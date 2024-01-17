@@ -1,0 +1,66 @@
+// Package cmd: команды tim на cobra.
+package cmd
+
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/ui"
+)
+
+var cfg *config.Config
+
+var root = &cobra.Command{
+	Use:   "tim",
+	Short: "Пульт разработчика: проекты, серверы, маршруты, туннели, базы",
+	Long: `tim держит под рукой всё хозяйство ~/Dev: реестр проектов, ssh с обходом VPN,
+маршруты, туннели через свой сервер, базы по .env проекта.
+TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие систему, вместо запуска.`,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		cfg, err = config.Load()
+		if err != nil {
+			return ui.Errorf("конфиг %s: %v", config.Path(), err)
+		}
+		return nil
+	},
+}
+
+func init() {
+	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
+	root.CompletionOptions.HiddenDefaultCmd = true
+}
+
+func Execute() error {
+	if err := root.Execute(); err != nil {
+		ui.Println(ui.Bad(err.Error()))
+		return err
+	}
+	return nil
+}
+
+func projectNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	c, err := config.Load()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	var names []string
+	for _, p := range c.Projects {
+		names = append(names, p.Name)
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func exitCode(err error) int {
+	if err != nil {
+		return 1
+	}
+	return 0
+}
+
+var _ = os.Exit
