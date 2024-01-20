@@ -7,8 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -46,6 +48,9 @@ var projInfoCmd = &cobra.Command{
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := registry.Pick(cfg, first(args))
+		if err != nil && len(args) == 0 && tui.Available() {
+			p, err = pickProject()
+		}
 		if err != nil {
 			return err
 		}
@@ -96,12 +101,22 @@ var goCmd = &cobra.Command{
 	Short:             "Перейти в клон проекта; с точкой в обёртку над app/",
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
+		if len(args) == 0 && !tui.Available() {
 			return projListCmd.RunE(cmd, nil)
 		}
-		p, ok := cfg.Project(args[0])
-		if !ok {
-			return ui.Errorf("нет проекта %s: tim proj list", args[0])
+		var p *config.Project
+		if len(args) == 0 {
+			picked, err := pickProject()
+			if err != nil {
+				return err
+			}
+			p = picked
+		} else {
+			found, ok := cfg.Project(args[0])
+			if !ok {
+				return ui.Errorf("нет проекта %s: tim proj list", args[0])
+			}
+			p = found
 		}
 		dir := cfg.ProjectDir(p)
 		if len(args) > 1 && args[1] == "." && strings.HasSuffix(dir, "/app") {

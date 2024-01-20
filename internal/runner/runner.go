@@ -76,10 +76,18 @@ func ExecEnv(env []string, name string, args ...string) error {
 
 func Sudo(args ...string) error { return Run("sudo", args...) }
 
+// ConfirmFunc задаёт интерактивный вопрос; asked=false - спросить не вышло, спрашиваем строкой.
+var ConfirmFunc func(question string) (yes, asked bool)
+
 // Confirm спрашивает подтверждение; в dry-run всегда да.
 func Confirm(question string) bool {
 	if DryRun {
 		return true
+	}
+	if ConfirmFunc != nil {
+		if yes, asked := ConfirmFunc(question); asked {
+			return yes
+		}
 	}
 	ui.Printf("%s [y/N] ", question)
 	var answer string
