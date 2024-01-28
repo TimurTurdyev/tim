@@ -30,6 +30,16 @@ iterm-config, `tim config migrate ~/Dev/projects/iterm/shell` converts
   on a free local port and closes it when the client exits.
 - `tim proj list|info|here`, `tim go [project] [.]`: without a project opens a fuzzy picker.
 - `tim config`, `tim config migrate <dir>`.
+- `tim cert <host[:port]>`, `tim dns <host> [--server ip]`, `tim port check <host:port...>`.
+- `tim site <domain|url> [--json]`: IPs with country and provider, domain registration (RDAP, whois
+  for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
+  Geolocation is asked from ipwho.is.
+
+Utilities, all on the standard library; without an argument they read stdin:
+
+- `tim hex 255`, `tim dec ff 0x1F 0b101`: number bases.
+- `tim b64 [-d] [--url] <text>`, `tim jwt <token>` (no signature check), `tim hash [md5|sha1|sha256|sha512|crc32]`.
+- `tim ts [epoch|date] [--tz zone]`, `tim uuid [-7] [-n N]`, `tim json [-c]`.
 
 `--dry-run` or `TIM_DRY_RUN=1` prints every command that would change the system.
 
