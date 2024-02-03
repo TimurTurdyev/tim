@@ -42,6 +42,9 @@ func Pick(cfg *config.Config, name string) (*config.Project, error) {
 		}
 		return p, nil
 	}
+	if len(cfg.Projects) == 0 {
+		return nil, ui.Errorf("реестр пуст: tim config init или tim proj scan")
+	}
 	cwd, _ := os.Getwd()
 	if p, ok := cfg.ProjectHere(cwd); ok {
 		return p, nil

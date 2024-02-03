@@ -7,12 +7,16 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/tui"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // errPickCanceled: человек закрыл пикер, команда тихо завершается.
 var errPickCanceled = errors.New("выбор отменён")
 
 func pickProject() (*config.Project, error) {
+	if len(cfg.Projects) == 0 {
+		return nil, ui.Errorf("реестр пуст: tim config init или tim proj scan")
+	}
 	items := make([]tui.Item, len(cfg.Projects))
 	for i, p := range cfg.Projects {
 		items[i] = tui.Item{Title: p.Name, Hint: p.Path}
