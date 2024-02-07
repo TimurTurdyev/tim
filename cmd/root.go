@@ -52,7 +52,7 @@ var groups = []struct {
 	cmds      []string
 }{
 	{"proj", "Проекты:", []string{"proj", "go", "db", "config", "init"}},
-	{"net", "Сервер и сеть:", []string{"ssh", "route", "cert", "dns", "port", "site"}},
+	{"net", "Сервер и сеть:", []string{"ssh", "route", "vpn", "cert", "dns", "port", "site"}},
 	{"util", "Утилиты:", []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json", "version"}},
 }
 

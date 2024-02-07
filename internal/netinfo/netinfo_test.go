@@ -44,3 +44,78 @@ func TestIsPrivate(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTarget(t *testing.T) {
+	cases := []struct {
+		in   string
+		kind TargetKind
+		val  string
+	}{
+		{"203.0.113.7", KindHost, "203.0.113.7"},
+		{"203.0.113.77/24", KindNet, "203.0.113.0/24"},
+		{"Example.COM.", KindDomain, "example.com"},
+		{"https://git.example.com:8443/repo", KindDomain, "git.example.com"},
+	}
+	for _, c := range cases {
+		got, err := ParseTarget(c.in)
+		if err != nil || got.Kind != c.kind || got.Value != c.val {
+			t.Errorf("%s: %+v %v", c.in, got, err)
+		}
+	}
+	for _, bad := range []string{"300.1.1.1", "10.0.0.0/40", "localhost", "a b.c"} {
+		if _, err := ParseTarget(bad); err == nil {
+			t.Errorf("%q should fail", bad)
+		}
+	}
+	priv, _ := ParseTarget("10.20.0.0/16")
+	pub, _ := ParseTarget("198.51.100.0/24")
+	if !PrivateTarget(priv) || PrivateTarget(pub) {
+		t.Error("private detection")
+	}
+}
+
+const tableSample = `Routing tables
+
+Internet:
+Destination        Gateway            Flags               Netif Expire
+0/1                utun4              UScg                utun4
+default            192.0.2.1          UGScg                 en0
+10.8/16            10.8.0.1           UGSc                utun4
+128.0/1            utun4              UScg                utun4
+198.51.100/24      192.0.2.1          UGSc                  en0
+198.51.100.9       192.0.2.254        UGHS                  en0
+203.0.113.5        192.0.2.1          UGHS                  en0
+203.0.113.6        192.168.7.1        UGHS                  en7
+192.0.2.1/32       link#14            UCS                   en0      !
+192.0.2.1          8:31:a4:55:0:2e    UHLWIir               en0   1197
+`
+
+func TestParseRoutesExpandsNets(t *testing.T) {
+	list := ParseRoutes(tableSample)
+	want := map[string]bool{"0.0.0.0/1": true, "10.8.0.0/16": true, "128.0.0.0/1": true, "198.51.100.0/24": true}
+	found := 0
+	for _, r := range list {
+		if want[r.Dest] {
+			found++
+		}
+	}
+	if found != 4 {
+		t.Errorf("nets found %d: %+v", found, list)
+	}
+	hosts := ParseHostRoutes(tableSample)
+	if len(hosts) != 3 || hosts[0].Dest != "198.51.100.9" {
+		t.Errorf("hosts %+v", hosts)
+	}
+}
+
+func TestStale(t *testing.T) {
+	list := ParseRoutes(tableSample)
+	all := Stale(list, "192.0.2.1", nil)
+	if len(all) != 2 || all[0].Dest != "198.51.100.9" || all[1].Dest != "203.0.113.6" {
+		t.Errorf("stale all: %+v", all)
+	}
+	only := Stale(list, "192.0.2.1", map[string]bool{"203.0.113.6": true, "203.0.113.5": true})
+	if len(only) != 1 || only[0].Dest != "203.0.113.6" {
+		t.Errorf("stale only: %+v", only)
+	}
+}

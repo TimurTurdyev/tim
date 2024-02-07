@@ -29,7 +29,14 @@ Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONF
   If it goes into a VPN tunnel or to the gateway of a previous network, offers to add
   a host route through the physical gateway, then connects. Private addresses are
   left to the VPN.
-- `tim route`, `tim route check`, `tim route up|down [addr...]`, `tim route table`.
+- `tim route add <address|domain|subnet...> [--label x]`: keep a target outside the VPN. It is saved to the
+  config and routed through the physical interface's gateway right away; a domain expands to all its A records,
+  a subnet goes in as `-net`. Private ranges need `--force`, since they usually live behind the VPN.
+- `tim route` shows where the internet traffic goes and the path of every target now; `route rm`, `route up|down`,
+  `route clean [--all]` (drop routes to the gateway of a previous network), `route check`, `route list`, `route table`.
+- `tim vpn`: tunnels, connected VPN services, full or split tunnel, DNS, how many targets bypass it;
+  `tim vpn exclude <target>` is `route add`, `tim vpn fix` cleans stale routes and brings every target up again.
+  IPv4 only.
 - `tim db [project] [dump|restore <file>] [--via <alias>]`: mysql, psql or sqlite
   from the project's `.env`; `--via` opens an ssh port forward to the server's database
   on a free local port and closes it when the client exits.
