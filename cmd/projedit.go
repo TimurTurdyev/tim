@@ -116,10 +116,13 @@ var projScanCmd = &cobra.Command{
 	},
 }
 
-var addName string
+var (
+	addName string
+	addURL  string
+)
 
 var projAddCmd = &cobra.Command{
-	Use:   "add [путь] [--name имя]",
+	Use:   "add [путь] [--name имя] [--url адрес]",
 	Short: "Добавить папку в реестр (по умолчанию текущую)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -147,7 +150,7 @@ var projAddCmd = &cobra.Command{
 			}
 			name = scan.Names([]string{abs}, cfg.Wrapper, taken)[0]
 		}
-		if err := cfg.AddProject(config.Project{Name: name, Path: cfg.Relative(abs)}); err != nil {
+		if err := cfg.AddProject(config.Project{Name: name, Path: cfg.Relative(abs), URL: addURL}); err != nil {
 			return err
 		}
 		if err := saveConfig(cfg); err != nil {
@@ -182,5 +185,6 @@ var projRmCmd = &cobra.Command{
 func init() {
 	projScanCmd.Flags().BoolVar(&scanAdd, "add", false, "добавить все найденные")
 	projAddCmd.Flags().StringVar(&addName, "name", "", "имя в реестре")
+	projAddCmd.Flags().StringVar(&addURL, "url", "", "адрес сайта проекта (для tim ssl)")
 	projCmd.AddCommand(projScanCmd, projAddCmd, projRmCmd)
 }
