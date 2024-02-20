@@ -118,3 +118,36 @@ func DNSServers() []string {
 	out, _ := runner.Output("scutil", "--dns")
 	return ParseDNS(out)
 }
+
+// Proxy: системный SOCKS-прокси службы macOS.
+type Proxy struct {
+	Enabled bool
+	Server  string
+	Port    string
+}
+
+// ParseSocksProxy разбирает networksetup -getsocksfirewallproxy.
+func ParseSocksProxy(out string) Proxy {
+	var p Proxy
+	for _, line := range strings.Split(out, "\n") {
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		switch strings.TrimSpace(k) {
+		case "Enabled":
+			p.Enabled = v == "Yes"
+		case "Server":
+			p.Server = v
+		case "Port":
+			p.Port = v
+		}
+	}
+	return p
+}
+
+func SocksProxy(service string) Proxy {
+	out, _ := runner.Output("networksetup", "-getsocksfirewallproxy", service)
+	return ParseSocksProxy(out)
+}

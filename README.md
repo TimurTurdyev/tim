@@ -29,6 +29,11 @@ Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONF
   If it goes into a VPN tunnel or to the gateway of a previous network, offers to add
   a host route through the physical gateway, then connects. Private addresses are
   left to the VPN.
+- `tim tunnel`: background ssh tunnels with a control socket; the server's route is checked against the VPN first.
+  `tunnel up [server]` is SOCKS5 on `tunnel.port` (1080), `tunnel system on|off` points macOS proxy settings at it,
+  `tunnel check` compares the external IP with and without it. `tunnel port <L:host:R|L:R|R> [server]`,
+  `tunnel db [project] [--via server]` keeps a database tunnel for a GUI client, `tunnel down [name|all]`.
+  `tunnel expose <port>` publishes a local port with cloudflared, or `--frp host:port`, or `--ssh server`.
 - `tim route add <address|domain|subnet...> [--label x]`: keep a target outside the VPN. It is saved to the
   config and routed through the physical interface's gateway right away; a domain expands to all its A records,
   a subnet goes in as `-net`. Private ranges need `--force`, since they usually live behind the VPN.
