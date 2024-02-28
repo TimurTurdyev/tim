@@ -30,7 +30,9 @@ Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONF
   a host route through the physical gateway, then connects. Private addresses are
   left to the VPN.
 - `tim tunnel`: background ssh tunnels with a control socket; the server's route is checked against the VPN first.
-  `tunnel up [server]` is SOCKS5 on `tunnel.port` (1080), `tunnel system on|off` points macOS proxy settings at it,
+  `tunnel all [server] [-x subnet]` sends all IPv4 and DNS through ssh with sshuttle, no proxy settings needed
+  (the server itself and private ranges stay outside; `tunnel all off` stops it).
+  `tunnel up [server]` is SOCKS5 on `tunnel.port` (1080), listening on 127.0.0.1 only, so the network sees plain ssh; `tunnel system on|off` points macOS proxy settings at it,
   `tunnel check` compares the external IP with and without it. `tunnel port <L:host:R|L:R|R> [server]`,
   `tunnel db [project] [--via server]` keeps a database tunnel for a GUI client, `tunnel down [name|all]`.
   `tunnel expose <port>` publishes a local port with cloudflared, or `--frp host:port`, or `--ssh server`.

@@ -36,6 +36,9 @@ var tunnelCmd = &cobra.Command{
 			}
 			ui.Println(ui.Pad(t.Name, 14) + " " + ui.Pad(state, 10) + " " + t.Host + "  " + ui.Dim(t.Desc))
 		}
+		if pid, ok := shuttlePID(); ok {
+			ui.Println(ui.Pad("all", 14) + " " + ui.Pad(ui.Label("работает"), 10) + " " + ui.Dim("sshuttle, pid "+pid+", весь IPv4 через ssh"))
+		}
 		if phys, _ := physical(); phys.Name != "" {
 			p := netinfo.SocksProxy(phys.Name)
 			if p.Enabled {
@@ -101,7 +104,7 @@ func socksTunnel(server string) sshx.Tunnel {
 
 var tunnelUpCmd = &cobra.Command{
 	Use:   "up [сервер] [--port 1080]",
-	Short: "SOCKS5 через сервер (ssh -D)",
+	Short: "SOCKS5 через сервер (ssh -D): слушает только 127.0.0.1, наружу идёт обычный ssh",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		server, err := tunnelServer(first(args))
@@ -164,6 +167,9 @@ var tunnelCheckCmd = &cobra.Command{
 		via, err := ipVia(proxy)
 		if err != nil {
 			ui.Println(ui.Dim("через SOCKS: туннеля нет или он не отвечает (" + proxy + ")"))
+			if _, ok := shuttlePID(); ok {
+				ui.Println(ui.Dim("tunnel all работает: адрес напрямую выше уже должен быть адресом сервера"))
+			}
 			return nil
 		}
 		ui.Println(ui.Label("через SOCKS ") + via)
@@ -369,7 +375,79 @@ var tunnelExposeCmd = &cobra.Command{
 	},
 }
 
+// shuttlePID: pid работающего sshuttle из pidfile.
+func shuttlePID() (string, bool) {
+	data, err := os.ReadFile(sshx.ShuttlePidfile())
+	if err != nil {
+		return "", false
+	}
+	pid := strings.TrimSpace(string(data))
+	if _, err := runner.Output("ps", "-p", pid); err != nil {
+		return pid, false
+	}
+	return pid, true
+}
+
+var (
+	allNoDNS   bool
+	allExclude []string
+)
+
+var tunnelAllCmd = &cobra.Command{
+	Use:   "all [сервер|off] [--no-dns] [-x подсеть...]",
+	Short: "Весь трафик через ssh без настройки прокси (sshuttle); off - выключить",
+	Long: `Прозрачный туннель поверх ssh: sshuttle перехватывает весь IPv4 и DNS и отправляет через сервер.
+Приложениям ничего настраивать не надо, на сервере нужен только python3.
+Мимо туннеля остаются сам сервер и частные сети (локальная сеть и ресурсы корпоративного VPN).
+IPv6 sshuttle не перехватывает. sudo спросит пароль при старте.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if first(args) == "off" {
+			pid, ok := shuttlePID()
+			if !ok {
+				ui.Println(ui.Dim("tunnel all не запущен"))
+				return nil
+			}
+			if err := runner.Sudo("kill", pid); err != nil {
+				return err
+			}
+			if !runner.DryRun {
+				_ = os.Remove(sshx.ShuttlePidfile())
+			}
+			ui.Println(ui.Label("tunnel all выключен"))
+			return nil
+		}
+		for _, x := range allExclude {
+			if _, err := netinfo.ParseTarget(x); err != nil {
+				return err
+			}
+		}
+		if pid, ok := shuttlePID(); ok {
+			ui.Println(ui.Dim("уже работает, pid " + pid + ": tim tunnel all off"))
+			return nil
+		}
+		if !runner.Has("sshuttle") && !runner.DryRun {
+			return ui.Errorf("sshuttle не найден: brew install sshuttle")
+		}
+		server, err := tunnelServer(first(args))
+		if err != nil {
+			return err
+		}
+		ip := sshx.IP(server)
+		if ip != "" {
+			ensureBypass(ip)
+		}
+		if err := runner.Run("sshuttle", sshx.ShuttleArgs(server, ip, !allNoDNS, allExclude, sshx.ShuttlePidfile())...); err != nil {
+			return ui.Errorf("sshuttle не поднялся: %v", err)
+		}
+		ui.Println(ui.Label("весь трафик идёт через "+server) + ui.Dim("  проверить: tim tunnel check, выключить: tim tunnel all off"))
+		return nil
+	},
+}
+
 func init() {
+	tunnelAllCmd.Flags().BoolVar(&allNoDNS, "no-dns", false, "DNS не заворачивать")
+	tunnelAllCmd.Flags().StringSliceVarP(&allExclude, "exclude", "x", nil, "ещё подсети или адреса мимо туннеля")
 	tunnelUpCmd.Flags().IntVar(&tunnelPort, "port", 0, "локальный порт SOCKS (по умолчанию tunnel.port)")
 	tunnelSystemCmd.Flags().IntVar(&tunnelPort, "port", 0, "локальный порт SOCKS")
 	tunnelCheckCmd.Flags().IntVar(&tunnelPort, "port", 0, "локальный порт SOCKS")
@@ -378,6 +456,6 @@ func init() {
 	tunnelExposeCmd.Flags().StringVar(&exposeFRP, "frp", "", "сервер frps host[:port]")
 	tunnelExposeCmd.Flags().StringVar(&exposeSSH, "ssh", "", "сервер для ssh -R")
 	tunnelExposeCmd.Flags().IntVar(&exposeRemote, "remote", 0, "порт снаружи (по умолчанию тот же)")
-	tunnelCmd.AddCommand(tunnelUpCmd, tunnelDownCmd, tunnelCheckCmd, tunnelSystemCmd, tunnelPortCmd, tunnelDBCmd, tunnelExposeCmd)
+	tunnelCmd.AddCommand(tunnelAllCmd, tunnelUpCmd, tunnelDownCmd, tunnelCheckCmd, tunnelSystemCmd, tunnelPortCmd, tunnelDBCmd, tunnelExposeCmd)
 	root.AddCommand(tunnelCmd)
 }
