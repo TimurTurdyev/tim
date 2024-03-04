@@ -35,6 +35,7 @@ type Tunnel struct {
 type Config struct {
 	Dev      string    `toml:"dev"`
 	Wrapper  string    `toml:"wrapper,omitempty"`
+	Editor   string    `toml:"editor,omitempty"`
 	Tunnel   Tunnel    `toml:"tunnel"`
 	Projects []Project `toml:"project"`
 	Hosts    []Host    `toml:"host"`
