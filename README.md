@@ -59,6 +59,13 @@ Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONF
   for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
   Geolocation is asked from ipwho.is.
 
+Summary:
+
+- `tim motd [section...] [--all] [--time]`: project in the current folder (branch, changes), network and VPN,
+  running project servers, brew services from launchd, and on request `repos` (uncommitted or unpushed),
+  `procs` (top CPU), `versions`. Sections run in parallel with a timeout each; the default set
+  (`project net ports services`, or the `motd` list in the config) takes about 150 ms.
+
 Local run:
 
 - `tim serve [project] [port]`: dev server by stack (Laravel `composer dev` or `artisan serve`, plain PHP `php -S`,
