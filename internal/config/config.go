@@ -21,6 +21,16 @@ type Project struct {
 	URL    string `toml:"url,omitempty"`
 }
 
+// Shell: что tim init добавляет в оболочку.
+type Shell struct {
+	Motd    bool              `toml:"motd,omitempty"`
+	CdInfo  *bool             `toml:"cd_info,omitempty"`
+	Aliases map[string]string `toml:"aliases,omitempty"`
+}
+
+// CdInfoOn: подсказка о проекте при входе в папку, по умолчанию включена.
+func (s Shell) CdInfoOn() bool { return s.CdInfo == nil || *s.CdInfo }
+
 // Host: цель обхода VPN - адрес, подсеть CIDR или домен.
 type Host struct {
 	Addr  string `toml:"addr"`
@@ -37,6 +47,7 @@ type Config struct {
 	Wrapper  string    `toml:"wrapper,omitempty"`
 	Editor   string    `toml:"editor,omitempty"`
 	Motd     []string  `toml:"motd,omitempty"`
+	Shell    Shell     `toml:"shell,omitempty"`
 	Tunnel   Tunnel    `toml:"tunnel"`
 	Projects []Project `toml:"project"`
 	Hosts    []Host    `toml:"host"`

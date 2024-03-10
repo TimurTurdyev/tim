@@ -9,7 +9,7 @@ database access from a project's `.env`. One Go binary plus a tiny zsh shim.
 ```sh
 go install github.com/TimurTurdyev/tim@latest
 tim config init                       # projects root, wrapper folder, pick clones for the registry
-echo 'eval "$(tim init zsh)"' >> ~/.zshrc
+echo 'eval "$(tim init zsh)"' >> ~/.zshrc    # bash: echo 'eval "$(tim init bash)"' >> ~/.bashrc
 tim go                                # fuzzy picker over the registry, cd into the project
 ```
 
@@ -20,8 +20,18 @@ parent folder and `tim go shop .` jumps to `shop/`. Without a terminal use flags
 `tim config init --root ~/code --all -y`. Later, `tim proj scan` finds new clones,
 `tim proj add [path]` and `tim proj rm <name>` edit the registry.
 
-The shim is needed for `tim go`, since a process cannot change the directory of its parent shell.
-Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONFIG` overrides).
+`tim init zsh` (or `tim init bash` for `.bashrc`) adds a `tim` function, since a process cannot change the
+directory or `PATH` of its parent shell (`tim go`, `tim php use`), completion, a one-line note when you enter a
+project folder, your aliases and, if you want it, the summary on every new terminal:
+
+```toml
+[shell]
+motd = true          # tim motd in every new interactive shell
+cd_info = true       # project, branch and changes when entering its folder (default on)
+
+[shell.aliases]
+gs = "git status -sb"
+``` Config lives in `~/.config/tim/config.toml` (`TIM_CONFIG` overrides).
 
 ## Commands
 
