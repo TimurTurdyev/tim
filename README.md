@@ -76,6 +76,24 @@ Summary:
   `procs` (top CPU), `versions`. Sections run in parallel with a timeout each; the default set
   (`project net ports services`, or the `motd` list in the config) takes about 150 ms.
 
+Across projects:
+
+- `tim each [task] [project...] [--list] [--all] [--scan]`: run a command in every project folder (and the wrapper
+  above the clone) that has a marker file. Tasks live in the config:
+
+  ```toml
+  [[task]]
+  name = "deps"
+  marker = "composer.json"
+  run = "composer outdated --direct"
+  # optional: a version key in a JSON marker and a command for the latest version;
+  # then only outdated folders run unless --all
+  version_key = "version"
+  version_cmd = "tool --version"
+  ```
+
+  One-off: `tim each --marker go.mod -- go mod tidy`. `--dry-run` prints the commands.
+
 Local run:
 
 - `tim serve [project] [port]`: dev server by stack (Laravel `composer dev` or `artisan serve`, plain PHP `php -S`,

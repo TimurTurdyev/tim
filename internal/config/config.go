@@ -21,6 +21,25 @@ type Project struct {
 	URL    string `toml:"url,omitempty"`
 }
 
+// Task: команда, которую tim each выполняет во всех проектах с файлом-маркером.
+type Task struct {
+	Name       string `toml:"name"`
+	Marker     string `toml:"marker"`
+	Run        string `toml:"run"`
+	VersionKey string `toml:"version_key,omitempty"`
+	VersionCmd string `toml:"version_cmd,omitempty"`
+	Scan       bool   `toml:"scan,omitempty"`
+}
+
+func (c *Config) Task(name string) (*Task, bool) {
+	for i := range c.Tasks {
+		if c.Tasks[i].Name == name {
+			return &c.Tasks[i], true
+		}
+	}
+	return nil, false
+}
+
 // Shell: что tim init добавляет в оболочку.
 type Shell struct {
 	Motd    bool              `toml:"motd,omitempty"`
@@ -48,6 +67,7 @@ type Config struct {
 	Editor   string    `toml:"editor,omitempty"`
 	Motd     []string  `toml:"motd,omitempty"`
 	Shell    Shell     `toml:"shell,omitempty"`
+	Tasks    []Task    `toml:"task,omitempty"`
 	Tunnel   Tunnel    `toml:"tunnel"`
 	Projects []Project `toml:"project"`
 	Hosts    []Host    `toml:"host"`
