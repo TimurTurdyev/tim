@@ -4,7 +4,7 @@ VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev
 LDFLAGS  := -s -w -X $(PKG)/cmd.version=$(VERSION)
 BENCHCFG := $(shell mktemp -t tim-bench)
 
-.PHONY: build install test vet lint clean bench inittrace benchinit
+.PHONY: build install test vet lint clean bench inittrace benchinit snapshot release-check
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) .
@@ -45,3 +45,10 @@ inittrace: build
 benchinit:
 	@command -v benchinit >/dev/null || go install mvdan.cc/benchinit@latest
 	benchinit ./cmd
+
+# Локальная сборка релиза без публикации: dist/ с universal-бинарником и checksums.txt.
+snapshot:
+	goreleaser release --snapshot --clean --skip=publish
+
+release-check:
+	goreleaser check
