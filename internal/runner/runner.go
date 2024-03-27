@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -148,4 +150,34 @@ func CaptureIn(dir, name string, args ...string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// Start запускает команду в фоне в своей группе процессов, вывод пишет в logPath; возвращает pid.
+// В dry-run только печатает и возвращает 0.
+func Start(dir string, env []string, logPath, name string, args ...string) (int, error) {
+	if DryRun {
+		ui.Println(ui.Dim("$ cd " + quote([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+quote(append([]string{name}, args...))) + " > " + logPath + " &"))
+		return 0, nil
+	}
+	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = log.Close() }()
+	cmd := exec.Command(lookIn(env, name), args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdout, cmd.Stderr = log, log
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	pid := cmd.Process.Pid
+	_ = cmd.Process.Release()
+	return pid, nil
+}
+
+// StopGroup шлёт SIGTERM всей группе процессов pid (запущенной через Start).
+func StopGroup(pid int) error {
+	return Run("kill", "-TERM", "--", "-"+strconv.Itoa(pid))
 }

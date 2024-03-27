@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/registry"
@@ -23,6 +24,8 @@ type Facts struct {
 	UV          bool
 	Python      string
 	PyEntry     string
+	Compose     string
+	Custom      string
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
@@ -44,6 +47,15 @@ func Detect(dir string) Facts {
 		if py := filepath.Join(dir, v, "bin", "python"); exists(py) {
 			f.Python = py
 			break
+		}
+	}
+compose:
+	for _, sub := range []string{".", "docker"} {
+		for _, c := range []string{"compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"} {
+			if exists(filepath.Join(dir, sub, c)) {
+				f.Compose = filepath.Join(sub, c)
+				break compose
+			}
 		}
 	}
 	for _, e := range []string{"manage.py", "main.py", "app.py", "server.py"} {
@@ -98,6 +110,9 @@ func (c Command) String() string {
 
 // Serve выбирает команду dev-сервера для стека.
 func Serve(f Facts, port string) (Command, error) {
+	if f.Custom != "" {
+		return Command{Name: "sh", Args: []string{"-c", f.Custom}, Env: []string{"PORT=" + port}}, nil
+	}
 	makeDev := Command{Name: "make", Args: []string{"dev"}}
 	switch f.Stack {
 	case "laravel":
@@ -146,5 +161,50 @@ func Serve(f Facts, port string) (Command, error) {
 	if f.MakeDev {
 		return makeDev, nil
 	}
-	return Command{}, errors.New("стек " + f.Stack + " не знаю, а цели dev в Makefile нет")
+	if f.Compose != "" {
+		if filepath.Dir(f.Compose) == "." {
+			return Command{Name: "docker", Args: []string{"compose", "up"}}, nil
+		}
+		return Command{Name: "docker", Args: []string{"compose", "-f", f.Compose, "up"}}, nil
+	}
+	return Command{}, errors.New("стек " + f.Stack + " не знаю, цели dev в Makefile и compose-файла нет; задай serve в конфиге проекта")
+}
+
+// MatchNames: точное имя, иначе начало имени, иначе вхождение; индексы совпадений.
+func MatchNames(names []string, q string) []int {
+	q = strings.ToLower(q)
+	var prefix, sub []int
+	for i, n := range names {
+		l := strings.ToLower(n)
+		switch {
+		case l == q:
+			return []int{i}
+		case strings.HasPrefix(l, q):
+			prefix = append(prefix, i)
+		case strings.Contains(l, q):
+			sub = append(sub, i)
+		}
+	}
+	if len(prefix) > 0 {
+		return prefix
+	}
+	return sub
+}
+
+// AllocPorts раздаёт порты по порядку: занятый или уже выданный заменяется следующим свободным.
+func AllocPorts(wanted []string, busy func(string) bool) []string {
+	used := map[int]bool{}
+	out := make([]string, len(wanted))
+	for i, w := range wanted {
+		p, err := strconv.Atoi(w)
+		if err != nil || p < 1 {
+			p = 8000
+		}
+		for used[p] || busy(strconv.Itoa(p)) {
+			p++
+		}
+		used[p] = true
+		out[i] = strconv.Itoa(p)
+	}
+	return out
 }

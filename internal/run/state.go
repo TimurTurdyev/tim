@@ -1,0 +1,74 @@
+package run
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// State: фоновый dev-сервер, запущенный tim serve -d.
+type State struct {
+	Name    string    `json:"name"`
+	PID     int       `json:"pid"`
+	Port    string    `json:"port"`
+	Dir     string    `json:"dir"`
+	Command string    `json:"command"`
+	Log     string    `json:"log"`
+	Started time.Time `json:"started"`
+}
+
+func StateDir() string {
+	home, _ := os.UserHomeDir()
+	d := filepath.Join(home, ".local", "state", "tim", "serve")
+	_ = os.MkdirAll(d, 0o755)
+	return d
+}
+
+func LogPath(name string) string { return filepath.Join(StateDir(), name+".log") }
+
+func (s State) Save() error {
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(StateDir(), s.Name+".json"), data, 0o600)
+}
+
+func (s State) Remove() { _ = os.Remove(filepath.Join(StateDir(), s.Name+".json")) }
+
+// Alive: процесс ещё есть (сигнал 0 ничего не делает, только проверяет).
+func (s State) Alive() bool {
+	if s.PID <= 0 {
+		return false
+	}
+	err := syscall.Kill(s.PID, 0)
+	return err == nil || err == syscall.EPERM
+}
+
+func LoadState(name string) (State, bool) {
+	data, err := os.ReadFile(filepath.Join(StateDir(), name+".json"))
+	if err != nil {
+		return State{}, false
+	}
+	var s State
+	if json.Unmarshal(data, &s) != nil {
+		return State{}, false
+	}
+	return s, true
+}
+
+func ListStates() []State {
+	files, _ := filepath.Glob(filepath.Join(StateDir(), "*.json"))
+	var out []State
+	for _, f := range files {
+		if s, ok := LoadState(strings.TrimSuffix(filepath.Base(f), ".json")); ok {
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}

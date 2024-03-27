@@ -23,6 +23,10 @@ func TestServe(t *testing.T) {
 		{"python uv", Facts{Stack: "python", PyEntry: "main.py", UV: true}, "uv run python main.py"},
 		{"python plain", Facts{Stack: "python", PyEntry: "app.py"}, "python3 app.py"},
 		{"other make", Facts{Stack: "other", MakeDev: true}, "make dev"},
+		{"compose", Facts{Stack: "other", Compose: "compose.yml"}, "docker compose up"},
+		{"compose in docker/", Facts{Stack: "other", Compose: "docker/docker-compose.yml"}, "docker compose -f docker/docker-compose.yml up"},
+		{"make beats compose", Facts{Stack: "other", Compose: "compose.yml", MakeDev: true}, "make dev"},
+		{"custom wins", Facts{Stack: "laravel", ComposerDev: true, Custom: "npm run serve"}, "PORT=8001 sh -c npm run serve"},
 	}
 	for _, c := range cases {
 		got, err := Serve(c.f, "8001")
@@ -54,5 +58,35 @@ func TestDetect(t *testing.T) {
 	write("Makefile", "dev:\n\tnpm run dev\n")
 	if !Detect(dir).MakeDev {
 		t.Error("make dev not found")
+	}
+}
+
+func TestMatchNames(t *testing.T) {
+	names := []string{"lpack-site", "lpack-kb", "mercurio-lpack", "lpack", "shop"}
+	if got := MatchNames(names, "LPACK"); len(got) != 1 || got[0] != 3 {
+		t.Errorf("exact: %v", got)
+	}
+	if got := MatchNames(names[:3], "lpack"); len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Errorf("prefix over substring: %v", got)
+	}
+	if got := MatchNames(names, "merc"); len(got) != 1 || got[0] != 2 {
+		t.Errorf("single prefix: %v", got)
+	}
+	if got := MatchNames(names, "kb"); len(got) != 1 || got[0] != 1 {
+		t.Errorf("substring: %v", got)
+	}
+	if got := MatchNames(names, "zzz"); len(got) != 0 {
+		t.Errorf("none: %v", got)
+	}
+}
+
+func TestAllocPorts(t *testing.T) {
+	busy := map[string]bool{"8003": true, "8001": true}
+	got := AllocPorts([]string{"8000", "8000", "8003", "", "8002"}, func(p string) bool { return busy[p] })
+	want := []string{"8000", "8002", "8004", "8005", "8006"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
 	}
 }
