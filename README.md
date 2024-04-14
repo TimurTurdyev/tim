@@ -64,6 +64,9 @@ gs = "git status -sb"
   `tim stale [--hours 8] [--kill]`: project dev servers left running.
 - `tim dns flush`, `tim dns servers`, `tim ssl [domain...]`: certificate expiry for the given domains or the
   `url` field of projects (`tim proj add --url`).
+- `tim mail <domain> [--selector s]`: MX, SPF, DKIM (common selectors and yours), DMARC, with what is wrong in them.
+- `tim http <url> [-L] [--all-headers]`: one request on a fresh connection split into DNS, TCP, TLS, first byte and
+  download, status, protocol, size and key headers; `-L` follows redirects.
 - `tim cert <host[:port]>`, `tim dns <host> [--server ip]`, `tim port check <host:port...>`.
 - `tim site <domain|url> [--json]`: IPs with country and provider, domain registration (RDAP, whois
   for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
@@ -75,6 +78,11 @@ Health check:
   aliases, broken route targets and tasks), the shell shim, `PATH` (duplicates, missing folders, programs shadowed
   by another copy), version managers that fight over one language, several brew formulas for one database client,
   crashed brew services. Read-only; exits 1 only on errors.
+
+Disk:
+
+- `tim disk [folder] [--min 50M]`: space taken by node_modules, vendor, venvs, target, dist, build, .next and .nuxt
+  across projects, largest first with the owning project, plus totals by kind. Read-only.
 
 Summary:
 
