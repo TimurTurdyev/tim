@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/minio/selfupdate v0.6.0
 	github.com/spf13/cobra v1.10.2
+	rsc.io/qr v0.2.0
 )
 
 require (

@@ -119,3 +119,24 @@ func TestUUIDVersions(t *testing.T) {
 		t.Errorf("v7 %s", v7)
 	}
 }
+
+func TestPassword(t *testing.T) {
+	for range 200 {
+		p, err := Password(12, true, true)
+		if err != nil || len(p) != 12 {
+			t.Fatalf("%q %v", p, err)
+		}
+		if !strings.ContainsAny(p, lowers) || !strings.ContainsAny(p, uppers) || !strings.ContainsAny(p, digits) || !strings.ContainsAny(p, symbols) {
+			t.Fatalf("missing class: %q", p)
+		}
+		if strings.ContainsAny(p, similar) {
+			t.Fatalf("ambiguous char: %q", p)
+		}
+	}
+	if p, _ := Password(8, false, false); strings.ContainsAny(p, symbols) {
+		t.Errorf("symbols off: %q", p)
+	}
+	if _, err := Password(3, true, false); err == nil {
+		t.Error("too short should fail")
+	}
+}

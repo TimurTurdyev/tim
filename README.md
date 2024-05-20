@@ -134,6 +134,9 @@ Utilities, all on the standard library; without an argument they read stdin:
 - `tim hex 255`, `tim dec ff 0x1F 0b101`: number bases.
 - `tim b64 [-d] [--url] <text>`, `tim jwt <token>` (no signature check), `tim hash [md5|sha1|sha256|sha512|crc32]`.
 - `tim ts [epoch|date] [--tz zone]`, `tim uuid [-7] [-n N]`, `tim json [-c]`.
+- `tim url encode|decode|parse`, `tim pass [-n 20] [-c N] [--no-symbols] [--no-ambiguous]`.
+- `tim qr <text> [--invert]`: QR code right in the terminal, to move a link or a Wi-Fi password to a phone.
+- `tim cron "<expr>" [-n 5]`: what a cron expression means and its next runs in local time.
 
 `--dry-run` or `TIM_DRY_RUN=1` prints every command that would change the system.
 
