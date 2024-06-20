@@ -4,13 +4,22 @@ VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev
 LDFLAGS  := -s -w -X $(PKG)/cmd.version=$(VERSION)
 BENCHCFG := $(shell mktemp -t tim-bench)
 
-.PHONY: build install test vet lint clean bench inittrace benchinit snapshot release-check
+.PHONY: build install man test vet lint clean bench inittrace benchinit snapshot release-check
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) .
 
-install:
+MANDIR := $(shell go env GOPATH)/share/man/man1
+
+# man ищет страницы рядом с каталогом из PATH: для ~/go/bin это ~/go/share/man.
+install: man
 	go install -ldflags "$(LDFLAGS)" .
+	mkdir -p $(MANDIR)
+	cp man/*.1 $(MANDIR)/
+
+man:
+	rm -rf man
+	go run -ldflags "$(LDFLAGS)" . man man
 
 test:
 	go test ./...
@@ -22,7 +31,7 @@ lint:
 	@command -v golangci-lint >/dev/null || { echo "golangci-lint не найден"; exit 0; }; golangci-lint run ./...
 
 clean:
-	rm -f $(BIN)
+	rm -rf $(BIN) man
 
 # Замер старта на пустом конфиге, чтобы числа не зависели от личного config.toml.
 bench: build

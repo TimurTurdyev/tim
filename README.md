@@ -33,6 +33,10 @@ cd_info = true       # project, branch and changes when entering its folder (def
 gs = "git status -sb"
 ``` Config lives in `~/.config/tim/config.toml` (`TIM_CONFIG` overrides).
 
+`tim` alone shows the most used commands, `tim --help` all of them grouped, `tim <command> --help` the details
+with examples, `man tim` and `man tim-<command>` the same as man pages (installed next to the binary by
+`make install` and by the cask). Help and errors are in Russian; colors only in a terminal, `NO_COLOR` turns them off.
+
 ## Commands
 
 - `tim ssh [alias|project|user@host] [args]`: without a target opens a picker over aliases; checks the route to the address first.
@@ -158,7 +162,8 @@ The binary is not notarized, so the cask clears the quarantine flag after instal
 
 ```sh
 make build      # ./tim with the version from git describe
-make install    # go install with the same ldflags
+make install    # go install with the same ldflags, man pages into $(go env GOPATH)/share/man/man1
+make man        # man pages into ./man
 make test vet lint
 make bench      # startup time on an empty config (hyperfine if installed)
 make inittrace  # most expensive package init functions

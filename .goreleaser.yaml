@@ -6,6 +6,7 @@ before:
   hooks:
     - go mod tidy
     - go test ./...
+    - go run . man man
 
 builds:
   - id: tim
@@ -29,6 +30,7 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_all"
     files:
       - README.md
+      - man/*.1
 
 checksum:
   name_template: checksums.txt
@@ -52,6 +54,7 @@ homebrew_casks:
     homepage: https://github.com/TimurTurdyev/tim
     description: Developer control panel for the terminal
     binaries: [tim]
+    manpages: [man/tim.1]
     # Бинарник не подписан и не нотаризован: без снятия карантина Gatekeeper его не запустит.
     hooks:
       post:
