@@ -3,6 +3,7 @@ package cmd
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -37,10 +38,9 @@ const usageTemplate = `{{h "Использование:"}}{{if .Runnable}}
 {{dim (print "Подробнее о команде: " .CommandPath " <команда> --help")}}{{end}}
 `
 
-var flagLine = regexp.MustCompile(`^(\s*)(-\S.*?)(\s{2,})(.*)$`)
-
 // colorFlags подсвечивает сами флаги в строках FlagUsages, описания оставляет как есть.
 func colorFlags(s string, color func(string) string) string {
+	flagLine := regexp.MustCompile(`^(\s*)(-\S.*?)(\s{2,})(.*)$`)
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		if m := flagLine.FindStringSubmatch(l); m != nil {
@@ -153,26 +153,31 @@ func overview() {
 	ui.Println(ui.Dim("все команды: tim --help, по команде: tim <команда> --help, man tim"))
 }
 
-var cobraErrors = []struct {
+type cobraError struct {
 	re   *regexp.Regexp
 	tmpl string
-}{
-	{regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`), "нет команды $1 у $2: $2 --help"},
-	{regexp.MustCompile(`^unknown flag: (\S+)`), "нет флага $1: посмотри --help"},
-	{regexp.MustCompile(`^unknown shorthand flag: '(.)' in (\S+)`), "нет флага -$1: посмотри --help"},
-	{regexp.MustCompile(`^flag needs an argument: (\S+)`), "флагу $1 нужно значение"},
-	{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)" flag`), "неверное значение $1 для $2"},
-	{regexp.MustCompile(`^requires at least (\d+) arg\(s\), only received (\d+)`), "нужно аргументов не меньше $1, передано $2"},
-	{regexp.MustCompile(`^accepts at most (\d+) arg\(s\), received (\d+)`), "аргументов не больше $1, передано $2"},
-	{regexp.MustCompile(`^accepts (\d+) arg\(s\), received (\d+)`), "нужно аргументов: $1, передано $2"},
-	{regexp.MustCompile(`^accepts between (\d+) and (\d+) arg\(s\), received (\d+)`), "нужно аргументов от $1 до $2, передано $3"},
-	{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)"`), "неверный аргумент $1 для $2"},
 }
+
+// cobraErrors компилируются только при ошибке, чтобы не тратить на это старт.
+var cobraErrors = sync.OnceValue(func() []cobraError {
+	return []cobraError{
+		{regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`), "нет команды $1 у $2: $2 --help"},
+		{regexp.MustCompile(`^unknown flag: (\S+)`), "нет флага $1: посмотри --help"},
+		{regexp.MustCompile(`^unknown shorthand flag: '(.)' in (\S+)`), "нет флага -$1: посмотри --help"},
+		{regexp.MustCompile(`^flag needs an argument: (\S+)`), "флагу $1 нужно значение"},
+		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)" flag`), "неверное значение $1 для $2"},
+		{regexp.MustCompile(`^requires at least (\d+) arg\(s\), only received (\d+)`), "нужно аргументов не меньше $1, передано $2"},
+		{regexp.MustCompile(`^accepts at most (\d+) arg\(s\), received (\d+)`), "аргументов не больше $1, передано $2"},
+		{regexp.MustCompile(`^accepts (\d+) arg\(s\), received (\d+)`), "нужно аргументов: $1, передано $2"},
+		{regexp.MustCompile(`^accepts between (\d+) and (\d+) arg\(s\), received (\d+)`), "нужно аргументов от $1 до $2, передано $3"},
+		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)"`), "неверный аргумент $1 для $2"},
+	}
+})
 
 // translateError переводит типовые ошибки cobra; подсказку "Did you mean" сохраняет по-русски.
 func translateError(msg string) string {
 	head, rest, _ := strings.Cut(msg, "\n")
-	for _, e := range cobraErrors {
+	for _, e := range cobraErrors() {
 		if e.re.MatchString(head) {
 			head = e.re.ReplaceAllString(e.re.FindString(head), e.tmpl)
 			break

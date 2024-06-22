@@ -19,7 +19,7 @@ install: man
 
 man:
 	rm -rf man
-	go run -ldflags "$(LDFLAGS)" . man man
+	go run -ldflags "-X $(PKG)/cmd.version=$(VERSION)" ./tools/genman man
 
 test:
 	go test ./...

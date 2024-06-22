@@ -6,7 +6,7 @@ before:
   hooks:
     - go mod tidy
     - go test ./...
-    - go run . man man
+    - go run -ldflags "-X github.com/TimurTurdyev/tim/cmd.version={{ .Tag }}" ./tools/genman man
 
 builds:
   - id: tim
