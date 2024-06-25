@@ -136,6 +136,12 @@ func Save(cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	// Кодировщик TOML не сохраняет комментарии: прежний файл остаётся рядом копией.
+	if old, err := os.ReadFile(path); err == nil {
+		if err := os.WriteFile(path+".bak", old, 0o600); err != nil {
+			return err
+		}
+	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".config-*.toml")
 	if err != nil {
 		return err
@@ -273,4 +279,18 @@ func (c *Config) ResolveHost(want string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// HasComments: в файле конфига есть строки-комментарии, которые запись потеряет.
+func HasComments() bool {
+	data, err := os.ReadFile(Path())
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "#") {
+			return true
+		}
+	}
+	return false
 }
