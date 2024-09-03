@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+var errCrtStale = errors.New("не ответил, показан прошлый список имён")
+
 var errCrtBusy = errors.New("сервис перегружен и ответил не JSON; поддомены только из перебора частых имён")
 
 var errNoQuota = errors.New("дневной лимит бесплатного сервиса исчерпан")
@@ -54,11 +56,14 @@ type Report struct {
 	Related  []string  `json:"related,omitempty"`
 	Trackers []Tracker `json:"trackers,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
+	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
+	CRTCached time.Time `json:"crt_cached,omitzero"`
 }
 
 // Options: что собирать.
 type Options struct {
 	SkipCRT       bool
+	FreshCRT      bool
 	SkipNeighbors bool
 	Notify        func(string)
 }
@@ -81,15 +86,23 @@ func Collect(domain string, opt Options) *Report {
 			return
 		}
 		if opt.Notify != nil {
-			opt.Notify("спрашиваю логи сертификатов, это до 45 секунд")
+			if c, ok := readCache(domain); ok && !opt.FreshCRT && time.Since(c.Fetched) < CacheTTL {
+				opt.Notify("логи сертификатов из кэша, обновить: --fresh")
+			} else {
+				opt.Notify("спрашиваю логи сертификатов, это до 45 секунд")
+			}
 		}
-		subs, related, err := fromCRT(domain)
+		subs, related, cached, err := fromCRT(domain, opt.FreshCRT)
 		mu.Lock()
 		defer mu.Unlock()
-		if err != nil {
+		if err != nil && subs == nil {
 			rep.Errors = append(rep.Errors, "crt.sh: "+err.Error())
 			return
 		}
+		if err != nil {
+			rep.Errors = append(rep.Errors, "crt.sh: "+err.Error())
+		}
+		rep.CRTCached = cached
 		for _, s := range subs {
 			if names[s] == "" {
 				names[s] = "сертификат"
@@ -208,18 +221,28 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// fromCRT: логи сертификатов. Сервис часто перегружен и вместо JSON отдаёт страницу с ошибкой, поэтому один повтор.
-func fromCRT(domain string) (subs, related []string, err error) {
-	for attempt := range 2 {
+// fromCRT: логи сертификатов. Сервис часто перегружен, поэтому ответ кладётся в кэш на сутки,
+// а при неудаче берётся даже просроченный кэш: старый список лучше пустого.
+func fromCRT(domain string, fresh bool) (subs, related []string, cached time.Time, err error) {
+	c, has := readCache(domain)
+	if has && !fresh && time.Since(c.Fetched) < CacheTTL {
+		return c.Subs, c.Related, c.Fetched, nil
+	}
+	for attempt := range 3 {
 		if attempt > 0 {
-			time.Sleep(2 * time.Second)
+			time.Sleep(time.Duration(attempt) * 2 * time.Second)
 		}
 		subs, related, err = crtOnce(domain)
 		if err == nil {
-			return subs, related, nil
+			writeCache(domain, subs, related)
+			return subs, related, time.Time{}, nil
 		}
 	}
-	return nil, nil, err
+	if has {
+		// Сервис не ответил: старый список лучше пустого.
+		return c.Subs, c.Related, c.Fetched, errCrtStale
+	}
+	return nil, nil, time.Time{}, err
 }
 
 func crtOnce(domain string) ([]string, []string, error) {
