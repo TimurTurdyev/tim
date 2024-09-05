@@ -138,15 +138,11 @@ func doctorShim(r *report) {
 		r.ok("шим tim init работает в этой оболочке")
 		return
 	}
-	home, _ := os.UserHomeDir()
-	for _, rc := range []string{".zshrc", ".bashrc"} {
-		data, err := os.ReadFile(filepath.Join(home, rc))
-		if err == nil && strings.Contains(string(data), "tim init") {
-			r.ok("шим подключён в ~/" + rc)
-			return
-		}
+	if path, _ := rcFile(""); sourced(path, 2) {
+		r.warn("шим подключён, но эта оболочка открыта раньше: открой новый терминал")
+		return
 	}
-	r.warn("шим не виден: echo 'eval \"$(tim init zsh)\"' >> ~/.zshrc; если он уже подключён через другой файл, открой новый терминал")
+	r.warn("шим не подключён: tim init (без него не работают tim go и tim php use)")
 }
 
 func doctorPath(r *report, dirs []string) {
