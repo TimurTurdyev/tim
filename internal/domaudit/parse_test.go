@@ -78,3 +78,25 @@ func TestParseNeighbors(t *testing.T) {
 		t.Errorf("%v", got)
 	}
 }
+
+func TestParseCertSpotter(t *testing.T) {
+	data := []byte(`[{"id":"1","dns_names":["example.com","*.example.com"]},
+	 {"id":"2","dns_names":["api.example.com","cdn.example.net"]}]`)
+	subs, related, err := ParseCertSpotter(data, "example.com")
+	if err != nil || len(subs) != 2 || subs[0] != "api.example.com" || subs[1] != "example.com" {
+		t.Fatalf("subs %v %v", subs, err)
+	}
+	if len(related) != 1 || related[0] != "example.net" {
+		t.Errorf("related %v", related)
+	}
+}
+
+func TestParseHostSearch(t *testing.T) {
+	subs, err := ParseHostSearch("admin.example.com,1.2.3.4\nwww.example.com,1.2.3.4\nother.org,5.6.7.8\n", "example.com")
+	if err != nil || len(subs) != 2 || subs[0] != "admin.example.com" {
+		t.Fatalf("%v %v", subs, err)
+	}
+	if _, err := ParseHostSearch("error API count exceeded\n", "example.com"); err == nil {
+		t.Error("quota error should be reported")
+	}
+}

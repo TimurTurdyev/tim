@@ -80,9 +80,9 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
 - `tim dns flush`, `tim dns servers`, `tim ssl [domain...]`: certificate expiry for the given domains or the
   `url` field of projects (`tim proj add --url`).
 - `tim domain <domain|project> [--fast] [--map] [--json] [--all]`: the whole picture for a domain in one command.
-  Registration and NS, mail records, subdomains from certificate transparency logs plus a probe of ~70 common names,
+  Registration and NS, mail records, subdomains from three sources in parallel (CertSpotter, crt.sh, hostsearch) plus a probe of ~70 common names,
   every address with its network, country and PTR, what each name answers over HTTP, names in the same certificates,
-  analytics counters and neighbours on the apex IP (skipped for CDN addresses). Certificate-log answers are cached for a day (`--fresh` refetches; a stale list is used when the service is down).
+  analytics counters and neighbours on the apex IP (skipped for CDN addresses). Answers are cached for a day (`--fresh` refetches; a stale list is used when the service is down).
   `--map` writes a self-contained HTML
   graph (no external scripts) and opens it. The domain is sent to crt.sh, whois.cymru.com and api.hackertarget.com.
 - `tim mail <domain> [--selector s]`: MX, SPF, DKIM (common selectors and yours), DMARC, with what is wrong in them.
