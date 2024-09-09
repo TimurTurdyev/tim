@@ -18,7 +18,7 @@ func Aliases() []string {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var out []string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

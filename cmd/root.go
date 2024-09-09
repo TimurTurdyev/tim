@@ -2,12 +2,13 @@
 package cmd
 
 import (
-	"os"
+	"errors"
 
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -34,10 +35,23 @@ TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие
 func init() {
 	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
 	root.CompletionOptions.HiddenDefaultCmd = true
+	runner.ConfirmFunc = func(q string) (bool, bool) {
+		if !tui.Available() {
+			return false, false
+		}
+		yes, err := tui.Confirm(q)
+		if err != nil && !errors.Is(err, tui.ErrCanceled) {
+			return false, false
+		}
+		return yes, true
+	}
 }
 
 func Execute() error {
 	if err := root.Execute(); err != nil {
+		if errors.Is(err, errPickCanceled) {
+			return nil
+		}
 		ui.Println(ui.Bad(err.Error()))
 		return err
 	}
@@ -55,12 +69,3 @@ func projectNames(cmd *cobra.Command, args []string, toComplete string) ([]strin
 	}
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
-
-func exitCode(err error) int {
-	if err != nil {
-		return 1
-	}
-	return 0
-}
-
-var _ = os.Exit

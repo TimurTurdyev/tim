@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -17,7 +18,7 @@ var sshCmd = &cobra.Command{
 	Long: `Цель может быть алиасом из ~/.ssh/config, именем проекта из конфига или user@host.
 Перед подключением tim смотрит, куда уходит адрес. Если в туннель VPN или на шлюз
 прежней сети, предлагает завести host-маршрут через физический шлюз и только потом
-подключается. Без аргументов печатает алиасы с проектами.`,
+подключается. Без аргументов открывает выбор алиаса, ssh list печатает их списком.`,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveDefault
@@ -26,8 +27,15 @@ var sshCmd = &cobra.Command{
 		return append(sshx.Aliases(), names...), cobra.ShellCompDirectiveNoFileComp
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 || args[0] == "list" {
+		if len(args) > 0 && args[0] == "list" || len(args) == 0 && !tui.Available() {
 			return sshList()
+		}
+		if len(args) == 0 {
+			alias, err := pickAlias()
+			if err != nil {
+				return err
+			}
+			args = []string{alias}
 		}
 		target, err := sshTarget(args[0])
 		if err != nil {
@@ -79,13 +87,7 @@ func sshList() error {
 			continue
 		}
 		t := sshx.Resolve(a)
-		var projects []string
-		for _, p := range cfg.Projects {
-			if p.SSH == a {
-				projects = append(projects, p.Name)
-			}
-		}
-		ui.Println(ui.Label(ui.Pad(a, 24)) + " " + ui.Pad(t.User+"@"+t.Host, 34) + " " + ui.Dim(strings.Join(projects, " ")))
+		ui.Println(ui.Label(ui.Pad(a, 24)) + " " + ui.Pad(t.User+"@"+t.Host, 34) + " " + ui.Dim(strings.Join(projectsBySSH(a), " ")))
 	}
 	return nil
 }

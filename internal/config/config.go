@@ -83,8 +83,11 @@ func Save(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(cfg)
+	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func expandHome(p string) string {
