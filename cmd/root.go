@@ -47,7 +47,33 @@ func init() {
 	}
 }
 
+var groups = []struct {
+	id, title string
+	cmds      []string
+}{
+	{"proj", "Проекты:", []string{"proj", "go", "db", "config", "init"}},
+	{"net", "Сервер и сеть:", []string{"ssh", "route", "cert", "dns", "port", "site"}},
+	{"util", "Утилиты:", []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json", "version"}},
+}
+
+// assignGroups раскладывает команды по разделам справки; вызывается после всех init().
+func assignGroups() {
+	byName := map[string]*cobra.Command{}
+	for _, c := range root.Commands() {
+		byName[c.Name()] = c
+	}
+	for _, g := range groups {
+		root.AddGroup(&cobra.Group{ID: g.id, Title: g.title})
+		for _, n := range g.cmds {
+			if c, ok := byName[n]; ok {
+				c.GroupID = g.id
+			}
+		}
+	}
+}
+
 func Execute() error {
+	assignGroups()
 	if err := root.Execute(); err != nil {
 		if errors.Is(err, errPickCanceled) {
 			return nil
