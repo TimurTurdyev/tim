@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -98,7 +99,7 @@ var goPrint bool
 
 var goCmd = &cobra.Command{
 	Use:               "go [имя] [.]",
-	Short:             "Перейти в клон проекта; с точкой в обёртку над app/",
+	Short:             "Перейти в проект; с точкой в папку над клоном, если задан wrapper",
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 && !tui.Available() {
@@ -119,8 +120,8 @@ var goCmd = &cobra.Command{
 			p = found
 		}
 		dir := cfg.ProjectDir(p)
-		if len(args) > 1 && args[1] == "." && strings.HasSuffix(dir, "/app") {
-			dir = strings.TrimSuffix(dir, "/app")
+		if len(args) > 1 && args[1] == "." && cfg.Wrapper != "" && filepath.Base(dir) == cfg.Wrapper {
+			dir = filepath.Dir(dir)
 		}
 		if _, err := os.Stat(dir); err != nil {
 			return ui.Errorf("папки нет: %s", dir)

@@ -92,6 +92,7 @@ func Confirm(question string) bool {
 	ui.Printf("%s [y/N] ", question)
 	var answer string
 	if _, err := fmtScan(&answer); err != nil {
+		ui.Println()
 		return false
 	}
 	return answer == "y" || answer == "Y" || answer == "д" || answer == "Д"

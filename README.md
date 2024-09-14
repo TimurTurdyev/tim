@@ -4,19 +4,24 @@ A developer's control panel for the terminal: project registry, ssh that routes
 around a VPN when needed, host routes, tunnels through your own server and
 database access from a project's `.env`. One Go binary plus a tiny zsh shim.
 
-## Install
+## Getting started
 
 ```sh
 go install github.com/TimurTurdyev/tim@latest
+tim config init                       # projects root, wrapper folder, pick clones for the registry
 echo 'eval "$(tim init zsh)"' >> ~/.zshrc
+tim go                                # fuzzy picker over the registry, cd into the project
 ```
 
-The shim is needed for `tim go`, since a process cannot change the directory of
-its parent shell. Completion comes with it.
+`config init` looks for git clones under the projects root (default: the first existing of `~/Dev`,
+`~/Projects`, `~/code`, `~/src`) and asks which to add. If every project keeps its clone in a fixed
+subfolder (for example `shop/app`), set that name as the wrapper: projects are then named after the
+parent folder and `tim go shop .` jumps to `shop/`. Without a terminal use flags:
+`tim config init --root ~/code --all -y`. Later, `tim proj scan` finds new clones,
+`tim proj add [path]` and `tim proj rm <name>` edit the registry.
 
-Config lives in `~/.config/tim/config.toml`. If you used the zsh version from
-iterm-config, `tim config migrate ~/Dev/projects/iterm/shell` converts
-`tools.projects`, `tools.hosts` and `tools.conf` into it.
+The shim is needed for `tim go`, since a process cannot change the directory of its parent shell.
+Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONFIG` overrides).
 
 ## Commands
 
@@ -29,7 +34,7 @@ iterm-config, `tim config migrate ~/Dev/projects/iterm/shell` converts
   from the project's `.env`; `--via` opens an ssh port forward to the server's database
   on a free local port and closes it when the client exits.
 - `tim proj list|info|here`, `tim go [project] [.]`: without a project opens a fuzzy picker.
-- `tim config`, `tim config migrate <dir>`.
+- `tim config`, `tim config init`, `tim proj scan [--add]`, `tim proj add [path] [--name]`, `tim proj rm <name>`.
 - `tim cert <host[:port]>`, `tim dns <host> [--server ip]`, `tim port check <host:port...>`.
 - `tim site <domain|url> [--json]`: IPs with country and provider, domain registration (RDAP, whois
   for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
@@ -61,3 +66,8 @@ Interactive parts (project and ssh pickers, confirmations) live in `internal/tui
 package that imports charm. They draw on `/dev/tty`, so `tim go` works inside the shim's
 command substitution; without a terminal the commands fall back to plain lists and line prompts.
 Startup budget: under 10 ms, since the shim runs in every new terminal.
+
+## Migrating from the zsh tools module
+
+If you used the zsh `tools` module, the hidden `tim config migrate <dir>` converts `tools.projects`,
+`tools.hosts` and `tools.conf` from that folder into the config.

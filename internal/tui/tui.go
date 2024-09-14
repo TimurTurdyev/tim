@@ -38,20 +38,44 @@ func openTTY() (*os.File, error) {
 }
 
 func Confirm(question string) (bool, error) {
+	yes := false
+	err := run(huh.NewConfirm().Title(question).Affirmative("да").Negative("нет").Value(&yes))
+	return yes, err
+}
+
+// Input спрашивает строку; value - значение по умолчанию.
+func Input(title, value string) (string, error) {
+	err := run(huh.NewInput().Title(title).Value(&value))
+	return value, err
+}
+
+// MultiSelect возвращает индексы отмеченных элементов; selected - отмеченные заранее.
+func MultiSelect(title string, items []Item, selected []bool) ([]int, error) {
+	opts := make([]huh.Option[int], len(items))
+	for i, it := range items {
+		label := it.Title
+		if it.Hint != "" {
+			label += "  " + it.Hint
+		}
+		opts[i] = huh.NewOption(label, i).Selected(i < len(selected) && selected[i])
+	}
+	var picked []int
+	err := run(huh.NewMultiSelect[int]().Title(title).Options(opts...).Height(min(len(items)+2, 18)).Value(&picked))
+	return picked, err
+}
+
+func run(field huh.Field) error {
 	tty, err := openTTY()
 	if err != nil {
-		return false, ErrNoTTY
+		return ErrNoTTY
 	}
 	defer func() { _ = tty.Close() }()
-	yes := false
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().Title(question).Affirmative("да").Negative("нет").Value(&yes),
-	)).WithInput(tty).WithOutput(tty).WithShowHelp(false)
+	form := huh.NewForm(huh.NewGroup(field)).WithInput(tty).WithOutput(tty).WithShowHelp(false)
 	if err := form.Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
-			return false, ErrCanceled
+			return ErrCanceled
 		}
-		return false, err
+		return err
 	}
-	return yes, nil
+	return nil
 }

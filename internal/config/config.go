@@ -16,7 +16,7 @@ type Project struct {
 	SSH    string `toml:"ssh,omitempty"`
 	Remote string `toml:"remote,omitempty"`
 	Deploy string `toml:"deploy,omitempty"`
-	Port   int    `toml:"port,omitempty"`
+	Port   int    `toml:"port,omitzero"`
 	DB     string `toml:"db,omitempty"`
 }
 
@@ -26,12 +26,13 @@ type Host struct {
 }
 
 type Tunnel struct {
-	Host string `toml:"host"`
+	Host string `toml:"host,omitempty"`
 	Port int    `toml:"port"`
 }
 
 type Config struct {
 	Dev      string    `toml:"dev"`
+	Wrapper  string    `toml:"wrapper,omitempty"`
 	Tunnel   Tunnel    `toml:"tunnel"`
 	Projects []Project `toml:"project"`
 	Hosts    []Host    `toml:"host"`
@@ -47,8 +48,19 @@ func Path() string {
 }
 
 func Default() *Config {
+	return &Config{Dev: DefaultRoot(), Tunnel: Tunnel{Port: 1080}}
+}
+
+// DefaultRoot: первая существующая из привычных папок с проектами, иначе ~/Dev.
+func DefaultRoot() string {
 	home, _ := os.UserHomeDir()
-	return &Config{Dev: filepath.Join(home, "Dev"), Tunnel: Tunnel{Port: 1080}}
+	for _, d := range []string{"Dev", "Projects", "projects", "code", "src"} {
+		p := filepath.Join(home, d)
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			return p
+		}
+	}
+	return filepath.Join(home, "Dev")
 }
 
 // Load читает конфиг; отсутствие файла не ошибка, тогда значения по умолчанию.
@@ -70,7 +82,7 @@ func Load() (*Config, error) {
 	if cfg.Tunnel.Port == 0 {
 		cfg.Tunnel.Port = 1080
 	}
-	cfg.Dev = expandHome(cfg.Dev)
+	cfg.Dev = ExpandHome(cfg.Dev)
 	return cfg, nil
 }
 
@@ -79,18 +91,25 @@ func Save(cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	f, err := os.CreateTemp(filepath.Dir(path), ".config-*.toml")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
 	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
 		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
-func expandHome(p string) string {
+// ExpandHome раскрывает ~/ в начале пути.
+func ExpandHome(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, p[2:])
@@ -132,6 +151,36 @@ func (c *Config) ProjectHere(cwd string) (*Project, bool) {
 		}
 	}
 	return best, best != nil
+}
+
+// Relative: путь от корня проектов, если проект внутри него, иначе абсолютный.
+func (c *Config) Relative(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	if rel, err := filepath.Rel(c.Dev, abs); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return abs
+}
+
+func (c *Config) AddProject(p Project) error {
+	if _, ok := c.Project(p.Name); ok {
+		return errors.New("проект " + p.Name + " уже есть в реестре")
+	}
+	c.Projects = append(c.Projects, p)
+	return nil
+}
+
+func (c *Config) RemoveProject(name string) bool {
+	for i := range c.Projects {
+		if c.Projects[i].Name == name {
+			c.Projects = append(c.Projects[:i], c.Projects[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) HostLabel(addr string) string {
