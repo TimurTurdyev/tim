@@ -123,15 +123,14 @@ func printDomain(rep *domaudit.Report) {
 	default:
 		ui.Println(ui.Label("mx          ") + strings.Join(m.MX, ", "))
 	}
-	mailNote := []string{}
-	if m.SPF == "" {
-		mailNote = append(mailNote, ui.Warn("SPF нет"))
-	}
-	if m.DMARC == "" {
-		mailNote = append(mailNote, ui.Warn("DMARC нет"))
-	}
-	if len(mailNote) > 0 {
-		ui.Println(ui.Label("почта       ") + strings.Join(mailNote, "  ") + ui.Dim("  подробно: tim mail "+rep.Domain))
+	level, missing := m.Verdict()
+	switch level {
+	case "ok":
+		ui.Println(ui.Label("почта       ") + "настроена верно")
+	case "warn":
+		ui.Println(ui.Label("почта       ") + ui.Warn("не хватает: "+strings.Join(missing, ", ")) + ui.Dim("  подробно: tim mail "+rep.Domain))
+	default:
+		ui.Println(ui.Label("почта       ") + ui.Bad("проблемы: нет "+strings.Join(missing, ", ")) + ui.Dim("  подробно: tim mail "+rep.Domain))
 	}
 
 	if len(rep.Hosts) == 0 {
