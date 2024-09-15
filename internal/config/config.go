@@ -20,9 +20,10 @@ type Project struct {
 	DB     string `toml:"db,omitempty"`
 }
 
+// Host: цель обхода VPN - адрес, подсеть CIDR или домен.
 type Host struct {
 	Addr  string `toml:"addr"`
-	Label string `toml:"label"`
+	Label string `toml:"label,omitempty"`
 }
 
 type Tunnel struct {
@@ -181,6 +182,34 @@ func (c *Config) RemoveProject(name string) bool {
 		}
 	}
 	return false
+}
+
+// AddHost добавляет цель обхода; повтор адреса обновляет пометку, если она задана. false - уже была.
+func (c *Config) AddHost(h Host) bool {
+	for i := range c.Hosts {
+		if c.Hosts[i].Addr == h.Addr {
+			if h.Label != "" {
+				c.Hosts[i].Label = h.Label
+			}
+			return false
+		}
+	}
+	c.Hosts = append(c.Hosts, h)
+	return true
+}
+
+// RemoveHost убирает цель по адресу или пометке и возвращает убранные.
+func (c *Config) RemoveHost(want string) []Host {
+	var kept, removed []Host
+	for _, h := range c.Hosts {
+		if h.Addr == want || h.Label == want {
+			removed = append(removed, h)
+		} else {
+			kept = append(kept, h)
+		}
+	}
+	c.Hosts = kept
+	return removed
 }
 
 func (c *Config) HostLabel(addr string) string {

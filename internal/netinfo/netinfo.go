@@ -128,14 +128,9 @@ type HostRoute struct{ Dest, Gateway, Iface string }
 
 func ParseHostRoutes(out string) []HostRoute {
 	var list []HostRoute
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 4 || !IsIPv4(f[0]) {
-			continue
-		}
-		flags := f[2]
-		if strings.Contains(flags, "H") && strings.Contains(flags, "S") {
-			list = append(list, HostRoute{Dest: f[0], Gateway: f[1], Iface: f[3]})
+	for _, r := range ParseRoutes(out) {
+		if !r.IsNet() && strings.Contains(r.Flags, "H") && strings.Contains(r.Flags, "S") {
+			list = append(list, HostRoute{Dest: r.Dest, Gateway: r.Gateway, Iface: r.Iface})
 		}
 	}
 	return list
@@ -147,6 +142,16 @@ func HostRoutes() []HostRoute {
 }
 
 func DefaultIface() string { return RouteOf("default").Iface }
+
+// Table: вся таблица IPv4.
+func Table() []TableRoute {
+	out, _ := runner.Output("netstat", "-rn", "-f", "inet")
+	return ParseRoutes(out)
+}
+
+// InternetIface: куда уходит трафик в интернет. VPN часто ставит 0/1 и 128.0/1 вместо default,
+// поэтому смотрим маршрут до публичного адреса, а не default.
+func InternetIface() string { return RouteOf("1.1.1.1").Iface }
 
 // ResolveIPv4 через системный резолвер.
 func ResolveIPv4(host string) string {
