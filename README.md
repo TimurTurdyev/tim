@@ -42,6 +42,11 @@ Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONF
   on a free local port and closes it when the client exits.
 - `tim proj list|info|here`, `tim go [project] [.]`: without a project opens a fuzzy picker.
 - `tim config`, `tim config init`, `tim proj scan [--add]`, `tim proj add [path] [--name]`, `tim proj rm <name>`.
+- `tim net check`: interface and gateway, internet, DNS, external IP, VPN, step by step with the first failure named.
+- `tim ports [--all]`: who listens on TCP ports, for how long and in which project; `tim port <n> [kill] [--force]`;
+  `tim stale [--hours 8] [--kill]`: project dev servers left running.
+- `tim dns flush`, `tim dns servers`, `tim ssl [domain...]`: certificate expiry for the given domains or the
+  `url` field of projects (`tim proj add --url`).
 - `tim cert <host[:port]>`, `tim dns <host> [--server ip]`, `tim port check <host:port...>`.
 - `tim site <domain|url> [--json]`: IPs with country and provider, domain registration (RDAP, whois
   for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.

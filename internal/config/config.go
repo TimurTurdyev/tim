@@ -18,6 +18,7 @@ type Project struct {
 	Deploy string `toml:"deploy,omitempty"`
 	Port   int    `toml:"port,omitzero"`
 	DB     string `toml:"db,omitempty"`
+	URL    string `toml:"url,omitempty"`
 }
 
 // Host: цель обхода VPN - адрес, подсеть CIDR или домен.
