@@ -75,3 +75,13 @@ func TestParseDNS(t *testing.T) {
 		t.Errorf("dns vpn: %v", got)
 	}
 }
+
+func TestParseSocksProxy(t *testing.T) {
+	p := ParseSocksProxy("Enabled: Yes\nServer: 127.0.0.1\nPort: 1080\nAuthenticated Proxy Enabled: 0\n")
+	if !p.Enabled || p.Server != "127.0.0.1" || p.Port != "1080" {
+		t.Errorf("proxy %+v", p)
+	}
+	if ParseSocksProxy("Enabled: No\nServer: \nPort: 0\n").Enabled {
+		t.Error("should be off")
+	}
+}

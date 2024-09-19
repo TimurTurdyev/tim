@@ -97,3 +97,9 @@ func Confirm(question string) bool {
 	}
 	return answer == "y" || answer == "Y" || answer == "д" || answer == "Д"
 }
+
+// Has: программа есть в PATH.
+func Has(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
