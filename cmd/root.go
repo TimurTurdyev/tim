@@ -53,6 +53,7 @@ var groups = []struct {
 }{
 	{"proj", "Проекты:", []string{"proj", "go", "db", "config", "init"}},
 	{"net", "Сервер и сеть:", []string{"ssh", "tunnel", "route", "vpn", "net", "ports", "port", "stale", "dns", "cert", "ssl", "site"}},
+	{"run", "Локальный запуск:", []string{"serve", "env", "logs", "open", "svc", "php"}},
 	{"util", "Утилиты:", []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json", "version"}},
 }
 

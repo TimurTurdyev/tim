@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -98,8 +99,41 @@ func Confirm(question string) bool {
 	return answer == "y" || answer == "Y" || answer == "д" || answer == "Д"
 }
 
+// lookIn ищет программу по PATH из env, если он там задан: exec.Command смотрит только PATH самого tim.
+func lookIn(env []string, name string) string {
+	if strings.Contains(name, "/") {
+		return name
+	}
+	for _, e := range env {
+		path, ok := strings.CutPrefix(e, "PATH=")
+		if !ok {
+			continue
+		}
+		for _, d := range filepath.SplitList(path) {
+			p := filepath.Join(d, name)
+			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+				return p
+			}
+		}
+	}
+	return name
+}
+
 // Has: программа есть в PATH.
 func Has(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// ExecIn как Exec, но в папке dir и с дополнительным окружением.
+func ExecIn(dir string, env []string, name string, args ...string) error {
+	if DryRun {
+		ui.Println(ui.Dim("$ cd " + quote([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+quote(append([]string{name}, args...)))))
+		return nil
+	}
+	cmd := exec.Command(lookIn(env, name), args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
 }

@@ -33,3 +33,20 @@ func TestParse(t *testing.T) {
 		t.Errorf("port without number: want empty, got %s", got)
 	}
 }
+
+func TestMask(t *testing.T) {
+	cases := []struct{ key, val, want string }{
+		{"DB_PASSWORD", "hunter2", "***"},
+		{"APP_KEY", "base64:abc", "***"},
+		{"STRIPE_SECRET", "sk_live", "***"},
+		{"DB_HOST", "127.0.0.1", "127.0.0.1"},
+		{"DATABASE_URL", "postgres://app:hunter2@db:5432/shop?sslmode=disable", "postgres://app:***@db:5432/shop?sslmode=disable"},
+		{"REDIS_URL", "redis://db:6379", "redis://db:6379"},
+		{"DB_PASSWORD", "", ""},
+	}
+	for _, c := range cases {
+		if got := Mask(c.key, c.val); got != c.want {
+			t.Errorf("%s=%s: %s", c.key, c.val, got)
+		}
+	}
+}

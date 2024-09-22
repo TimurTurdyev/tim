@@ -59,6 +59,19 @@ Completion comes with it. Config lives in `~/.config/tim/config.toml` (`TIM_CONF
   for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
   Geolocation is asked from ipwho.is.
 
+Local run:
+
+- `tim serve [project] [port]`: dev server by stack (Laravel `composer dev` or `artisan serve`, plain PHP `php -S`,
+  node and VitePress via `make dev` or the lockfile's package manager, `go run`, Python via uv or the venv).
+  Port: argument, the project's `port`, `APP_URL`, else 8000; a busy port is reported with its owner.
+- `tim env [project] [--all]`: `.env` summary with secrets masked, checked against the registry.
+- `tim logs [project] [-f] [-n 50]`: tail of the newest `*.log` of the project.
+- `tim open [project]`: the `editor` command from the config, `$VISUAL`, or Finder.
+- `tim svc [start|stop|restart|logs <name>]`: Homebrew services.
+- `tim php`: installed versions, the active one and what the project's composer.json requires;
+  `tim php exec 8.3 composer install` runs once with that version, `tim php use 8.3` switches the current shell
+  (through the `tim init zsh` shim).
+
 Utilities, all on the standard library; without an argument they read stdin:
 
 - `tim hex 255`, `tim dec ff 0x1F 0b101`: number bases.
