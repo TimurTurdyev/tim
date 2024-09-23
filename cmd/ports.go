@@ -33,7 +33,8 @@ func listenRows() []portRow {
 		if r.Proc.Command == "" {
 			r.Proc.Command = l.Command
 		}
-		if r.Cwd != "" && r.Cwd != "/" {
+		// Приложения из .app стартуют в папке, откуда их открыли, это не делает их частью проекта.
+		if r.Cwd != "" && r.Cwd != "/" && !strings.Contains(r.Proc.Command, ".app/Contents/") {
 			if p, ok := cfg.ProjectHere(r.Cwd); ok {
 				r.project = p.Name
 			}
