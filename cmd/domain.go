@@ -123,14 +123,14 @@ func printDomain(rep *domaudit.Report) {
 	default:
 		ui.Println(ui.Label("mx          ") + strings.Join(m.MX, ", "))
 	}
-	level, missing := m.Verdict()
+	level, reasons := m.Verdict()
 	switch level {
 	case "ok":
 		ui.Println(ui.Label("почта       ") + "настроена верно")
 	case "warn":
-		ui.Println(ui.Label("почта       ") + ui.Warn("не хватает: "+strings.Join(missing, ", ")) + ui.Dim("  подробно: tim mail "+rep.Domain))
+		ui.Println(ui.Label("почта       ") + ui.Warn(strings.Join(reasons, ", ")) + ui.Dim("  подробно: tim mail "+rep.Domain))
 	default:
-		ui.Println(ui.Label("почта       ") + ui.Bad("проблемы: нет "+strings.Join(missing, ", ")) + ui.Dim("  подробно: tim mail "+rep.Domain))
+		ui.Println(ui.Label("почта       ") + ui.Bad("проблемы: "+strings.Join(reasons, ", ")) + ui.Dim("  подробно: tim mail "+rep.Domain))
 	}
 
 	if len(rep.Hosts) == 0 {

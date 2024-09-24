@@ -31,6 +31,29 @@ func printFindings(fs []inspect.Finding) int {
 	return bad
 }
 
+// fixes печатает готовые записи для того, чего не хватает: чтобы не искать синтаксис в интернете.
+func fixes(domain string, m *inspect.Mail) {
+	var lines []string
+	if m.DMARC == "" && !m.NullMX {
+		lines = append(lines, "_dmarc."+domain+`  TXT  "v=DMARC1; p=none; rua=mailto:dmarc@`+domain+`"`)
+	}
+	if m.SPF == "" && !m.NullMX {
+		lines = append(lines, domain+`  TXT  "v=spf1 include:<сервер отправки> ~all"`)
+	}
+	if len(lines) == 0 {
+		return
+	}
+	ui.Println()
+	ui.Println(ui.Info("Что добавить в DNS"))
+	for _, l := range lines {
+		ui.Println("  " + l)
+	}
+	if m.DMARC == "" {
+		ui.Println(ui.Dim("  p=none только собирает отчёты и ничего не ломает; через пару недель по отчётам"))
+		ui.Println(ui.Dim("  переключают на p=quarantine, затем на p=reject"))
+	}
+}
+
 var mailAll bool
 
 // mailAll: сводка по всем доменам реестра одной таблицей.
@@ -71,10 +94,10 @@ func mailSummary() error {
 			ui.Println(ui.Label(ui.Pad(r.domain, 30)) + " настроена верно")
 		case "warn":
 			bad++
-			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Warn("не хватает: "+strings.Join(r.missing, ", ")))
+			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Warn(strings.Join(r.missing, ", ")))
 		default:
 			bad++
-			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Bad("проблемы"+hint(r.missing)))
+			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Bad("проблемы: "+strings.Join(r.missing, ", ")))
 		}
 	}
 	ui.Println(ui.Dim("подробно по домену: tim mail <домен>"))
@@ -134,15 +157,16 @@ var mailCmd = &cobra.Command{
 		}
 		ui.Println(ui.Info("DMARC") + ui.Dim("  "+m.DMARC))
 		bad += printFindings(m.DMRF)
-		level, missing := m.Verdict()
+		fixes(domain, m)
+		level, reasons := m.Verdict()
 		ui.Println()
 		switch level {
 		case "ok":
 			ui.Println(ui.Label("итог ") + "почта настроена верно")
 		case "warn":
-			ui.Println(ui.Warn("итог ") + "работает, но не хватает: " + strings.Join(missing, ", "))
+			ui.Println(ui.Warn("итог ") + "работает, но: " + strings.Join(reasons, ", "))
 		default:
-			ui.Println(ui.Bad("итог ") + "есть проблемы" + hint(missing))
+			ui.Println(ui.Bad("итог ") + "есть проблемы: " + strings.Join(reasons, ", "))
 		}
 		if bad > 0 {
 			return ui.Errorf("ошибок: %d", bad)
@@ -152,13 +176,6 @@ var mailCmd = &cobra.Command{
 }
 
 // dkimRevoked: тег p= пустой - ключ отозван.
-func hint(missing []string) string {
-	if len(missing) == 0 {
-		return ""
-	}
-	return ": нет " + strings.Join(missing, ", ")
-}
-
 func dkimRevoked(rec string) bool {
 	for _, part := range strings.Split(rec, ";") {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")

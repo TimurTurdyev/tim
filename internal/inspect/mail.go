@@ -12,6 +12,8 @@ import (
 type Finding struct {
 	Level string
 	Text  string
+	// Why: короткая причина для итоговой строки, без подробностей.
+	Why string
 }
 
 // AnalyzeSPF оценивает TXT-записи домена: должна быть ровно одна v=spf1.
@@ -24,10 +26,10 @@ func AnalyzeSPF(txt []string) (string, []Finding) {
 	}
 	switch len(spf) {
 	case 0:
-		return "", []Finding{{"bad", "SPF нет: почту от имени домена может слать кто угодно"}}
+		return "", []Finding{{"bad", "SPF нет: почту от имени домена может слать кто угодно", "нет SPF"}}
 	case 1:
 	default:
-		return spf[0], []Finding{{"bad", "SPF-записей " + strconv.Itoa(len(spf)) + ": по RFC это ошибка, проверка провалится"}}
+		return spf[0], []Finding{{"bad", "SPF-записей " + strconv.Itoa(len(spf)) + ": по RFC это ошибка, проверка провалится", "несколько SPF"}}
 	}
 	var out []Finding
 	lookups, all := 0, ""
@@ -44,20 +46,20 @@ func AnalyzeSPF(txt []string) (string, []Finding) {
 	}
 	switch all {
 	case "-all":
-		out = append(out, Finding{"ok", "-all: чужие серверы отклоняются"})
+		out = append(out, Finding{"ok", "-all: чужие серверы отклоняются", ""})
 	case "~all":
-		out = append(out, Finding{"ok", "~all: чужие серверы помечаются как подозрительные"})
+		out = append(out, Finding{"ok", "~all: чужие серверы помечаются как подозрительные", ""})
 	case "+all", "all":
-		out = append(out, Finding{"bad", "+all: разрешено слать любому серверу, SPF бесполезен"})
+		out = append(out, Finding{"bad", "+all: разрешено слать любому серверу, SPF бесполезен", "SPF разрешает всем"})
 	case "?all":
-		out = append(out, Finding{"warn", "?all: нейтрально, чужие серверы не отсекаются"})
+		out = append(out, Finding{"warn", "?all: нейтрально, чужие серверы не отсекаются", "SPF нейтрален"})
 	default:
 		if !strings.Contains(strings.ToLower(spf[0]), "redirect=") {
-			out = append(out, Finding{"warn", "нет механизма all: что делать с чужими серверами, не сказано"})
+			out = append(out, Finding{"warn", "нет механизма all: что делать с чужими серверами, не сказано", "SPF без all"})
 		}
 	}
 	if lookups > 10 {
-		out = append(out, Finding{"warn", "DNS-механизмов " + strconv.Itoa(lookups) + " (больше 10): часть получателей отбросит SPF"})
+		out = append(out, Finding{"warn", "DNS-механизмов " + strconv.Itoa(lookups) + " (больше 10): часть получателей отбросит SPF", "SPF больше 10 запросов"})
 	}
 	return spf[0], out
 }
@@ -71,7 +73,7 @@ func AnalyzeDMARC(txt []string) (string, []Finding) {
 		}
 	}
 	if rec == "" {
-		return "", []Finding{{"bad", "DMARC нет: получатели не знают, что делать с подделкой"}}
+		return "", []Finding{{"bad", "DMARC нет: получатели не знают, что делать с подделкой", "нет DMARC"}}
 	}
 	tags := map[string]string{}
 	for _, part := range strings.Split(rec, ";") {
@@ -83,24 +85,37 @@ func AnalyzeDMARC(txt []string) (string, []Finding) {
 	var out []Finding
 	switch strings.ToLower(tags["p"]) {
 	case "reject":
-		out = append(out, Finding{"ok", "p=reject: подделки отклоняются"})
+		out = append(out, Finding{"ok", "p=reject: подделки отклоняются", ""})
 	case "quarantine":
-		out = append(out, Finding{"ok", "p=quarantine: подделки уходят в спам"})
+		out = append(out, Finding{"ok", "p=quarantine: подделки уходят в спам", ""})
 	case "none":
-		out = append(out, Finding{"warn", "p=none: только наблюдение, подделки доходят"})
+		out = append(out, Finding{"warn", "p=none: только наблюдение, подделки доходят", "DMARC только наблюдает"})
 	default:
-		out = append(out, Finding{"bad", "нет политики p="})
+		out = append(out, Finding{"bad", "нет политики p=", "DMARC без политики"})
 	}
 	if pct := tags["pct"]; pct != "" && pct != "100" {
-		out = append(out, Finding{"warn", "pct=" + pct + ": политика применяется не ко всем письмам"})
+		out = append(out, Finding{"warn", "pct=" + pct + ": политика применяется не ко всем письмам", "DMARC не для всех писем"})
 	}
 	if tags["rua"] == "" {
-		out = append(out, Finding{"info", "нет rua: отчёты о подделках никуда не приходят"})
+		out = append(out, Finding{"info", "нет rua: отчёты о подделках никуда не приходят", ""})
 	}
 	return rec, out
 }
 
-var DKIMSelectors = []string{"default", "google", "selector1", "selector2", "mail", "dkim", "k1", "s1", "s2", "yandex", "mx", "smtp"}
+// DKIMSelectors: частые селекторы почтовых провайдеров и рассыльщиков. Селектор может быть любым,
+// поэтому их отсутствие в этом списке не доказывает, что подписи нет.
+var DKIMSelectors = []string{
+	// общие
+	"default", "dkim", "mail", "smtp", "mx", "key1", "dkim1", "dkim2",
+	// Mail.ru, Яндекс, VK, российские хостинги
+	"mailru", "yandex", "beget", "timeweb", "reg", "rumail",
+	// Google Workspace, Microsoft 365, Zoho, Fastmail, Proton, Apple
+	"google", "selector1", "selector2", "zoho", "zohomail", "fm1", "fm2", "fm3",
+	"protonmail", "protonmail2", "protonmail3", "sig1",
+	// рассыльщики
+	"k1", "k2", "k3", "s1", "s2", "s1024", "sendgrid", "mandrill", "mailjet",
+	"pm", "postmark", "hs1", "hs2", "cm", "everlytickey1", "titan",
+}
 
 // Mail: записи почты домена.
 type Mail struct {
@@ -153,29 +168,31 @@ func MailCheck(domain string, selectors []string) *Mail {
 	return m
 }
 
-// Verdict: общая оценка почты домена. ok - принимает и защищена от подделок;
+// Verdict: общая оценка почты домена и короткие причины. ok - принимает и защищена от подделок;
 // warn - работает, но есть чего не хватает; bad - есть серьёзная дыра или почты нет.
-func (m *Mail) Verdict() (level string, missing []string) {
+func (m *Mail) Verdict() (level string, reasons []string) {
 	level = "ok"
 	drop := func(l string) {
 		if l == "bad" || level == "ok" && l == "warn" {
 			level = l
 		}
 	}
+	seen := map[string]bool{}
+	add := func(why string) {
+		if why != "" && !seen[why] {
+			seen[why] = true
+			reasons = append(reasons, why)
+		}
+	}
 	for _, f := range append(append([]Finding{}, m.SPFF...), m.DMRF...) {
 		if f.Level == "bad" || f.Level == "warn" {
 			drop(f.Level)
+			add(f.Why)
 		}
-	}
-	if m.SPF == "" {
-		missing = append(missing, "SPF")
-	}
-	if m.DMARC == "" {
-		missing = append(missing, "DMARC")
 	}
 	if len(m.DKIM) == 0 {
 		// Селектор DKIM может быть любым: отсутствие на частых не доказывает, что подписи нет.
-		missing = append(missing, "DKIM на частых селекторах")
+		add("DKIM на частых селекторах не найден")
 		drop("warn")
 	}
 	switch {
@@ -186,8 +203,8 @@ func (m *Mail) Verdict() (level string, missing []string) {
 		}
 		drop("warn")
 	case len(m.MX) == 0:
-		missing = append(missing, "MX")
+		add("нет MX")
 		drop("bad")
 	}
-	return level, missing
+	return level, reasons
 }

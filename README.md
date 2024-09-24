@@ -85,8 +85,8 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
   analytics counters and neighbours on the apex IP (skipped for CDN addresses). Answers are cached for a day (`--fresh` refetches; a stale list is used when the service is down).
   `--map` writes a self-contained HTML
   graph (no external scripts) and opens it. The domain is sent to crt.sh, whois.cymru.com and api.hackertarget.com.
-- `tim mail [domain] [--all] [--selector s]`: MX, SPF, DKIM (common selectors and yours), DMARC, what is wrong
-  in them and one verdict line; `--all` is a table over the `url` fields of the registry.
+- `tim mail [domain] [--all] [--selector s]`: MX, SPF, DKIM (common selectors and yours), DMARC, what is wrong in them,
+  ready-to-paste DNS records for what is missing and one verdict line; `--all` is a table over the `url` fields of the registry.
 - `tim http <url> [-L] [--all-headers]`: one request on a fresh connection split into DNS, TCP, TLS, first byte and
   download, status, protocol, size and key headers; `-L` follows redirects.
 - `tim cert <host[:port]>`, `tim dns <host> [--server ip]`, `tim port check <host:port...>`.
