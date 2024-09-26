@@ -3,10 +3,20 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
-var enabled = isTerminal(os.Stdout)
+var (
+	enabled           = isTerminal(os.Stdout)
+	out     io.Writer = os.Stdout
+)
+
+// UseStderr: весь вывод в stderr, цвета по нему; для хуков, у которых stdout перехвачен оболочкой.
+func UseStderr() {
+	out = os.Stderr
+	enabled = isTerminal(os.Stderr)
+}
 
 func isTerminal(f *os.File) bool {
 	if os.Getenv("NO_COLOR") != "" {
@@ -29,8 +39,8 @@ func Warn(s string) string  { return wrap("33", s) }
 func Bad(s string) string   { return wrap("31", s) }
 func Info(s string) string  { return wrap("36", s) }
 
-func Printf(format string, a ...any) { fmt.Printf(format, a...) }
-func Println(a ...any)               { fmt.Println(a...) }
+func Printf(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
+func Println(a ...any)               { _, _ = fmt.Fprintln(out, a...) }
 
 func Errorf(format string, a ...any) error {
 	return fmt.Errorf(format, a...)
