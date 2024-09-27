@@ -137,3 +137,15 @@ func ExecIn(dir string, env []string, name string, args ...string) error {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }
+
+// CaptureIn выполняет команду, меняющую систему, в папке dir и возвращает её вывод; в dry-run только печатает.
+func CaptureIn(dir, name string, args ...string) (string, error) {
+	if DryRun {
+		ui.Println(ui.Dim("$ cd " + quote([]string{dir}) + " && " + quote(append([]string{name}, args...))))
+		return "", nil
+	}
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

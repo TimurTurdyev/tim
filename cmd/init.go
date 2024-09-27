@@ -42,7 +42,7 @@ const bashHook = `_tim_prompt() {
 case ";$PROMPT_COMMAND;" in *";_tim_prompt;"*) ;; *) PROMPT_COMMAND="_tim_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;; esac
 `
 
-// shellQuote: значение в одинарных кавычках, сама кавычка пишется как '\''.
+// shellQuote: значение в одинарных кавычках; кавычка внутри закрывает строку, экранируется и открывает её снова.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
