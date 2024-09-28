@@ -9,7 +9,8 @@ import (
 )
 
 // Шим нужен командам, которые меняют состояние самой оболочки: cd (go) и PATH (php use).
-const shim = `tim() {
+const shim = `export TIM_SHIM=1
+tim() {
   case "$1" in
     go)
       local d

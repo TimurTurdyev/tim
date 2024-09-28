@@ -69,6 +69,13 @@ gs = "git status -sb"
   for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
   Geolocation is asked from ipwho.is.
 
+Health check:
+
+- `tim doctor`: config and projects root, registry (missing folders, duplicate names, shared ports, unknown ssh
+  aliases, broken route targets and tasks), the shell shim, `PATH` (duplicates, missing folders, programs shadowed
+  by another copy), version managers that fight over one language, several brew formulas for one database client,
+  crashed brew services. Read-only; exits 1 only on errors.
+
 Summary:
 
 - `tim motd [section...] [--all] [--time]`: project in the current folder (branch, changes), network and VPN,
