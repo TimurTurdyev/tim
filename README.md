@@ -73,6 +73,10 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
   steps = ["mkdir -p {dir}/public", "cp ~/templates/index.html {dir}/public/"]
   port = false
   ```
+- `tim sync [project...] [--remote] [--ssh] [--force]`: fill registry fields from the projects themselves.
+  Port and database come from the project's `.env`; `--remote` asks each server over ssh which domains its nginx
+  serves and matches them to projects by deploy path or name (read-only); `--ssh` picks the ssh alias whose
+  address matches the site. Only empty fields are filled unless `--force`.
 - `tim config`, `tim config init`, `tim proj scan [--add]`, `tim proj add [path] [--name]`, `tim proj rm <name>`.
 - `tim net check`: interface and gateway, internet, DNS, external IP, VPN, step by step with the first failure named.
 - `tim ports [--all]`: who listens on TCP ports, for how long and in which project; `tim port <n> [kill] [--force]`;
