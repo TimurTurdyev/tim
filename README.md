@@ -7,7 +7,7 @@ database access from a project's `.env`. One Go binary plus a tiny zsh shim.
 ## Getting started
 
 ```sh
-go install github.com/TimurTurdyev/tim@latest
+brew install --cask TimurTurdyev/tap/tim   # or: go install github.com/TimurTurdyev/tim@latest
 tim config init                       # projects root, wrapper folder, pick clones for the registry
 echo 'eval "$(tim init zsh)"' >> ~/.zshrc    # bash: echo 'eval "$(tim init bash)"' >> ~/.bashrc
 tim go                                # fuzzy picker over the registry, cd into the project
@@ -122,6 +122,10 @@ Utilities, all on the standard library; without an argument they read stdin:
 
 `--dry-run` or `TIM_DRY_RUN=1` prints every command that would change the system.
 
+Updating: `brew upgrade --cask tim` for the cask, `tim self-update [--check]` for any other install
+(latest GitHub release, sha256 checked against `checksums.txt`, rollback if the swap fails).
+The binary is not notarized, so the cask clears the quarantine flag after install.
+
 ## Development
 
 ```sh
@@ -131,6 +135,7 @@ make test vet lint
 make bench      # startup time on an empty config (hyperfine if installed)
 make inittrace  # most expensive package init functions
 make benchinit  # init cost of the cmd package via mvdan.cc/benchinit
+make snapshot   # local release build into dist/ (goreleaser, nothing published)
 ```
 
 `tim version` prints the version set with `-ldflags -X github.com/TimurTurdyev/tim/cmd.version=...`,
@@ -145,3 +150,9 @@ Startup budget: under 10 ms, since the shim runs in every new terminal.
 
 If you used the zsh `tools` module, the hidden `tim config migrate <dir>` converts `tools.projects`,
 `tools.hosts` and `tools.conf` from that folder into the config.
+
+## Releasing
+
+Push a `v*` tag: the release workflow runs goreleaser, which builds a universal macOS binary, publishes the
+GitHub release with `checksums.txt` and updates the cask in `TimurTurdyev/homebrew-tap`
+(needs the `HOMEBREW_TAP_TOKEN` secret with write access to that repository).

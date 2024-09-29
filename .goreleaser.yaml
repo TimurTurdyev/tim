@@ -1,0 +1,61 @@
+version: 2
+
+project_name: tim
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: tim
+    main: .
+    binary: tim
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin]
+    goarch: [arm64, amd64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/TimurTurdyev/tim/cmd.version={{ .Tag }}
+
+universal_binaries:
+  - id: tim
+    replace: true
+
+archives:
+  - id: tim
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_all"
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: TimurTurdyev
+    name: tim
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs", "^test", "^chore"]
+
+homebrew_casks:
+  - name: tim
+    repository:
+      owner: TimurTurdyev
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/TimurTurdyev/tim
+    description: Developer control panel for the terminal
+    binaries: [tim]
+    # Бинарник не подписан и не нотаризован: без снятия карантина Gatekeeper его не запустит.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/tim"]
+          end
