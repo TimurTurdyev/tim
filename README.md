@@ -103,9 +103,13 @@ Across projects:
 
 Local run:
 
-- `tim serve [project] [port]`: dev server by stack (Laravel `composer dev` or `artisan serve`, plain PHP `php -S`,
-  node and VitePress via `make dev` or the lockfile's package manager, `go run`, Python via uv or the venv).
-  Port: argument, the project's `port`, `APP_URL`, else 8000; a busy port is reported with its owner.
+- `tim serve [project|part of a name|@group...] [-d] [--port N]`: dev server by stack (Laravel `composer dev` or
+  `artisan serve`, plain PHP `php -S`, node and VitePress via `make dev` or the lockfile's package manager,
+  `go run`, Python via uv or the venv, `docker compose up` when a compose file sits in the folder or in `docker/`).
+  A project's `serve = "..."` field overrides the guess. PHP projects get a php from brew that fits
+  `require.php` when the active one does not. Port: argument, the project's `port`, `APP_URL`, else 8000.
+  Several projects, a group from `[groups]` or `-d` run in the background; busy ports move to the next free one.
+  `tim serve list`, `tim serve logs <name> [-f]`, `tim serve stop [name|all]` (stops child processes too).
 - `tim env [project] [--all]`: `.env` summary with secrets masked, checked against the registry.
 - `tim logs [project] [-f] [-n 50]`: tail of the newest `*.log` of the project.
 - `tim open [project]`: the `editor` command from the config, `$VISUAL`, or Finder.
