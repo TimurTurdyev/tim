@@ -78,10 +78,13 @@ Health check:
 
 Summary:
 
-- `tim motd [section...] [--all] [--time]`: project in the current folder (branch, changes), network and VPN,
+- `tim motd [section...] [--all] [--time]`: system (host, macOS, uptime, load, memory, disk, battery, local IP,
+  Docker containers), project in the current folder (branch, changes), network and VPN,
   running project servers, brew services from launchd, and on request `repos` (uncommitted or unpushed),
   `procs` (top CPU), `versions`. Sections run in parallel with a timeout each; the default set
-  (`project net ports services`, or the `motd` list in the config) takes about 150 ms.
+  (`system project net ports services`, or the `motd` list in the config) takes about 150 ms.
+- `tim ip`: external IP with country, city and provider, directly and through the SOCKS tunnel if it is up.
+- `tim wifi`: network, channel and band, standard, rate, signal and noise with a rating, security.
 
 Across projects:
 

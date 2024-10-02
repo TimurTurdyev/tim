@@ -27,6 +27,7 @@ type section struct {
 }
 
 var sections = []section{
+	{"system", 800 * time.Millisecond, motdSystem},
 	{"project", 800 * time.Millisecond, motdProject},
 	{"net", 800 * time.Millisecond, motdNet},
 	{"ports", 800 * time.Millisecond, motdPorts},
@@ -36,7 +37,7 @@ var sections = []section{
 	{"versions", 800 * time.Millisecond, motdVersions},
 }
 
-var defaultMotd = []string{"project", "net", "ports", "services"}
+var defaultMotd = []string{"system", "project", "net", "ports", "services"}
 
 var (
 	motdAll  bool
@@ -46,8 +47,8 @@ var (
 var motdCmd = &cobra.Command{
 	Use:       "motd [раздел...] [--all] [--time]",
 	Short:     "Сводка: проект, сеть, порты, сервисы, репозитории, процессы, версии",
-	Long:      "Разделы: project, net, ports, services, repos, procs, versions. По умолчанию ключ motd в конфиге или project net ports services.",
-	ValidArgs: []string{"project", "net", "ports", "services", "repos", "procs", "versions"},
+	Long:      "Разделы: system, project, net, ports, services, repos, procs, versions. По умолчанию ключ motd в конфиге или system project net ports services.",
+	ValidArgs: []string{"system", "project", "net", "ports", "services", "repos", "procs", "versions"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		want := args
 		switch {
@@ -68,7 +69,7 @@ var motdCmd = &cobra.Command{
 				found = found || s.name == w
 			}
 			if !found {
-				return ui.Errorf("нет раздела %s: project, net, ports, services, repos, procs, versions", w)
+				return ui.Errorf("нет раздела %s: system, project, net, ports, services, repos, procs, versions", w)
 			}
 			chosen[w] = true
 		}
@@ -120,6 +121,93 @@ var motdCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func gb(b uint64) string { return fmt.Sprintf("%.0f", float64(b)/(1<<30)) }
+
+func motdSystem() []string {
+	var (
+		wg                         sync.WaitGroup
+		ver, boot, load, mem, disk string
+		batt, ip, docker           string
+		memTotal                   uint64
+	)
+	run := func(f func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f()
+		}()
+	}
+	run(func() { v, _ := runner.Output("sw_vers", "-productVersion"); ver = strings.TrimSpace(v) })
+	run(func() { boot, _ = runner.Output("sysctl", "-n", "kern.boottime") })
+	run(func() { load, _ = runner.Output("sysctl", "-n", "vm.loadavg") })
+	run(func() {
+		mem, _ = runner.Output("vm_stat")
+		t, _ := runner.Output("sysctl", "-n", "hw.memsize")
+		memTotal, _ = strconv.ParseUint(strings.TrimSpace(t), 10, 64)
+	})
+	run(func() { disk, _ = runner.Output("df", "-k", "/System/Volumes/Data") })
+	run(func() { batt, _ = runner.Output("pmset", "-g", "batt") })
+	run(func() {
+		if phys, ok := netinfo.PhysIface(); ok {
+			out, _ := runner.Output("ipconfig", "getifaddr", phys.Device)
+			ip = strings.TrimSpace(out)
+		}
+	})
+	run(func() {
+		_, orb := runner.Output("pgrep", "-xq", "OrbStack Helper")
+		_, dd := runner.Output("pgrep", "-xq", "com.docker.backend")
+		if orb != nil && dd != nil {
+			return
+		}
+		out, err := runner.Output("docker", "ps", "-q")
+		if err != nil {
+			docker = "docker запущен"
+			return
+		}
+		docker = "docker " + strconv.Itoa(len(strings.Fields(out))) + " конт."
+	})
+	wg.Wait()
+	user := os.Getenv("USER")
+	host, _ := os.Hostname()
+	host, _, _ = strings.Cut(host, ".")
+	line1 := ui.Label(user+"@"+host) + "  macOS " + ver + "  " + time.Now().Format("Mon 02 Jan, 15:04")
+	if b, ok := sysinfo.ParseBoottime(boot); ok {
+		line1 += ui.Dim("  up " + human(time.Since(b)))
+	}
+	var parts []string
+	if l := sysinfo.ParseLoadavg(load); len(l) == 3 {
+		parts = append(parts, ui.Label("load ")+fmt.Sprintf("%.2f %.2f %.2f", l[0], l[1], l[2]))
+	}
+	if used := sysinfo.ParseVMStat(mem); used > 0 && memTotal > 0 {
+		parts = append(parts, ui.Label("mem ")+gb(used)+"/"+gb(memTotal)+" GB")
+	}
+	if d, ok := sysinfo.ParseDF(disk); ok {
+		text := gb(d.Used) + "/" + gb(d.Size) + " GB (" + strconv.Itoa(d.Percent()) + "%)"
+		if d.Percent() >= 90 {
+			text = ui.Bad(text)
+		}
+		parts = append(parts, ui.Label("disk ")+text)
+	}
+	if b, ok := sysinfo.ParsePmset(batt); ok {
+		text := strconv.Itoa(b.Percent) + "% " + b.State
+		if b.Remaining != "" && b.Remaining != "0:00" {
+			text += " " + b.Remaining
+		}
+		if b.Percent <= 20 && !b.AC {
+			text = ui.Warn(text)
+		}
+		parts = append(parts, ui.Label("batt ")+text)
+	}
+	line2 := strings.Join(parts, "   ")
+	if ip != "" {
+		line2 += "   " + ui.Label("ip ") + ip
+	}
+	if docker != "" {
+		line2 += "   " + ui.Dim(docker)
+	}
+	return []string{line1, line2}
 }
 
 func gitState(dir string) (sysinfo.GitState, bool) {
