@@ -18,7 +18,8 @@ type Found struct {
 }
 
 // local: адрес не указывает на сайт в интернете.
-func local(host string) bool {
+// Local: адрес живёт только на этой машине, в реестр и во внешние проверки он не годится.
+func Local(host string) bool {
 	switch host {
 	case "localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal":
 		return true
@@ -38,7 +39,7 @@ func FromEnv(dir string) Found {
 			if p := u.Port(); p != "" {
 				f.Port, _ = strconv.Atoi(p)
 			}
-			if !local(u.Hostname()) {
+			if !Local(u.Hostname()) {
 				f.URL = u.Scheme + "://" + u.Host
 			}
 		}
