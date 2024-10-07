@@ -58,6 +58,16 @@ gs = "git status -sb"
   from the project's `.env`; `--via` opens an ssh port forward to the server's database
   on a free local port and closes it when the client exits.
 - `tim proj list|info|here`, `tim go [project] [.]`: without a project opens a fuzzy picker.
+- `tim new <name> [--stack laravel|php|go|node|vite|python|empty] [--in folder] [--no-git] [--open]`: create a
+  project in the registry layout (`<root>/<in>/<name>`, plus the wrapper folder if set), initialize the stack,
+  `git init` and add it to the registry with a free port for PHP. Own templates in the config:
+
+  ```toml
+  [[template]]
+  name = "static"
+  steps = ["mkdir -p {dir}/public", "cp ~/templates/index.html {dir}/public/"]
+  port = false
+  ```
 - `tim config`, `tim config init`, `tim proj scan [--add]`, `tim proj add [path] [--name]`, `tim proj rm <name>`.
 - `tim net check`: interface and gateway, internet, DNS, external IP, VPN, step by step with the first failure named.
 - `tim ports [--all]`: who listens on TCP ports, for how long and in which project; `tim port <n> [kill] [--force]`;
