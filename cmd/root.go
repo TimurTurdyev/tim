@@ -3,6 +3,9 @@ package cmd
 
 import (
 	"errors"
+	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,11 +19,16 @@ var cfg *config.Config
 
 var root = &cobra.Command{
 	Use:   "tim",
-	Short: "Пульт разработчика: проекты, серверы, маршруты, туннели, базы",
-	Long: `tim держит под рукой всё хозяйство ~/Dev: реестр проектов, ssh с обходом VPN,
-маршруты, туннели через свой сервер, базы по .env проекта.
+	Short: "Помощник в терминале: проекты, сеть, туннели, запуск, утилиты",
+	Long: `tim держит под рукой проекты из реестра, ssh и маршруты мимо VPN, туннели, локальный запуск,
+сводку по машине и мелкие утилиты разработчика. Конфиг: ~/.config/tim/config.toml (TIM_CONFIG).
 TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие систему, вместо запуска.`,
-	SilenceUsage:  true,
+	SilenceUsage: true,
+	Args:         cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		overview()
+		return nil
+	},
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
@@ -73,13 +81,55 @@ func assignGroups() {
 	}
 }
 
+// bestSuggestions: сначала начинающиеся с набранного, затем по расстоянию редактирования; не больше n.
+func bestSuggestions(typed string, list []string, n int) []string {
+	sort.SliceStable(list, func(i, j int) bool {
+		pi, pj := strings.HasPrefix(list[i], typed), strings.HasPrefix(list[j], typed)
+		if pi != pj {
+			return pi
+		}
+		return editDistance(typed, list[i]) < editDistance(typed, list[j])
+	})
+	return list[:min(n, len(list))]
+}
+
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
+}
+
+var unknownCmd = regexp.MustCompile(`^unknown command "([^" ]+)" for "tim"`)
+
 func Execute() error {
 	assignGroups()
+	applyHelp()
 	if err := root.Execute(); err != nil {
 		if errors.Is(err, errPickCanceled) {
 			return nil
 		}
-		ui.Println(ui.Bad(err.Error()))
+		msg := err.Error()
+		if m := unknownCmd.FindStringSubmatch(msg); m != nil && !strings.Contains(msg, "Did you mean") {
+			root.SuggestionsMinimumDistance = 2
+			if sugg := bestSuggestions(m[1], root.SuggestionsFor(m[1]), 3); len(sugg) > 0 {
+				msg += "\n\nDid you mean this?\n\t" + strings.Join(sugg, "\n\t") + "\n"
+			}
+		}
+		ui.Println(ui.Bad(translateError(msg)))
 		return err
 	}
 	return nil
