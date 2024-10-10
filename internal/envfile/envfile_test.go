@@ -3,6 +3,7 @@ package envfile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,54 @@ func TestMask(t *testing.T) {
 		if got := Mask(c.key, c.val); got != c.want {
 			t.Errorf("%s=%s: %s", c.key, c.val, got)
 		}
+	}
+}
+
+func TestDiff(t *testing.T) {
+	example := map[string]string{
+		"APP_NAME":    "Laravel",
+		"APP_KEY":     "",
+		"DB_PASSWORD": "secret",
+		"MAIL_HOST":   "smtp.example.com",
+		"QUEUE":       "sync",
+	}
+	env := map[string]string{
+		"APP_NAME":    "Shop",
+		"APP_KEY":     "",
+		"DB_PASSWORD": "secret",
+		"MAIL_HOST":   "",
+		"EXTRA":       "1",
+	}
+	d := Diff(env, example)
+	if got := strings.Join(d.Missing, ","); got != "QUEUE" {
+		t.Errorf("Missing = %q", got)
+	}
+	if got := strings.Join(d.Extra, ","); got != "EXTRA" {
+		t.Errorf("Extra = %q", got)
+	}
+	// APP_KEY пуст и в образце - это не расхождение, а DB_PASSWORD остался образцовым секретом.
+	if got := strings.Join(d.Sample, ","); got != "DB_PASSWORD" {
+		t.Errorf("Sample = %q", got)
+	}
+	if got := strings.Join(d.Empty, ","); got != "MAIL_HOST" {
+		t.Errorf("Empty = %q", got)
+	}
+	if d.Clean() {
+		t.Error("расхождения есть, Clean говорит обратное")
+	}
+	own := map[string]string{"APP_NAME": "Shop", "QUEUE": "redis"}
+	if !Diff(own, map[string]string{"APP_NAME": "Laravel", "QUEUE": "sync"}).Clean() {
+		t.Error("свои значения несекретных ключей - это не расхождение")
+	}
+}
+
+func TestOnlyIn(t *testing.T) {
+	a := map[string]string{"A": "", "B": ""}
+	b := map[string]string{"B": ""}
+	if got := strings.Join(OnlyIn(a, b), ","); got != "A" {
+		t.Fatalf("OnlyIn = %q", got)
+	}
+	if len(OnlyIn(b, a)) != 0 {
+		t.Fatal("лишних ключей быть не должно")
 	}
 }
