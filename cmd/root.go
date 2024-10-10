@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"errors"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -81,6 +82,21 @@ func assignGroups() {
 	}
 }
 
+// needsHelp: справка будет показана - флаг справки, help, man или группа команд без своего действия.
+// Шаблон и примеры раскладываются только тогда, чтобы не тратить на это старт обычных команд.
+func needsHelp(args []string) bool {
+	for _, a := range args {
+		if a == "-h" || a == "--help" || a == "help" {
+			return true
+		}
+		if a == "--" {
+			break
+		}
+	}
+	c, _, err := root.Find(args)
+	return err == nil && c != root && !c.Runnable()
+}
+
 // bestSuggestions: сначала начинающиеся с набранного, затем по расстоянию редактирования; не больше n.
 func bestSuggestions(typed string, list []string, n int) []string {
 	sort.SliceStable(list, func(i, j int) bool {
@@ -113,16 +129,27 @@ func editDistance(a, b string) int {
 	return prev[len(b)]
 }
 
-var unknownCmd = regexp.MustCompile(`^unknown command "([^" ]+)" for "tim"`)
+// Root: корневая команда с группами и справкой, для генератора man.
+func Root() *cobra.Command {
+	assignGroups()
+	applyHelp()
+	root.DisableAutoGenTag = true
+	return root
+}
+
+func Version() string { return resolveVersion() }
 
 func Execute() error {
 	assignGroups()
-	applyHelp()
+	if needsHelp(os.Args[1:]) {
+		applyHelp()
+	}
 	if err := root.Execute(); err != nil {
 		if errors.Is(err, errPickCanceled) {
 			return nil
 		}
 		msg := err.Error()
+		unknownCmd := regexp.MustCompile(`^unknown command "([^" ]+)" for "tim"`)
 		if m := unknownCmd.FindStringSubmatch(msg); m != nil && !strings.Contains(msg, "Did you mean") {
 			root.SuggestionsMinimumDistance = 2
 			if sugg := bestSuggestions(m[1], root.SuggestionsFor(m[1]), 3); len(sugg) > 0 {
