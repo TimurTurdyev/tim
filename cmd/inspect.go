@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/net/publicsuffix"
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -211,9 +212,13 @@ func collectSite(host, target string) *siteReport {
 	return r
 }
 
-// registrable: последние две метки домена; для поддоменов спрашиваем регистрацию корня.
+// registrable: домен, который регистрируют (по таблице публичных суффиксов), для запроса RDAP и whois.
 func registrable(host string) string {
-	parts := strings.Split(strings.TrimSuffix(host, "."), ".")
+	host = strings.TrimSuffix(host, ".")
+	if d, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return d
+	}
+	parts := strings.Split(host, ".")
 	if len(parts) <= 2 {
 		return host
 	}

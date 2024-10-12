@@ -20,7 +20,14 @@ func saveConfig(c *config.Config) error {
 		ui.Println(ui.Dim("dry-run: конфиг " + config.Path() + " не записан"))
 		return nil
 	}
-	return config.Save(c)
+	lost := config.HasComments()
+	if err := config.Save(c); err != nil {
+		return err
+	}
+	if lost {
+		ui.Println(ui.Warn("комментарии из конфига при записи не сохраняются; прежний файл: " + config.Path() + ".bak"))
+	}
+	return nil
 }
 
 var configCmd = &cobra.Command{
