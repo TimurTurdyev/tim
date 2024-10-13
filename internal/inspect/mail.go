@@ -104,12 +104,13 @@ var DKIMSelectors = []string{"default", "google", "selector1", "selector2", "mai
 
 // Mail: записи почты домена.
 type Mail struct {
-	MX    []string
-	SPF   string
-	DMARC string
-	DKIM  map[string]string
-	SPFF  []Finding
-	DMRF  []Finding
+	NullMX bool
+	MX     []string
+	SPF    string
+	DMARC  string
+	DKIM   map[string]string
+	SPFF   []Finding
+	DMRF   []Finding
 }
 
 func lookupTXT(ctx context.Context, name string) []string {
@@ -128,7 +129,12 @@ func MailCheck(domain string, selectors []string) *Mail {
 		defer wg.Done()
 		mx, _ := net.DefaultResolver.LookupMX(ctx, domain)
 		for _, r := range mx {
-			m.MX = append(m.MX, strings.TrimSuffix(r.Host, ".")+" "+strconv.Itoa(int(r.Pref)))
+			h := strings.TrimSuffix(r.Host, ".")
+			if h == "" {
+				m.NullMX = true
+				continue
+			}
+			m.MX = append(m.MX, h+" "+strconv.Itoa(int(r.Pref)))
 		}
 	}()
 	wg.Add(1)

@@ -40,7 +40,10 @@ var mailCmd = &cobra.Command{
 		m := inspect.MailCheck(domain, sels)
 		bad := 0
 		ui.Println(ui.Info("MX"))
-		if len(m.MX) == 0 {
+		switch {
+		case m.NullMX:
+			ui.Println("  " + ui.Label("ок ") + "null MX: домен явно объявил, что почту не принимает")
+		case len(m.MX) == 0:
 			bad++
 			ui.Println("  " + ui.Bad("x  ") + "MX нет: почта на домен не приходит")
 		}
