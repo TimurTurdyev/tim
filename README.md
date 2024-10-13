@@ -80,6 +80,12 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
 - `tim env diff [project] [--server]`: what the local `.env` is missing. Against `.env.example`: keys absent,
   keys left empty, secrets still holding the sample value, keys not documented in the example. With `--server`
   only the key names are compared against the `.env` on the project's server - values are never requested.
+- `tim cert new <domain|ip...> [--dir] [--days] [--exact]`: issue a certificate for local development, signed by
+  tim's own CA in `~/.local/share/tim/ca` (`TIM_CAROOT` overrides). Every domain also gets `*.domain`, because a
+  wildcard does not cover the domain itself. `tim cert ca` shows the CA and whether it is trusted;
+  `tim cert ca install` adds it to the system trust store and to Firefox profiles when `certutil` is available,
+  `tim cert ca uninstall` removes it. Both ask for confirmation and honour `--dry-run`. Reading someone else's
+  certificate is still `tim cert <host[:port]>`.
 - `tim setup [project|git url] [-y] [--name] [--in]`: take a freshly cloned project from checkout to running.
   Copies `.env` from the example, installs php, js, go and python dependencies, and for Laravel generates the
   app key, creates the sqlite file, runs migrations and links storage. Steps that are already done are skipped,
