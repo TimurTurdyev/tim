@@ -1,6 +1,7 @@
 package domaudit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"time"
 )
+
+var errCrtBusy = errors.New("сервис перегружен и ответил не JSON; поддомены только из перебора частых имён")
 
 var errNoQuota = errors.New("дневной лимит бесплатного сервиса исчерпан")
 
@@ -215,7 +218,21 @@ func contains(list []string, s string) bool {
 	return false
 }
 
+// fromCRT: логи сертификатов. Сервис часто перегружен и вместо JSON отдаёт страницу с ошибкой, поэтому один повтор.
 func fromCRT(domain string) (subs, related []string, err error) {
+	for attempt := range 2 {
+		if attempt > 0 {
+			time.Sleep(2 * time.Second)
+		}
+		subs, related, err = crtOnce(domain)
+		if err == nil {
+			return subs, related, nil
+		}
+	}
+	return nil, nil, err
+}
+
+func crtOnce(domain string) ([]string, []string, error) {
 	c := &http.Client{Timeout: crtTimeout}
 	resp, err := c.Get("https://crt.sh/?q=" + url.QueryEscape("%."+domain) + "&output=json")
 	if err != nil {
@@ -225,6 +242,9 @@ func fromCRT(domain string) (subs, related []string, err error) {
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
 		return nil, nil, err
+	}
+	if resp.StatusCode != http.StatusOK || !bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
+		return nil, nil, errCrtBusy
 	}
 	return ParseCRT(data, domain)
 }
