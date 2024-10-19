@@ -1,4 +1,4 @@
-package cmd
+package inspect
 
 import "testing"
 
@@ -11,7 +11,7 @@ func TestRegistrable(t *testing.T) {
 		"localhost":          "localhost",
 	}
 	for in, want := range cases {
-		if got := registrable(in); got != want {
+		if got := Registrable(in); got != want {
 			t.Errorf("%s: %s want %s", in, got, want)
 		}
 	}

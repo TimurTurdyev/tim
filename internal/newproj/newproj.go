@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/TimurTurdyev/tim/internal/shellq"
 )
 
 // Layout: папка клона и папка над ней (обёртка или группа).
@@ -17,11 +19,9 @@ func Layout(root, in, name, wrapper string) (dir, parent string) {
 	return base, filepath.Dir(base)
 }
 
-func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-
 // Expand подставляет {dir}, {name}, {parent} в шаг, экранируя значения для shell.
 func Expand(step, dir, name, parent string) string {
-	r := strings.NewReplacer("{dir}", quote(dir), "{name}", quote(name), "{parent}", quote(parent))
+	r := strings.NewReplacer("{dir}", shellq.Quote(dir), "{name}", shellq.Quote(name), "{parent}", shellq.Quote(parent))
 	return r.Replace(step)
 }
 

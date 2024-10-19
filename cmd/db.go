@@ -168,7 +168,7 @@ func dbRestore(c *dbConn, file string) error {
 	if _, err := os.Stat(file); err != nil {
 		return ui.Errorf("файла нет: %s", file)
 	}
-	if !confirm(fmt.Sprintf("залить %s в %s %s, текущие данные будут перезаписаны?", filepath.Base(file), c.Driver, c.Name)) {
+	if !runner.Confirm(fmt.Sprintf("залить %s в %s %s, текущие данные будут перезаписаны?", filepath.Base(file), c.Driver, c.Name)) {
 		return nil
 	}
 	env, bin, args := c.clientArgs("restore")

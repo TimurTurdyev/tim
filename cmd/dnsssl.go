@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -105,7 +104,7 @@ var sslCmd = &cobra.Command{
 				bad++
 			}
 			if r.err != nil {
-				line += "  " + ui.Bad(shortErr(r.err))
+				line += "  " + ui.Bad(ui.ShortErr(r.err))
 			}
 			ui.Println(line)
 		}
@@ -114,14 +113,6 @@ var sslCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-func shortErr(err error) string {
-	s := err.Error()
-	if i := strings.LastIndex(s, ": "); i >= 0 {
-		s = s[i+2:]
-	}
-	return s
 }
 
 func init() {

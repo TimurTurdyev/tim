@@ -3,7 +3,6 @@ package cmd
 import (
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,7 +35,7 @@ func readHosts() (string, []hostsfile.Entry, error) {
 	return string(data), hostsfile.Parse(string(data)), nil
 }
 
-// saveHosts переписывает /etc/hosts через sudo, оставляя рядом копию прежнего файла.
+// saveHosts переписывает файл hosts, оставляя рядом копию прежнего.
 func saveHosts(text string, entries []hostsfile.Entry) error {
 	next := hostsfile.Render(text, entries)
 	if next == text {
@@ -48,23 +47,10 @@ func saveHosts(text string, entries []hostsfile.Entry) error {
 		printHostBlock(entries)
 		return nil
 	}
-	if err := os.WriteFile(hostsFile()+".tim-backup", []byte(text), 0o644); err == nil {
-		// Файл наш, sudo не нужен: так бывает в контейнере и при TIM_HOSTS.
-		if err := os.WriteFile(hostsFile(), []byte(next), 0o644); err != nil {
-			return err
-		}
-		ui.Println(ui.Dim("прежний файл: " + hostsFile() + ".tim-backup"))
-		return nil
-	}
-	tmp := filepath.Join(os.TempDir(), "tim-hosts")
-	if err := os.WriteFile(tmp, []byte(next), 0o644); err != nil {
+	if err := runner.WriteRoot(hostsFile()+".tim-backup", []byte(text)); err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(tmp) }()
-	if err := runner.Sudo("cp", hostsFile(), hostsFile()+".tim-backup"); err != nil {
-		return err
-	}
-	if err := runner.Sudo("cp", tmp, hostsFile()); err != nil {
+	if err := runner.WriteRoot(hostsFile(), []byte(next)); err != nil {
 		return err
 	}
 	ui.Println(ui.Dim("прежний файл: " + hostsFile() + ".tim-backup"))

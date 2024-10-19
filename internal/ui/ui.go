@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 var (
@@ -57,4 +58,13 @@ func Pad(s string, width int) string {
 		b[i] = ' '
 	}
 	return s + string(b)
+}
+
+// ShortErr: последняя, самая содержательная часть обёрнутой ошибки.
+func ShortErr(err error) string {
+	s := err.Error()
+	if i := strings.LastIndex(s, ": "); i >= 0 {
+		s = s[i+2:]
+	}
+	return s
 }

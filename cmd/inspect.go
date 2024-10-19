@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/net/publicsuffix"
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -179,7 +178,7 @@ func collectSite(host, target string) *siteReport {
 		}
 	})
 	wg.Go(func() {
-		if d, err := inspect.Registration(registrable(host)); err == nil {
+		if d, err := inspect.Registration(inspect.Registrable(host)); err == nil {
 			r.Domain = d
 		} else {
 			fail("domain", err)
@@ -202,19 +201,6 @@ func collectSite(host, target string) *siteReport {
 	})
 	wg.Wait()
 	return r
-}
-
-// registrable: домен, который регистрируют (по таблице публичных суффиксов), для запроса RDAP и whois.
-func registrable(host string) string {
-	host = strings.TrimSuffix(host, ".")
-	if d, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
-		return d
-	}
-	parts := strings.Split(host, ".")
-	if len(parts) <= 2 {
-		return host
-	}
-	return strings.Join(parts[len(parts)-2:], ".")
 }
 
 func printSite(r *siteReport) {

@@ -10,23 +10,12 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // DryRun печатает команды, меняющие систему, вместо запуска.
 var DryRun = os.Getenv("TIM_DRY_RUN") != ""
-
-func quote(args []string) string {
-	out := make([]string, len(args))
-	for i, a := range args {
-		if strings.ContainsAny(a, " \t\"'$") {
-			out[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
-		} else {
-			out[i] = a
-		}
-	}
-	return strings.Join(out, " ")
-}
 
 // Output запускает команду только для чтения и возвращает stdout.
 func Output(name string, args ...string) (string, error) {
@@ -40,7 +29,7 @@ func Output(name string, args ...string) (string, error) {
 
 // Run выполняет команду, меняющую систему: в dry-run только печатает.
 func Run(name string, args ...string) error {
-	ui.Println(ui.Dim("$ " + quote(append([]string{name}, args...))))
+	ui.Println(ui.Dim("$ " + shellq.Join(append([]string{name}, args...))))
 	if DryRun {
 		return nil
 	}
@@ -52,7 +41,7 @@ func Run(name string, args ...string) error {
 // Exec передаёт терминал команде целиком (ssh, mysql, psql).
 func Exec(name string, args ...string) error {
 	if DryRun {
-		ui.Println(ui.Dim("$ " + quote(append([]string{name}, args...))))
+		ui.Println(ui.Dim("$ " + shellq.Join(append([]string{name}, args...))))
 		return nil
 	}
 	cmd := exec.Command(name, args...)
@@ -68,7 +57,7 @@ func ExecEnv(env []string, name string, args ...string) error {
 			k, _, _ := strings.Cut(e, "=")
 			masked[i] = k + "=***"
 		}
-		ui.Println(ui.Dim("$ " + strings.Join(masked, " ") + " " + quote(append([]string{name}, args...))))
+		ui.Println(ui.Dim("$ " + strings.Join(masked, " ") + " " + shellq.Join(append([]string{name}, args...))))
 		return nil
 	}
 	cmd := exec.Command(name, args...)
@@ -130,7 +119,7 @@ func Has(name string) bool {
 // ExecIn как Exec, но в папке dir и с дополнительным окружением.
 func ExecIn(dir string, env []string, name string, args ...string) error {
 	if DryRun {
-		ui.Println(ui.Dim("$ cd " + quote([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+quote(append([]string{name}, args...)))))
+		ui.Println(ui.Dim("$ cd " + shellq.Join([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+shellq.Join(append([]string{name}, args...)))))
 		return nil
 	}
 	cmd := exec.Command(lookIn(env, name), args...)
@@ -143,7 +132,7 @@ func ExecIn(dir string, env []string, name string, args ...string) error {
 // CaptureIn выполняет команду, меняющую систему, в папке dir и возвращает её вывод; в dry-run только печатает.
 func CaptureIn(dir, name string, args ...string) (string, error) {
 	if DryRun {
-		ui.Println(ui.Dim("$ cd " + quote([]string{dir}) + " && " + quote(append([]string{name}, args...))))
+		ui.Println(ui.Dim("$ cd " + shellq.Join([]string{dir}) + " && " + shellq.Join(append([]string{name}, args...))))
 		return "", nil
 	}
 	cmd := exec.Command(name, args...)
@@ -156,7 +145,7 @@ func CaptureIn(dir, name string, args ...string) (string, error) {
 // В dry-run только печатает и возвращает 0.
 func Start(dir string, env []string, logPath, name string, args ...string) (int, error) {
 	if DryRun {
-		ui.Println(ui.Dim("$ cd " + quote([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+quote(append([]string{name}, args...))) + " > " + logPath + " &"))
+		ui.Println(ui.Dim("$ cd " + shellq.Join([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+shellq.Join(append([]string{name}, args...))) + " > " + logPath + " &"))
 		return 0, nil
 	}
 	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
@@ -180,4 +169,36 @@ func Start(dir string, env []string, logPath, name string, args ...string) (int,
 // StopGroup шлёт SIGTERM всей группе процессов pid (запущенной через Start).
 func StopGroup(pid int) error {
 	return Run("kill", "-TERM", "--", "-"+strconv.Itoa(pid))
+}
+
+// WriteRoot пишет файл, который может принадлежать системе: сначала напрямую,
+// а если прав не хватило - через временный файл и sudo. Недостающие папки создаются.
+func WriteRoot(path string, data []byte) error {
+	if DryRun {
+		ui.Println(ui.Dim("$ # записал бы " + path + ", " + strconv.Itoa(len(data)) + " байт"))
+		return nil
+	}
+	if os.MkdirAll(filepath.Dir(path), 0o755) == nil && os.WriteFile(path, data, 0o644) == nil {
+		return nil
+	}
+	tmp := filepath.Join(os.TempDir(), "tim-"+filepath.Base(path))
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	if err := Sudo("mkdir", "-p", filepath.Dir(path)); err != nil {
+		return err
+	}
+	return Sudo("cp", tmp, path)
+}
+
+// RemoveRoot убирает файл, который может принадлежать системе.
+func RemoveRoot(path string) error {
+	if _, err := os.Stat(path); err != nil && !DryRun {
+		return nil
+	}
+	if !DryRun && os.Remove(path) == nil {
+		return nil
+	}
+	return Sudo("rm", "-f", path)
 }

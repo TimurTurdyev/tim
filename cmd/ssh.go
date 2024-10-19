@@ -76,7 +76,7 @@ func ensureBypass(ip string) {
 		return
 	}
 	ui.Println(ip + ": " + state)
-	if confirm("завести маршрут через " + gw + "?") {
+	if runner.Confirm("завести маршрут через " + gw + "?") {
 		_ = routeUp([]string{ip})
 	}
 }
