@@ -1,71 +1,99 @@
 # tim
 
-A developer's control panel for the terminal: project registry, ssh that routes
-around a VPN when needed, host routes, tunnels through your own server and
-database access from a project's `.env`. One Go binary plus a tiny zsh shim.
+Помощник в терминале для разработчика: проекты, сеть, туннели, локальный запуск.
+Один бинарник на Go плюс маленькая функция для shell.
 
-## Getting started
+Вырос из набора zsh-функций, которые копились годами: перейти в проект, подключиться
+к серверу, когда включён VPN, поднять туннель к базе, посмотреть, кто занял порт.
+В какой-то момент их стало тридцать, они перестали помещаться в голове и начали тормозить
+открытие терминала. Так появился `tim`: то же самое, но одной командой, с подсказками
+и без задержки на старте.
 
 ```sh
-brew install --cask TimurTurdyev/tap/tim   # or: go install github.com/TimurTurdyev/tim@latest
-tim init                              # wire tim into your shell (zsh or bash, detected)
-tim config init                       # projects root, wrapper folder, pick clones for the registry
-tim go                                # fuzzy picker over the registry, cd into the project
+tim go                      # выбрать проект и перейти в него
+tim ssh prod                # подключиться мимо VPN, если он мешает
+tim serve shop -d           # поднять dev-сервер в фоне
+tim check                   # обойти всё хозяйство одной таблицей
 ```
 
-`config init` looks for git clones under the projects root (default: the first existing of `~/Dev`,
-`~/Projects`, `~/code`, `~/src`) and asks which to add. If every project keeps its clone in a fixed
-subfolder (for example `shop/app`), set that name as the wrapper: projects are then named after the
-parent folder and `tim go shop .` jumps to `shop/`. Without a terminal use flags:
-`tim config init --root ~/code --all -y`. Later, `tim proj scan` finds new clones,
-`tim proj add [path]` and `tim proj rm <name>` edit the registry.
+## Зачем он нужен
 
-`tim init` appends the line to your shell's config and tells you what is left to do; `tim init zsh`
-(or `tim init bash`) just prints the code for `eval`. It adds a `tim` function, since a process cannot change the
-directory or `PATH` of its parent shell (`tim go`, `tim php use`), completion, a one-line note when you enter a
-project folder, your aliases and, if you want it, the summary on every new terminal:
+**Проекты всегда под рукой.** Реестр проектов в конфиге, `tim go` открывает выбор с поиском
+по части имени и переходит в папку. При входе в папку проекта показывает ветку и изменения.
+
+**VPN перестаёт мешать.** `tim ssh` сначала смотрит, куда сейчас ведёт маршрут до сервера.
+Если в туннель VPN или на шлюз прошлой сети - предложит пустить этот адрес напрямую
+и только потом подключится. `tim route add git.example.com` оставляет адрес снаружи навсегда.
+
+**Туннели без настроек прокси.** `tim tunnel all prod` заворачивает весь трафик через ssh
+(сам сервер и приватные сети остаются снаружи). `tim tunnel db shop` держит туннель к базе
+для GUI-клиента. `tim tunnel expose 8000` показывает локальный порт наружу.
+
+**Утро начинается с одной команды.** `tim check` проходит по всем проектам: что не закоммичено,
+отвечает ли сайт, когда истекает сертификат, в порядке ли почта домена, до каких пор оплачен домен.
+Строки с проблемами сверху, подробности под строкой.
+
+**Локальная разработка целиком.** `tim setup` доводит свежий клон до рабочего состояния.
+`tim cert new shop.test` выпускает настоящий сертификат для локального домена.
+`tim host add shop.test` заводит имя. `tim serve` поднимает сервер по стеку проекта.
+
+**Ничего личного в коде.** Адреса, серверы, пути - всё в твоём конфиге `~/.config/tim/config.toml`.
+В репозитории нет ни одного IP.
+
+## Установка
+
+```sh
+brew install --cask TimurTurdyev/tap/tim
+# или
+go install github.com/TimurTurdyev/tim@latest
+```
+
+```sh
+tim init          # вписать tim в shell (zsh или bash, определит сам)
+tim config init   # корень проектов, папка-обёртка, выбор клонов в реестр
+tim go            # всё готово
+```
+
+`tim config init` ищет git-клоны под корнем проектов (по умолчанию первый существующий из
+`~/Dev`, `~/Projects`, `~/code`, `~/src`) и спрашивает, какие добавить. Если у каждого проекта
+клон лежит в одной и той же подпапке (например `shop/app`), укажи её как обёртку: тогда проект
+зовётся по имени родительской папки, а `tim go shop .` ведёт в `shop/`. Без терминала - флагами:
+`tim config init --root ~/code --all -y`.
+
+`tim init` дописывает одну строку в конфиг твоего shell. Нужна она потому, что процесс не может
+сменить папку или `PATH` родительской оболочки - без неё не работают `tim go` и `tim php use`.
+Заодно подключает дополнение по Tab, подсказку при входе в папку проекта, твои алиасы
+и, если захочешь, сводку в каждом новом терминале:
 
 ```toml
 [shell]
-motd = true          # tim motd in every new interactive shell
-cd_info = true       # project, branch and changes when entering its folder (default on)
+motd = true          # сводка при открытии терминала
+cd_info = true       # проект, ветка и изменения при входе в папку
 
 [shell.aliases]
 gs = "git status -sb"
-``` Config lives in `~/.config/tim/config.toml` (`TIM_CONFIG` overrides).
+```
 
-`tim` alone shows the most used commands, `tim --help` all of them grouped, `tim <command> --help` the details
-with examples, `man tim` and `man tim-<command>` the same as man pages (installed next to the binary by
-`make install` and by the cask). Help and errors are in Russian; colors only in a terminal, `NO_COLOR` turns them off.
+Обновление: `brew upgrade --cask tim` или `tim self-update` для любого другого способа установки
+(берёт последний релиз с GitHub, сверяет sha256 с `checksums.txt`, откатывается, если подмена не удалась).
 
-## Commands
+## Справка
 
-- `tim ssh [alias|project|user@host] [args]`: without a target opens a picker over aliases; checks the route to the address first.
-  If it goes into a VPN tunnel or to the gateway of a previous network, offers to add
-  a host route through the physical gateway, then connects. Private addresses are
-  left to the VPN.
-- `tim tunnel`: background ssh tunnels with a control socket; the server's route is checked against the VPN first.
-  `tunnel all [server] [-x subnet]` sends all IPv4 and DNS through ssh with sshuttle, no proxy settings needed
-  (the server itself and private ranges stay outside; `tunnel all off` stops it).
-  `tunnel up [server]` is SOCKS5 on `tunnel.port` (1080), listening on 127.0.0.1 only, so the network sees plain ssh; `tunnel system on|off` points macOS proxy settings at it,
-  `tunnel check` compares the external IP with and without it. `tunnel port <L:host:R|L:R|R> [server]`,
-  `tunnel db [project] [--via server]` keeps a database tunnel for a GUI client, `tunnel down [name|all]`.
-  `tunnel expose <port>` publishes a local port with cloudflared, or `--frp host:port`, or `--ssh server`.
-- `tim route add <address|domain|subnet...> [--label x]`: keep a target outside the VPN. It is saved to the
-  config and routed through the physical interface's gateway right away; a domain expands to all its A records,
-  a subnet goes in as `-net`. Private ranges need `--force`, since they usually live behind the VPN.
-- `tim route` shows where the internet traffic goes and the path of every target now; `route rm`, `route up|down`,
-  `route clean [--all]` (drop routes to the gateway of a previous network), `route check`, `route list`, `route table`.
-- `tim vpn`: tunnels, connected VPN services, full or split tunnel, DNS, how many targets bypass it;
-  `tim vpn exclude <target>` is `route add`, `tim vpn fix` cleans stale routes and brings every target up again.
-  IPv4 only.
-- `tim db [project] [dump|restore <file>] [--via <alias>]`: mysql, psql or sqlite
-  from the project's `.env`; `--via` opens an ssh port forward to the server's database
-  on a free local port and closes it when the client exits.
-- `tim proj list|info|here`, `tim go [project] [.]`: without a project opens a fuzzy picker.
-- `tim new <name> [--stack laravel|php|go|node|vite|python|empty] [--in folder] [--no-git] [--open]`: create a
-  project in the registry layout (`<root>/<in>/<name>`, plus the wrapper folder if set), initialize the stack,
-  `git init` and add it to the registry with a free port for PHP. Own templates in the config:
+`tim` без аргументов показывает самое ходовое, `tim --help` - все команды по разделам,
+`tim <команда> --help` - подробности с примерами. То же есть в `man tim` и `man tim-<команда>`.
+Справка и ошибки по-русски, цвет только в терминале, `NO_COLOR` его выключает.
+
+`--dry-run` или `TIM_DRY_RUN=1` печатает каждую команду, которая меняет систему, вместо её запуска.
+Это работает везде, где tim трогает маршруты, туннели, системные файлы или ходит на сервер.
+
+## Команды
+
+### Проекты
+
+- `tim go [проект] [.]` - перейти; без аргумента выбор с поиском. Точка ведёт в папку над клоном.
+- `tim proj list|info|here`, `tim proj scan [--add]`, `tim proj add [путь] [--name]`, `tim proj rm <имя>`.
+- `tim new <имя> [--stack laravel|php|go|node|vite|python|empty] [--in папка] [--open]` - создать проект
+  по раскладке реестра, поднять стек, `git init` и записать в реестр. Свои шаблоны в конфиге:
 
   ```toml
   [[template]]
@@ -73,158 +101,152 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
   steps = ["mkdir -p {dir}/public", "cp ~/templates/index.html {dir}/public/"]
   port = false
   ```
-- `tim sync [project...] [--remote] [--ssh] [--force]`: fill registry fields from the projects themselves.
-  Port and database come from the project's `.env`; `--remote` asks each server over ssh which domains its nginx
-  serves and matches them to projects by deploy path or name (read-only); `--ssh` picks the ssh alias whose
-  address matches the site. Only empty fields are filled unless `--force`.
-- `tim env diff [project] [--server]`: what the local `.env` is missing. Against `.env.example`: keys absent,
-  keys left empty, secrets still holding the sample value, keys not documented in the example. With `--server`
-  only the key names are compared against the `.env` on the project's server - values are never requested.
-- `tim host`, `tim host add <name...> [--ip] [--profile]`, `tim host rm`, `tim host on|off <profile>`,
-  `tim host check <name>`: local names in `/etc/hosts`. tim keeps its own block between `# tim:begin` and
-  `# tim:end` and never touches anything outside it; the previous file is kept as `/etc/hosts.tim-backup`.
-  Entries belong to profiles, so a whole set of names can be switched off without deleting it. `TIM_HOSTS`
-  points at a different file.
-- `tim host resolver [tld] [--off]`: `/etc/hosts` only knows exact names, so `a.shop.test` cannot be put there.
-  The resolver solves the whole zone: dnsmasq answers 127.0.0.1 for any name under it and `/etc/resolver/<tld>`
-  tells the system to ask dnsmasq about that zone. Requires dnsmasq; without an argument it lists configured zones.
-- `tim cert new <domain|ip...> [--dir] [--days] [--exact]`: issue a certificate for local development, signed by
-  tim's own CA in `~/.local/share/tim/ca` (`TIM_CAROOT` overrides). Every domain also gets `*.domain`, because a
-  wildcard does not cover the domain itself. `tim cert ca` shows the CA and whether it is trusted;
-  `tim cert ca install` adds it to the system trust store and to Firefox profiles when `certutil` is available,
-  `tim cert ca uninstall` removes it. Both ask for confirmation and honour `--dry-run`. Reading someone else's
-  certificate is still `tim cert <host[:port]>`.
-- `tim setup [project|git url] [-y] [--name] [--in]`: take a freshly cloned project from checkout to running.
-  Copies `.env` from the example, installs php, js, go and python dependencies, and for Laravel generates the
-  app key, creates the sqlite file, runs migrations and links storage. Steps that are already done are skipped,
-  so running it on a working project does nothing. A git url instead of a name clones the repository into the
-  registry layout first and records the project. Migrations are confirmed separately.
-- `tim check [project|domain...] [--local] [--net] [--hours N]`: one sweep over everything. A row per project with
-  git state, site response, certificate expiry, mail verdict and domain registration expiry; worst rows first,
-  details under the row. An argument that is not in the registry but looks like a domain is checked as is.
-  `--local` skips the network, `--net` skips git. Below the table: dev servers left running and a full disk.
-  Exits non-zero when something is wrong, so it can be wired into shell startup.
-- `tim config`, `tim config init`, `tim proj scan [--add]`, `tim proj add [path] [--name]`, `tim proj rm <name>`.
-- `tim net check`: interface and gateway, internet, DNS, external IP, VPN, step by step with the first failure named.
-- `tim ports [--all]`: who listens on TCP ports, for how long and in which project; `tim port <n> [kill] [--force]`;
-  `tim stale [--hours 8] [--kill]`: project dev servers left running.
-- `tim dns flush`, `tim dns servers`, `tim ssl [domain...]`: certificate expiry for the given domains or the
-  `url` field of projects (`tim proj add --url`).
-- `tim domain <domain|project> [--fast] [--map] [--json] [--all]`: the whole picture for a domain in one command.
-  Registration and NS, mail records, subdomains from three sources in parallel (CertSpotter, crt.sh, hostsearch) plus a probe of ~70 common names,
-  every address with its network, country and PTR, what each name answers over HTTP, names in the same certificates,
-  analytics counters and neighbours on the apex IP (skipped for CDN addresses). Answers are cached for a day (`--fresh` refetches; a stale list is used when the service is down).
-  `--map` writes a self-contained HTML
-  graph (no external scripts) and opens it. The domain is sent to crt.sh, whois.cymru.com and api.hackertarget.com.
-- `tim mail [domain] [--all] [--selector s]`: MX, SPF, DKIM (common selectors and yours), DMARC, what is wrong in them,
-  ready-to-paste DNS records for what is missing and one verdict line; `--all` is a table over the `url` fields of the registry.
-- `tim http <url> [-L] [--all-headers]`: one request on a fresh connection split into DNS, TCP, TLS, first byte and
-  download, status, protocol, size and key headers; `-L` follows redirects.
-- `tim cert <host[:port]>`, `tim dns <host> [--server ip]`, `tim port check <host:port...>`.
-- `tim site <domain|url> [--json]`: IPs with country and provider, domain registration (RDAP, whois
-  for zones without RDAP), certificate, HTTP status and redirects, server and a guess at the CMS.
-  Geolocation is asked from ipwho.is.
-
-Health check:
-
-- `tim doctor`: config and projects root, registry (missing folders, duplicate names, shared ports, unknown ssh
-  aliases, broken route targets and tasks), the shell shim, `PATH` (duplicates, missing folders, programs shadowed
-  by another copy), version managers that fight over one language, several brew formulas for one database client,
-  crashed brew services. Read-only; exits 1 only on errors.
-
-Disk:
-
-- `tim disk [folder] [--min 50M]`: space taken by node_modules, vendor, venvs, target, dist, build, .next and .nuxt
-  across projects, largest first with the owning project, plus totals by kind. Read-only.
-
-Summary:
-
-- `tim motd [section...] [--all] [--time]`: system (host, macOS, uptime, load, memory, disk, battery, local IP,
-  Docker containers), project in the current folder (branch, changes), network and VPN,
-  running project servers, brew services from launchd, and on request `repos` (uncommitted or unpushed),
-  `procs` (top CPU), `versions`. Sections run in parallel with a timeout each; the default set
-  (`system project net ports services`, or the `motd` list in the config) takes about 150 ms.
-- `tim ip`: external IP with country, city and provider, directly and through the SOCKS tunnel if it is up.
-- `tim wifi`: network, channel and band, standard, rate, signal and noise with a rating, security.
-
-Across projects:
-
-- `tim each [task] [project...] [--list] [--all] [--scan]`: run a command in every project folder (and the wrapper
-  above the clone) that has a marker file. Tasks live in the config:
+- `tim setup [проект|адрес репозитория] [-y]` - от клона до работающего локально: `.env` из образца,
+  зависимости php, js, go и python, у Laravel ключ приложения, файл sqlite, миграции, ссылка на хранилище.
+  Уже сделанное не повторяется, так что на готовом проекте команда молчит. Адрес репозитория вместо
+  имени сначала клонирует его и записывает проект. Миграции спрашиваются отдельно.
+- `tim sync [проект...] [--remote] [--ssh] [--force]` - дописать поля реестра по самим проектам.
+  Порт и база из `.env`; `--remote` спрашивает у серверов по ssh, какие домены отдаёт их nginx,
+  и сопоставляет с проектами по пути деплоя или имени (только читает); `--ssh` подбирает ssh-алиас
+  по адресу сайта. Заполняются только пустые поля, если не `--force`.
+- `tim each [задача] [проект...]` - команда во всех проектах с файлом-маркером. Задачи в конфиге:
 
   ```toml
   [[task]]
   name = "deps"
   marker = "composer.json"
   run = "composer outdated --direct"
-  # optional: a version key in a JSON marker and a command for the latest version;
-  # then only outdated folders run unless --all
-  version_key = "version"
-  version_cmd = "tool --version"
   ```
 
-  One-off: `tim each --marker go.mod -- go mod tidy`. `--dry-run` prints the commands.
+  Разово: `tim each --marker go.mod -- go mod tidy`.
 
-Local run:
+### Сеть и VPN
 
-- `tim serve [project|part of a name|@group...] [-d] [--port N]`: dev server by stack (Laravel `composer dev` or
-  `artisan serve`, plain PHP `php -S`, node and VitePress via `make dev` or the lockfile's package manager,
-  `go run`, Python via uv or the venv, `docker compose up` when a compose file sits in the folder or in `docker/`).
-  A project's `serve = "..."` field overrides the guess. PHP projects get a php from brew that fits
-  `require.php` when the active one does not. Port: argument, the project's `port`, `APP_URL`, else 8000.
-  Several projects, a group from `[groups]` or `-d` run in the background; busy ports move to the next free one.
-  `tim serve list`, `tim serve logs <name> [-f]`, `tim serve stop [name|all]` (stops child processes too).
-- `tim env [project] [--all]`: `.env` summary with secrets masked, checked against the registry.
-- `tim logs [project] [-f] [-n 50]`: tail of the newest `*.log` of the project.
-- `tim open [project]`: the `editor` command from the config, `$VISUAL`, or Finder.
-- `tim svc [start|stop|restart|logs <name>]`: Homebrew services.
-- `tim php`: installed versions, the active one and what the project's composer.json requires;
-  `tim php exec 8.3 composer install` runs once with that version, `tim php use 8.3` switches the current shell
-  (through the `tim init zsh` shim).
+- `tim ssh [алиас|проект|user@host] [команда]` - без цели открывает выбор алиасов. Проверяет маршрут
+  до адреса и, если он уходит в VPN или на шлюз прошлой сети, предлагает добавить прямой маршрут.
+  Приватные адреса оставляет VPN.
+- `tim route add <адрес|домен|подсеть...> [--label x]` - оставить цель снаружи VPN. Сохраняется в конфиг
+  и поднимается сразу; домен раскрывается во все A-записи, подсеть идёт как `-net`.
+- `tim route` - куда идёт трафик в интернет и где сейчас каждая цель; `route rm|up|down|clean|check|table`.
+- `tim vpn` - какие туннели подняты, полный или раздельный, DNS, сколько целей идёт мимо;
+  `tim vpn exclude <цель>`, `tim vpn fix` после смены сети. Только IPv4.
+- `tim tunnel all [сервер] [-x подсеть]` - весь трафик через ssh с помощью sshuttle, без настроек прокси.
+- `tim tunnel up [сервер]` - SOCKS5 на 127.0.0.1, снаружи это обычный ssh; `tunnel system on|off`
+  направляет туда системный прокси macOS, `tunnel check` сравнивает внешний IP с ним и без.
+- `tim tunnel port <L:host:R>`, `tim tunnel db [проект]`, `tim tunnel expose <порт>`, `tim tunnel down`.
+- `tim net check` - интерфейс и шлюз, интернет, DNS, внешний адрес, VPN; шаг за шагом, с первым сбоем.
 
-Utilities, all on the standard library; without an argument they read stdin:
+### Локальная разработка
 
-- `tim hex 255`, `tim dec ff 0x1F 0b101`: number bases.
-- `tim b64 [-d] [--url] <text>`, `tim jwt <token>` (no signature check), `tim hash [md5|sha1|sha256|sha512|crc32]`.
-- `tim ts [epoch|date] [--tz zone]`, `tim uuid [-7] [-n N]`, `tim json [-c]`.
-- `tim url encode|decode|parse`, `tim pass [-n 20] [-c N] [--no-symbols] [--no-ambiguous]`.
-- `tim qr <text> [--invert]`: QR code right in the terminal, to move a link or a Wi-Fi password to a phone.
-- `tim cron "<expr>" [-n 5]`: what a cron expression means and its next runs in local time.
+- `tim serve [проект|часть имени|@группа...] [-d] [--port N]` - dev-сервер по стеку: Laravel через
+  `composer dev` или `artisan serve`, обычный PHP через `php -S`, node и VitePress через `make dev`
+  или пакетный менеджер из lock-файла, `go run`, Python через uv или venv, `docker compose up`,
+  если рядом лежит compose-файл. Поле `serve` у проекта перебивает догадку. PHP-проекту подбирается
+  версия php под `require.php`. Порт: аргумент, поле `port`, `APP_URL`, иначе 8000.
+  Несколько проектов, группа или `-d` уходят в фон, занятые порты сдвигаются на свободные.
+  `tim serve list|logs|stop`.
+- `tim cert new <домен|адрес...>` - сертификат для локальной разработки, подписанный своим CA
+  в `~/.local/share/tim/ca`. К каждому домену добавляется и `*.домен`, потому что wildcard
+  не покрывает сам домен. `tim cert ca install` кладёт CA в системное хранилище и в профили Firefox.
+- `tim host add <имя...> [--profile]`, `tim host on|off <профиль>`, `tim host rm`, `tim host check` -
+  локальные имена. Свой блок в `/etc/hosts` между `# tim:begin` и `# tim:end`, остальное не трогается,
+  прежний файл остаётся как `/etc/hosts.tim-backup`. Профиль выключается целиком, не удаляя имена.
+- `tim host resolver [зона]` - зона `*.test` целиком на 127.0.0.1 через dnsmasq. Точными именами
+  поддомены не покрыть, поэтому `a.shop.test` в `/etc/hosts` не записать, а резолвер решает это разом.
+- `tim env [проект]` - выжимка `.env` без секретов, сверенная с реестром.
+- `tim env diff [проект] [--server]` - чего не хватает в `.env`: ключей нет, значение пустое,
+  секрет остался из образца, ключа нет в образце. С `--server` сравнивается только состав ключей
+  с `.env` на сервере, значения оттуда не запрашиваются.
+- `tim db [проект] [dump|restore <файл>] [--via <алиас>]` - mysql, psql или sqlite по `.env` проекта;
+  `--via` поднимает ssh-проброс к базе сервера на свободный локальный порт и закрывает его после выхода.
+- `tim php` - установленные версии, активная и что требует composer.json; `tim php exec 8.3 composer install`
+  запускает разово с этой версией, `tim php use 8.3` переключает текущую оболочку.
+- `tim logs [проект] [-f]`, `tim open [проект]`, `tim svc [start|stop|restart|logs]`.
 
-`--dry-run` or `TIM_DRY_RUN=1` prints every command that would change the system.
+### Что происходит с машиной
 
-Updating: `brew upgrade --cask tim` for the cask, `tim self-update [--check]` for any other install
-(latest GitHub release, sha256 checked against `checksums.txt`, rollback if the swap fails).
-The binary is not notarized, so the cask clears the quarantine flag after install.
+- `tim motd [раздел...]` - система (хост, macOS, uptime, нагрузка, память, диск, батарея, адрес, Docker),
+  проект в текущей папке, сеть и VPN, запущенные серверы проектов, службы brew; по запросу `repos`
+  (незакоммиченное и неотправленное), `procs`, `versions`. Разделы идут параллельно, набор по умолчанию
+  укладывается примерно в 150 мс.
+- `tim ports [--all]` - кто слушает порты, сколько уже и в каком проекте; `tim port <n> [kill]`;
+  `tim stale [--hours 8] [--kill]` - забытые dev-серверы проектов.
+- `tim disk [папка] [--min 50M]` - сколько занимают node_modules, vendor, venv, target, dist, build,
+  .next и .nuxt по проектам: крупное сверху, с итогами по видам. Только читает.
+- `tim doctor` - что не так в окружении: конфиг и реестр (пропавшие папки, одинаковые имена, общие порты,
+  неизвестные ssh-алиасы), шим в shell, `PATH` (дубли, несуществующие папки, перекрытые программы),
+  менеджеры версий, которые спорят за один язык, несколько формул brew для одного клиента базы,
+  упавшие службы. Только читает, ненулевой код только на ошибках.
+- `tim ip`, `tim wifi` - внешний адрес с геолокацией (и через туннель, если он поднят); сеть, канал,
+  стандарт, сигнал с оценкой.
 
-## Development
+### Домены и сайты
+
+- `tim check [проект|домен...] [--local] [--net]` - обход всего хозяйства одной таблицей: git, сайт,
+  сертификат, почта, срок домена. Проблемные строки сверху. Аргумент, которого нет в реестре,
+  но похожий на домен, проверяется как есть. Код выхода ненулевой, если что-то плохо, -
+  команду можно повесить на запуск терминала.
+- `tim domain <домен|проект> [--map] [--all]` - вся картина по домену за раз: регистрация и NS,
+  записи почты, поддомены из трёх источников параллельно (CertSpotter, crt.sh, hostsearch) плюс перебор
+  примерно 70 частых имён, каждый адрес со своей сетью, страной и PTR, что отвечает каждое имя по HTTP,
+  имена из тех же сертификатов, счётчики аналитики и соседи по адресу. Ответы кешируются на сутки.
+  `--map` рисует самодостаточную HTML-карту без внешних скриптов и открывает её.
+  Домен уходит в crt.sh, whois.cymru.com и api.hackertarget.com.
+- `tim mail [домен] [--all] [--selector s]` - MX, SPF, DKIM (частые селекторы и твои), DMARC,
+  что в них не так, готовые DNS-записи для недостающего и одна строка вердикта.
+- `tim site <домен|url>` - адреса со страной и провайдером, регистрация домена, сертификат,
+  статус и редиректы, сервер и догадка о CMS.
+- `tim ssl [домен...]` - сроки сертификатов по доменам или по полю `url` проектов.
+- `tim http <url> [-L]` - один запрос на свежем соединении по фазам: DNS, TCP, TLS, первый байт, загрузка.
+- `tim cert <host[:port]>`, `tim dns <host>`, `tim port check <host:port...>`, `tim dns flush|servers`.
+
+### Мелочи
+
+Всё на стандартной библиотеке, без аргумента читают stdin.
+
+- `tim hex 255`, `tim dec ff 0x1F 0b101` - системы счисления.
+- `tim b64 [-d] [--url]`, `tim jwt <токен>` (подпись не проверяется), `tim hash [md5|sha1|sha256|sha512|crc32]`.
+- `tim ts [epoch|дата] [--tz зона]`, `tim uuid [-7] [-n N]`, `tim json [-c]`.
+- `tim url encode|decode|parse`, `tim pass [-n 20] [--no-symbols] [--no-ambiguous]`.
+- `tim qr <текст>` - QR прямо в терминале, чтобы перекинуть ссылку или пароль от wi-fi на телефон.
+- `tim cron "<выражение>" [-n 5]` - что значит выражение cron и когда сработает ближайшие разы.
+
+## Как это устроено
+
+Тонкий слой команд на cobra поверх `internal/*`. Решения (пороги, разбор, классификация) живут
+в `internal` и покрыты тестами, слой команд занят вводом, параллелью и выводом.
+
+Всё, что меняет систему или ходит на сервер, проходит через `internal/runner` - единственное место,
+которое запускает внешние команды, и единственное, которое знает про dry-run и подтверждения.
+
+Интерактивные части (выбор проекта и сервера, подтверждения) собраны в `internal/tui` - только этот
+пакет знает про charm. Рисуют они на `/dev/tty`, поэтому `tim go` работает внутри подстановки команды
+из шима; без терминала команды переходят на обычные списки и вопросы в строку.
+
+Бюджет старта - меньше 10 мс, потому что шим выполняется в каждом новом терминале.
+
+## Разработка
 
 ```sh
-make build      # ./tim with the version from git describe
-make install    # go install with the same ldflags, man pages into $(go env GOPATH)/share/man/man1
-make man        # man pages into ./man
+make build      # ./tim с версией из git describe
+make install    # go install плюс man-страницы в $(go env GOPATH)/share/man/man1
+make man        # man-страницы в ./man
 make test vet lint
-make bench      # startup time on an empty config (hyperfine if installed)
-make inittrace  # most expensive package init functions
-make benchinit  # init cost of the cmd package via mvdan.cc/benchinit
-make snapshot   # local release build into dist/ (goreleaser, nothing published)
+make bench      # время старта на пустом конфиге
+make inittrace  # самые дорогие init пакетов
+make snapshot   # локальная сборка релиза в dist/, ничего не публикуется
 ```
 
-`tim version` prints the version set with `-ldflags -X github.com/TimurTurdyev/tim/cmd.version=...`,
-falling back to the module version from `go install` or `dev`.
+`tim version` печатает версию из `-ldflags -X github.com/TimurTurdyev/tim/cmd.version=...`,
+иначе версию модуля из `go install`, иначе `dev`.
 
-Interactive parts (project and ssh pickers, confirmations) live in `internal/tui`, the only
-package that imports charm. They draw on `/dev/tty`, so `tim go` works inside the shim's
-command substitution; without a terminal the commands fall back to plain lists and line prompts.
-Startup budget: under 10 ms, since the shim runs in every new terminal.
+## Релиз
 
-## Migrating from the zsh tools module
+Тег `v*` запускает сборку: goreleaser собирает универсальный бинарник для macOS, публикует релиз
+с `checksums.txt` и обновляет cask в `TimurTurdyev/homebrew-tap` (нужен секрет `HOMEBREW_TAP_TOKEN`
+с правом записи в тот репозиторий). Бинарник не нотаризован, поэтому cask снимает карантин после установки.
 
-If you used the zsh `tools` module, the hidden `tim config migrate <dir>` converts `tools.projects`,
-`tools.hosts` and `tools.conf` from that folder into the config.
+## Переезд со старого
 
-## Releasing
-
-Push a `v*` tag: the release workflow runs goreleaser, which builds a universal macOS binary, publishes the
-GitHub release with `checksums.txt` and updates the cask in `TimurTurdyev/homebrew-tap`
-(needs the `HOMEBREW_TAP_TOKEN` secret with write access to that repository).
+Если пользовался zsh-модулем `tools`, скрытая команда `tim config migrate <папка>` перенесёт
+`tools.projects`, `tools.hosts` и `tools.conf` в конфиг.
