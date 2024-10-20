@@ -18,6 +18,7 @@ import (
 
 var (
 	domFast    bool
+	domFresh   bool
 	domNoNeigh bool
 	domJSON    bool
 	domMap     bool
@@ -70,7 +71,7 @@ var domainCmd = &cobra.Command{
 		if domJSON {
 			notify = nil
 		}
-		rep := domaudit.Collect(domain, domaudit.Options{SkipCRT: domFast, SkipNeighbors: domNoNeigh, Notify: notify})
+		rep := domaudit.Collect(domain, domaudit.Options{SkipCRT: domFast, FreshCRT: domFresh, SkipNeighbors: domNoNeigh, Notify: notify})
 		if domJSON {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -177,6 +178,9 @@ func printDomain(rep *domaudit.Report) {
 	ui.Println(ui.Dim("имён " + strconv.Itoa(len(rep.Hosts)) + ", адресов " + strconv.Itoa(len(rep.Addrs)) +
 		", не отвечают по HTTP " + strconv.Itoa(dead)))
 
+	if !rep.CRTCached.IsZero() {
+		ui.Println(ui.Dim("список имён из кэша от " + rep.CRTCached.Format("02.01 15:04") + ", обновить: --fresh"))
+	}
 	if len(rep.Related) > 0 {
 		ui.Println(ui.Label("в тех же сертификатах: ") + strings.Join(cut(rep.Related, 10), " "))
 	}
@@ -265,6 +269,7 @@ func domainAll() error {
 func init() {
 	f := domainCmd.Flags()
 	f.BoolVar(&domFast, "fast", false, "без логов сертификатов, только перебор частых имён")
+	f.BoolVar(&domFresh, "fresh", false, "обновить логи сертификатов, не брать из кэша")
 	f.BoolVar(&domNoNeigh, "no-neighbors", false, "не спрашивать соседей по IP")
 	f.BoolVar(&domJSON, "json", false, "вывод в JSON")
 	f.BoolVar(&domMap, "map", false, "собрать карту в HTML и открыть")
