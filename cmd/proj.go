@@ -131,9 +131,18 @@ var goCmd = &cobra.Command{
 			return nil
 		}
 		ui.Println(dir)
-		ui.Println(ui.Dim("чтобы cd работал из команды, добавь в .zshrc: eval \"$(tim init zsh)\""))
+		ui.Println(ui.Dim(shimHint()))
 		return nil
 	},
+}
+
+// shimHint: почему cd не сработал - шим не подключён или оболочка открыта до подключения.
+func shimHint() string {
+	path, _ := rcFile("")
+	if sourced(path, 2) {
+		return "эта оболочка открыта раньше подключения tim: открой новый терминал, и cd заработает"
+	}
+	return "чтобы cd работал из команды, выполни: tim init"
 }
 
 func dashIfEmpty(s string) string {

@@ -8,8 +8,8 @@ database access from a project's `.env`. One Go binary plus a tiny zsh shim.
 
 ```sh
 brew install --cask TimurTurdyev/tap/tim   # or: go install github.com/TimurTurdyev/tim@latest
+tim init                              # wire tim into your shell (zsh or bash, detected)
 tim config init                       # projects root, wrapper folder, pick clones for the registry
-echo 'eval "$(tim init zsh)"' >> ~/.zshrc    # bash: echo 'eval "$(tim init bash)"' >> ~/.bashrc
 tim go                                # fuzzy picker over the registry, cd into the project
 ```
 
@@ -20,7 +20,8 @@ parent folder and `tim go shop .` jumps to `shop/`. Without a terminal use flags
 `tim config init --root ~/code --all -y`. Later, `tim proj scan` finds new clones,
 `tim proj add [path]` and `tim proj rm <name>` edit the registry.
 
-`tim init zsh` (or `tim init bash` for `.bashrc`) adds a `tim` function, since a process cannot change the
+`tim init` appends the line to your shell's config and tells you what is left to do; `tim init zsh`
+(or `tim init bash`) just prints the code for `eval`. It adds a `tim` function, since a process cannot change the
 directory or `PATH` of its parent shell (`tim go`, `tim php use`), completion, a one-line note when you enter a
 project folder, your aliases and, if you want it, the summary on every new terminal:
 
