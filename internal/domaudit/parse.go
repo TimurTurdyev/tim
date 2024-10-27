@@ -3,6 +3,7 @@ package domaudit
 
 import (
 	"encoding/json"
+	"errors"
 	"html"
 	"regexp"
 	"sort"
@@ -20,31 +21,12 @@ func ParseCRT(data []byte, domain string) (subs, related []string, err error) {
 	if err := json.Unmarshal(data, &rows); err != nil {
 		return nil, nil, err
 	}
-	domain = strings.ToLower(domain)
-	seenS, seenR := map[string]bool{}, map[string]bool{}
+	var names []string
 	for _, r := range rows {
-		for _, n := range strings.Split(r.NameValue+"\n"+r.Common, "\n") {
-			n = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(n)), "*.")
-			if n == "" || strings.ContainsAny(n, " @") {
-				continue
-			}
-			if n == domain || strings.HasSuffix(n, "."+domain) {
-				if !seenS[n] {
-					seenS[n] = true
-					subs = append(subs, n)
-				}
-				continue
-			}
-			reg, err := publicsuffix.EffectiveTLDPlusOne(n)
-			if err == nil && reg != domain && !seenR[reg] {
-				seenR[reg] = true
-				related = append(related, reg)
-			}
-		}
+		names = append(names, strings.Split(r.NameValue, "\n")...)
+		names = append(names, r.Common)
 	}
-	sort.Strings(subs)
-	sort.Strings(related)
-	return subs, related, nil
+	return splitNames(names, domain)
 }
 
 // ASInfo: к какой сети принадлежит адрес.
@@ -165,4 +147,68 @@ var Common = []string{
 	"images", "media", "files", "upload", "download", "db", "mysql", "pgsql", "redis", "git", "gitlab", "jenkins",
 	"ci", "build", "deploy", "vpn", "ssh", "ftp", "sftp", "backup", "monitor", "grafana", "metrics", "logs",
 	"kibana", "portal", "my", "lk", "office", "crm", "erp", "lms", "edu", "m", "mobile", "ws", "socket", "chat",
+}
+
+// ParseCertSpotter разбирает ответ api.certspotter.com: имена из поля dns_names.
+func ParseCertSpotter(data []byte, domain string) (subs, related []string, err error) {
+	var rows []struct {
+		DNSNames []string `json:"dns_names"`
+	}
+	if err := json.Unmarshal(data, &rows); err != nil {
+		return nil, nil, err
+	}
+	var names []string
+	for _, r := range rows {
+		names = append(names, r.DNSNames...)
+	}
+	return splitNames(names, domain)
+}
+
+// ParseHostSearch разбирает CSV "имя,адрес" построчно.
+func ParseHostSearch(out string, domain string) ([]string, error) {
+	if strings.Contains(out, "API count exceeded") || strings.Contains(out, "error ") {
+		return nil, errors.New(strings.TrimSpace(firstLine(out)))
+	}
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		name, _, ok := strings.Cut(strings.TrimSpace(line), ",")
+		if ok {
+			names = append(names, name)
+		}
+	}
+	subs, _, err := splitNames(names, domain)
+	return subs, err
+}
+
+func firstLine(s string) string {
+	l, _, _ := strings.Cut(s, "\n")
+	return l
+}
+
+// splitNames делит имена на поддомены домена и другие регистрируемые домены.
+func splitNames(names []string, domain string) (subs, related []string, err error) {
+	domain = strings.ToLower(domain)
+	seenS, seenR := map[string]bool{}, map[string]bool{}
+	for _, n := range names {
+		n = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(n)), "*.")
+		n = strings.TrimSuffix(n, ".")
+		if n == "" || strings.ContainsAny(n, " @") {
+			continue
+		}
+		if n == domain || strings.HasSuffix(n, "."+domain) {
+			if !seenS[n] {
+				seenS[n] = true
+				subs = append(subs, n)
+			}
+			continue
+		}
+		reg, e := publicsuffix.EffectiveTLDPlusOne(n)
+		if e == nil && reg != domain && !seenR[reg] {
+			seenR[reg] = true
+			related = append(related, reg)
+		}
+	}
+	sort.Strings(subs)
+	sort.Strings(related)
+	return subs, related, nil
 }

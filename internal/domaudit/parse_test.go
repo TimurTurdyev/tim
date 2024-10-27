@@ -45,3 +45,13 @@ func TestParseCymru(t *testing.T) {
 		t.Error("cdn detection")
 	}
 }
+
+func TestParseHostSearch(t *testing.T) {
+	subs, err := ParseHostSearch("admin.example.com,1.2.3.4\nwww.example.com,1.2.3.4\nother.org,5.6.7.8\n", "example.com")
+	if err != nil || len(subs) != 2 || subs[0] != "admin.example.com" {
+		t.Fatalf("%v %v", subs, err)
+	}
+	if _, err := ParseHostSearch("error API count exceeded\n", "example.com"); err == nil {
+		t.Error("quota error should be reported")
+	}
+}

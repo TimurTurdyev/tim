@@ -16,7 +16,7 @@ import (
 
 var errCrtStale = errors.New("не ответил, показан прошлый список имён")
 
-var errCrtBusy = errors.New("сервис перегружен и ответил не JSON; поддомены только из перебора частых имён")
+var errCrtBusy = errors.New("ответил не JSON")
 
 var errNoQuota = errors.New("дневной лимит бесплатного сервиса исчерпан")
 
@@ -91,10 +91,10 @@ func Collect(domain string, opt Options) *Report {
 			if c, ok := readCache(domain); ok && !opt.FreshCRT && time.Since(c.Fetched) < CacheTTL {
 				opt.Notify("логи сертификатов из кэша, обновить: --fresh")
 			} else {
-				opt.Notify("спрашиваю логи сертификатов, это до 45 секунд")
+				opt.Notify("спрашиваю логи сертификатов")
 			}
 		}
-		subs, related, cached, err := fromCRT(domain, opt.FreshCRT)
+		subs, related, cached, err := fromCRT(domain, opt.FreshCRT, !opt.SkipNeighbors)
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil && subs == nil {
@@ -231,42 +231,129 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// fromCRT: логи сертификатов. Сервис часто перегружен, поэтому ответ кладётся в кэш на сутки,
-// а при неудаче берётся даже просроченный кэш: старый список лучше пустого.
-func fromCRT(domain string, fresh bool) (subs, related []string, cached time.Time, err error) {
+// certSources: откуда берутся имена. CertSpotter быстрый, crt.sh глубже по истории, hostsearch видит то,
+// чего нет в сертификатах. Опрашиваются параллельно, результат объединяется.
+func certSources(domain string, withQuota bool) (subs, related []string, used []string, err error) {
+	type res struct {
+		name    string
+		subs    []string
+		related []string
+		err     error
+	}
+	jobs := []struct {
+		name string
+		fn   func(string) ([]string, []string, error)
+	}{
+		{"certspotter", fromCertSpotter},
+		{"crt.sh", crtOnce},
+	}
+	if withQuota {
+		jobs = append(jobs, struct {
+			name string
+			fn   func(string) ([]string, []string, error)
+		}{"hostsearch", fromHostSearch})
+	}
+	out := make([]res, len(jobs))
+	var wg sync.WaitGroup
+	for i, j := range jobs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s, r, e := j.fn(domain)
+			out[i] = res{name: j.name, subs: s, related: r, err: e}
+		}()
+	}
+	wg.Wait()
+	seenS, seenR := map[string]bool{}, map[string]bool{}
+	var fails []string
+	for _, r := range out {
+		if r.err != nil {
+			fails = append(fails, r.name+" ("+r.err.Error()+")")
+			continue
+		}
+		used = append(used, r.name)
+		for _, n := range r.subs {
+			if !seenS[n] {
+				seenS[n] = true
+				subs = append(subs, n)
+			}
+		}
+		for _, n := range r.related {
+			if !seenR[n] {
+				seenR[n] = true
+				related = append(related, n)
+			}
+		}
+	}
+	sort.Strings(subs)
+	sort.Strings(related)
+	if len(used) == 0 {
+		return nil, nil, nil, errors.New("источники не ответили: " + strings.Join(fails, ", "))
+	}
+	return subs, related, used, nil
+}
+
+// fromCRT: имена из источников с кэшем на сутки; при полном отказе берётся прошлый список.
+func fromCRT(domain string, fresh, withQuota bool) (subs, related []string, cached time.Time, err error) {
 	c, has := readCache(domain)
 	if has && !fresh && time.Since(c.Fetched) < CacheTTL {
 		return c.Subs, c.Related, c.Fetched, nil
 	}
-	for attempt := range 3 {
-		if attempt > 0 {
-			time.Sleep(time.Duration(attempt) * 2 * time.Second)
-		}
-		subs, related, err = crtOnce(domain)
-		if err == nil {
-			writeCache(domain, subs, related)
-			return subs, related, time.Time{}, nil
-		}
+	subs, related, _, err = certSources(domain, withQuota)
+	if err == nil {
+		writeCache(domain, subs, related)
+		return subs, related, time.Time{}, nil
 	}
 	if has {
-		// Сервис не ответил: старый список лучше пустого.
 		return c.Subs, c.Related, c.Fetched, errCrtStale
 	}
 	return nil, nil, time.Time{}, err
 }
 
-func crtOnce(domain string) ([]string, []string, error) {
-	c := &http.Client{Timeout: crtTimeout}
-	resp, err := c.Get("https://crt.sh/?q=" + url.QueryEscape("%."+domain) + "&output=json")
+func getJSON(target string, timeout time.Duration) ([]byte, error) {
+	c := &http.Client{Timeout: timeout}
+	resp, err := c.Get(target)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New(resp.Status)
+	}
+	return data, nil
+}
+
+func fromCertSpotter(domain string) ([]string, []string, error) {
+	data, err := getJSON("https://api.certspotter.com/v1/issuances?domain="+url.QueryEscape(domain)+
+		"&include_subdomains=true&expand=dns_names", 20*time.Second)
+	if err != nil {
 		return nil, nil, err
 	}
-	if resp.StatusCode != http.StatusOK || !bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
+	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
+		return nil, nil, errCrtBusy
+	}
+	return ParseCertSpotter(data, domain)
+}
+
+func fromHostSearch(domain string) ([]string, []string, error) {
+	data, err := getJSON("https://api.hackertarget.com/hostsearch/?q="+url.QueryEscape(domain), 20*time.Second)
+	if err != nil {
+		return nil, nil, err
+	}
+	subs, err := ParseHostSearch(string(data), domain)
+	return subs, nil, err
+}
+
+func crtOnce(domain string) ([]string, []string, error) {
+	data, err := getJSON("https://crt.sh/?q="+url.QueryEscape("%."+domain)+"&output=json", crtTimeout)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
 		return nil, nil, errCrtBusy
 	}
 	return ParseCRT(data, domain)
