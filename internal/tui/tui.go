@@ -19,9 +19,12 @@ type Item struct {
 	Hint  string
 }
 
+// Disabled: спрашивать нельзя, даже если терминал есть (--no-input, TIM_NO_INPUT).
+var Disabled = os.Getenv("TIM_NO_INPUT") != ""
+
 // Available: можно спросить человека. stdout может быть перехвачен шимом, поэтому смотрим только stdin.
 func Available() bool {
-	if !term.IsTerminal(os.Stdin.Fd()) {
+	if Disabled || !term.IsTerminal(os.Stdin.Fd()) {
 		return false
 	}
 	f, err := openTTY()
@@ -65,6 +68,9 @@ func MultiSelect(title string, items []Item, selected []bool) ([]int, error) {
 }
 
 func run(field huh.Field) error {
+	if !Available() {
+		return ErrNoTTY
+	}
 	tty, err := openTTY()
 	if err != nil {
 		return ErrNoTTY

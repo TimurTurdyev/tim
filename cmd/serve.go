@@ -84,7 +84,7 @@ func resolveProjects(args []string) ([]*config.Project, error) {
 			}
 			k, err := tui.Pick(a, items)
 			if err != nil {
-				return nil, pickErr(err)
+				return nil, pickErr(err, "проект", items)
 			}
 			out = append(out, &cfg.Projects[idx[k]])
 		default:

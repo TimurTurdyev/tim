@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/config"
@@ -23,7 +24,7 @@ func pickProject() (*config.Project, error) {
 	}
 	i, err := tui.Pick("проект", items)
 	if err != nil {
-		return nil, pickErr(err)
+		return nil, pickErr(err, "проект", items)
 	}
 	return &cfg.Projects[i], nil
 }
@@ -45,7 +46,7 @@ func pickAlias() (string, error) {
 	}
 	i, err := tui.Pick("ssh", items)
 	if err != nil {
-		return "", pickErr(err)
+		return "", pickErr(err, "алиас", items)
 	}
 	return aliases[i], nil
 }
@@ -60,9 +61,16 @@ func projectsBySSH(alias string) []string {
 	return out
 }
 
-func pickErr(err error) error {
+// pickErr: без терминала выбирать некому - печатаем варианты в stdout, чтобы скрипт мог их взять.
+func pickErr(err error, what string, items []tui.Item) error {
 	if errors.Is(err, tui.ErrCanceled) {
 		return errPickCanceled
+	}
+	if errors.Is(err, tui.ErrNoTTY) {
+		for _, it := range items {
+			fmt.Println(it.Title)
+		}
+		return ui.Errorf("выбрать не из чего без терминала: передай %s аргументом", what)
 	}
 	return err
 }

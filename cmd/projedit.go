@@ -60,7 +60,7 @@ func chooseProjects(found []config.Project, all bool) ([]config.Project, error) 
 	}
 	idx, err := tui.MultiSelect("Какие проекты добавить в реестр?", items, sel)
 	if err != nil {
-		return nil, pickErr(err)
+		return nil, pickErr(err, "--all", nil)
 	}
 	out := make([]config.Project, 0, len(idx))
 	for _, i := range idx {

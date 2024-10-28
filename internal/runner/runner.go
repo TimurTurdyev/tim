@@ -14,6 +14,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
+// NoInput: ни о чём не спрашивать, на подтверждения отвечать "нет" (--no-input, TIM_NO_INPUT).
+var NoInput = os.Getenv("TIM_NO_INPUT") != ""
+
 // DryRun печатает команды, меняющие систему, вместо запуска.
 var DryRun = os.Getenv("TIM_DRY_RUN") != ""
 
@@ -75,6 +78,10 @@ var ConfirmFunc func(question string) (yes, asked bool)
 func Confirm(question string) bool {
 	if DryRun {
 		return true
+	}
+	if NoInput {
+		ui.Println(ui.Dim(question + " - нет (без ввода)"))
+		return false
 	}
 	if ConfirmFunc != nil {
 		if yes, asked := ConfirmFunc(question); asked {
