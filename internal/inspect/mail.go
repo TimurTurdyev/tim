@@ -164,3 +164,42 @@ func MailCheck(domain string, selectors []string) *Mail {
 	wg.Wait()
 	return m
 }
+
+// Verdict: общая оценка почты домена. ok - принимает и защищена от подделок;
+// warn - работает, но есть чего не хватает; bad - есть серьёзная дыра или почты нет.
+func (m *Mail) Verdict() (level string, missing []string) {
+	level = "ok"
+	drop := func(l string) {
+		if l == "bad" || level == "ok" && l == "warn" {
+			level = l
+		}
+	}
+	for _, f := range append(append([]Finding{}, m.SPFF...), m.DMRF...) {
+		if f.Level == "bad" || f.Level == "warn" {
+			drop(f.Level)
+		}
+	}
+	if m.SPF == "" {
+		missing = append(missing, "SPF")
+	}
+	if m.DMARC == "" {
+		missing = append(missing, "DMARC")
+	}
+	if len(m.DKIM) == 0 {
+		// Селектор DKIM может быть любым: отсутствие на частых не доказывает, что подписи нет.
+		missing = append(missing, "DKIM на частых селекторах")
+		drop("warn")
+	}
+	switch {
+	case m.NullMX:
+		// Домен явно сказал, что почту не принимает: это осознанная настройка, а не дыра.
+		if m.SPF != "" && m.DMARC != "" {
+			return "ok", nil
+		}
+		drop("warn")
+	case len(m.MX) == 0:
+		missing = append(missing, "MX")
+		drop("bad")
+	}
+	return level, missing
+}

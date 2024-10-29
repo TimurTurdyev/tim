@@ -3,6 +3,7 @@ package cmd
 import (
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -30,11 +31,72 @@ func printFindings(fs []inspect.Finding) int {
 	return bad
 }
 
+var mailAll bool
+
+// mailAll: сводка по всем доменам реестра одной таблицей.
+func mailSummary() error {
+	type row struct {
+		domain, level string
+		missing       []string
+	}
+	var domains []string
+	for _, p := range cfg.Projects {
+		if p.URL != "" {
+			h, _ := hostPort(p.URL, "")
+			domains = append(domains, h)
+		}
+	}
+	if len(domains) == 0 {
+		return ui.Errorf("ни у одного проекта нет поля url: tim proj add --url")
+	}
+	sort.Strings(domains)
+	rows := make([]row, len(domains))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, d := range domains {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			m := inspect.MailCheck(d, inspect.DKIMSelectors)
+			level, missing := m.Verdict()
+			rows[i] = row{d, level, missing}
+		}()
+	}
+	wg.Wait()
+	bad := 0
+	ui.Println(ui.Dim(ui.Pad("ДОМЕН", 30) + " ИТОГ"))
+	for _, r := range rows {
+		switch r.level {
+		case "ok":
+			ui.Println(ui.Label(ui.Pad(r.domain, 30)) + " настроена верно")
+		case "warn":
+			bad++
+			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Warn("не хватает: "+strings.Join(r.missing, ", ")))
+		default:
+			bad++
+			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Bad("проблемы"+hint(r.missing)))
+		}
+	}
+	ui.Println(ui.Dim("подробно по домену: tim mail <домен>"))
+	if bad > 0 {
+		return ui.Errorf("требуют внимания: %d из %d", bad, len(rows))
+	}
+	return nil
+}
+
 var mailCmd = &cobra.Command{
-	Use:   "mail <домен> [--selector s]",
+	Use:   "mail [домен] [--all] [--selector s]",
 	Short: "Почта домена: MX, SPF, DKIM, DMARC и что с ними не так",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if mailAll {
+			return mailSummary()
+		}
+		if len(args) == 0 {
+			return ui.Errorf("укажи домен: tim mail example.com (или --all по доменам реестра)")
+		}
 		domain, _ := hostPort(args[0], "")
 		sels := append(append([]string{}, mailSelectors...), inspect.DKIMSelectors...)
 		m := inspect.MailCheck(domain, sels)
@@ -74,6 +136,16 @@ var mailCmd = &cobra.Command{
 		}
 		ui.Println(ui.Info("DMARC") + ui.Dim("  "+m.DMARC))
 		bad += printFindings(m.DMRF)
+		level, missing := m.Verdict()
+		ui.Println()
+		switch level {
+		case "ok":
+			ui.Println(ui.Label("итог ") + "почта настроена верно")
+		case "warn":
+			ui.Println(ui.Warn("итог ") + "работает, но не хватает: " + strings.Join(missing, ", "))
+		default:
+			ui.Println(ui.Bad("итог ") + "есть проблемы" + hint(missing))
+		}
 		if bad > 0 {
 			return ui.Errorf("ошибок: %d", bad)
 		}
@@ -82,6 +154,13 @@ var mailCmd = &cobra.Command{
 }
 
 // dkimRevoked: тег p= пустой - ключ отозван.
+func hint(missing []string) string {
+	if len(missing) == 0 {
+		return ""
+	}
+	return ": нет " + strings.Join(missing, ", ")
+}
+
 func dkimRevoked(rec string) bool {
 	for _, part := range strings.Split(rec, ";") {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
@@ -93,6 +172,7 @@ func dkimRevoked(rec string) bool {
 }
 
 func init() {
+	mailCmd.Flags().BoolVar(&mailAll, "all", false, "сводка по доменам реестра")
 	mailCmd.Flags().StringSliceVar(&mailSelectors, "selector", nil, "свой DKIM-селектор (можно несколько)")
 	root.AddCommand(mailCmd)
 }
