@@ -96,20 +96,29 @@ func TestSiteCheck(t *testing.T) {
 }
 
 func TestGitCheck(t *testing.T) {
+	ignored := EnvGit{Exists: true, Ignored: true}
 	cases := []struct {
 		g    sysinfo.GitState
+		env  EnvGit
 		want Level
 		text string
 	}{
-		{sysinfo.GitState{Branch: "main"}, OK, "чисто"},
-		{sysinfo.GitState{Branch: "main", Changes: 3}, OK, "3 изм"},
-		{sysinfo.GitState{Branch: "main", Ahead: 2}, Warn, "2 не отпр"},
-		{sysinfo.GitState{Branch: "main", Changes: 3, Ahead: 2}, Warn, "3 изм, 2 не отпр"},
+		{sysinfo.GitState{}, EnvGit{}, OK, "чисто"},
+		{sysinfo.GitState{Changes: 3}, ignored, OK, "3 изм"},
+		{sysinfo.GitState{Ahead: 2}, ignored, Warn, "2 не отпр"},
+		{sysinfo.GitState{Behind: 4}, ignored, Warn, "4 позади"},
+		{sysinfo.GitState{Changes: 3, Ahead: 2}, ignored, Warn, "3 изм, 2 не отпр"},
+		{sysinfo.GitState{}, EnvGit{Exists: true}, Warn, ".env не в ignore"},
+		// В репозитории - хуже всего, даже если игнор потом добавили: файл уже в истории.
+		{sysinfo.GitState{Changes: 1}, EnvGit{Exists: true, Tracked: true, Ignored: true}, Bad, ".env в git, 1 изм"},
 	}
 	for _, c := range cases {
-		got := GitCheck(c.g)
+		got := GitCheck(c.g, c.env)
 		if got.Level != c.want || got.Text != c.text {
-			t.Errorf("%+v -> %v %q, ожидали %v %q", c.g, got.Level, got.Text, c.want, c.text)
+			t.Errorf("%+v %+v -> %v %q, ожидали %v %q", c.g, c.env, got.Level, got.Text, c.want, c.text)
+		}
+		if got.Level == Bad && got.Detail == "" {
+			t.Errorf("%+v: нет пояснения", c.env)
 		}
 	}
 }
