@@ -77,6 +77,11 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
   Port and database come from the project's `.env`; `--remote` asks each server over ssh which domains its nginx
   serves and matches them to projects by deploy path or name (read-only); `--ssh` picks the ssh alias whose
   address matches the site. Only empty fields are filled unless `--force`.
+- `tim check [project|domain...] [--local] [--net] [--hours N]`: one sweep over everything. A row per project with
+  git state, site response, certificate expiry, mail verdict and domain registration expiry; worst rows first,
+  details under the row. An argument that is not in the registry but looks like a domain is checked as is.
+  `--local` skips the network, `--net` skips git. Below the table: dev servers left running and a full disk.
+  Exits non-zero when something is wrong, so it can be wired into shell startup.
 - `tim config`, `tim config init`, `tim proj scan [--add]`, `tim proj add [path] [--name]`, `tim proj rm <name>`.
 - `tim net check`: interface and gateway, internet, DNS, external IP, VPN, step by step with the first failure named.
 - `tim ports [--all]`: who listens on TCP ports, for how long and in which project; `tim port <n> [kill] [--force]`;
