@@ -252,3 +252,21 @@ func FileStem(dns []string, ips []net.IP) string {
 	}
 	return "local"
 }
+
+// LeafPaths: где лежат сертификат и ключ, выпущенные для имени через tim link.
+func LeafPaths(name string) (cert, key string) {
+	dir := filepath.Join(filepath.Dir(Root()), "certs")
+	stem := FileStem([]string{name}, nil)
+	return filepath.Join(dir, stem+".pem"), filepath.Join(dir, stem+"-key.pem")
+}
+
+// Save кладёт сертификат и ключ по путям, создавая папку. Ключ доступен только владельцу.
+func (l *Leaf) Save(certPath, keyPath string) error {
+	if err := os.MkdirAll(filepath.Dir(certPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(certPath, l.Cert, 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(keyPath, l.Key, 0o600)
+}
