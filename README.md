@@ -77,6 +77,11 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
   Port and database come from the project's `.env`; `--remote` asks each server over ssh which domains its nginx
   serves and matches them to projects by deploy path or name (read-only); `--ssh` picks the ssh alias whose
   address matches the site. Only empty fields are filled unless `--force`.
+- `tim setup [project|git url] [-y] [--name] [--in]`: take a freshly cloned project from checkout to running.
+  Copies `.env` from the example, installs php, js, go and python dependencies, and for Laravel generates the
+  app key, creates the sqlite file, runs migrations and links storage. Steps that are already done are skipped,
+  so running it on a working project does nothing. A git url instead of a name clones the repository into the
+  registry layout first and records the project. Migrations are confirmed separately.
 - `tim check [project|domain...] [--local] [--net] [--hours N]`: one sweep over everything. A row per project with
   git state, site response, certificate expiry, mail verdict and domain registration expiry; worst rows first,
   details under the row. An argument that is not in the registry but looks like a domain is checked as is.
