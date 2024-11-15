@@ -80,6 +80,7 @@ var examples = map[string]string{
 	"tim each":        "  tim each                   # задачи из конфига\n  tim each deps --list\n  tim each --marker go.mod -- go mod tidy",
 	"tim new":         "  tim new shop --stack laravel --in clients\n  tim new tool --stack go\n  tim new site --stack static   # свой шаблон из конфига",
 	"tim doctor":      "  tim doctor",
+	"tim env":         "  tim env shop\n  tim env diff shop          # против .env.example\n  tim env diff shop --server # состав ключей против сервера",
 	"tim setup":       "  tim setup shop             # доделать склонированный проект\n  tim setup git@github.com:me/shop.git\n  tim setup shop --dry-run   # посмотреть, что будет сделано",
 	"tim check":       "  tim check                  # все проекты реестра\n  tim check lpack            # один проект\n  tim check example.com      # домен не из реестра\n  tim check --local          # без сети",
 	"tim sync":        "  tim sync                   # порт и база из .env\n  tim sync --remote          # боевые домены из nginx на серверах\n  tim sync lpack --force",

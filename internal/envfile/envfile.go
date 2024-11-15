@@ -4,6 +4,7 @@ package envfile
 import (
 	"bufio"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -82,4 +83,75 @@ func Port(url string) string {
 		}
 	}
 	return p
+}
+
+// Delta: чем файл отличается от образца.
+type Delta struct {
+	Missing []string // есть в образце, нет в файле
+	Extra   []string // есть в файле, нет в образце
+	Sample  []string // секрет остался таким же, как в образце
+	Empty   []string // ключ есть, значение пустое, а в образце заполнено
+}
+
+// Clean: расхождений нет.
+func (d Delta) Clean() bool {
+	return len(d.Missing)+len(d.Extra)+len(d.Sample)+len(d.Empty) == 0
+}
+
+// Diff сравнивает .env с образцом. Значения сравниваются только у секретов:
+// у остальных ключей совпадение с образцом - обычное дело.
+func Diff(env, example map[string]string) Delta {
+	var d Delta
+	for k, want := range example {
+		got, ok := env[k]
+		switch {
+		case !ok:
+			d.Missing = append(d.Missing, k)
+		case got == "" && want != "":
+			d.Empty = append(d.Empty, k)
+		case Secret(k) && got == want && !placeholder(want):
+			d.Sample = append(d.Sample, k)
+		}
+	}
+	for k := range env {
+		if _, ok := example[k]; !ok {
+			d.Extra = append(d.Extra, k)
+		}
+	}
+	sort.Strings(d.Missing)
+	sort.Strings(d.Extra)
+	sort.Strings(d.Sample)
+	sort.Strings(d.Empty)
+	return d
+}
+
+// placeholder: значение, которое ничего не скрывает, - у Laravel так пишут "пароля нет".
+func placeholder(v string) bool {
+	switch strings.ToLower(v) {
+	case "", "null", "none", "false", "true", "nil", "-":
+		return true
+	}
+	return false
+}
+
+// Keys: отсортированные ключи набора.
+func Keys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// OnlyIn: ключи, которые есть в a и нет в b.
+func OnlyIn(a, b map[string]string) []string {
+	var out []string
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

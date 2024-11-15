@@ -77,6 +77,9 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
   Port and database come from the project's `.env`; `--remote` asks each server over ssh which domains its nginx
   serves and matches them to projects by deploy path or name (read-only); `--ssh` picks the ssh alias whose
   address matches the site. Only empty fields are filled unless `--force`.
+- `tim env diff [project] [--server]`: what the local `.env` is missing. Against `.env.example`: keys absent,
+  keys left empty, secrets still holding the sample value, keys not documented in the example. With `--server`
+  only the key names are compared against the `.env` on the project's server - values are never requested.
 - `tim setup [project|git url] [-y] [--name] [--in]`: take a freshly cloned project from checkout to running.
   Copies `.env` from the example, installs php, js, go and python dependencies, and for Laravel generates the
   app key, creates the sqlite file, runs migrations and links storage. Steps that are already done are skipped,
