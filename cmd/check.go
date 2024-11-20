@@ -187,6 +187,12 @@ var checkCmd = &cobra.Command{
 	Use:   "check [проект...]",
 	Short: "Обход хозяйства: git, сайт, сертификат, почта, срок домена по всем проектам",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		switch {
+		case checkInstall:
+			return installCheck()
+		case checkUninstall:
+			return uninstallCheck()
+		}
 		projects, err := checkProjects(args)
 		if err != nil {
 			return err
@@ -218,6 +224,9 @@ var checkCmd = &cobra.Command{
 		}
 		health.Sort(rows)
 		printCheck(rows)
+		if checkNotify {
+			notifyProblems(rows)
+		}
 		ok, warn, bad := health.Counts(rows)
 		ui.Println(ui.Dim(fmt.Sprintf("всего %d: ок %d, внимание %d", len(rows), ok, warn)))
 		if lines := checkMachine(); len(lines) > 0 {
@@ -237,5 +246,9 @@ func init() {
 	checkCmd.Flags().BoolVar(&checkLocal, "local", false, "только локальные проверки, без сети")
 	checkCmd.Flags().BoolVar(&checkNet, "net", false, "только сетевые проверки")
 	checkCmd.Flags().Float64Var(&checkHours, "hours", 8, "с какого возраста dev-сервер считается забытым")
+	checkCmd.Flags().BoolVar(&checkInstall, "install", false, "обходить каждый день и присылать уведомление, если что-то плохо")
+	checkCmd.Flags().BoolVar(&checkUninstall, "uninstall", false, "убрать ежедневный обход")
+	checkCmd.Flags().BoolVar(&checkNotify, "notify", false, "уведомление системы, если есть плохие строки")
+	checkCmd.Flags().StringVar(&checkAt, "at", "09:30", "во сколько обходить (с --install)")
 	root.AddCommand(checkCmd)
 }
