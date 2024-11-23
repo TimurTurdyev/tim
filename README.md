@@ -80,6 +80,14 @@ with examples, `man tim` and `man tim-<command>` the same as man pages (installe
 - `tim env diff [project] [--server]`: what the local `.env` is missing. Against `.env.example`: keys absent,
   keys left empty, secrets still holding the sample value, keys not documented in the example. With `--server`
   only the key names are compared against the `.env` on the project's server - values are never requested.
+- `tim host`, `tim host add <name...> [--ip] [--profile]`, `tim host rm`, `tim host on|off <profile>`,
+  `tim host check <name>`: local names in `/etc/hosts`. tim keeps its own block between `# tim:begin` and
+  `# tim:end` and never touches anything outside it; the previous file is kept as `/etc/hosts.tim-backup`.
+  Entries belong to profiles, so a whole set of names can be switched off without deleting it. `TIM_HOSTS`
+  points at a different file.
+- `tim host resolver [tld] [--off]`: `/etc/hosts` only knows exact names, so `a.shop.test` cannot be put there.
+  The resolver solves the whole zone: dnsmasq answers 127.0.0.1 for any name under it and `/etc/resolver/<tld>`
+  tells the system to ask dnsmasq about that zone. Requires dnsmasq; without an argument it lists configured zones.
 - `tim cert new <domain|ip...> [--dir] [--days] [--exact]`: issue a certificate for local development, signed by
   tim's own CA in `~/.local/share/tim/ca` (`TIM_CAROOT` overrides). Every domain also gets `*.domain`, because a
   wildcard does not cover the domain itself. `tim cert ca` shows the CA and whether it is trusted;
