@@ -59,7 +59,7 @@ var configInitCmd = &cobra.Command{
 		case exists && initMerge:
 			c = cfg
 		case exists && !initYes:
-			if !confirm("конфиг " + config.Path() + " уже есть, перезаписать? (дополнить: --merge)") {
+			if !runner.Confirm("конфиг " + config.Path() + " уже есть, перезаписать? (дополнить: --merge)") {
 				return nil
 			}
 		}
@@ -158,7 +158,7 @@ var configMigrateCmd = &cobra.Command{
 			return err
 		}
 		if _, err := os.Stat(config.Path()); err == nil {
-			if !confirm("конфиг " + config.Path() + " уже есть, перезаписать?") {
+			if !runner.Confirm("конфиг " + config.Path() + " уже есть, перезаписать?") {
 				return nil
 			}
 		}

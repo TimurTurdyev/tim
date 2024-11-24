@@ -11,6 +11,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -50,10 +51,6 @@ case ";$PROMPT_COMMAND;" in *";_tim_prompt;"*) ;; *) PROMPT_COMMAND="_tim_prompt
 `
 
 // shellQuote: значение в одинарных кавычках; кавычка внутри закрывает строку, экранируется и открывает её снова.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 func validAlias(name string) bool {
 	if name == "" || name == "tim" {
 		return false
@@ -94,7 +91,7 @@ func shellScript(shell string) (string, error) {
 	sort.Strings(names)
 	for _, n := range names {
 		if validAlias(n) {
-			fmt.Fprintf(&b, "alias %s=%s\n", n, shellQuote(cfg.Shell.Aliases[n]))
+			fmt.Fprintf(&b, "alias %s=%s\n", n, shellq.Quote(cfg.Shell.Aliases[n]))
 		}
 	}
 	switch {

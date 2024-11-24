@@ -125,7 +125,7 @@ func killRows(rows []portRow) error {
 		sig = "-KILL"
 	}
 	for _, r := range rows {
-		if !confirm(fmt.Sprintf("остановить %s (pid %s)?", r.Proc.Command, r.Listener.PID)) {
+		if !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", r.Proc.Command, r.Listener.PID)) {
 			continue
 		}
 		if err := runner.Run("kill", sig, r.Listener.PID); err != nil {

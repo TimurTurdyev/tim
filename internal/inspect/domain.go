@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 type Domain struct {
@@ -190,4 +192,18 @@ func parseWhoisDate(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// Registrable: домен, который регистрируют (по таблице публичных суффиксов),
+// для запроса RDAP и whois.
+func Registrable(host string) string {
+	host = strings.TrimSuffix(host, ".")
+	if d, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return d
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) <= 2 {
+		return host
+	}
+	return strings.Join(parts[len(parts)-2:], ".")
 }

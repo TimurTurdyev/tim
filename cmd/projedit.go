@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/scan"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -104,7 +105,7 @@ var projScanCmd = &cobra.Command{
 		if err != nil || len(chosen) == 0 {
 			return err
 		}
-		if scanAdd && !confirm("добавить в реестр "+strconv.Itoa(len(chosen))+"?") {
+		if scanAdd && !runner.Confirm("добавить в реестр "+strconv.Itoa(len(chosen))+"?") {
 			return nil
 		}
 		n := addAll(cfg, chosen)
@@ -170,7 +171,7 @@ var projRmCmd = &cobra.Command{
 		if _, ok := cfg.Project(args[0]); !ok {
 			return ui.Errorf("нет проекта %s в реестре", args[0])
 		}
-		if !confirm("убрать " + args[0] + " из реестра?") {
+		if !runner.Confirm("убрать " + args[0] + " из реестра?") {
 			return nil
 		}
 		cfg.RemoveProject(args[0])

@@ -31,7 +31,7 @@ func domainOf(arg string) (string, error) {
 	if arg != "" {
 		if p, ok := cfg.Project(arg); ok && p.URL != "" {
 			h, _ := hostPort(p.URL, "")
-			return registrable(h), nil
+			return inspect.Registrable(h), nil
 		}
 		h, _ := hostPort(arg, "")
 		if !strings.Contains(h, ".") {

@@ -26,38 +26,6 @@ func dnsmasqDir() string {
 func resolverPath(tld string) string { return filepath.Join("/etc/resolver", tld) }
 func dnsmasqPath(tld string) string  { return filepath.Join(dnsmasqDir(), "tim-"+tld+".conf") }
 
-// writeRoot пишет файл, который принадлежит системе: через временный файл и sudo.
-func writeRoot(path, content string) error {
-	if runner.DryRun {
-		ui.Println(ui.Dim("$ # записал бы в " + path + ": " + strings.TrimSpace(content)))
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-		if err := os.WriteFile(path, []byte(content), 0o644); err == nil {
-			return nil
-		}
-	}
-	tmp := filepath.Join(os.TempDir(), "tim-"+filepath.Base(path))
-	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tmp) }()
-	if err := runner.Sudo("mkdir", "-p", filepath.Dir(path)); err != nil {
-		return err
-	}
-	return runner.Sudo("cp", tmp, path)
-}
-
-func removeRoot(path string) error {
-	if _, err := os.Stat(path); err != nil && !runner.DryRun {
-		return nil
-	}
-	if os.Remove(path) == nil {
-		return nil
-	}
-	return runner.Sudo("rm", "-f", path)
-}
-
 // restartDnsmasq: dnsmasq слушает 53-й порт, поэтому запускается от root.
 func restartDnsmasq() error {
 	if runtime.GOOS == "darwin" {
@@ -85,10 +53,10 @@ var hostResolverCmd = &cobra.Command{
 			return ui.Errorf("нужна зона целиком, например test или localhost")
 		}
 		if resolverOff {
-			if err := removeRoot(resolverPath(tld)); err != nil {
+			if err := runner.RemoveRoot(resolverPath(tld)); err != nil {
 				return err
 			}
-			if err := removeRoot(dnsmasqPath(tld)); err != nil {
+			if err := runner.RemoveRoot(dnsmasqPath(tld)); err != nil {
 				return err
 			}
 			ui.Println(ui.Label("выключено") + ui.Dim("  зона "+tld))
@@ -105,10 +73,10 @@ var hostResolverCmd = &cobra.Command{
 		if !runner.Confirm("настроить зону " + tld + "?") {
 			return ui.Errorf("отменено")
 		}
-		if err := writeRoot(dnsmasqPath(tld), "address=/."+tld+"/127.0.0.1\n"); err != nil {
+		if err := runner.WriteRoot(dnsmasqPath(tld), []byte("address=/."+tld+"/127.0.0.1\n")); err != nil {
 			return err
 		}
-		if err := writeRoot(resolverPath(tld), "nameserver 127.0.0.1\n"); err != nil {
+		if err := runner.WriteRoot(resolverPath(tld), []byte("nameserver 127.0.0.1\n")); err != nil {
 			return err
 		}
 		if err := restartDnsmasq(); err != nil {

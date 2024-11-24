@@ -10,6 +10,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/each"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -91,7 +92,7 @@ var eachCmd = &cobra.Command{
 			if dash < 0 || dash == len(args) {
 				return ui.Errorf("команду пиши после --: tim each --marker go.mod -- go mod tidy")
 			}
-			t = &config.Task{Name: "разово", Marker: eachMarker, Run: shellJoin(args[dash:])}
+			t = &config.Task{Name: "разово", Marker: eachMarker, Run: shellq.Join(args[dash:])}
 			names = args[:dash]
 		case len(args) == 0:
 			if len(cfg.Tasks) == 0 {
@@ -177,19 +178,6 @@ var eachCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-const safeShell = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./=:@,+%"
-
-func shellJoin(args []string) string {
-	out := make([]string, len(args))
-	for i, a := range args {
-		out[i] = a
-		if a == "" || strings.ContainsFunc(a, func(r rune) bool { return !strings.ContainsRune(safeShell, r) }) {
-			out[i] = shellQuote(a)
-		}
-	}
-	return strings.Join(out, " ")
 }
 
 func tail(s string, n int) string {

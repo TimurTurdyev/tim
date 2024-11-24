@@ -373,7 +373,7 @@ func routeClean(all bool) (int, error) {
 	for _, r := range stale {
 		ui.Println(ui.Warn(ui.Pad(r.Dest, 20)) + " через " + r.Gateway + " " + ui.Dim(r.Iface+", сейчас шлюз "+gw))
 	}
-	if !confirm("снять эти маршруты?") {
+	if !runner.Confirm("снять эти маршруты?") {
 		return 0, nil
 	}
 	for _, r := range stale {

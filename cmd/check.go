@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,93 +51,16 @@ func checkProjects(args []string) ([]*config.Project, error) {
 	return out, nil
 }
 
-func checkGit(dir string) health.Check {
-	c := health.Check{Name: "git", Level: health.Skip, Text: "-"}
+// gitCheck: состояние клона. Сам запуск git остаётся здесь, решение об уровне - в health.
+func gitCheck(dir string) health.Check {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-		return c
+		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
 	}
 	g, ok := gitState(dir)
 	if !ok {
-		return c
+		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
 	}
-	var parts []string
-	if g.Changes > 0 {
-		parts = append(parts, strconv.Itoa(g.Changes)+" изм")
-	}
-	if g.Ahead > 0 {
-		parts = append(parts, strconv.Itoa(g.Ahead)+" не отпр")
-	}
-	if len(parts) == 0 {
-		c.Level, c.Text = health.OK, "чисто"
-		return c
-	}
-	// Незакоммиченное - обычное состояние работы, а вот неотправленное живёт только на этой машине.
-	c.Level, c.Text = health.OK, strings.Join(parts, ", ")
-	if g.Ahead > 0 {
-		c.Level = health.Warn
-	}
-	return c
-}
-
-func checkSite(url string) health.Check {
-	c := health.Check{Name: "сайт", Level: health.OK}
-	page, err := inspect.HTTP(url)
-	if err != nil {
-		c.Level, c.Text, c.Detail = health.Bad, "нет ответа", "сайт не отвечает: "+shortErr(err)
-		return c
-	}
-	c.Text = strconv.Itoa(page.Status)
-	switch {
-	case page.Status >= 500:
-		c.Level, c.Detail = health.Bad, fmt.Sprintf("сайт отвечает %d", page.Status)
-	case page.Status >= 400:
-		c.Level, c.Detail = health.Warn, fmt.Sprintf("сайт отвечает %d", page.Status)
-	}
-	return c
-}
-
-func checkCert(host string) health.Check {
-	info, err := inspect.Cert(host, "443")
-	if err != nil {
-		return health.Check{Name: "сертификат", Level: health.Bad, Text: "нет", Detail: "сертификат не получен: " + shortErr(err)}
-	}
-	c := health.Deadline("сертификат", info.Leaf().NotAfter, 21, 7)
-	if info.VerifyErr != nil {
-		c.Level = health.Bad
-		c.Detail = "сертификат не проходит проверку: " + shortErr(info.VerifyErr)
-	}
-	return c
-}
-
-func checkMail(domain string) health.Check {
-	m := inspect.MailCheck(domain, inspect.DKIMSelectors)
-	level, reasons := m.Verdict()
-	c := health.Check{Name: "почта"}
-	switch level {
-	case "bad":
-		c.Level, c.Text = health.Bad, "плохо"
-	case "warn":
-		c.Level, c.Text = health.Warn, "неполно"
-	default:
-		c.Level, c.Text = health.OK, "ок"
-	}
-	if c.Level >= health.Warn && len(reasons) > 0 {
-		c.Detail = "почта: " + strings.Join(reasons, "; ")
-	}
-	return c
-}
-
-func checkDomain(domain string) health.Check {
-	d, err := health.Registration(domain)
-	if err != nil {
-		return health.Check{Name: "домен", Level: health.Skip, Text: "-"}
-	}
-	if d.Expires.IsZero() {
-		return health.Check{Name: "домен", Level: health.Skip, Text: "-"}
-	}
-	c := health.Deadline("регистрация домена", d.Expires, 30, 10)
-	c.Name = "домен"
-	return c
+	return health.GitCheck(g)
 }
 
 // checkRow: все проверки одного проекта. Сетевые идут параллельно.
@@ -152,30 +74,30 @@ func checkRow(p *config.Project) health.Row {
 	}
 	var wg sync.WaitGroup
 	if !checkNet {
-		add(checkGit(cfg.ProjectDir(p)))
+		add(gitCheck(cfg.ProjectDir(p)))
 	}
 	host, _ := hostPort(p.URL, "")
 	if !checkLocal && p.URL != "" && host != "" && !fill.Local(host) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			add(checkSite(p.URL))
+			add(health.Site(p.URL))
 		}()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			add(checkCert(host))
+			add(health.Cert(host))
 		}()
-		base := registrable(host)
+		base := inspect.Registrable(host)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			add(checkMail(base))
+			add(health.Mail(base))
 		}()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			add(checkDomain(base))
+			add(health.DomainReg(base))
 		}()
 	}
 	wg.Wait()
