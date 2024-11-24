@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
 // errPickCanceled: человек закрыл пикер, команда тихо завершается.
@@ -18,15 +20,21 @@ func pickProject() (*config.Project, error) {
 	if len(cfg.Projects) == 0 {
 		return nil, ui.Errorf("реестр пуст: tim config init или tim proj scan")
 	}
-	items := make([]tui.Item, len(cfg.Projects))
+	names := make([]string, len(cfg.Projects))
 	for i, p := range cfg.Projects {
-		items[i] = tui.Item{Title: p.Name, Hint: p.Path}
+		names[i] = p.Name
 	}
-	i, err := tui.Pick("проект", items)
+	// Недавние сверху: без запроса это порядок списка, с запросом - порядок при равных очках.
+	order := visits.Order(names, visits.Load(), time.Now())
+	items := make([]tui.Item, len(order))
+	for k, i := range order {
+		items[k] = tui.Item{Title: cfg.Projects[i].Name, Hint: cfg.Projects[i].Path}
+	}
+	k, err := tui.Pick("проект", items)
 	if err != nil {
 		return nil, pickErr(err, "проект", items)
 	}
-	return &cfg.Projects[i], nil
+	return &cfg.Projects[order[k]], nil
 }
 
 func pickAlias() (string, error) {
