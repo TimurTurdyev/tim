@@ -32,6 +32,7 @@ TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие
 	},
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		tui.Disabled = tui.Disabled || runner.NoInput
 		var err error
 		cfg, err = config.Load()
 		if err != nil {
@@ -43,6 +44,7 @@ TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие
 
 func init() {
 	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
+	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
 	root.CompletionOptions.HiddenDefaultCmd = true
 	runner.ConfirmFunc = func(q string) (bool, bool) {
 		if !tui.Available() {

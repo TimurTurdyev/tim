@@ -81,7 +81,7 @@ var configInitCmd = &cobra.Command{
 			}
 			w, err := tui.Input("Подпапка с клоном внутри папки проекта (пусто, если клон лежит прямо в ней)", guess)
 			if err != nil {
-				return pickErr(err)
+				return pickErr(err, "--wrapper", nil)
 			}
 			c.Wrapper = w
 		}
@@ -113,7 +113,7 @@ func askRoot(current string, interactive bool) (string, error) {
 	} else if interactive {
 		r, err := tui.Input("Корень, под которым лежат проекты", current)
 		if err != nil {
-			return "", pickErr(err)
+			return "", pickErr(err, "--root", nil)
 		}
 		root = r
 	}

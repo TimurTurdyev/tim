@@ -32,6 +32,10 @@ type picker struct {
 
 // Pick показывает список с fuzzy-поиском и возвращает индекс выбранного элемента.
 func Pick(prompt string, items []Item) (int, error) {
+	// Без этой проверки пикер в скрипте с перенаправленным stdin откроет /dev/tty и будет ждать.
+	if !Available() {
+		return -1, ErrNoTTY
+	}
 	tty, err := openTTY()
 	if err != nil {
 		return -1, ErrNoTTY
