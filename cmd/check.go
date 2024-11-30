@@ -51,6 +51,19 @@ func checkProjects(args []string) ([]*config.Project, error) {
 	return out, nil
 }
 
+// envGit: два вопроса к git про .env; ответ "нет" при любой ошибке, чтобы не шуметь.
+func envGit(dir string) health.EnvGit {
+	var e health.EnvGit
+	if _, err := os.Stat(filepath.Join(dir, ".env")); err == nil {
+		e.Exists = true
+		_, err := runner.Output("git", "-C", dir, "check-ignore", "-q", ".env")
+		e.Ignored = err == nil
+	}
+	_, err := runner.Output("git", "-C", dir, "ls-files", "--error-unmatch", ".env")
+	e.Tracked = err == nil
+	return e
+}
+
 // gitCheck: состояние клона. Сам запуск git остаётся здесь, решение об уровне - в health.
 func gitCheck(dir string) health.Check {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
@@ -60,7 +73,7 @@ func gitCheck(dir string) health.Check {
 	if !ok {
 		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
 	}
-	return health.GitCheck(g)
+	return health.GitCheck(g, envGit(dir))
 }
 
 // checkRow: все проверки одного проекта. Сетевые идут параллельно.
@@ -108,7 +121,7 @@ var checkCols = []struct {
 	name  string
 	width int
 }{
-	{"git", 18},
+	{"git", 26},
 	{"сайт", 12},
 	{"сертификат", 14},
 	{"почта", 8},

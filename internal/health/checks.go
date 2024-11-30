@@ -18,8 +18,16 @@ const (
 	DomainBadDays  = 10
 )
 
+// EnvGit: что git знает про .env проекта.
+type EnvGit struct {
+	Exists  bool // файл есть в папке
+	Tracked bool // лежит в репозитории
+	Ignored bool // попадает под .gitignore
+}
+
 // GitCheck: незакоммиченное - обычное состояние работы, а неотправленное живёт только на этой машине.
-func GitCheck(g sysinfo.GitState) Check {
+// .env в репозитории - утечка секретов, хуже всего остального в колонке.
+func GitCheck(g sysinfo.GitState, env EnvGit) Check {
 	c := Check{Name: "git", Level: OK}
 	var parts []string
 	if g.Changes > 0 {
@@ -27,15 +35,29 @@ func GitCheck(g sysinfo.GitState) Check {
 	}
 	if g.Ahead > 0 {
 		parts = append(parts, strconv.Itoa(g.Ahead)+" не отпр")
+		c.Level = Warn
+	}
+	if g.Behind > 0 {
+		parts = append(parts, strconv.Itoa(g.Behind)+" позади")
+		c.Level = Warn
+	}
+	switch {
+	case env.Tracked:
+		parts = append([]string{".env в git"}, parts...)
+		c.Level = Bad
+		c.Detail = ".env лежит в репозитории: секреты уже в истории, их надо сменить, а файл убрать (git rm --cached .env)"
+	case env.Exists && !env.Ignored:
+		parts = append([]string{".env не в ignore"}, parts...)
+		if c.Level < Warn {
+			c.Level = Warn
+		}
+		c.Detail = ".env не в .gitignore: один git add . - и секреты в репозитории"
 	}
 	if len(parts) == 0 {
 		c.Text = "чисто"
 		return c
 	}
 	c.Text = strings.Join(parts, ", ")
-	if g.Ahead > 0 {
-		c.Level = Warn
-	}
 	return c
 }
 
