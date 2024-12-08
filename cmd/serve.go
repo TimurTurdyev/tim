@@ -201,6 +201,11 @@ var serveCmd = &cobra.Command{
 					line += ui.Dim("  " + hint)
 				}
 				ui.Println(line)
+				if serveOpen {
+					go openWhenReady(f.port, f.url())
+				}
+			} else if serveOpen {
+				go openWhenReady(port, "http://localhost:"+port)
 			}
 			return runner.ExecIn(sp.dir, sp.cmd.Env, sp.cmd.Name, sp.cmd.Args...)
 		}
@@ -252,7 +257,12 @@ func serveBackground(list []*config.Project, port string) error {
 				ui.Println(ui.Bad("  https-прокси: " + err.Error()))
 			} else {
 				ui.Println("  " + f.url())
+				if serveOpen {
+					openWhenReady(f.port, f.url())
+				}
 			}
+		} else if serveOpen {
+			openWhenReady(ports[i], "http://localhost:"+ports[i])
 		}
 		if runner.DryRun {
 			continue
