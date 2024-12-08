@@ -188,6 +188,20 @@ var serveCmd = &cobra.Command{
 				return err
 			}
 			ui.Println(ui.Label(p.Name) + "  " + ui.Dim(sp.note+", порт "+port+", "+sp.dir))
+			if serveHTTPS {
+				f, err := planHTTPS(p)
+				if err != nil {
+					return err
+				}
+				if err := startHTTPSInline(f, port); err != nil {
+					return err
+				}
+				line := "  " + f.url()
+				if hint := httpsHint(registry.Stack(sp.dir)); hint != "" {
+					line += ui.Dim("  " + hint)
+				}
+				ui.Println(line)
+			}
 			return runner.ExecIn(sp.dir, sp.cmd.Env, sp.cmd.Name, sp.cmd.Args...)
 		}
 		return serveBackground(list, port)
@@ -231,6 +245,15 @@ func serveBackground(list []*config.Project, port string) error {
 			line += "  " + ui.Warn("вместо "+wanted[i]+" (занят); APP_URL мог остаться на "+wanted[i])
 		}
 		ui.Println(line)
+		if serveHTTPS {
+			if f, err := planHTTPS(p); err != nil {
+				ui.Println(ui.Warn("  " + err.Error()))
+			} else if err := startHTTPSBackground(p, f, ports[i]); err != nil {
+				ui.Println(ui.Bad("  https-прокси: " + err.Error()))
+			} else {
+				ui.Println("  " + f.url())
+			}
+		}
 		if runner.DryRun {
 			continue
 		}
@@ -286,11 +309,13 @@ var serveStopCmd = &cobra.Command{
 		want := first(args)
 		var targets []run.State
 		for _, s := range run.ListStates() {
-			if want == "all" || want == s.Name || want == "" {
+			// Прокси --https живёт рядом с сервером под именем <проект>.https и гасится вместе с ним.
+			if want == "all" || want == s.Name || s.Name == want+".https" || want == "" {
 				targets = append(targets, s)
 			}
 		}
-		if want == "" && len(targets) > 1 {
+		withProxy := len(targets) == 2 && targets[1].Name == targets[0].Name+".https"
+		if want == "" && len(targets) > 1 && !withProxy {
 			return ui.Errorf("фоновых несколько: tim serve stop <имя> или all")
 		}
 		if len(targets) == 0 {
