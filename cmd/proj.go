@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
 var projCmd = &cobra.Command{
@@ -126,6 +128,7 @@ var goCmd = &cobra.Command{
 		if _, err := os.Stat(dir); err != nil {
 			return ui.Errorf("папки нет: %s", dir)
 		}
+		visits.Record(p.Name, time.Now())
 		if goPrint {
 			fmt.Println(dir)
 			return nil
