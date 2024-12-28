@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Kinds: имена папок, которые можно пересоздать установкой или сборкой.
@@ -70,4 +71,21 @@ func Summarize(items []Item, top int, min int64) Summary {
 		}
 	}
 	return s
+}
+
+// Stale: папки, которых не касались дольше days дней, не меньше min, крупные первыми.
+// touched - когда последний раз трогали проект, которому принадлежит папка; без отметки папку
+// не предлагаем: лучше промолчать, чем удалить зависимости живого проекта.
+func Stale(items []Item, touched map[string]time.Time, now time.Time, days int, min int64) []Item {
+	limit := now.AddDate(0, 0, -days)
+	var out []Item
+	for _, it := range items {
+		t, ok := touched[it.Path]
+		if !ok || t.IsZero() || t.After(limit) || it.Size < min {
+			continue
+		}
+		out = append(out, it)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	return out
 }
