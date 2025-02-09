@@ -16,6 +16,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/diskuse"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -23,7 +24,102 @@ var (
 	diskMin   string
 	diskClean bool
 	diskDays  int
+	diskSys   bool
 )
+
+// topCaches: самые большие подпапки общего кеша, кроме тех, что уже показаны отдельной строкой.
+func topCaches(dir string, known map[string]int64, n int) []diskuse.Item {
+	if known == nil {
+		known = map[string]int64{}
+	}
+	out, _ := runner.Output("sh", "-c", "du -sk "+shellq.Quote(dir)+"/* 2>/dev/null")
+	var items []diskuse.Item
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.SplitN(line, "\t", 2)
+		if len(f) != 2 {
+			continue
+		}
+		name := filepath.Base(f[1])
+		if _, shown := known[diskuse.Caches+"/"+name]; shown {
+			continue
+		}
+		kb, _ := strconv.ParseInt(f[0], 10, 64)
+		items = append(items, diskuse.Item{Path: name, Size: kb * 1024})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Size > items[j].Size })
+	return items[:min(n, len(items))]
+}
+
+// diskSystem: куда делось место кроме проектов. Только показ и команды, ничего не удаляет.
+func diskSystem() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	paths := diskuse.AllPaths(diskuse.SystemPlaces)
+	sizes := map[string]int64{}
+	var mu sync.Mutex
+	sem := make(chan struct{}, 6)
+	var wg sync.WaitGroup
+	for _, rel := range paths {
+		full := filepath.Join(home, rel)
+		if _, err := os.Stat(full); err != nil {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			// du без прав на часть подпапок пишет ошибки, но итог печатает - его и берём.
+			out, _ := runner.Output("du", "-sk", full)
+			kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
+			mu.Lock()
+			sizes[rel] = kb * 1024
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	list := diskuse.SummarizeSystem(diskuse.SystemPlaces, sizes)
+	var total int64
+	for _, m := range list {
+		if m.Size < 50<<20 {
+			continue
+		}
+		total += m.Size
+		line := ui.Label(ui.Pad(fmtBytes(m.Size), 10)) + ui.Pad(m.Name, 28)
+		if m.Clean != "" {
+			line += ui.Dim(m.Clean)
+		}
+		ui.Println(line)
+		switch m.Paths[0] {
+		case diskuse.Caches:
+			for _, sub := range topCaches(filepath.Join(home, diskuse.Caches), sizes, 3) {
+				ui.Println(ui.Dim("          " + ui.Pad(fmtBytes(sub.Size), 10) + sub.Path))
+			}
+		case diskuse.Caches + "/JetBrains":
+			subs := topCaches(filepath.Join(home, m.Paths[0]), nil, 20)
+			names := make([]string, len(subs))
+			for i, sub := range subs {
+				names[i] = sub.Path
+			}
+			old := diskuse.OldIDEVersions(names)
+			for _, sub := range subs {
+				if sub.Size < 50<<20 {
+					continue
+				}
+				line := "          " + ui.Pad(fmtBytes(sub.Size), 10) + ui.Pad(sub.Path, 18)
+				if old[sub.Path] {
+					ui.Println(ui.Dim(line) + ui.Warn("старая версия, можно удалить"))
+					continue
+				}
+				ui.Println(ui.Dim(line))
+			}
+		}
+	}
+	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  места крупнее 50 MB; tim ничего не удаляет"))
+	return nil
+}
 
 // lastTouched: когда трогали проект - последний коммит или изменение в папке над найденной, что позже.
 // Папки вне реестра не получают отметки и в очистку не попадают.
@@ -116,6 +212,9 @@ var diskCmd = &cobra.Command{
 	Short: "Сколько места заняли node_modules, vendor, venv и сборки по проектам; --clean убирает заброшенное",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if diskSys {
+			return diskSystem()
+		}
 		root := cfg.Dev
 		if len(args) > 0 {
 			root = config.ExpandHome(args[0])
@@ -174,5 +273,6 @@ func init() {
 	diskCmd.Flags().StringVar(&diskMin, "min", "50M", "не показывать папки меньше")
 	diskCmd.Flags().BoolVar(&diskClean, "clean", false, "предложить убрать в Корзину папки заброшенных проектов")
 	diskCmd.Flags().IntVar(&diskDays, "days", 60, "сколько дней без изменений считать заброшенным")
+	diskCmd.Flags().BoolVar(&diskSys, "system", false, "куда делось место кроме проектов: кеши, образы, Корзина")
 	root.AddCommand(diskCmd)
 }
