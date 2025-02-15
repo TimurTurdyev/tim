@@ -57,7 +57,7 @@ type Report struct {
 	Trackers []Tracker `json:"trackers,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
 	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
-	CRTCached time.Time `json:"crt_cached"`
+	CRTCached time.Time `json:"crt_cached,omitzero"`
 }
 
 // Options: что собирать.

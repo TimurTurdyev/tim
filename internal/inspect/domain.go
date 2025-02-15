@@ -15,8 +15,8 @@ import (
 
 type Domain struct {
 	Registrar   string    `json:"registrar,omitempty"`
-	Created     time.Time `json:"created"`
-	Expires     time.Time `json:"expires"`
+	Created     time.Time `json:"created,omitzero"`
+	Expires     time.Time `json:"expires,omitzero"`
 	Nameservers []string  `json:"nameservers,omitempty"`
 	Source      string    `json:"source"`
 }
@@ -123,7 +123,7 @@ func whois(domain string) (string, error) {
 		return "", err
 	}
 	server := ""
-	for _, line := range strings.Split(iana, "\n") {
+	for line := range strings.SplitSeq(iana, "\n") {
 		k, v, ok := strings.Cut(line, ":")
 		if ok && (strings.TrimSpace(k) == "whois" || strings.TrimSpace(k) == "refer") && strings.TrimSpace(v) != "" {
 			server = strings.TrimSpace(v)
