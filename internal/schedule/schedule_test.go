@@ -47,3 +47,13 @@ func TestSystemd(t *testing.T) {
 		t.Fatalf("%s\n%s", svc, timer)
 	}
 }
+
+func TestEvery(t *testing.T) {
+	j := Job{Label: "dev.tim.stats", Args: []string{"/bin/tim", "stats", "--record"}, Every: 3600}
+	if p := j.Plist(); !strings.Contains(p, "<key>StartInterval</key>\n\t<integer>3600</integer>") || strings.Contains(p, "StartCalendarInterval") {
+		t.Fatalf("%s", p)
+	}
+	if _, timer := j.Systemd(); !strings.Contains(timer, "OnUnitActiveSec=3600s") {
+		t.Fatalf("%s", timer)
+	}
+}

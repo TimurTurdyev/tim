@@ -14,6 +14,7 @@ type Job struct {
 	Args   []string // полный путь к программе первым
 	Hour   int
 	Minute int
+	Every  int // секунды; если задано, запуск по интервалу, а не в Hour:Minute
 	Log    string
 	Env    map[string]string
 }
@@ -44,7 +45,11 @@ func (j Job) Plist() string {
 		b.WriteString("\t\t<string>" + esc(a) + "</string>\n")
 	}
 	b.WriteString("\t</array>\n")
-	fmt.Fprintf(&b, "\t<key>StartCalendarInterval</key>\n\t<dict>\n\t\t<key>Hour</key>\n\t\t<integer>%d</integer>\n\t\t<key>Minute</key>\n\t\t<integer>%d</integer>\n\t</dict>\n", j.Hour, j.Minute)
+	if j.Every > 0 {
+		fmt.Fprintf(&b, "\t<key>StartInterval</key>\n\t<integer>%d</integer>\n", j.Every)
+	} else {
+		fmt.Fprintf(&b, "\t<key>StartCalendarInterval</key>\n\t<dict>\n\t\t<key>Hour</key>\n\t\t<integer>%d</integer>\n\t\t<key>Minute</key>\n\t\t<integer>%d</integer>\n\t</dict>\n", j.Hour, j.Minute)
+	}
 	if len(j.Env) > 0 {
 		b.WriteString("\t<key>EnvironmentVariables</key>\n\t<dict>\n")
 		for _, k := range sortedKeys(j.Env) {
@@ -72,8 +77,11 @@ func (j Job) Systemd() (service, timer string) {
 	}
 	service = "[Unit]\nDescription=" + j.Label + "\n\n[Service]\nType=oneshot\n" + env.String() +
 		"ExecStart=" + strings.Join(quoted, " ") + "\n"
-	timer = fmt.Sprintf("[Unit]\nDescription=%s\n\n[Timer]\nOnCalendar=*-*-* %02d:%02d:00\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
-		j.Label, j.Hour, j.Minute)
+	when := fmt.Sprintf("OnCalendar=*-*-* %02d:%02d:00\nPersistent=true", j.Hour, j.Minute)
+	if j.Every > 0 {
+		when = fmt.Sprintf("OnBootSec=5min\nOnUnitActiveSec=%ds", j.Every)
+	}
+	timer = fmt.Sprintf("[Unit]\nDescription=%s\n\n[Timer]\n%s\n\n[Install]\nWantedBy=timers.target\n", j.Label, when)
 	return service, timer
 }
 
