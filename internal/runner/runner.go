@@ -209,3 +209,13 @@ func RemoveRoot(path string) error {
 	}
 	return Sudo("rm", "-f", path)
 }
+
+// OutputStdin как Output, но с данными на stdin: для скрипта, который уходит на сервер через ssh.
+func OutputStdin(stdin, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	return out.String(), err
+}

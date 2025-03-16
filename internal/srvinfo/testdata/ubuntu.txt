@@ -1,0 +1,82 @@
+@@os
+PRETTY_NAME="Ubuntu 24.04.3 LTS"
+VERSION_ID="24.04"
+ID=ubuntu
+@@uptime
+14883507.50 29296012.23
+2
+0.08 0.02 0.01 1/209 2121271
+@@mem
+MemTotal:        4009864 kB
+MemAvailable:    3106148 kB
+SwapTotal:        524284 kB
+SwapFree:         507940 kB
+@@df
+Filesystem     1024-blocks     Used Available Capacity Mounted on
+/dev/vda1         61834444 29248988  29424184      50% /
+@@inodes
+Filesystem      Inodes  IUsed   IFree IUse% Mounted on
+/dev/vda1      3932160 284118 3648042    8% /
+@@failed
+ifup@eth0.service  loaded failed failed ifup for eth0
+networking.service loaded failed failed Raise network interfaces
+@@reboot
+yes
+linux-image-6.8.0-111-generic
+linux-base
+linux-image-6.8.0-117-generic
+linux-base
+linux-image-6.8.0-124-generic
+linux-base
+linux-image-6.8.0-134-generic
+linux-base
+linux-image-6.8.0-136-generic
+linux-base
+libc6
+linux-image-6.8.0-137-generic
+linux-base
+linux-image-6.8.0-138-generic
+linux-base
+linux-image-6.8.0-139-generic
+linux-base
+libc6
+linux-image-6.8.0-142-generic
+linux-base
+linux-image-6.8.0-146-generic
+linux-base
+linux-image-6.8.0-147-generic
+linux-base
+@@updates
+@@ports
+LISTEN 0      511         127.0.0.1:81   0.0.0.0:*
+LISTEN 0      511    203.0.113.10:80   0.0.0.0:*
+LISTEN 0      511    203.0.113.10:443  0.0.0.0:*
+LISTEN 0      511           0.0.0.0:7777 0.0.0.0:*
+LISTEN 0      100           0.0.0.0:143  0.0.0.0:*
+LISTEN 0      20            0.0.0.0:25   0.0.0.0:*
+LISTEN 0      4096          0.0.0.0:22   0.0.0.0:*
+LISTEN 0      100           0.0.0.0:110  0.0.0.0:*
+LISTEN 0      80          127.0.0.1:3306 0.0.0.0:*
+LISTEN 0      4096        127.0.0.1:5501 0.0.0.0:*
+LISTEN 0      20            0.0.0.0:465  0.0.0.0:*
+LISTEN 0      511           0.0.0.0:8888 0.0.0.0:*
+LISTEN 0      20            0.0.0.0:587  0.0.0.0:*
+LISTEN 0      100           0.0.0.0:993  0.0.0.0:*
+LISTEN 0      100           0.0.0.0:995  0.0.0.0:*
+LISTEN 0      100              [::]:143     [::]:*
+LISTEN 0      20               [::]:25      [::]:*
+LISTEN 0      128                 *:21         *:*
+LISTEN 0      4096             [::]:22      [::]:*
+LISTEN 0      100              [::]:110     [::]:*
+LISTEN 0      20               [::]:465     [::]:*
+LISTEN 0      20               [::]:587     [::]:*
+LISTEN 0      100              [::]:993     [::]:*
+LISTEN 0      100              [::]:995     [::]:*
+@@sshd
+nosudo
+@@firewall
+fail2ban inactive
+@@nginx
+sudo: a password is required
+@@certs
+@@end
