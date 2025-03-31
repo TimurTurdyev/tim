@@ -153,8 +153,11 @@ func notifyProblems(rows []health.Row) {
 	if bad == 0 {
 		return
 	}
-	title := "tim check: плохо в " + strconv.Itoa(bad)
-	body := strings.Join(lines, "\n")
+	notify("tim check: плохо в "+strconv.Itoa(bad), strings.Join(lines, "\n"))
+}
+
+// notify: уведомление системы; молча ничего, если показать нечем.
+func notify(title, body string) {
 	switch runtime.GOOS {
 	case "darwin":
 		q := func(s string) string {
