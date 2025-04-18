@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -74,7 +75,7 @@ var dnsServer string
 
 var dnsCmd = &cobra.Command{
 	Use:   "dns <host> [--server 1.1.1.1]",
-	Short: "Записи A, AAAA, CNAME, MX, NS, TXT",
+	Short: "Записи A, AAAA, CNAME, MX, NS, TXT, CAA и подписана ли зона (DNSSEC)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := hostPort(args[0], "")
@@ -84,6 +85,19 @@ var dnsCmd = &cobra.Command{
 		}
 		for _, r := range recs {
 			ui.Println(ui.Label(ui.Pad(r.Type, 6)) + r.Value)
+		}
+		// CAA и DNSSEC спрашиваем у проверяющего резолвера: системный за VPN может не ставить бит AD.
+		if caa, err := dnsq.CAA(host); err == nil {
+			for _, c := range caa {
+				ui.Println(ui.Label(ui.Pad("CAA", 6)) + c)
+			}
+		}
+		if signed, err := dnsq.Signed(host); err == nil {
+			state := ui.Dim("не подписана")
+			if signed {
+				state = "подписана, подпись проверена"
+			}
+			ui.Println(ui.Label(ui.Pad("DNSSEC", 6)) + " " + state)
 		}
 		return nil
 	},
