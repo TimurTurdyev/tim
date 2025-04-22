@@ -14,6 +14,7 @@ const (
 	KindHost TargetKind = iota
 	KindNet
 	KindDomain
+	KindAS // все сети автономной системы, значение вида as:13238
 )
 
 // Target: что уводим в обход - адрес, подсеть или домен.
@@ -29,6 +30,9 @@ func ParseTarget(s string) (Target, error) {
 		t, _, _ = strings.Cut(t[i+3:], "/")
 	}
 	t = strings.TrimSuffix(t, ".")
+	if num, ok := asNumber(t); ok {
+		return Target{KindAS, "as:" + num}, nil
+	}
 	if IsIPv4(t) {
 		if net.ParseIP(t) == nil {
 			return Target{}, errors.New("неверный адрес: " + s)
@@ -146,4 +150,17 @@ func Stale(routes []TableRoute, gw string, only map[string]bool) []TableRoute {
 		out = append(out, r)
 	}
 	return out
+}
+
+// asNumber: as:13238, as13238 или AS13238.
+func asNumber(s string) (string, bool) {
+	rest, ok := strings.CutPrefix(s, "as")
+	if !ok {
+		return "", false
+	}
+	rest = strings.TrimPrefix(rest, ":")
+	if n, err := strconv.ParseUint(rest, 10, 32); err != nil || n == 0 {
+		return "", false
+	}
+	return rest, true
 }

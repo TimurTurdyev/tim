@@ -159,7 +159,7 @@ func Collect(domain string, opt Options) *Report {
 		ips = append(ips, ip)
 	}
 	sort.Strings(ips)
-	asn := cymru(ips)
+	asn := Cymru(ips)
 	for _, ip := range ips {
 		a := Addr{IP: ip, AS: asn[ip], Hosts: byIP[ip]}
 		a.CDN = IsCDN(a.AS.Name)
@@ -393,8 +393,8 @@ func ptr(ip string) string {
 	return strings.TrimSuffix(names[0], ".")
 }
 
-// cymru спрашивает сведения обо всех адресах одним соединением.
-func cymru(ips []string) map[string]ASInfo {
+// Cymru спрашивает сведения обо всех адресах одним соединением.
+func Cymru(ips []string) map[string]ASInfo {
 	if len(ips) == 0 {
 		return nil
 	}

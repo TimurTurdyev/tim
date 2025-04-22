@@ -66,7 +66,7 @@ var vpnCmd = &cobra.Command{
 }
 
 var vpnExcludeCmd = &cobra.Command{
-	Use:   "exclude <адрес|домен|подсеть...> [--label x]",
+	Use:   "exclude <адрес|домен|подсеть|as:N...> [--owner] [--label x]",
 	Short: "Пустить мимо VPN: то же, что route add",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  func(cmd *cobra.Command, args []string) error { return routeAddCmd.RunE(cmd, args) },
@@ -92,6 +92,7 @@ func init() {
 	vpnExcludeCmd.Flags().StringVar(&routeLabel, "label", "", "пометка (для одной цели)")
 	vpnExcludeCmd.Flags().BoolVar(&routeNoUp, "no-up", false, "только сохранить")
 	vpnExcludeCmd.Flags().BoolVar(&routeForce, "force", false, "разрешить частные адреса и подсети")
+	vpnExcludeCmd.Flags().BoolVar(&routeOwner, "owner", false, "для домена - все сети его владельца (AS)")
 	vpnCmd.AddCommand(vpnExcludeCmd, vpnFixCmd)
 	root.AddCommand(vpnCmd)
 }
