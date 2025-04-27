@@ -69,7 +69,13 @@ func ExecEnv(env []string, name string, args ...string) error {
 	return cmd.Run()
 }
 
-func Sudo(args ...string) error { return Run("sudo", args...) }
+func Sudo(args ...string) error {
+	// Под root (страж маршрутов в launchd) sudo лишний: запускаем как есть.
+	if os.Geteuid() == 0 && len(args) > 0 {
+		return Run(args[0], args[1:]...)
+	}
+	return Run("sudo", args...)
+}
 
 // ConfirmFunc задаёт интерактивный вопрос; asked=false - спросить не вышло, спрашиваем строкой.
 var ConfirmFunc func(question string) (yes, asked bool)
