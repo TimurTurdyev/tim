@@ -57,3 +57,15 @@ func TestEvery(t *testing.T) {
 		t.Fatalf("%s", timer)
 	}
 }
+
+func TestDaemon(t *testing.T) {
+	j := Job{Label: "dev.tim.routes", Args: []string{"/bin/tim", "route", "watch"}, Daemon: true}
+	p := j.Plist()
+	if !strings.Contains(p, "<key>KeepAlive</key>\n\t<true/>") || strings.Contains(p, "StartInterval") || strings.Contains(p, "StartCalendarInterval") {
+		t.Fatalf("%s", p)
+	}
+	svc, timer := j.Systemd()
+	if timer != "" || !strings.Contains(svc, "Restart=always") || !strings.Contains(svc, "WantedBy=multi-user.target") {
+		t.Fatalf("%s|%s", svc, timer)
+	}
+}
