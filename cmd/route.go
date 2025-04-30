@@ -325,6 +325,7 @@ func routeStatus(probe bool) error {
 		ui.Println(ui.Dim("целей обхода нет: tim route add <адрес|домен|подсеть>"))
 		return nil
 	}
+	ui.Println(guardLine())
 	ui.Println(ui.Dim(ui.Pad("ЦЕЛЬ", 24) + " " + ui.Pad("ПОМЕТКА", 11) + " " + ui.Pad("АДРЕС", 18) + " СОСТОЯНИЕ"))
 	for _, h := range cfg.Hosts {
 		dests := expandAddr(h.Addr)

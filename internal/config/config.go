@@ -4,7 +4,9 @@ package config
 import (
 	"errors"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -84,12 +86,47 @@ type Config struct {
 }
 
 // Path отдаёт путь к конфигу: TIM_CONFIG или ~/.config/tim/config.toml.
+// Под sudo домашняя папка - того, кто вызвал sudo: у root свой пустой конфиг, и sudo tim route add
+// иначе записал бы цель не туда.
 func Path() string {
 	if p := os.Getenv("TIM_CONFIG"); p != "" {
 		return p
 	}
-	home, _ := os.UserHomeDir()
+	home := sudoHome()
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
 	return filepath.Join(home, ".config", "tim", "config.toml")
+}
+
+func sudoHome() string {
+	if os.Geteuid() != 0 {
+		return ""
+	}
+	name := os.Getenv("SUDO_USER")
+	if name == "" || name == "root" {
+		return ""
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return ""
+	}
+	return u.HomeDir
+}
+
+// giveBack: файл, записанный под sudo, возвращается тому, кто вызвал sudo.
+func giveBack(paths ...string) {
+	if os.Geteuid() != 0 {
+		return
+	}
+	uid, err1 := strconv.Atoi(os.Getenv("SUDO_UID"))
+	gid, err2 := strconv.Atoi(os.Getenv("SUDO_GID"))
+	if err1 != nil || err2 != nil {
+		return
+	}
+	for _, p := range paths {
+		_ = os.Chown(p, uid, gid)
+	}
 }
 
 func Default() *Config {
@@ -156,7 +193,11 @@ func Save(cfg *Config) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	giveBack(path, path+".bak")
+	return nil
 }
 
 // ExpandHome раскрывает ~/ в начале пути.

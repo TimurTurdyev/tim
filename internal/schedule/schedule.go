@@ -14,7 +14,8 @@ type Job struct {
 	Args   []string // полный путь к программе первым
 	Hour   int
 	Minute int
-	Every  int // секунды; если задано, запуск по интервалу, а не в Hour:Minute
+	Every  int  // секунды; если задано, запуск по интервалу, а не в Hour:Minute
+	Daemon bool // работает постоянно и перезапускается после падения
 	Log    string
 	Env    map[string]string
 }
@@ -45,9 +46,12 @@ func (j Job) Plist() string {
 		b.WriteString("\t\t<string>" + esc(a) + "</string>\n")
 	}
 	b.WriteString("\t</array>\n")
-	if j.Every > 0 {
+	switch {
+	case j.Daemon:
+		b.WriteString("\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<true/>\n")
+	case j.Every > 0:
 		fmt.Fprintf(&b, "\t<key>StartInterval</key>\n\t<integer>%d</integer>\n", j.Every)
-	} else {
+	default:
 		fmt.Fprintf(&b, "\t<key>StartCalendarInterval</key>\n\t<dict>\n\t\t<key>Hour</key>\n\t\t<integer>%d</integer>\n\t\t<key>Minute</key>\n\t\t<integer>%d</integer>\n\t</dict>\n", j.Hour, j.Minute)
 	}
 	if len(j.Env) > 0 {
@@ -74,6 +78,13 @@ func (j Job) Systemd() (service, timer string) {
 	var env strings.Builder
 	for _, k := range sortedKeys(j.Env) {
 		env.WriteString(`Environment="` + k + "=" + j.Env[k] + "\"\n")
+	}
+	if j.Daemon {
+		// Постоянная служба: таймер не нужен, после падения systemd поднимет её сам.
+		service = "[Unit]\nDescription=" + j.Label + "\nAfter=network-online.target\nWants=network-online.target\n\n" +
+			"[Service]\nType=simple\n" + env.String() + "ExecStart=" + strings.Join(quoted, " ") +
+			"\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n"
+		return service, ""
 	}
 	service = "[Unit]\nDescription=" + j.Label + "\n\n[Service]\nType=oneshot\n" + env.String() +
 		"ExecStart=" + strings.Join(quoted, " ") + "\n"

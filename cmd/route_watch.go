@@ -100,6 +100,9 @@ var routeWatchCmd = &cobra.Command{
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := stateDir()
+		if os.Geteuid() == 0 {
+			dir = guardDir()
+		}
 		st, _ := routewatch.Load(dir)
 		st.PID, st.Started = os.Getpid(), time.Now()
 		if watchRouteOnce {

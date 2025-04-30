@@ -57,6 +57,7 @@ var vpnCmd = &cobra.Command{
 				line += "  " + ui.Dim("tim vpn fix")
 			}
 			ui.Println(line)
+			ui.Println(guardLine())
 		}
 		if hasV6 {
 			ui.Println(ui.Dim("обход работает только для IPv4; IPv6 через туннель остаётся как есть"))
