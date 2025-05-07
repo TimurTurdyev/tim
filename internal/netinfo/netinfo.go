@@ -4,6 +4,7 @@ package netinfo
 import (
 	"net"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -33,7 +34,7 @@ func IsPrivate(ip string) bool {
 
 // IsTunnelIface: utun, tun, tap, ppp считаются туннелями.
 func IsTunnelIface(name string) bool {
-	for _, p := range []string{"utun", "tun", "tap", "ppp"} {
+	for _, p := range []string{"utun", "tun", "tap", "ppp", "wg", "tailscale", "zt"} {
 		if strings.HasPrefix(name, p) {
 			return true
 		}
@@ -68,6 +69,10 @@ func ParseServiceOrder(out string) []Service {
 
 // PhysIface: первый активный физический интерфейс из порядка служб.
 func PhysIface() (Service, bool) {
+	if runtime.GOOS == "linux" {
+		dev, _ := linuxDefault()
+		return Service{Name: dev, Device: dev}, dev != ""
+	}
 	out, _ := runner.Output("networksetup", "-listnetworkserviceorder")
 	for _, s := range ParseServiceOrder(out) {
 		if IsTunnelIface(s.Device) || strings.HasPrefix(s.Device, "bridge") {
@@ -83,6 +88,12 @@ func PhysIface() (Service, bool) {
 
 // IfaceGateway: роутер интерфейса по DHCP, иначе из таблицы маршрутов.
 func IfaceGateway(device string) string {
+	if runtime.GOOS == "linux" {
+		if dev, gw := linuxDefault(); dev == device {
+			return gw
+		}
+		return ""
+	}
 	out, _ := runner.Output("ipconfig", "getoption", device, "router")
 	gw := strings.TrimSpace(out)
 	if gw != "" && gw != "0.0.0.0" {
@@ -119,6 +130,10 @@ func ParseRouteGet(out string) Route {
 }
 
 func RouteOf(addr string) Route {
+	if runtime.GOOS == "linux" {
+		out, _ := runner.Output("ip", "-4", "route", "get", addr)
+		return ParseIPRouteGet(out)
+	}
 	out, _ := runner.Output("route", "-n", "get", addr)
 	return ParseRouteGet(out)
 }
@@ -145,6 +160,10 @@ func DefaultIface() string { return RouteOf("default").Iface }
 
 // Table: вся таблица IPv4.
 func Table() []TableRoute {
+	if runtime.GOOS == "linux" {
+		out, _ := runner.Output("ip", "-4", "route", "show")
+		return ParseIPRoute(out)
+	}
 	out, _ := runner.Output("netstat", "-rn", "-f", "inet")
 	return ParseRoutes(out)
 }

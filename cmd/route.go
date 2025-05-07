@@ -361,11 +361,13 @@ func portOpen(addr, port string) bool {
 	return true
 }
 
-func kindFlag(dest string) string {
-	if strings.Contains(dest, "/") {
-		return "-net"
+// setRoute ставит маршрут через шлюз. macOS не меняет существующий маршрут командой add,
+// поэтому старый снимается первым; ip route replace на Linux делает это сам.
+func setRoute(dest, gw, iface string) error {
+	if runtime.GOOS != "linux" {
+		_ = runner.Sudo(netinfo.DelRouteCmd(dest)...)
 	}
-	return "-host"
+	return runner.Sudo(netinfo.AddRouteCmd(dest, gw, iface)...)
 }
 
 // routeUp заводит маршрут через физический шлюз для каждого адреса или подсети.
@@ -380,8 +382,7 @@ func routeUp(dests []string) error {
 			ui.Println(ui.Dim(d + ": уже в обход"))
 			continue
 		}
-		_ = runner.Sudo("route", "-n", "delete", kindFlag(d), d)
-		if err := runner.Sudo("route", "-n", "add", kindFlag(d), d, gw); err != nil {
+		if err := setRoute(d, gw, phys.Device); err != nil {
 			ui.Println(ui.Bad(d + ": завести не удалось"))
 			continue
 		}
@@ -410,7 +411,7 @@ func bypassed(dest string, phys netinfo.Service, gw string) bool {
 
 func routeDown(dests []string) {
 	for _, d := range dests {
-		if err := runner.Sudo("route", "-n", "delete", kindFlag(d), d); err != nil {
+		if err := runner.Sudo(netinfo.DelRouteCmd(d)...); err != nil {
 			ui.Println(ui.Dim(d + ": маршрута не было"))
 		} else {
 			ui.Println(ui.Label(d + ": маршрут снят"))
@@ -445,7 +446,7 @@ func routeClean(all bool) (int, error) {
 		return 0, nil
 	}
 	for _, r := range stale {
-		if err := runner.Sudo("route", "-n", "delete", kindFlag(r.Dest), r.Dest); err != nil {
+		if err := runner.Sudo(netinfo.DelRouteCmd(r.Dest)...); err != nil {
 			ui.Println(ui.Bad(r.Dest + ": снять не удалось"))
 		}
 	}
