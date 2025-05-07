@@ -58,8 +58,7 @@ func guardCycle(st *routewatch.Status) []routewatch.Repair {
 	st.OK = st.Want - len(repairs)
 	var done []routewatch.Repair
 	for _, r := range repairs {
-		_ = runner.Sudo("route", "-n", "delete", kindFlag(r.Dest), r.Dest)
-		if err := runner.Sudo("route", "-n", "add", kindFlag(r.Dest), r.Dest, gw); err != nil {
+		if err := setRoute(r.Dest, gw, phys.Device); err != nil {
 			logLine("%s: не удалось (%s): %v", r.Dest, r.Reason, err)
 			continue
 		}
