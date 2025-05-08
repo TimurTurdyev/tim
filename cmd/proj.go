@@ -104,7 +104,16 @@ var goCmd = &cobra.Command{
 	Short:             "Перейти в проект; с точкой в папку над клоном, если задан wrapper",
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(cfg.Projects) == 0 {
+			return ui.Errorf("реестр пуст: tim config init найдёт клоны и предложит добавить")
+		}
 		if len(args) == 0 && !tui.Available() {
+			// Шим делает cd в то, что напечатано в stdout: список туда попасть не должен.
+			if goPrint {
+				ui.UseStderr()
+				_ = projListCmd.RunE(cmd, nil)
+				return ui.Errorf("выбрать без терминала нельзя: tim go <имя>")
+			}
 			return projListCmd.RunE(cmd, nil)
 		}
 		var p *config.Project
