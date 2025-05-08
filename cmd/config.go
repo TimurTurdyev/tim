@@ -101,7 +101,7 @@ var configInitCmd = &cobra.Command{
 			return err
 		}
 		ui.Println(ui.Label("записан ") + config.Path() + ui.Dim("  проектов в реестре: "+strconv.Itoa(len(c.Projects))+", добавлено "+strconv.Itoa(n)))
-		ui.Println(ui.Dim("дальше: добавь в ~/.zshrc строку eval \"$(tim init zsh)\" и попробуй tim go"))
+		ui.Println(ui.Dim("дальше: tim init подключит tim к shell, потом tim go"))
 		return nil
 	},
 }
