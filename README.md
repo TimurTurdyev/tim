@@ -16,6 +16,14 @@ tim serve shop -d           # поднять dev-сервер в фоне
 tim check                   # обойти всё хозяйство одной таблицей
 ```
 
+## Гайды
+
+По задачам, с примерами: [первый запуск](docs/guides/01-first-run.md),
+[как устроен конфиг](docs/guides/02-config.md), [VPN и маршруты](docs/guides/03-vpn.md),
+[локальная разработка с https](docs/guides/04-local-https.md),
+[быстро посмотреть сайт клиента](docs/guides/05-site-check.md),
+[состояние сервера](docs/guides/06-servers.md), [каждый день](docs/guides/07-daily.md).
+
 ## Зачем он нужен
 
 **Проекты всегда под рукой.** Реестр проектов в конфиге, `tim go` открывает выбор с поиском
