@@ -13,6 +13,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/envfile"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/newproj"
 	"github.com/TimurTurdyev/tim/internal/phpver"
 	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -28,6 +29,43 @@ func projectFor(name string) (*config.Project, error) {
 		return pickProject()
 	}
 	return p, err
+}
+
+// registryPorts: порты, уже закреплённые за проектами реестра.
+func registryPorts() []int {
+	var used []int
+	for _, q := range cfg.Projects {
+		if q.Port > 0 {
+			used = append(used, q.Port)
+		}
+	}
+	return used
+}
+
+// servable: проект можно поднять через serve - только таким нужен свой порт.
+func servable(dir string) bool {
+	_, err := run.Serve(run.Detect(dir), "8000")
+	return err == nil
+}
+
+// pinPort: порт для запуска. У проекта без порта и без порта в APP_URL tim закрепляет свой,
+// которого нет ни у кого в реестре, и записывает его: иначе у всех таких проектов будет 8000
+// и при запуске вместе второй молча уедет на другой порт.
+func pinPort(p *config.Project, dir string) string {
+	port := projectPort(p, dir)
+	if p.Port > 0 || port != "8000" {
+		return port
+	}
+	n := newproj.NextPort(registryPorts(), 8000, func(s string) bool { _, b := netinfo.PortBusy(s); return b })
+	p.Port = n
+	if err := saveConfig(cfg); err != nil {
+		ui.Println(ui.Warn("порт не закреплён: " + err.Error()))
+		return strconv.Itoa(n)
+	}
+	if !runner.DryRun {
+		ui.Println(ui.Dim("закрепил за " + p.Name + " порт " + strconv.Itoa(n) + "; поменять - поле port в реестре"))
+	}
+	return strconv.Itoa(n)
 }
 
 func projectPort(p *config.Project, dir string) string {
@@ -178,7 +216,7 @@ var serveCmd = &cobra.Command{
 		if len(list) == 1 && !serveDetach {
 			p := list[0]
 			if port == "" {
-				port = projectPort(p, cfg.ProjectDir(p))
+				port = pinPort(p, cfg.ProjectDir(p))
 			}
 			if l, busy := netinfo.PortBusy(port); busy {
 				return ui.Errorf("порт %s занят: %s (pid %s); освободить: tim port %s kill", port, l.Command, l.PID, port)
@@ -226,7 +264,7 @@ func serveBackground(list []*config.Project, port string) error {
 	for i, p := range todo {
 		wanted[i] = port
 		if wanted[i] == "" || len(todo) > 1 {
-			wanted[i] = projectPort(p, cfg.ProjectDir(p))
+			wanted[i] = pinPort(p, cfg.ProjectDir(p))
 		}
 	}
 	ports := run.AllocPorts(wanted, func(p string) bool { _, busy := netinfo.PortBusy(p); return busy })
