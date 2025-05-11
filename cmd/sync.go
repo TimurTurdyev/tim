@@ -11,6 +11,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/newproj"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -155,6 +156,12 @@ var syncCmd = &cobra.Command{
 			if f.Port > 0 && (p.Port == 0 || syncForce) && p.Port != f.Port {
 				changes = append(changes, change{p.Name, "port", strconv.Itoa(p.Port), strconv.Itoa(f.Port)})
 				p.Port = f.Port
+			}
+			// Проекту, который поднимается через serve, - свой порт, чтобы двое не делили 8000.
+			if p.Port == 0 && servable(cfg.ProjectDir(p)) {
+				n := newproj.NextPort(registryPorts(), 8000, func(s string) bool { _, b := netinfo.PortBusy(s); return b })
+				changes = append(changes, change{p.Name, "port", "", strconv.Itoa(n)})
+				p.Port = n
 			}
 			if ips == nil || p.URL == "" {
 				continue
