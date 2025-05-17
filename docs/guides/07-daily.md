@@ -49,6 +49,8 @@ tim net top            # кто сейчас качает
 tim disk --system      # куда делось место: кеши, образы Docker, старые версии IDE
 tim disk --clean       # убрать node_modules и vendor заброшенных проектов в Корзину
 tim stale --kill       # погасить забытые dev-серверы
+tim ps chrome          # что запущено у приложения
+tim kill chrome        # закрыть зависшее: сначала как Cmd+Q, потом принудительно
 ```
 
 ## Тренды
