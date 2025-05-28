@@ -78,29 +78,51 @@ func Sudo(args ...string) error {
 }
 
 // ConfirmFunc задаёт интерактивный вопрос; asked=false - спросить не вышло, спрашиваем строкой.
-var ConfirmFunc func(question string) (yes, asked bool)
+var ConfirmFunc func(question string, def bool) (yes, asked bool)
 
-// Confirm спрашивает подтверждение; в dry-run всегда да.
-func Confirm(question string) bool {
+// Confirm спрашивает подтверждение, по умолчанию "нет"; в dry-run всегда да.
+func Confirm(question string) bool { return ConfirmDefault(question, false) }
+
+// ConfirmDefault спрашивает подтверждение с ответом по умолчанию. Вопрос и ответ остаются строкой
+// на экране: интерактивный вопрос стирает себя, и без неё непонятно, что именно было отменено.
+func ConfirmDefault(question string, def bool) bool {
 	if DryRun {
 		return true
 	}
 	if NoInput {
-		ui.Println(ui.Dim(question + " - нет (без ввода)"))
-		return false
+		ui.Println(ui.Dim(question + " - " + answer(def) + " (без ввода)"))
+		return def
 	}
 	if ConfirmFunc != nil {
-		if yes, asked := ConfirmFunc(question); asked {
+		if yes, asked := ConfirmFunc(question, def); asked {
+			ui.Println(ui.Dim(question + " - " + answer(yes)))
 			return yes
 		}
 	}
-	ui.Printf("%s [y/N] ", question)
-	var answer string
-	if _, err := fmtScan(&answer); err != nil {
+	hint := "[y/N]"
+	if def {
+		hint = "[Y/n]"
+	}
+	ui.Printf("%s %s ", question, hint)
+	var a string
+	if _, err := fmtScan(&a); err != nil {
 		ui.Println()
 		return false
 	}
-	return answer == "y" || answer == "Y" || answer == "д" || answer == "Д"
+	switch a {
+	case "":
+		return def
+	case "y", "Y", "д", "Д":
+		return true
+	}
+	return false
+}
+
+func answer(yes bool) string {
+	if yes {
+		return "да"
+	}
+	return "нет"
 }
 
 // lookIn ищет программу по PATH из env, если он там задан: exec.Command смотрит только PATH самого tim.

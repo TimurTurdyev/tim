@@ -46,11 +46,11 @@ func init() {
 	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
 	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
 	root.CompletionOptions.HiddenDefaultCmd = true
-	runner.ConfirmFunc = func(q string) (bool, bool) {
+	runner.ConfirmFunc = func(q string, def bool) (bool, bool) {
 		if !tui.Available() {
 			return false, false
 		}
-		yes, err := tui.Confirm(q)
+		yes, err := tui.Confirm(q, def)
 		if err != nil && !errors.Is(err, tui.ErrCanceled) {
 			return false, false
 		}

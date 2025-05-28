@@ -40,8 +40,9 @@ func openTTY() (*os.File, error) {
 	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
 }
 
-func Confirm(question string) (bool, error) {
-	yes := false
+// Confirm задаёт вопрос да или нет; def - что выбрано, если просто нажать Enter.
+func Confirm(question string, def bool) (bool, error) {
+	yes := def
 	err := run(huh.NewConfirm().Title(question).Affirmative("да").Negative("нет").Value(&yes))
 	return yes, err
 }
@@ -76,7 +77,8 @@ func run(field huh.Field) error {
 		return ErrNoTTY
 	}
 	defer func() { _ = tty.Close() }()
-	form := huh.NewForm(huh.NewGroup(field)).WithInput(tty).WithOutput(tty).WithShowHelp(false)
+	form := huh.NewForm(huh.NewGroup(field)).WithInput(tty).WithOutput(tty).
+		WithTheme(timTheme()).WithKeyMap(ruKeys()).WithShowHelp(true)
 	if err := form.Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return ErrCanceled
