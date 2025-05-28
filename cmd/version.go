@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -33,4 +34,18 @@ var versionCmd = &cobra.Command{
 func init() {
 	root.Version = resolveVersion()
 	root.AddCommand(versionCmd)
+}
+
+// shortVersion: для заставки. Версия go install вида v0.0.0-20251022162241-8c6e20c7cc4a+dirty
+// длинная и ничего не говорит человеку - показываем коммит.
+func shortVersion() string {
+	v := resolveVersion()
+	if i := strings.LastIndex(v, "-"); i > 0 && strings.HasPrefix(v, "v0.0.0-") {
+		c := strings.TrimSuffix(v[i+1:], "+dirty")
+		if len(c) > 7 {
+			c = c[:7]
+		}
+		return c
+	}
+	return v
 }

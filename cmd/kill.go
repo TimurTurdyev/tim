@@ -132,6 +132,9 @@ func signalAll(sig string, pids []int) error {
 
 func confirmKill(q string) bool { return killYes || runner.Confirm(q) }
 
+// confirmGentle: бережное закрытие ты и так попросил, словом kill, - Enter соглашается.
+func confirmGentle(q string) bool { return killYes || runner.ConfirmDefault(q, true) }
+
 // killApp: сначала как человек - Cmd+Q у приложения или SIGTERM у программы; не помогло - SIGKILL.
 func killApp(a procs.App) error {
 	for _, p := range a.Procs {
@@ -159,13 +162,13 @@ func killApp(a procs.App) error {
 	}
 	if !killForce {
 		if a.IsApp && runtime.GOOS == "darwin" {
-			if !confirmKill("закрыть " + a.Name + " как Cmd+Q?") {
+			if !confirmGentle("закрыть " + a.Name + " как Cmd+Q?") {
 				return ui.Errorf("отменено")
 			}
 			// Приложение само спросит про несохранённое и закроет окна - бережнее, чем сигнал.
 			_ = runner.Run("osascript", "-e", `quit app "`+strings.ReplaceAll(a.Name, `"`, `\"`)+`"`)
 		} else {
-			if !confirmKill(fmt.Sprintf("завершить %s (%d процессов)?", a.Name, len(pids))) {
+			if !confirmGentle(fmt.Sprintf("завершить %s (%d процессов)?", a.Name, len(pids))) {
 				return ui.Errorf("отменено")
 			}
 			_ = signalAll("TERM", pids)

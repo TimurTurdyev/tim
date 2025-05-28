@@ -96,13 +96,38 @@ func Find(list []Full, query string) []App {
 			return []App{*groups[names[i]]}
 		}
 	}
-	var out []App
-	for _, m := range fuzzy.Filter(q, keys) {
+	type hit struct {
+		app   App
+		rank  int
+		order int
+	}
+	var hits []hit
+	for i, m := range fuzzy.Filter(q, keys) {
 		// Слишком слабое совпадение - шум: на "go" подойдёт половина системы.
 		if m.Score < len([]rune(q))*2 {
 			continue
 		}
-		out = append(out, *groups[names[m.Index]])
+		a := *groups[names[m.Index]]
+		// Слово целиком в имени важнее совпадения по буквам, а приложение с окном - служебного
+		// процесса: на "chrome" первым должен быть сам браузер, а не chrome-devtools-mcp.
+		rank := 0
+		if strings.Contains(keys[m.Index], q) {
+			rank += 2
+		}
+		if a.IsApp {
+			rank++
+		}
+		hits = append(hits, hit{a, rank, i})
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].rank != hits[j].rank {
+			return hits[i].rank > hits[j].rank
+		}
+		return hits[i].order < hits[j].order
+	})
+	out := make([]App, len(hits))
+	for i, h := range hits {
+		out[i] = h.app
 	}
 	return out
 }

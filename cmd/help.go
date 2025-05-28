@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -135,37 +136,92 @@ func applyHelp() {
 	walk(root)
 }
 
-var common = [][2]string{
-	{"tim go", "перейти в проект (выбор из реестра)"},
-	{"tim serve -d", "поднять dev-сервер проекта в фоне"},
-	{"tim ssh", "ssh мимо VPN, выбор алиаса"},
-	{"tim tunnel all <сервер>", "весь трафик через ssh"},
-	{"tim route add <адрес>", "пустить адрес мимо VPN"},
-	{"tim motd", "сводка: машина, проект, сеть, сервисы"},
-	{"tim site <домен>", "что за сайт: IP, домен, сертификат, CMS"},
-	{"tim cert new <домен>", "сертификат для локальной разработки"},
-	{"tim host add <имя>", "локальное имя в /etc/hosts"},
-	{"tim setup <проект>", "от клона до работающего локально"},
-	{"tim check", "обход всех проектов: git, сайт, сертификат, почта"},
-	{"tim today --week", "что сделано за неделю по всем проектам"},
-	{"tim doctor", "что не так в окружении"},
-	{"tim new <имя> --stack go", "новый проект по шаблону"},
-	{"tim each <задача>", "команда во всех проектах"},
+// overviewSections: самое ходовое по разделам - то, что видно на tim без аргументов.
+var overviewSections = []struct {
+	title string
+	cmds  [][2]string
+}{
+	{"Проекты", [][2]string{
+		{"tim go", "перейти в проект, недавние сверху"},
+		{"tim serve -d", "поднять dev-сервер в фоне"},
+		{"tim setup <проект>", "от клона до работающего локально"},
+		{"tim check", "обход всех проектов одной таблицей"},
+		{"tim today --week", "что сделано за неделю"},
+	}},
+	{"Сеть и серверы", [][2]string{
+		{"tim ssh", "ssh мимо VPN, выбор алиаса"},
+		{"tim vpn exclude <сайт> --owner", "пустить сервис мимо VPN целиком"},
+		{"tim tunnel all <сервер>", "весь трафик через ssh"},
+		{"tim server <алиас>", "что с сервером: место, порты, sshd"},
+	}},
+	{"Сайты", [][2]string{
+		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},
+		{"tim mail <домен>", "почта: SPF, DKIM, DMARC"},
+		{"tim og <url>", "превью ссылки в мессенджерах"},
+	}},
+	{"Машина", [][2]string{
+		{"tim motd", "сводка: машина, проект, сеть"},
+		{"tim top", "кто съел память и CPU"},
+		{"tim kill <имя>", "закрыть зависшее приложение"},
+		{"tim doctor", "что не так в окружении"},
+	}},
+}
+
+// splash: маскот и логотип рядом; без цветов - просто имя.
+func splash() {
+	on, depth := ui.Colors()
+	mascot := []string(nil)
+	if on {
+		mascot = brand.Mascot(brand.Calm, depth)
+	}
+	side := []string{""}
+	for i, line := range brand.Title {
+		if on {
+			side = append(side, "\x1b[1;"+brand.TitleGradient[i].FG(depth, "36")+"m"+line+"\x1b[0m")
+		} else {
+			side = append(side, line)
+		}
+	}
+	side = append(side, ui.Dim("помощник в терминале  "+shortVersion()))
+	if mascot == nil {
+		for _, l := range side[1:] {
+			ui.Println("  " + l)
+		}
+		return
+	}
+	for i := 0; i < max(len(mascot), len(side)); i++ {
+		left := strings.Repeat(" ", brand.MascotWidth)
+		if i < len(mascot) {
+			left = mascot[i]
+		}
+		right := ""
+		if i < len(side) {
+			right = side[i]
+		}
+		ui.Println("  " + left + "   " + right)
+	}
 }
 
 // overview: что показать на tim без аргументов.
 func overview() {
-	ui.Println(ui.Label("tim") + " " + ui.Dim(resolveVersion()) + "  " + "помощник в терминале: проекты, сеть, туннели, запуск")
-	ui.Println()
+	splash()
 	width := 0
-	for _, c := range common {
-		width = max(width, len([]rune(c[0])))
+	for _, s := range overviewSections {
+		for _, c := range s.cmds {
+			width = max(width, len([]rune(c[0])))
+		}
 	}
-	for _, c := range common {
-		ui.Println("  " + ui.Label(ui.Pad(c[0], width)) + "  " + c[1])
+	for _, s := range overviewSections {
+		ui.Println()
+		ui.Println("  " + ui.Title(s.title))
+		for _, c := range s.cmds {
+			// "tim" одинаков во всех строках - приглушён, чтобы глаз цеплялся за саму команду.
+			rest := strings.TrimPrefix(c[0], "tim ")
+			ui.Println("    " + ui.Dim("tim ") + ui.Label(ui.Pad(rest, width-4)) + "  " + c[1])
+		}
 	}
 	ui.Println()
-	ui.Println(ui.Dim("все команды: tim --help, по команде: tim <команда> --help, man tim"))
+	ui.Println(ui.Dim("  все команды: tim --help  \u2022  по команде: tim <команда> --help  \u2022  man tim"))
 }
 
 type cobraError struct {

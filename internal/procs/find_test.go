@@ -56,3 +56,13 @@ func TestFindExactWins(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestFindAppFirst(t *testing.T) {
+	list := ParseFull(psSample + `
+ 5000  1 501 900 0,0 6-00:00:00 S chrome-devtools-mcp
+ 5001  1 501 900 0,0 6-00:00:00 S npm exec chrome-devtools-mcp@latest`)
+	got := Find(list, "chrome")
+	if len(got) < 2 || got[0].Name != "Google Chrome" {
+		t.Fatalf("первым должен быть браузер: %+v", got[0].Name)
+	}
+}
