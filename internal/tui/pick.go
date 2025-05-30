@@ -56,6 +56,8 @@ func Pick(prompt string, items []Item) (int, error) {
 	in := textinput.New()
 	in.Prompt = symPointer + " "
 	in.Placeholder = "начни печатать, чтобы отфильтровать"
+	// Без ширины textinput обрезает подсказку до одной буквы: буфер под неё - ширина плюс один.
+	in.SetWidth(48)
 	st := in.Styles()
 	st.Focused.Prompt = stylePrompt
 	st.Focused.Placeholder = styleHint
