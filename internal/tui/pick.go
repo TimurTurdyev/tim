@@ -56,6 +56,8 @@ func Pick(prompt string, items []Item) (int, error) {
 	in := textinput.New()
 	in.Prompt = symPointer + " "
 	in.Placeholder = "начни печатать, чтобы отфильтровать"
+	// Ширина поля с запасом под подсказку.
+	in.Width = 48
 	in.PromptStyle = stylePrompt
 	in.PlaceholderStyle = styleHint
 	in.Cursor.Style = lipgloss.NewStyle().Foreground(colAccent)
