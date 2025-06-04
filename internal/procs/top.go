@@ -13,6 +13,7 @@ type Sample struct {
 	RSS  int64 // байты
 	CPU  float64
 	Comm string
+	Args string // командная строка целиком, если её запросили отдельно
 }
 
 // ParseTop разбирает ps -Axo pid=,rss=,pcpu=,comm=. Доля CPU приходит с запятой в русской локали.

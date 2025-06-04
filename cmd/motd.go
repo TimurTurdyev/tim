@@ -199,7 +199,8 @@ func motdSystem() []string {
 	if docker != "" {
 		line2 += "   " + ui.Dim(docker)
 	}
-	return []string{line1, line2}
+	// Пожиратели CPU - сюда же: про них и надо узнать при открытии терминала, а не через три дня.
+	return append([]string{line1, line2}, hogLines("")...)
 }
 
 func gitState(dir string) (sysinfo.GitState, bool) {

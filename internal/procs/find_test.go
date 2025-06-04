@@ -66,3 +66,13 @@ func TestFindAppFirst(t *testing.T) {
 		t.Fatalf("первым должен быть браузер: %+v", got[0].Name)
 	}
 }
+
+func TestFindByFileName(t *testing.T) {
+	list := ParseFull(psSample + "\n 7000 1 501 4096 296,0 02:00:00 R /Users/x/sdk/qemu-system-aarch64-headless")
+	list[len(list)-1].Args = "qemu -avd Test_Phone -no-window"
+	list = append(list, ParseFull(" 7001 1 501 100 0,0 01:00 S /System/Library/Frameworks/QuickLook/com.apple.quicklook.ThumbnailsAgent")...)
+	got := Find(list, "qemu")
+	if len(got) != 1 || got[0].Name != "Android-эмулятор Test_Phone" {
+		t.Fatalf("%+v", got)
+	}
+}

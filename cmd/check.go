@@ -164,7 +164,7 @@ func clip(s string, width int) string {
 
 // checkMachine: замечания не о проектах, а о самой машине.
 func checkMachine() []string {
-	var out []string
+	out := hogLines("")
 	limit := time.Duration(checkHours * float64(time.Hour))
 	var forgotten []string
 	for _, r := range listenRows() {

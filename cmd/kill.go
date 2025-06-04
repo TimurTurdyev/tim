@@ -30,7 +30,18 @@ func allProcs() ([]procs.Full, error) {
 	if err != nil {
 		return nil, err
 	}
-	return procs.ParseFull(out), nil
+	return withArgs(procs.ParseFull(out)), nil
+}
+
+// rowName: имя строки процесса - описание, если процесс известный, иначе имя файла.
+func rowName(p procs.Full) string {
+	if n, note, ok := procs.Describe(p.Comm, p.Args); ok {
+		if note != "" {
+			return n + ", " + note
+		}
+		return n
+	}
+	return filepath.Base(p.Comm)
 }
 
 func stateHint(s string) string {
@@ -57,7 +68,7 @@ func printApp(a procs.App, limit int) {
 			ui.Println(ui.Dim(fmt.Sprintf("  и ещё %d", len(sorted)-limit)))
 			break
 		}
-		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(fmtBytes(p.RSS), 10) + clip(filepath.Base(p.Comm), 34)
+		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(fmtBytes(p.RSS), 10) + clip(rowName(p), 48)
 		if p.PID == a.Main.PID && a.IsApp {
 			line += ui.Dim("  главный")
 		}
@@ -222,7 +233,8 @@ var killCmd = &cobra.Command{
 		if _, err := strconv.Atoi(args[0]); err == nil {
 			for _, p := range list {
 				if p.PID == args[0] {
-					app = procs.App{Name: procs.AppName(p.Comm), Procs: []procs.Full{p}, Main: p, RSS: p.RSS, CPU: p.CPU}
+					app = procs.App{Name: procs.Name(p.Comm, p.Args), Procs: []procs.Full{p}, Main: p, RSS: p.RSS, CPU: p.CPU,
+						IsApp: strings.Contains(p.Comm, ".app/")}
 				}
 			}
 			if app.Name == "" {
