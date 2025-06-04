@@ -1,6 +1,7 @@
 package procs
 
 import (
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,7 +68,7 @@ type App struct {
 func Find(list []Full, query string) []App {
 	groups := map[string]*App{}
 	for _, p := range list {
-		name := AppName(p.Comm)
+		name := Name(p.Comm, p.Args)
 		g := groups[name]
 		if g == nil {
 			g = &App{Name: name, IsApp: strings.Contains(p.Comm, ".app/")}
@@ -86,8 +87,11 @@ func Find(list []Full, query string) []App {
 	}
 	sort.Strings(names)
 	keys := make([]string, len(names))
+	files := make([]string, len(names))
 	for i, n := range names {
 		keys[i] = strings.ReplaceAll(strings.ToLower(n), " ", "")
+		// Искать можно и по имени файла: человек помнит "qemu", а показываем "Android-эмулятор".
+		files[i] = strings.ToLower(filepath.Base(groups[n].Main.Comm))
 	}
 	q := strings.ReplaceAll(strings.ToLower(query), " ", "")
 	// Точное имя - без выбора: kill launchd не должен спрашивать, какой из похожих.
@@ -102,7 +106,11 @@ func Find(list []Full, query string) []App {
 		order int
 	}
 	var hits []hit
-	for i, m := range fuzzy.Filter(q, keys) {
+	search := make([]string, len(keys))
+	for i := range keys {
+		search[i] = keys[i] + " " + files[i]
+	}
+	for i, m := range fuzzy.Filter(q, search) {
 		// Слишком слабое совпадение - шум: на "go" подойдёт половина системы.
 		if m.Score < len([]rune(q))*2 {
 			continue
@@ -111,13 +119,24 @@ func Find(list []Full, query string) []App {
 		// Слово целиком в имени важнее совпадения по буквам, а приложение с окном - служебного
 		// процесса: на "chrome" первым должен быть сам браузер, а не chrome-devtools-mcp.
 		rank := 0
-		if strings.Contains(keys[m.Index], q) {
+		if strings.Contains(search[m.Index], q) {
 			rank += 2
 		}
 		if a.IsApp {
 			rank++
 		}
 		hits = append(hits, hit{a, rank, i})
+	}
+	// Есть совпадение целым словом - разрозненные буквы уже не нужны: на "qemu" не надо
+	// предлагать com.apple.quicklook, в котором q-e-m-u просто идут по порядку.
+	whole := hits[:0:0]
+	for _, h := range hits {
+		if h.rank >= 2 {
+			whole = append(whole, h)
+		}
+	}
+	if len(whole) > 0 {
+		hits = whole
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].rank != hits[j].rank {

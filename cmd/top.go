@@ -48,7 +48,13 @@ var topCmd = &cobra.Command{
 			return err
 		}
 		list := procs.ParseTop(out)
-		key := func(s procs.Sample) string { return procs.AppName(s.Comm) }
+		if a, err := runner.Output("ps", "-Axo", "pid=,args="); err == nil {
+			args := procs.ParseArgs(a)
+			for i := range list {
+				list[i].Args = args[list[i].PID]
+			}
+		}
+		key := func(s procs.Sample) string { return procs.Name(s.Comm, s.Args) }
 		label := "приложение"
 		switch topBy {
 		case "app":
