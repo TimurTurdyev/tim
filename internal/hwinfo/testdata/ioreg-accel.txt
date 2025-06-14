@@ -1,0 +1,3 @@
+"PerformanceStatistics" = {"In use system memory (driver)"=0,"Alloc system memory"=12271943680,"Tiler Utilization %"=1,"recoveryCount"=0,"lastRecoveryTime"=0,"Renderer Utilization %"=100,"TiledSceneBytes"=1474560,"Device Utilization %"=100,"SplitSceneCount"=0,"Allocated PB Size"=85983232,"In use system memory"=10060840960}
+"model" = "Apple M5 Pro"
+"gpu-core-count" = 20

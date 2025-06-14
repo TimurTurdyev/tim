@@ -85,6 +85,7 @@ var examples = map[string]string{
 	"tim cert":        "  tim cert example.com       # чужой сертификат\n  tim cert new shop.test     # свой, для локальной разработки\n  tim cert ca install        # чтобы браузер ему доверял",
 	"tim env":         "  tim env shop\n  tim env diff shop          # против .env.example\n  tim env diff shop --server # состав ключей против сервера",
 	"tim kill":        "  tim kill chrome            # Cmd+Q, не помогло - спросит про принудительно\n  tim kill goglehrome        # опечатки прощаются\n  tim kill 4242              # по номеру\n  tim kill node --force      # сразу SIGKILL",
+	"tim hw":          "  tim hw                     # паспорт машины и загрузка\n  tim hw --watch             # обновлять раз в секунду",
 	"tim ps":          "  tim ps chrome              # что запущено и как закрыть",
 	"tim today":       "  tim today                  # свои коммиты за сегодня\n  tim today --week\n  tim today lpack --since 2025-10-01 --md",
 	"tim link":        "  tim link shop              # shop.test: hosts, сертификат, url\n  tim serve shop --https     # https://shop.test:8443\n  tim unlink shop",
@@ -162,6 +163,7 @@ var overviewSections = []struct {
 	{"Машина", [][2]string{
 		{"tim motd", "сводка: машина, проект, сеть"},
 		{"tim top", "кто съел память и CPU"},
+		{"tim hw", "железо и загрузка: процессор, видеокарта, память"},
 		{"tim kill <имя>", "закрыть зависшее приложение"},
 		{"tim doctor", "что не так в окружении"},
 	}},
