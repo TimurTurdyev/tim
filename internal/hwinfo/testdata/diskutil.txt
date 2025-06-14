@@ -1,0 +1,5 @@
+   Protocol:                  Apple Fabric
+   SMART Status:              Verified
+   Disk Size:                 994.6 GB (994610155520 Bytes) (exactly 1942597960 512-Byte-Units)
+   Volume Used Space:         13.7 GB (13659275264 Bytes) (exactly 26678272 512-Byte-Units)
+   Solid State:               Yes

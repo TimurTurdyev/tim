@@ -1,0 +1,8 @@
+      "IOUserClientCreator" = "pid 615, WindowServer"
+      "IOUserClientCreator" = "pid 615, WindowServer"
+      "IOUserClientCreator" = "pid 620, runningboardd"
+      "IOUserClientCreator" = "pid 1319, NotificationCent"
+      "IOUserClientCreator" = "pid 1331, avconferenced"
+      "IOUserClientCreator" = "pid 1299, MenuBarAgent"
+      "IOUserClientCreator" = "pid 1185, ControlCenter"
+      "IOUserClientCreator" = "pid 1384, WallpaperMacinto"
