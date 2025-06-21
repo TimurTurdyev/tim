@@ -1,9 +1,8 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"runtime"
 	"sort"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -277,27 +277,40 @@ var hwCmd = &cobra.Command{
 			printHW(collectHW(false), true)
 			return nil
 		}
-		stop := make(chan os.Signal, 1)
-		signal.Notify(stop, os.Interrupt)
-		// Свой экран терминала: после выхода вернётся то, что было до запуска.
-		fmt.Print("\x1b[?1049h\x1b[?25l")
-		defer fmt.Print("\x1b[?25h\x1b[?1049l")
-		for {
-			s := collectHW(true) // iostat сам ждёт секунду - это и есть такт обновления
-			fmt.Print("\x1b[H\x1b[2J")
-			printHW(s, false)
-			ui.Println()
-			ui.Println(ui.Dim("  обновление раз в секунду  \u2022  Ctrl-C - выход"))
-			select {
-			case <-stop:
-				return nil
-			default:
-			}
+		s0 := collectHW(false)
+		title := s0.model + "  " + strconv.Itoa(s0.cores) + " ядер  " + fmtBytes(s0.memTotal)
+		err := tui.RunHW(title, func() tui.HWSample { return hwSample(s0) })
+		if errors.Is(err, tui.ErrNoTTY) {
+			// Без терминала живому экрану негде жить - один снимок.
+			printHW(s0, true)
+			return nil
 		}
+		return err
 	},
 }
 
 func init() {
 	hwCmd.Flags().BoolVarP(&hwWatch, "watch", "w", false, "обновлять раз в секунду")
 	root.AddCommand(hwCmd)
+}
+
+// hwSample: замер для живого экрана. Паспорт машины уже собран, здесь только то, что меняется.
+func hwSample(base hwSnapshot) tui.HWSample {
+	s := collectHW(true)
+	out := tui.HWSample{CPU: s.cpuPct, GPU: s.gpu.Device, GPUValid: s.gpu.Valid, VRAM: s.gpu.InUse,
+		MemUsed: s.memUsed, MemTotal: base.memTotal, SwapUsed: s.swap.Used, SwapTotal: s.swap.Total, Load: s.loadAvg}
+	if base.memTotal > 0 {
+		out.Mem = int(s.memUsed * 100 / base.memTotal)
+	}
+	if list, err := allProcs(); err == nil {
+		samples := make([]procs.Sample, len(list))
+		for i, p := range list {
+			samples[i] = p.Sample
+		}
+		groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, true)
+		for _, g := range groups[:min(6, len(groups))] {
+			out.Top = append(out.Top, tui.TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})
+		}
+	}
+	return out
 }
