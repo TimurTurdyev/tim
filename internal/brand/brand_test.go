@@ -40,7 +40,7 @@ func TestMascot(t *testing.T) {
 	if Mascot(Calm, Basic) != nil {
 		t.Fatal("без 256 цветов маскот не рисуется")
 	}
-	for _, m := range []Mood{Calm, Happy, Upset, Asleep} {
+	for _, m := range []Mood{Calm, Happy, Upset, Asleep, Blink} {
 		lines := Mascot(m, TrueColor)
 		if len(lines) != 6 {
 			t.Fatalf("%v: строк %d", m, len(lines))

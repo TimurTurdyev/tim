@@ -41,6 +41,7 @@ const (
 	Happy
 	Upset
 	Asleep
+	Blink // кадр моргания: глаза закрыты, без "z"
 )
 
 func mascotGrid(m Mood) [][]byte {
@@ -50,8 +51,11 @@ func mascotGrid(m Mood) [][]byte {
 		e1, e2, mouth = "EE", "EE", "MSSM"
 	case Upset:
 		e1, e2 = "RR", "RR"
-	case Asleep:
+	case Asleep, Blink:
 		e1, e2, mouth = "SS", "SS", "SSSS"
+		if m == Blink {
+			mouth = "SMMS"
+		}
 	}
 	g := make([][]byte, len(mascotBase))
 	for i, row := range mascotBase {
@@ -66,6 +70,8 @@ func mascotGrid(m Mood) [][]byte {
 	case Asleep:
 		g[4][2], g[4][3], g[4][6], g[4][7] = 'E', 'E', 'E', 'E'
 		g[0][10], g[1][11] = 'Z', 'Z'
+	case Blink:
+		g[4][2], g[4][3], g[4][6], g[4][7] = 'E', 'E', 'E', 'E'
 	case Upset:
 		g[0][10], g[1][10], g[3][10] = 'R', 'R', 'R'
 	}
