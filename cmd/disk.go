@@ -27,8 +27,43 @@ var (
 	diskSys   bool
 )
 
+// printModels: модели Hugging Face по размеру и с тем, когда их последний раз запускали:
+// без этого непонятно, какую из моделей по 8 ГБ можно убрать.
+func printModels(hub string) {
+	models := diskuse.HFModels(hub)
+	var wg sync.WaitGroup
+	for i := range models {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			models[i].Size = diskuse.ModelSize(models[i].Path)
+			models[i].LastUsed = diskuse.LastUsed(models[i].Path)
+		}()
+	}
+	wg.Wait()
+	diskuse.SortModels(models)
+	for _, m := range models {
+		if m.Size < 50<<20 {
+			continue
+		}
+		used := "не запускали"
+		if !m.LastUsed.IsZero() {
+			days := int(time.Since(m.LastUsed).Hours() / 24)
+			switch {
+			case days == 0:
+				used = "запускали сегодня"
+			case days < 30:
+				used = "запускали " + strconv.Itoa(days) + " дн назад"
+			default:
+				used = ui.Warn("не запускали " + strconv.Itoa(days) + " дн")
+			}
+		}
+		ui.Println(ui.Dim("          "+ui.Pad(fmtBytes(m.Size), 10)+ui.Pad(m.Name, 44)) + used)
+	}
+}
+
 // topCaches: самые большие подпапки общего кеша, кроме тех, что уже показаны отдельной строкой.
-func topCaches(dir string, known map[string]int64, n int) []diskuse.Item {
+func topCaches(dir, rel string, known map[string]int64, n int) []diskuse.Item {
 	if known == nil {
 		known = map[string]int64{}
 	}
@@ -40,7 +75,7 @@ func topCaches(dir string, known map[string]int64, n int) []diskuse.Item {
 			continue
 		}
 		name := filepath.Base(f[1])
-		if _, shown := known[diskuse.Caches+"/"+name]; shown {
+		if _, shown := known[rel+"/"+name]; shown {
 			continue
 		}
 		kb, _ := strconv.ParseInt(f[0], 10, 64)
@@ -93,12 +128,18 @@ func diskSystem() error {
 		}
 		ui.Println(line)
 		switch m.Paths[0] {
+		case diskuse.DotCache:
+			for _, sub := range topCaches(filepath.Join(home, diskuse.DotCache), diskuse.DotCache, sizes, 3) {
+				ui.Println(ui.Dim("          " + ui.Pad(fmtBytes(sub.Size), 10) + sub.Path))
+			}
+		case ".cache/huggingface":
+			printModels(filepath.Join(home, ".cache", "huggingface", "hub"))
 		case diskuse.Caches:
-			for _, sub := range topCaches(filepath.Join(home, diskuse.Caches), sizes, 3) {
+			for _, sub := range topCaches(filepath.Join(home, diskuse.Caches), diskuse.Caches, sizes, 3) {
 				ui.Println(ui.Dim("          " + ui.Pad(fmtBytes(sub.Size), 10) + sub.Path))
 			}
 		case diskuse.Caches + "/JetBrains":
-			subs := topCaches(filepath.Join(home, m.Paths[0]), nil, 20)
+			subs := topCaches(filepath.Join(home, m.Paths[0]), m.Paths[0], nil, 20)
 			names := make([]string, len(subs))
 			for i, sub := range subs {
 				names[i] = sub.Path
@@ -186,6 +227,10 @@ func cleanStale(items []diskuse.Item, min int64) error {
 			continue
 		}
 		freed += it.Size
+	}
+	if freed == 0 {
+		ui.Println(ui.Dim("ничего не убрано; кандидатов " + strconv.Itoa(len(stale))))
+		return nil
 	}
 	ui.Println(ui.Info("освобождено "+fmtBytes(freed)) + ui.Dim("  вернуть можно из Корзины"))
 	return nil
