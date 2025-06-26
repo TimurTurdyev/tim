@@ -99,3 +99,50 @@ func TestOldIDEVersions(t *testing.T) {
 		t.Fatal("PyCharm без более новой версии помечен старым")
 	}
 }
+
+func TestModelName(t *testing.T) {
+	if n, ok := ModelName("/x/hub/models--mlx-community--Qwen3-8B-4bit"); !ok || n != "mlx-community/Qwen3-8B-4bit" {
+		t.Fatalf("%q %v", n, ok)
+	}
+	// Двойной дефис в имени самой модели не должен превращаться в слеш.
+	if n, _ := ModelName("models--org--a--b"); n != "org/a--b" {
+		t.Fatalf("%q", n)
+	}
+	if _, ok := ModelName("datasets--x--y"); ok {
+		t.Fatal("наборы данных - не модели")
+	}
+}
+
+func TestSummarizeTwoParents(t *testing.T) {
+	places := []Place{{Name: "hf", Paths: []string{".cache/huggingface"}}, {Name: "brew", Paths: []string{"Library/Caches/Homebrew"}}}
+	got := SummarizeSystem(places, map[string]int64{".cache": 40, ".cache/huggingface": 34, "Library/Caches": 10, "Library/Caches/Homebrew": 4})
+	m := map[string]int64{}
+	for _, x := range got {
+		m[x.Name] = x.Size
+	}
+	if m["hf"] != 34 || m["~/.cache: прочее"] != 6 || m["~/Library/Caches: прочее"] != 6 {
+		t.Fatalf("%v", m)
+	}
+}
+
+func TestModelSizeFollowsSharedBlobs(t *testing.T) {
+	hub := t.TempDir()
+	shared := filepath.Join(hub, "blobs", "1c")
+	model := filepath.Join(hub, "models--org--m")
+	for _, d := range []string{shared, filepath.Join(model, "blobs"), filepath.Join(model, "snapshots", "rev")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Данные лежат в общем hub/blobs, к ним ведут две ссылки подряд.
+	if err := os.WriteFile(filepath.Join(shared, "big"), make([]byte, 5000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Symlink("../../blobs/1c/big", filepath.Join(model, "blobs", "h1"))
+	_ = os.Symlink("../../blobs/h1", filepath.Join(model, "snapshots", "rev", "model.safetensors"))
+	_ = os.WriteFile(filepath.Join(model, "blobs", "small"), make([]byte, 100), 0o644)
+	_ = os.Symlink("../../blobs/small", filepath.Join(model, "snapshots", "rev", "config.json"))
+	if got := ModelSize(model); got != 5100 {
+		t.Fatalf("размер %d, ожидали 5100: каждый файл один раз, по настоящим данным", got)
+	}
+}

@@ -30,7 +30,10 @@ var SystemPlaces = []Place{
 	{"JetBrains: кеши IDE", []string{"Library/Caches/JetBrains"}, "папки прошлых версий IDE удаляются целиком, текущую не трогать"},
 	{"Xcode DerivedData", []string{"Library/Developer/Xcode/DerivedData"}, "rm -rf ~/Library/Developer/Xcode/DerivedData"},
 	{"VS Code: кеш", []string{"Library/Application Support/Code/Cache", "Library/Application Support/Code/CachedData"}, "удалить при закрытом редакторе"},
-	{"~/.cache", []string{".cache"}, ""},
+	{"модели Hugging Face", []string{".cache/huggingface"}, "hf cache delete - выбрать ненужные модели"},
+	{"uv", []string{".cache/uv"}, "uv cache clean"},
+	{"браузеры puppeteer", []string{".cache/puppeteer"}, "удалить папку, скачаются снова при надобности"},
+	{"браузеры chrome-devtools-mcp", []string{".cache/chrome-devtools-mcp"}, "удалить папку, скачаются снова при надобности"},
 	{"Корзина", []string{".Trash"}, "очистить Корзину в Finder"},
 	{"Загрузки", []string{"Downloads"}, ""},
 }
@@ -48,31 +51,43 @@ type Measured struct {
 // sizes - размер каждого пути из Paths и Caches, от домашней папки.
 func SummarizeSystem(places []Place, sizes map[string]int64) []Measured {
 	var out []Measured
-	var nested int64
+	nested := map[string]int64{}
 	for _, p := range places {
 		var size int64
 		for _, path := range p.Paths {
 			size += sizes[path]
-			if strings.HasPrefix(path, Caches+"/") {
-				nested += sizes[path]
+			for _, parent := range Parents {
+				if strings.HasPrefix(path, parent.Path+"/") {
+					nested[parent.Path] += sizes[path]
+				}
 			}
 		}
 		if size > 0 {
 			out = append(out, Measured{Place: p, Size: size})
 		}
 	}
-	if rest := sizes[Caches] - nested; rest > 0 {
-		out = append(out, Measured{Place: Place{Name: "~/Library/Caches: прочее", Paths: []string{Caches},
-			Clean: "приложения пересоздадут сами; чистить при закрытых приложениях"}, Size: rest})
+	for _, parent := range Parents {
+		if rest := sizes[parent.Path] - nested[parent.Path]; rest > 0 {
+			out = append(out, Measured{Place: Place{Name: parent.Name, Paths: []string{parent.Path}, Clean: parent.Clean}, Size: rest})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
 	return out
 }
 
+// Parents: общие папки кешей. Из них вычитается то, что показано отдельными строками, остаток - "прочее".
+var Parents = []struct{ Path, Name, Clean string }{
+	{Caches, "~/Library/Caches: прочее", "приложения пересоздадут сами; чистить при закрытых приложениях"},
+	{DotCache, "~/.cache: прочее", ""},
+}
+
+// DotCache: кеши консольных программ и моделей.
+const DotCache = ".cache"
+
 // AllPaths: все пути, которые надо измерить.
 func AllPaths(places []Place) []string {
-	seen := map[string]bool{Caches: true}
-	out := []string{Caches}
+	seen := map[string]bool{Caches: true, DotCache: true}
+	out := []string{Caches, DotCache}
 	for _, p := range places {
 		for _, path := range p.Paths {
 			if !seen[path] {
