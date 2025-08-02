@@ -27,6 +27,24 @@ var (
 	diskSys   bool
 )
 
+// tilde: путь от домашней папки так, как его набирают в терминале.
+func tilde(rel string) string { return "~/" + rel }
+
+// placePath: где лежит место; у мест из нескольких папок - самая большая из них.
+func placePath(home string, p diskuse.Place, sizes map[string]int64) string {
+	best := p.Paths[0]
+	for _, path := range p.Paths {
+		if sizes[path] > sizes[best] {
+			best = path
+		}
+	}
+	return tilde(best)
+}
+
+func subRow(size int64, name, path string) string {
+	return "          " + ui.Pad(fmtBytes(size), 10) + ui.Pad(name, 24) + path
+}
+
 // printModels: модели Hugging Face по размеру и с тем, когда их последний раз запускали:
 // без этого непонятно, какую из моделей по 8 ГБ можно убрать.
 func printModels(hub string) {
@@ -58,7 +76,8 @@ func printModels(hub string) {
 				used = ui.Warn("не запускали " + strconv.Itoa(days) + " дн")
 			}
 		}
-		ui.Println(ui.Dim("          "+ui.Pad(fmtBytes(m.Size), 10)+ui.Pad(m.Name, 44)) + used)
+		ui.Println(ui.Dim("          "+ui.Pad(fmtBytes(m.Size), 10)+ui.Pad(m.Name, 44)) + ui.Pad(used, 24) +
+			ui.Dim(tilde(filepath.Join(".cache", "huggingface", "hub", filepath.Base(m.Path)))))
 	}
 }
 
@@ -123,20 +142,21 @@ func diskSystem() error {
 		}
 		total += m.Size
 		line := ui.Label(ui.Pad(fmtBytes(m.Size), 10)) + ui.Pad(m.Name, 28)
+		hint := []string{placePath(home, m.Place, sizes)}
 		if m.Clean != "" {
-			line += ui.Dim(m.Clean)
+			hint = append(hint, m.Clean)
 		}
-		ui.Println(line)
+		ui.Println(line + ui.Dim(strings.Join(hint, "  \u2022  ")))
 		switch m.Paths[0] {
 		case diskuse.DotCache:
 			for _, sub := range topCaches(filepath.Join(home, diskuse.DotCache), diskuse.DotCache, sizes, 3) {
-				ui.Println(ui.Dim("          " + ui.Pad(fmtBytes(sub.Size), 10) + sub.Path))
+				ui.Println(ui.Dim(subRow(sub.Size, sub.Path, tilde(filepath.Join(diskuse.DotCache, sub.Path)))))
 			}
 		case ".cache/huggingface":
 			printModels(filepath.Join(home, ".cache", "huggingface", "hub"))
 		case diskuse.Caches:
 			for _, sub := range topCaches(filepath.Join(home, diskuse.Caches), diskuse.Caches, sizes, 3) {
-				ui.Println(ui.Dim("          " + ui.Pad(fmtBytes(sub.Size), 10) + sub.Path))
+				ui.Println(ui.Dim(subRow(sub.Size, sub.Path, tilde(filepath.Join(diskuse.Caches, sub.Path)))))
 			}
 		case diskuse.Caches + "/JetBrains":
 			subs := topCaches(filepath.Join(home, m.Paths[0]), m.Paths[0], nil, 20)
@@ -149,12 +169,15 @@ func diskSystem() error {
 				if sub.Size < 50<<20 {
 					continue
 				}
-				line := "          " + ui.Pad(fmtBytes(sub.Size), 10) + ui.Pad(sub.Path, 18)
+				rel := filepath.Join(m.Paths[0], sub.Path)
 				if old[sub.Path] {
-					ui.Println(ui.Dim(line) + ui.Warn("старая версия, можно удалить"))
+					// Готовая команда: trash кладёт в Корзину, а не стирает - передумал, вернул.
+					// Тильда остаётся снаружи кавычек, иначе shell её не раскроет.
+					ui.Println(ui.Dim("          "+ui.Pad(fmtBytes(sub.Size), 10)+ui.Pad(sub.Path, 24)) +
+						ui.Warn("старая версия") + ui.Dim("  trash ~/"+shellq.Join([]string{rel})))
 					continue
 				}
-				ui.Println(ui.Dim(line))
+				ui.Println(ui.Dim(subRow(sub.Size, sub.Path, tilde(rel))))
 			}
 		}
 	}
