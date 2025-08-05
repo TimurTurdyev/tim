@@ -27,6 +27,19 @@ var (
 	diskSys   bool
 )
 
+// engineHint: docker system prune чистит только через работающий движок - у выключенного
+// OrbStack нет сокета, и команда падает с "no such file or directory".
+func engineHint(name, clean string) string {
+	if name != "OrbStack" || !runner.Has("orb") {
+		return clean
+	}
+	out, _ := runner.Output("orb", "status")
+	if strings.TrimSpace(out) == "Running" {
+		return clean
+	}
+	return "OrbStack выключен: orb start, " + clean + ", orb stop"
+}
+
 // tilde: путь от домашней папки так, как его набирают в терминале.
 func tilde(rel string) string { return "~/" + rel }
 
@@ -140,7 +153,7 @@ func diskSystem() error {
 		line := ui.Label(ui.Pad(fmtBytes(m.Size), 10)) + ui.Pad(m.Name, 28)
 		hint := []string{placePath(home, m.Place, sizes)}
 		if m.Clean != "" {
-			hint = append(hint, m.Clean)
+			hint = append(hint, engineHint(m.Name, m.Clean))
 		}
 		ui.Println(line + ui.Dim(strings.Join(hint, "  \u2022  ")))
 		switch m.Paths[0] {
