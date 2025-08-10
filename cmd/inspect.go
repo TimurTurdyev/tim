@@ -178,9 +178,7 @@ func collectSite(host, target string) *siteReport {
 		mu.Unlock()
 	}
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		ips, err := net.LookupHost(host)
 		if err != nil {
 			fail("dns", err)
@@ -192,35 +190,29 @@ func collectSite(host, target string) *siteReport {
 		} else {
 			fail("geo", err)
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		if d, err := inspect.Registration(inspect.Registrable(host)); err == nil {
 			r.Domain = d
 		} else {
 			fail("domain", err)
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		info, err := inspect.Cert(host, "443")
 		if err != nil {
 			fail("tls", err)
 			return
 		}
 		r.TLS = &siteTLS{Issuer: info.Leaf().Issuer.CommonName, Expires: info.Leaf().NotAfter, Verified: info.VerifyErr == nil}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		if p, err := inspect.HTTP(target); err == nil {
 			r.HTTP = p
 		} else {
 			fail("http", err)
 		}
-	}()
+	})
 	wg.Wait()
 	return r
 }

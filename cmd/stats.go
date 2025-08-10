@@ -32,45 +32,37 @@ func localSample() stats.Sample {
 	s := stats.Sample{At: time.Now()}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		out, _ := runner.Output("df", "-k", "/System/Volumes/Data")
 		if d, ok := sysinfo.ParseDF(out); ok {
 			mu.Lock()
 			s.DiskTotal, s.DiskFree = int64(d.Size), int64(d.Size-d.Used)
 			mu.Unlock()
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		vm, _ := runner.Output("vm_stat")
 		t, _ := runner.Output("sysctl", "-n", "hw.memsize")
 		total, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
 		mu.Lock()
 		s.MemUsed, s.MemTotal = int64(sysinfo.ParseVMStat(vm)), total
 		mu.Unlock()
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		out, _ := runner.Output("sysctl", "-n", "vm.loadavg")
 		if l := sysinfo.ParseLoadavg(out); len(l) > 0 {
 			mu.Lock()
 			s.Load = l[0]
 			mu.Unlock()
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		if b, ok := readBattery(); ok {
 			mu.Lock()
 			s.Battery = b.Charge
 			mu.Unlock()
 		}
-	}()
+	})
 	wg.Wait()
 	return s
 }

@@ -64,12 +64,10 @@ func printModels(hub string) {
 	models := diskuse.HFModels(hub)
 	var wg sync.WaitGroup
 	for i := range models {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			models[i].Size = diskuse.ModelSize(models[i].Path)
 			models[i].LastUsed = diskuse.LastUsed(models[i].Path)
-		}()
+		})
 	}
 	wg.Wait()
 	diskuse.SortModels(models)
@@ -133,9 +131,7 @@ func diskSystem() error {
 		if _, err := os.Stat(full); err != nil {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			// du без прав на часть подпапок пишет ошибки, но итог печатает - его и берём.
@@ -144,7 +140,7 @@ func diskSystem() error {
 			mu.Lock()
 			sizes[rel] = kb * 1024
 			mu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
 	list := diskuse.SummarizeSystem(diskuse.SystemPlaces, sizes)
@@ -233,14 +229,12 @@ func cleanStale(items []diskuse.Item, min int64) error {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, it := range items {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			t := lastTouched(it.Path)
 			mu.Lock()
 			touched[it.Path] = t
 			mu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
 	stale := diskuse.Stale(items, touched, time.Now(), diskDays, min)
@@ -312,15 +306,13 @@ var diskCmd = &cobra.Command{
 		sem := make(chan struct{}, 8)
 		var wg sync.WaitGroup
 		for i, d := range dirs {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				out, _ := runner.Output("du", "-sk", d)
 				kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
 				items[i] = diskuse.Item{Path: d, Kind: filepath.Base(d), Size: kb * 1024}
-			}()
+			})
 		}
 		wg.Wait()
 		if diskClean {

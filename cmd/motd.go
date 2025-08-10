@@ -85,9 +85,7 @@ var motdCmd = &cobra.Command{
 			if !chosen[s.name] {
 				continue
 			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				t0 := time.Now()
 				done := make(chan []string, 1)
 				go func() { done <- s.collect() }()
@@ -97,7 +95,7 @@ var motdCmd = &cobra.Command{
 				case <-time.After(s.timeout):
 					results[i] = result{took: s.timeout, late: true}
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		for i, s := range sections {
@@ -132,13 +130,7 @@ func motdSystem() []string {
 		batt, ip, docker           string
 		memTotal                   uint64
 	)
-	run := func(f func()) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			f()
-		}()
-	}
+	run := func(f func()) { wg.Go(f) }
 	run(func() { v, _ := runner.Output("sw_vers", "-productVersion"); ver = strings.TrimSpace(v) })
 	run(func() { boot, _ = runner.Output("sysctl", "-n", "kern.boottime") })
 	run(func() { load, _ = runner.Output("sysctl", "-n", "vm.loadavg") })
@@ -355,9 +347,7 @@ func motdRepos() []string {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			if g, ok := gitState(dir); ok && (g.Changes > 0 || g.Ahead > 0) {
@@ -365,7 +355,7 @@ func motdRepos() []string {
 				rows = append(rows, row{p.Name, g})
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if len(rows) == 0 {
@@ -408,9 +398,7 @@ func motdVersions() []string {
 	vals := make([]string, len(probes))
 	var wg sync.WaitGroup
 	for i, p := range probes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if !runner.Has(p.args[0]) {
 				return
 			}
@@ -418,7 +406,7 @@ func motdVersions() []string {
 			if err == nil {
 				vals[i] = p.name + " " + strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(out), "go"), "v")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	var items []string

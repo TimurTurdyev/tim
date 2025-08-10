@@ -32,9 +32,7 @@ func remoteDomains(aliases []string) map[string][]fill.Vhost {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
 	for i, a := range aliases {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			conf, err := runner.Output("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", a, nginxDump)
@@ -42,7 +40,7 @@ func remoteDomains(aliases []string) map[string][]fill.Vhost {
 				return
 			}
 			out[i] = fill.ParseNginx(conf)
-		}()
+		})
 	}
 	wg.Wait()
 	m := map[string][]fill.Vhost{}
@@ -65,13 +63,11 @@ func aliasIPs() map[string]string {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 12)
 	for i, a := range aliases {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			out[i] = sshx.IP(a)
-		}()
+		})
 	}
 	wg.Wait()
 	m := map[string]string{}

@@ -77,15 +77,13 @@ func mailSummary() error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
 	for i, d := range domains {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			m := inspect.MailCheck(d, inspect.DKIMSelectors)
 			level, missing := m.Verdict()
 			rows[i] = row{d, level, missing}
-		}()
+		})
 	}
 	wg.Wait()
 	bad := 0

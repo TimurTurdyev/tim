@@ -67,16 +67,14 @@ var todayCmd = &cobra.Command{
 		var wg sync.WaitGroup
 		for i, p := range projects {
 			order[i] = p.Name
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				list := commitsOf(cfg.ProjectDir(p), since)
 				mu.Lock()
 				by[p.Name] = list
 				mu.Unlock()
-			}()
+			})
 		}
 		wg.Wait()
 		groups := worklog.Group(by, order)

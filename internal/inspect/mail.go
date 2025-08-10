@@ -139,9 +139,7 @@ func MailCheck(domain string, selectors []string) *Mail {
 	m := &Mail{DKIM: map[string]string{}}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		mx, _ := net.DefaultResolver.LookupMX(ctx, domain)
 		for _, r := range mx {
 			h := strings.TrimSuffix(r.Host, ".")
@@ -151,21 +149,11 @@ func MailCheck(domain string, selectors []string) *Mail {
 			}
 			m.MX = append(m.MX, h+" "+strconv.Itoa(int(r.Pref)))
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		m.SPF, m.SPFF = AnalyzeSPF(lookupTXT(ctx, domain))
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		m.DMARC, m.DMRF = AnalyzeDMARC(lookupTXT(ctx, "_dmarc."+domain))
-	}()
+	})
+	wg.Go(func() { m.SPF, m.SPFF = AnalyzeSPF(lookupTXT(ctx, domain)) })
+	wg.Go(func() { m.DMARC, m.DMRF = AnalyzeDMARC(lookupTXT(ctx, "_dmarc."+domain)) })
 	for _, sel := range selectors {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for _, t := range lookupTXT(ctx, sel+"._domainkey."+domain) {
 				if strings.Contains(t, "p=") {
 					mu.Lock()
@@ -174,7 +162,7 @@ func MailCheck(domain string, selectors []string) *Mail {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return m

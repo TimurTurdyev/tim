@@ -91,27 +91,11 @@ func checkRow(p *config.Project) health.Row {
 	}
 	host, _ := hostPort(p.URL, "")
 	if !checkLocal && p.URL != "" && host != "" && !fill.Local(host) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			add(health.Site(p.URL))
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			add(health.Cert(host))
-		}()
+		wg.Go(func() { add(health.Site(p.URL)) })
+		wg.Go(func() { add(health.Cert(host)) })
 		base := inspect.Registrable(host)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			add(health.Mail(base))
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			add(health.DomainReg(base))
-		}()
+		wg.Go(func() { add(health.Mail(base)) })
+		wg.Go(func() { add(health.DomainReg(base)) })
 	}
 	wg.Wait()
 	return r
@@ -220,13 +204,11 @@ var checkCmd = &cobra.Command{
 		sem := make(chan struct{}, 8)
 		var wg sync.WaitGroup
 		for i, p := range projects {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				rows[i] = checkRow(p)
-			}()
+			})
 		}
 		wg.Wait()
 		// Проекты, по которым проверить было нечего, в таблице только шумят.

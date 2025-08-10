@@ -81,9 +81,7 @@ func Collect(domain string, opt Options) *Report {
 	names := map[string]string{domain: "апекс"}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if opt.SkipCRT {
 			return
 		}
@@ -111,10 +109,8 @@ func Collect(domain string, opt Options) *Report {
 			}
 		}
 		rep.Related = related
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		for _, n := range bruteforce(domain) {
 			mu.Lock()
 			if names[n] == "" {
@@ -122,7 +118,7 @@ func Collect(domain string, opt Options) *Report {
 			}
 			mu.Unlock()
 		}
-	}()
+	})
 	wg.Wait()
 
 	// Резолв всех имён, по 16 одновременно.
@@ -135,9 +131,7 @@ func Collect(domain string, opt Options) *Report {
 	var rwg sync.WaitGroup
 	var rmu sync.Mutex
 	for n := range names {
-		rwg.Add(1)
-		go func() {
-			defer rwg.Done()
+		rwg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			ips := lookup(n)
@@ -147,7 +141,7 @@ func Collect(domain string, opt Options) *Report {
 			rmu.Lock()
 			found = append(found, resolved{n, ips})
 			rmu.Unlock()
-		}()
+		})
 	}
 	rwg.Wait()
 	sort.Slice(found, func(i, j int) bool { return found[i].name < found[j].name })
@@ -175,22 +169,18 @@ func Collect(domain string, opt Options) *Report {
 	var pwg sync.WaitGroup
 	psem := make(chan struct{}, 16)
 	for i := range rep.Addrs {
-		pwg.Add(1)
-		go func() {
-			defer pwg.Done()
+		pwg.Go(func() {
 			psem <- struct{}{}
 			defer func() { <-psem }()
 			rep.Addrs[i].PTR = ptr(rep.Addrs[i].IP)
-		}()
+		})
 	}
 	for i := range rep.Hosts {
-		pwg.Add(1)
-		go func() {
-			defer pwg.Done()
+		pwg.Go(func() {
 			psem <- struct{}{}
 			defer func() { <-psem }()
 			probe(&rep.Hosts[i])
-		}()
+		})
 	}
 	pwg.Wait()
 
@@ -256,12 +246,10 @@ func certSources(domain string, withQuota bool) (subs, related []string, used []
 	out := make([]res, len(jobs))
 	var wg sync.WaitGroup
 	for i, j := range jobs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			s, r, e := j.fn(domain)
 			out[i] = res{name: j.name, subs: s, related: r, err: e}
-		}()
+		})
 	}
 	wg.Wait()
 	seenS, seenR := map[string]bool{}, map[string]bool{}
@@ -365,9 +353,7 @@ func bruteforce(domain string) []string {
 	sem := make(chan struct{}, 24)
 	var wg sync.WaitGroup
 	for _, p := range Common {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			n := p + "." + domain
@@ -376,7 +362,7 @@ func bruteforce(domain string) []string {
 				out = append(out, n)
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return out

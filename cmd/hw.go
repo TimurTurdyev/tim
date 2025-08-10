@@ -103,38 +103,28 @@ func collectHW(cpuNow bool) hwSnapshot {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		m, _ := runner.Output("sysctl", "-n", "machdep.cpu.brand_string")
 		c, pc, ec := sysctlInt("hw.ncpu"), sysctlInt("hw.perflevel0.physicalcpu"), sysctlInt("hw.perflevel1.physicalcpu")
 		total := sysctlInt("hw.memsize")
 		set(func() { s.model, s.cores, s.pc, s.ec, s.memTotal = strings.TrimSpace(m), c, pc, ec, int64(total) })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		vm, _ := runner.Output("vm_stat")
 		set(func() { s.memUsed = int64(sysinfo.ParseVMStat(vm)) })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		out, _ := runner.Output("memory_pressure")
 		n, _ := hwinfo.ParseFreePercent(out)
 		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
 		swap, _ := hwinfo.ParseSwap(sw)
 		set(func() { s.freePct, s.swap = n, swap })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		out, _ := runner.Output("sysctl", "-n", "vm.loadavg")
 		set(func() { s.loadAvg = sysinfo.ParseLoadavg(out) })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		if cpuNow {
 			out, _ := runner.Output("iostat", "-c", "2", "-w", "1")
 			n, _ := hwinfo.ParseIostatCPU(out)
@@ -152,28 +142,22 @@ func collectHW(cpuNow bool) hwSnapshot {
 		ncpu := runtime.NumCPU()
 		holders := gpuHolders(list)
 		set(func() { s.cpuPct, s.holders = int(sum/float64(ncpu)+0.5), holders })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		out, _ := runner.Output("system_profiler", "SPDisplaysDataType", "-json")
 		set(func() { s.gpus = hwinfo.ParseDisplays([]byte(out)) })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		out, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
 		set(func() { s.gpu = hwinfo.ParseGPULoad(out) })
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		out, _ := runner.Output("diskutil", "info", "/")
 		df, _ := runner.Output("df", "-k", "/System/Volumes/Data")
 		d, _ := sysinfo.ParseDF(df)
 		th, _ := runner.Output("pmset", "-g", "therm")
 		set(func() { s.disk, s.diskPct, s.therm = hwinfo.ParseDiskutil(out), d.Percent(), hwinfo.ParseTherm(th) })
-	}()
+	})
 	wg.Wait()
 	return s
 }

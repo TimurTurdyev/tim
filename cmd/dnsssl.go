@@ -71,9 +71,7 @@ var sslCmd = &cobra.Command{
 		rows := make([]sslRow, len(hosts))
 		var wg sync.WaitGroup
 		for i, h := range hosts {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				host, port := hostPort(h, "443")
 				rows[i].host = host
 				info, err := inspect.Cert(host, port)
@@ -85,7 +83,7 @@ var sslCmd = &cobra.Command{
 				if info.VerifyErr != nil {
 					rows[i].err = info.VerifyErr
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		sort.SliceStable(rows, func(a, b int) bool {
