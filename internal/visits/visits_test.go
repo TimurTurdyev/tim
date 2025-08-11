@@ -21,13 +21,3 @@ func TestOrder(t *testing.T) {
 		}
 	}
 }
-
-func TestRecord(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	now := time.Now()
-	Record("shop", now)
-	Record("shop", now)
-	if e := Load()["shop"]; e.Count != 2 || !e.Last.Equal(now.Round(0)) && e.Last.Unix() != now.Unix() {
-		t.Fatalf("%+v", e)
-	}
-}

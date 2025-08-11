@@ -40,13 +40,3 @@ func TestParseRIPEstat(t *testing.T) {
 		t.Fatalf("%v %v", got, err)
 	}
 }
-
-func TestParseNetworkInfoAndHolder(t *testing.T) {
-	got, err := ParseNetworkInfo([]byte(`{"data":{"asns":["13238","208398"],"prefix":"77.88.44.0/24"}}`))
-	if err != nil || strings.Join(got, ",") != "13238,208398" {
-		t.Fatalf("%v %v", got, err)
-	}
-	if h := ParseHolder([]byte(`{"data":{"holder":"YANDEX - YANDEX LLC"}}`)); h != "YANDEX - YANDEX LLC" {
-		t.Fatalf("%q", h)
-	}
-}

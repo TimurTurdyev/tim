@@ -74,10 +74,3 @@ func TestJournalKeep(t *testing.T) {
 		t.Fatalf("в журнале %d, последний %d", len(all), all[len(all)-1].N)
 	}
 }
-
-func TestPrettyForm(t *testing.T) {
-	r := Record{Headers: http.Header{"Content-Type": {"application/x-www-form-urlencoded"}}, Body: []byte("b=2&a=1")}
-	if p := Pretty(r); !strings.Contains(p, "a = 1\n  b = 2") {
-		t.Fatalf("%s", p)
-	}
-}

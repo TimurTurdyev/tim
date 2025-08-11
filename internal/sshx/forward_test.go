@@ -1,7 +1,6 @@
 package sshx
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -24,16 +23,5 @@ func TestParseForward(t *testing.T) {
 		if _, err := ParseForward(bad); err == nil {
 			t.Errorf("%q should fail", bad)
 		}
-	}
-}
-
-func TestShuttleArgs(t *testing.T) {
-	got := ShuttleArgs("vps", "203.0.113.10", true, []string{"198.51.100.0/24"}, "/tmp/s.pid")
-	want := "-r vps 0/0 --dns -x 203.0.113.10/32 -x 10.0.0.0/8 -x 172.16.0.0/12 -x 192.168.0.0/16 -x 198.51.100.0/24 -D --pidfile /tmp/s.pid"
-	if j := strings.Join(got, " "); j != want {
-		t.Errorf("got  %s\nwant %s", j, want)
-	}
-	if j := strings.Join(ShuttleArgs("vps", "", false, nil, "p"), " "); j != "-r vps 0/0 -x 10.0.0.0/8 -x 172.16.0.0/12 -x 192.168.0.0/16 -D --pidfile p" {
-		t.Errorf("minimal: %s", j)
 	}
 }

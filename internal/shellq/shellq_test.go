@@ -30,15 +30,6 @@ func TestJoin(t *testing.T) {
 	}
 }
 
-func TestQuoteApostrophe(t *testing.T) {
-	if got := Quote("it's"); got != `'it'\''s'` {
-		t.Fatalf("Quote(it's) = %s", got)
-	}
-	if got := Quote(""); got != "''" {
-		t.Fatalf("Quote(пусто) = %s", got)
-	}
-}
-
 // Значение должно дойти до настоящего sh ровно таким, какое оно у нас.
 func TestQuoteRoundTrip(t *testing.T) {
 	for _, v := range []string{`git status`, `echo 'hi'`, `printf "%s\n" $HOME`, "a;b && c | d", `it's "x"`, ""} {

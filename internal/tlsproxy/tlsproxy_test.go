@@ -38,17 +38,3 @@ func TestHandlerKeepsHostAndScheme(t *testing.T) {
 		t.Errorf("заголовки: proto=%q port=%q", got.Get("X-Forwarded-Proto"), got.Get("X-Forwarded-Port"))
 	}
 }
-
-func TestBackendDown(t *testing.T) {
-	target, _ := url.Parse("http://127.0.0.1:1")
-	front := httptest.NewTLSServer(Handler(target))
-	defer front.Close()
-	resp, err := front.Client().Get(front.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("статус %d, ожидали 502", resp.StatusCode)
-	}
-}

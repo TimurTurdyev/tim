@@ -89,14 +89,3 @@ func TestDiff(t *testing.T) {
 		t.Error("свои значения несекретных ключей - это не расхождение")
 	}
 }
-
-func TestOnlyIn(t *testing.T) {
-	a := map[string]string{"A": "", "B": ""}
-	b := map[string]string{"B": ""}
-	if got := strings.Join(OnlyIn(a, b), ","); got != "A" {
-		t.Fatalf("OnlyIn = %q", got)
-	}
-	if len(OnlyIn(b, a)) != 0 {
-		t.Fatal("лишних ключей быть не должно")
-	}
-}

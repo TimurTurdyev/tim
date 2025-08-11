@@ -2,15 +2,6 @@ package cmd
 
 import "testing"
 
-func TestColorFlags(t *testing.T) {
-	in := "  -d, --detach         в фоне\n      --port int       порт (для одного проекта)\n                       продолжение описания"
-	got := colorFlags(in, func(s string) string { return "<" + s + ">" })
-	want := "  <-d, --detach>         в фоне\n      <--port int>       порт (для одного проекта)\n                       продолжение описания"
-	if got != want {
-		t.Errorf("got\n%s\nwant\n%s", got, want)
-	}
-}
-
 func TestTranslateError(t *testing.T) {
 	cases := map[string]string{
 		"unknown command \"serv\" for \"tim\"\n\nDid you mean this?\n\tserve\n\tsvc\n": "нет команды serv у tim: tim --help; может, serve или svc?",

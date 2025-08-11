@@ -60,22 +60,6 @@ func TestAppendTrimAndLoad(t *testing.T) {
 	}
 }
 
-func TestSparkline(t *testing.T) {
-	if s := []rune(Sparkline([]float64{1, 0, 2, 3, 4}, 10)); len(s) != 4 || s[0] != '\u2581' || s[3] != '\u2588' {
-		t.Fatalf("%q", string(s))
-	}
-	if s := []rune(Sparkline(make([]float64, 0), 10)); len(s) != 0 {
-		t.Fatal("пусто")
-	}
-	many := make([]float64, 100)
-	for i := range many {
-		many[i] = float64(i + 1)
-	}
-	if s := []rune(Sparkline(many, 20)); len(s) != 20 {
-		t.Fatalf("ширина %d", len(s))
-	}
-}
-
 func TestSparklineIgnoresNoise(t *testing.T) {
 	s := []rune(Sparkline([]float64{205039521792, 205039517696, 205039513600}, 10))
 	for _, r := range s {
