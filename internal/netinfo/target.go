@@ -90,8 +90,6 @@ type TableRoute struct {
 	Dest, Gateway, Flags, Iface string
 }
 
-func (r TableRoute) IsNet() bool { return strings.Contains(r.Dest, "/") }
-
 // ParseRoutes разбирает таблицу; сокращённые сети вида 10.8/16 разворачиваются в 10.8.0.0/16.
 func ParseRoutes(out string) []TableRoute {
 	var list []TableRoute

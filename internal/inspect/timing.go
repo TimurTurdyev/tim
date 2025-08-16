@@ -10,7 +10,6 @@ import (
 
 // Timing: фазы одного запроса на новом соединении.
 type Timing struct {
-	URL                          string
 	Status                       int
 	Proto                        string
 	Size                         int64
@@ -22,7 +21,7 @@ type Timing struct {
 // Measure делает один GET без повторного использования соединений и без автоматических редиректов.
 func Measure(url string) (*Timing, error) {
 	var dnsStart, connStart, tlsStart, start time.Time
-	t := &Timing{URL: url}
+	t := &Timing{}
 	trace := &httptrace.ClientTrace{
 		DNSStart:             func(httptrace.DNSStartInfo) { dnsStart = time.Now() },
 		DNSDone:              func(httptrace.DNSDoneInfo) { t.DNS = time.Since(dnsStart) },

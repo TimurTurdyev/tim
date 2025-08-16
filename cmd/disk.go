@@ -44,7 +44,7 @@ func engineHint(name, clean string) string {
 func tilde(rel string) string { return "~/" + rel }
 
 // placePath: где лежит место; у мест из нескольких папок - самая большая из них.
-func placePath(home string, p diskuse.Place, sizes map[string]int64) string {
+func placePath(p diskuse.Place, sizes map[string]int64) string {
 	best := p.Paths[0]
 	for _, path := range p.Paths {
 		if sizes[path] > sizes[best] {
@@ -151,7 +151,7 @@ func diskSystem() error {
 		}
 		total += m.Size
 		line := ui.Label(ui.Pad(fmtBytes(m.Size), 10)) + ui.Pad(m.Name, 28)
-		hint := []string{placePath(home, m.Place, sizes)}
+		hint := []string{placePath(m.Place, sizes)}
 		if m.Clean != "" {
 			hint = append(hint, engineHint(m.Name, m.Clean))
 		}

@@ -24,7 +24,6 @@ var (
 	statsInstall   bool
 	statsUninstall bool
 	statsMonth     bool
-	statsServers   bool
 )
 
 // localSample: замер этой машины теми же источниками, что и motd.
@@ -129,11 +128,10 @@ func printStats(name string, list []stats.Sample) {
 }
 
 var statsCmd = &cobra.Command{
-	Use:   "stats [--month] [--record] [--install [--servers]] [--uninstall]",
+	Use:   "stats [--month] [--record] [--install] [--uninstall]",
 	Short: "История машины: место, память, нагрузка, батарея и когда кончится диск",
 	Long: `Показывает графики за неделю (--month - за месяц) по журналу замеров и прогноз свободного места.
-Замеры пишет tim stats --record; tim stats --install ставит его каждый час (launchd, на Linux - systemd).
-С --servers ежечасный замер ходит и на серверы реестра по ssh, только чтение.`,
+Замеры пишет tim stats --record; tim stats --install ставит его каждый час (launchd, на Linux - systemd).`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		switch {
@@ -142,11 +140,7 @@ var statsCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			cmdArgs := []string{self, "stats", "--record"}
-			if statsServers {
-				cmdArgs = append(cmdArgs, "--servers")
-			}
-			job := schedule.Job{Label: statsLabel, Args: cmdArgs, Every: 3600, Env: jobEnv(), Log: stats.Dir() + "/record.log"}
+			job := schedule.Job{Label: statsLabel, Args: []string{self, "stats", "--record"}, Every: 3600, Env: jobEnv(), Log: stats.Dir() + "/record.log"}
 			if err := installJob(job, "tim-stats"); err != nil {
 				return err
 			}
@@ -159,13 +153,7 @@ var statsCmd = &cobra.Command{
 			ui.Println(ui.Label("ежечасный замер убран") + ui.Dim("  журналы остались в "+stats.Dir()))
 			return nil
 		case statsRecord:
-			if err := stats.Append(stats.Path("local"), localSample()); err != nil {
-				return err
-			}
-			if statsServers {
-				recordServers()
-			}
-			return nil
+			return stats.Append(stats.Path("local"), localSample())
 		}
 		days := 7
 		if statsMonth {
@@ -182,6 +170,5 @@ func init() {
 	statsCmd.Flags().BoolVar(&statsInstall, "install", false, "замер каждый час")
 	statsCmd.Flags().BoolVar(&statsUninstall, "uninstall", false, "убрать ежечасный замер")
 	statsCmd.Flags().BoolVar(&statsMonth, "month", false, "за месяц, а не за неделю")
-	statsCmd.Flags().BoolVar(&statsServers, "servers", false, "замерять и серверы реестра по ssh")
 	root.AddCommand(statsCmd)
 }
