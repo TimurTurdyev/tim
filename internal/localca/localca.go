@@ -192,7 +192,6 @@ func Names(args []string, exact bool) (dns []string, ips []net.IP) {
 type Leaf struct {
 	Cert    []byte
 	Key     []byte
-	DNS     []string
 	IPs     []net.IP
 	Expires time.Time
 }
@@ -236,7 +235,6 @@ func (ca *CA) Issue(dns []string, ips []net.IP, days int) (*Leaf, error) {
 	return &Leaf{
 		Cert:    pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
 		Key:     pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
-		DNS:     dns,
 		IPs:     ips,
 		Expires: tmpl.NotAfter,
 	}, nil

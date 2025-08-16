@@ -19,7 +19,6 @@ const typeCAA dnsmessage.Type = 257
 // Answer: ответ на запрос - записи и проверена ли подпись.
 type Answer struct {
 	Authentic bool
-	RCode     dnsmessage.RCode
 	Records   []dnsmessage.Resource
 }
 
@@ -75,7 +74,7 @@ func query(server, name string, t dnsmessage.Type) (Answer, error) {
 	if err != nil {
 		return Answer{}, err
 	}
-	return Answer{Authentic: h.AuthenticData, RCode: h.RCode, Records: ans}, nil
+	return Answer{Authentic: h.AuthenticData, Records: ans}, nil
 }
 
 // Query спрашивает резолверы по очереди, пока один не ответит.

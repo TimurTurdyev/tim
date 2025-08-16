@@ -29,6 +29,11 @@ func (l Level) String() string {
 	return "-"
 }
 
+// MarshalText: в --json уровень словом, а не числом.
+func (l Level) MarshalText() ([]byte, error) {
+	return []byte([...]string{"skip", "ok", "warn", "bad"}[l]), nil
+}
+
 // Check: одна проверка. Text идёт в колонку таблицы, Detail - в разбор проблем под ней.
 type Check struct {
 	Name   string

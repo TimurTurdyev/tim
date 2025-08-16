@@ -138,26 +138,6 @@ func RouteOf(addr string) Route {
 	return ParseRouteGet(out)
 }
 
-// HostRoute: статический host-маршрут из таблицы.
-type HostRoute struct{ Dest, Gateway, Iface string }
-
-func ParseHostRoutes(out string) []HostRoute {
-	var list []HostRoute
-	for _, r := range ParseRoutes(out) {
-		if !r.IsNet() && strings.Contains(r.Flags, "H") && strings.Contains(r.Flags, "S") {
-			list = append(list, HostRoute{Dest: r.Dest, Gateway: r.Gateway, Iface: r.Iface})
-		}
-	}
-	return list
-}
-
-func HostRoutes() []HostRoute {
-	out, _ := runner.Output("netstat", "-rn", "-f", "inet")
-	return ParseHostRoutes(out)
-}
-
-func DefaultIface() string { return RouteOf("default").Iface }
-
 // Table: вся таблица IPv4.
 func Table() []TableRoute {
 	if runtime.GOOS == "linux" {

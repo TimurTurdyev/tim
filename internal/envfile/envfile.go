@@ -134,16 +134,6 @@ func placeholder(v string) bool {
 	return false
 }
 
-// Keys: отсортированные ключи набора.
-func Keys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // OnlyIn: ключи, которые есть в a и нет в b.
 func OnlyIn(a, b map[string]string) []string {
 	var out []string

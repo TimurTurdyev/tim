@@ -151,8 +151,7 @@ var routeCleanCmd = &cobra.Command{
 	Short: "Снять протухшие маршруты на прежний шлюз после смены сети",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := routeClean(routeAll)
-		return err
+		return routeClean(routeAll)
 	},
 }
 
@@ -420,10 +419,10 @@ func routeDown(dests []string) {
 }
 
 // routeClean снимает маршруты на прежний шлюз; all - по всей таблице, иначе только цели конфига.
-func routeClean(all bool) (int, error) {
+func routeClean(all bool) error {
 	_, gw := physical()
 	if gw == "" {
-		return 0, ui.Errorf("шлюз физического интерфейса не найден: не с чем сравнивать")
+		return ui.Errorf("шлюз физического интерфейса не найден: не с чем сравнивать")
 	}
 	var only map[string]bool
 	if !all {
@@ -437,20 +436,20 @@ func routeClean(all bool) (int, error) {
 	stale := netinfo.Stale(netinfo.Table(), gw, only)
 	if len(stale) == 0 {
 		ui.Println(ui.Dim("протухших маршрутов нет"))
-		return 0, nil
+		return nil
 	}
 	for _, r := range stale {
 		ui.Println(ui.Warn(ui.Pad(r.Dest, 20)) + " через " + r.Gateway + " " + ui.Dim(r.Iface+", сейчас шлюз "+gw))
 	}
 	if !runner.Confirm("снять эти маршруты?") {
-		return 0, nil
+		return nil
 	}
 	for _, r := range stale {
 		if err := runner.Sudo(netinfo.DelRouteCmd(r.Dest)...); err != nil {
 			ui.Println(ui.Bad(r.Dest + ": снять не удалось"))
 		}
 	}
-	return len(stale), nil
+	return nil
 }
 
 func init() {

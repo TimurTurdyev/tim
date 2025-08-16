@@ -78,7 +78,7 @@ var vpnFixCmd = &cobra.Command{
 	Short: "После смены сети: снять протухшие маршруты и завести все цели заново",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if _, err := routeClean(false); err != nil {
+		if err := routeClean(false); err != nil {
 			return err
 		}
 		dests, err := collectDests(nil)
