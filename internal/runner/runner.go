@@ -3,6 +3,7 @@ package runner
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,18 +55,30 @@ func Exec(name string, args ...string) error {
 
 // ExecEnv как Exec, но с дополнительными переменными окружения (пароли баз).
 func ExecEnv(env []string, name string, args ...string) error {
+	return Stream(env, os.Stdin, os.Stdout, "", name, args...)
+}
+
+// Stream запускает команду со своими stdin и stdout; note дописывается к строке dry-run (например "> файл").
+func Stream(env []string, in io.Reader, out io.Writer, note, name string, args ...string) error {
 	if DryRun {
-		masked := make([]string, len(env))
-		for i, e := range env {
-			k, _, _ := strings.Cut(e, "=")
-			masked[i] = k + "=***"
+		line := shellq.Join(append([]string{name}, args...))
+		if len(env) > 0 {
+			masked := make([]string, len(env))
+			for i, e := range env {
+				k, _, _ := strings.Cut(e, "=")
+				masked[i] = k + "=***"
+			}
+			line = strings.Join(masked, " ") + " " + line
 		}
-		ui.Println(ui.Dim("$ " + strings.Join(masked, " ") + " " + shellq.Join(append([]string{name}, args...))))
+		if note != "" {
+			line += " " + note
+		}
+		ui.Println(ui.Dim("$ " + line))
 		return nil
 	}
 	cmd := exec.Command(name, args...)
 	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = in, out, os.Stderr
 	return cmd.Run()
 }
 
