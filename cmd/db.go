@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -145,18 +147,35 @@ func dumpsDir() string {
 }
 
 func dbDump(c *dbConn) error {
-	_ = os.MkdirAll(dumpsDir(), 0o755)
 	out := filepath.Join(dumpsDir(), filepath.Base(c.Name)+"-"+time.Now().Format("20060102-1504")+".sql.gz")
 	env, bin, args := c.clientArgs("dump")
-	shell := bin + " " + strings.Join(args, " ") + " | gzip > " + out
 	if runner.DryRun {
-		ui.Println(ui.Dim("$ " + maskEnv(env) + shell))
-		return nil
+		return runner.Stream(env, nil, nil, "| gzip > "+out, bin, args...)
 	}
-	if err := runner.ExecEnv(env, "sh", "-c", shell); err != nil {
+	if err := os.MkdirAll(dumpsDir(), 0o755); err != nil {
 		return err
 	}
-	st, _ := os.Stat(out)
+	f, err := os.Create(out)
+	if err != nil {
+		return err
+	}
+	gz := gzip.NewWriter(f)
+	err = runner.Stream(env, nil, gz, "", bin, args...)
+	if cerr := gz.Close(); err == nil {
+		err = cerr
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		// Недописанный дамп хуже отсутствующего: его легко принять за бэкап.
+		_ = os.Remove(out)
+		return ui.Errorf("дамп не снят: %v", err)
+	}
+	st, err := os.Stat(out)
+	if err != nil {
+		return err
+	}
 	ui.Println(ui.Label("дамп: ") + out + ui.Dim(fmt.Sprintf(" (%.1f MB)", float64(st.Size())/1e6)))
 	return nil
 }
@@ -172,32 +191,28 @@ func dbRestore(c *dbConn, file string) error {
 		return nil
 	}
 	env, bin, args := c.clientArgs("restore")
-	reader := "cat"
-	if strings.HasSuffix(file, ".gz") {
-		reader = "gunzip -c"
-	}
-	shell := reader + " " + file + " | " + bin + " " + strings.Join(args, " ")
 	if runner.DryRun {
-		ui.Println(ui.Dim("$ " + maskEnv(env) + shell))
-		return nil
+		return runner.Stream(env, nil, nil, "< "+file, bin, args...)
 	}
-	if err := runner.ExecEnv(env, "sh", "-c", shell); err != nil {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	var in io.Reader = f
+	if strings.HasSuffix(file, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return ui.Errorf("%s: не gzip: %v", file, err)
+		}
+		defer func() { _ = gz.Close() }()
+		in = gz
+	}
+	if err := runner.Stream(env, in, os.Stdout, "", bin, args...); err != nil {
 		return err
 	}
 	ui.Println(ui.Label("восстановлено из ") + filepath.Base(file))
 	return nil
-}
-
-func maskEnv(env []string) string {
-	var out []string
-	for _, e := range env {
-		k, _, _ := strings.Cut(e, "=")
-		out = append(out, k+"=***")
-	}
-	if len(out) == 0 {
-		return ""
-	}
-	return strings.Join(out, " ") + " "
 }
 
 // viaTunnel поднимает ssh -L к базе на сервере и подменяет host:port на локальные.
