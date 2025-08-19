@@ -216,7 +216,10 @@ func systemProxy(on bool) {
 		ui.Println(ui.Bad("не вышло: " + err.Error()))
 		return
 	}
-	_ = runner.Run("networksetup", "-setsocksfirewallproxystate", phys.Name, "on")
+	if err := runner.Run("networksetup", "-setsocksfirewallproxystate", phys.Name, "on"); err != nil {
+		ui.Println(ui.Bad("прокси прописан, но не включился: " + err.Error()))
+		return
+	}
 	ui.Println(ui.Label("системный SOCKS включён на " + phys.Name + " -> 127.0.0.1:" + port))
 }
 
