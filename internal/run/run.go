@@ -36,9 +36,10 @@ func Detect(dir string) Facts {
 	f.ComposerDev = hasScript(filepath.Join(dir, "composer.json"), "dev")
 	f.NodeDev = hasScript(filepath.Join(dir, "package.json"), "dev")
 	f.MakeDev = hasMakeTarget(filepath.Join(dir, "Makefile"), "dev")
-	for lock, pm := range map[string]string{"pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "bun.lockb": "bun", "bun.lock": "bun"} {
-		if exists(filepath.Join(dir, lock)) {
-			f.PkgManager = pm
+	for _, l := range [...]struct{ lock, pm string }{{"pnpm-lock.yaml", "pnpm"}, {"bun.lock", "bun"}, {"bun.lockb", "bun"}, {"yarn.lock", "yarn"}} {
+		if exists(filepath.Join(dir, l.lock)) {
+			f.PkgManager = l.pm
+			break
 		}
 	}
 	f.Public = exists(filepath.Join(dir, "public"))
