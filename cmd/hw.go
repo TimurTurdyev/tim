@@ -97,8 +97,8 @@ func gpuHolders(list []procs.Full) []string {
 	return names
 }
 
-// collectHW: всё разом и параллельно; cpuNow - мерить ли загрузку процессора за секунду (iostat).
-func collectHW(cpuNow bool) hwSnapshot {
+// collectHW: всё разом и параллельно; загрузка процессора - по ps, без секундного iostat.
+func collectHW() hwSnapshot {
 	var s hwSnapshot
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -125,12 +125,6 @@ func collectHW(cpuNow bool) hwSnapshot {
 		set(func() { s.loadAvg = sysinfo.ParseLoadavg(out) })
 	})
 	wg.Go(func() {
-		if cpuNow {
-			out, _ := runner.Output("iostat", "-c", "2", "-w", "1")
-			n, _ := hwinfo.ParseIostatCPU(out)
-			set(func() { s.cpuPct = n })
-			return
-		}
 		list, err := allProcs()
 		if err != nil {
 			return
@@ -258,10 +252,10 @@ var hwCmd = &cobra.Command{
 			return ui.Errorf("пока только macOS")
 		}
 		if !hwWatch {
-			printHW(collectHW(false), true)
+			printHW(collectHW(), true)
 			return nil
 		}
-		s0 := collectHW(false)
+		s0 := collectHW()
 		title := s0.model + "  " + strconv.Itoa(s0.cores) + " ядер  " + fmtBytes(s0.memTotal)
 		err := tui.RunHW(title, func() tui.HWSample { return hwSample(s0) })
 		if errors.Is(err, tui.ErrNoTTY) {
@@ -278,23 +272,53 @@ func init() {
 	root.AddCommand(hwCmd)
 }
 
-// hwSample: замер для живого экрана. Паспорт машины уже собран, здесь только то, что меняется.
+// hwSample: замер для живого экрана. Паспорт машины уже собран, здесь только то, что меняется,
+// и всё параллельно с секундным iostat - он и задаёт такт.
 func hwSample(base hwSnapshot) tui.HWSample {
-	s := collectHW(true)
-	out := tui.HWSample{CPU: s.cpuPct, GPU: s.gpu.Device, GPUValid: s.gpu.Valid, VRAM: s.gpu.InUse,
-		MemUsed: s.memUsed, MemTotal: base.memTotal, SwapUsed: s.swap.Used, SwapTotal: s.swap.Total, Load: s.loadAvg}
+	out := tui.HWSample{MemTotal: base.memTotal}
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		used int64
+		list []procs.Full
+	)
+	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
+	wg.Go(func() {
+		o, _ := runner.Output("iostat", "-c", "2", "-w", "1")
+		n, _ := hwinfo.ParseIostatCPU(o)
+		set(func() { out.CPU = n })
+	})
+	wg.Go(func() {
+		o, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
+		g := hwinfo.ParseGPULoad(o)
+		set(func() { out.GPU, out.GPUValid, out.VRAM = g.Device, g.Valid, g.InUse })
+	})
+	wg.Go(func() {
+		vm, _ := runner.Output("vm_stat")
+		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
+		swap, _ := hwinfo.ParseSwap(sw)
+		la, _ := runner.Output("sysctl", "-n", "vm.loadavg")
+		set(func() {
+			used = int64(sysinfo.ParseVMStat(vm))
+			out.SwapUsed, out.SwapTotal, out.Load = swap.Used, swap.Total, sysinfo.ParseLoadavg(la)
+		})
+	})
+	wg.Go(func() {
+		l, _ := allProcs()
+		set(func() { list = l })
+	})
+	wg.Wait()
+	out.MemUsed = used
 	if base.memTotal > 0 {
-		out.Mem = int(s.memUsed * 100 / base.memTotal)
+		out.Mem = int(used * 100 / base.memTotal)
 	}
-	if list, err := allProcs(); err == nil {
-		samples := make([]procs.Sample, len(list))
-		for i, p := range list {
-			samples[i] = p.Sample
-		}
-		groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, true)
-		for _, g := range groups[:min(6, len(groups))] {
-			out.Top = append(out.Top, tui.TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})
-		}
+	samples := make([]procs.Sample, len(list))
+	for i, p := range list {
+		samples[i] = p.Sample
+	}
+	groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, true)
+	for _, g := range groups[:min(6, len(groups))] {
+		out.Top = append(out.Top, tui.TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})
 	}
 	return out
 }
