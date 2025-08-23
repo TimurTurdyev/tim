@@ -42,6 +42,7 @@ type hwModel struct {
 	gpuH    []float64
 	memH    []float64
 	paused  bool
+	busy    bool // замер идёт: второй не запускаем, иначе пауза плодит циклы
 	blink   bool
 	width   int
 	started time.Time
@@ -53,6 +54,10 @@ type (
 )
 
 func (m *hwModel) fetch() tea.Cmd {
+	if m.busy {
+		return nil
+	}
+	m.busy = true
 	return func() tea.Msg { return sampleMsg(m.sample()) }
 }
 
@@ -93,7 +98,7 @@ func (m *hwModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blink = bool(msg)
 		return m, nextBlink(m.blink)
 	case sampleMsg:
-		m.last, m.have = HWSample(msg), true
+		m.last, m.have, m.busy = HWSample(msg), true, false
 		m.cpuH = push(m.cpuH, m.last.CPU)
 		m.gpuH = push(m.gpuH, m.last.GPU)
 		m.memH = push(m.memH, m.last.Mem)
