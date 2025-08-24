@@ -227,7 +227,7 @@ var serveCmd = &cobra.Command{
 			}
 			ui.Println(ui.Label(p.Name) + "  " + ui.Dim(sp.note+", порт "+port+", "+sp.dir))
 			if serveHTTPS {
-				f, err := planHTTPS(p)
+				f, err := planHTTPS(p, map[string]bool{port: true})
 				if err != nil {
 					return err
 				}
@@ -268,6 +268,10 @@ func serveBackground(list []*config.Project, port string) error {
 		}
 	}
 	ports := run.AllocPorts(wanted, func(p string) bool { _, busy := netinfo.PortBusy(p); return busy })
+	taken := map[string]bool{}
+	for _, p := range ports {
+		taken[p] = true
+	}
 	failed := 0
 	for i, p := range todo {
 		sp, err := planServe(p, ports[i])
@@ -289,7 +293,7 @@ func serveBackground(list []*config.Project, port string) error {
 		}
 		ui.Println(line)
 		if serveHTTPS {
-			if f, err := planHTTPS(p); err != nil {
+			if f, err := planHTTPS(p, taken); err != nil {
 				ui.Println(ui.Warn("  " + err.Error()))
 			} else if err := startHTTPSBackground(p, f, ports[i]); err != nil {
 				ui.Println(ui.Bad("  https-прокси: " + err.Error()))

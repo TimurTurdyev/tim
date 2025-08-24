@@ -27,8 +27,9 @@ type httpsFront struct {
 	host, cert, key, port string
 }
 
-// planHTTPS: имя и сертификат из tim link, свободный порт для прокси.
-func planHTTPS(p *config.Project) (httpsFront, error) {
+// planHTTPS: имя и сертификат из tim link, свободный порт для прокси. taken - порты, уже выданные
+// в этом запуске: запущенные рядом процессы могли ещё не начать слушать.
+func planHTTPS(p *config.Project, taken map[string]bool) (httpsFront, error) {
 	host := strings.ToLower(p.Name) + ".test"
 	if u, err := url.Parse(p.URL); err == nil && u.Scheme == "https" && u.Hostname() != "" {
 		host = u.Hostname()
@@ -37,7 +38,11 @@ func planHTTPS(p *config.Project) (httpsFront, error) {
 	if _, err := os.Stat(cert); err != nil {
 		return httpsFront{}, ui.Errorf("для %s нет сертификата %s: сначала tim link %s", p.Name, host, p.Name)
 	}
-	port := run.AllocPorts([]string{httpsPortBase}, func(s string) bool { _, b := netinfo.PortBusy(s); return b })[0]
+	port := run.AllocPorts([]string{httpsPortBase}, func(s string) bool {
+		_, b := netinfo.PortBusy(s)
+		return b || taken[s]
+	})[0]
+	taken[port] = true
 	return httpsFront{host: host, cert: cert, key: key, port: port}, nil
 }
 
