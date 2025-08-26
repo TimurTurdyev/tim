@@ -68,7 +68,7 @@ type Host struct {
 
 type Tunnel struct {
 	Host string `toml:"host,omitempty"`
-	Port int    `toml:"port"`
+	Port int    `toml:"port,omitzero"`
 }
 
 type Config struct {
@@ -80,7 +80,7 @@ type Config struct {
 	Tasks     []Task              `toml:"task,omitempty"`
 	Groups    map[string][]string `toml:"groups,omitempty"`
 	Templates []Template          `toml:"template,omitempty"`
-	Tunnel    Tunnel              `toml:"tunnel"`
+	Tunnel    Tunnel              `toml:"tunnel,omitempty"`
 	Projects  []Project           `toml:"project"`
 	Hosts     []Host              `toml:"host"`
 }
@@ -168,23 +168,33 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
+var backedUp bool
+
 func Save(cfg *Config) error {
 	path := Path()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	// Кодировщик TOML не сохраняет комментарии: прежний файл остаётся рядом копией.
-	if old, err := os.ReadFile(path); err == nil {
+	if old, err := os.ReadFile(path); err == nil && !backedUp {
 		if err := os.WriteFile(path+".bak", old, 0o600); err != nil {
 			return err
 		}
+		backedUp = true
+	}
+	// В файл - как писал человек: ~ вместо домашней папки и без порта по умолчанию.
+	out := *cfg
+	out.Dev = collapseHome(cfg.Dev)
+	if out.Tunnel.Port == 1080 {
+		out.Tunnel.Port = 0
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".config-*.toml")
 	if err != nil {
 		return err
 	}
 	tmp := f.Name()
-	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
+	if err := toml.NewEncoder(f).Encode(&out); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return err
@@ -201,6 +211,14 @@ func Save(cfg *Config) error {
 }
 
 // ExpandHome раскрывает ~/ в начале пути.
+func collapseHome(p string) string {
+	home, _ := os.UserHomeDir()
+	if home != "" && strings.HasPrefix(p, home+"/") {
+		return "~/" + p[len(home)+1:]
+	}
+	return p
+}
+
 func ExpandHome(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		home, _ := os.UserHomeDir()
