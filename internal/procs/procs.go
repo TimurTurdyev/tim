@@ -107,3 +107,35 @@ func System(command string) bool {
 	}
 	return false
 }
+
+// Started: когда запущен процесс, с точностью до секунды.
+func Started(pid int) (time.Time, bool) {
+	out, err := runner.Output("ps", "-o", "etime=", "-p", strconv.Itoa(pid))
+	if err != nil {
+		return time.Time{}, false
+	}
+	age, ok := ParseEtime(out)
+	if !ok {
+		return time.Time{}, false
+	}
+	return time.Now().Add(-age), true
+}
+
+// Zombies: какие из процессов уже завершились, но не прибраны родителем (state Z).
+func Zombies(pids []int) map[int]bool {
+	args := make([]string, len(pids))
+	for i, p := range pids {
+		args[i] = strconv.Itoa(p)
+	}
+	out, _ := runner.Output("ps", "-o", "pid=,state=", "-p", strings.Join(args, ","))
+	z := map[int]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && strings.HasPrefix(f[1], "Z") {
+			if n, err := strconv.Atoi(f[0]); err == nil {
+				z[n] = true
+			}
+		}
+	}
+	return z
+}
