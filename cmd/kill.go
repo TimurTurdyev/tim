@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,6 +119,11 @@ func waitGone(pids []int, limit time.Duration) []int {
 			if alive(p) {
 				left = append(left, p)
 			}
+		}
+		// Зомби на сигнал 0 отвечает, но он уже завершён: ждать его нечего.
+		if len(left) > 0 {
+			z := procs.Zombies(left)
+			left = slices.DeleteFunc(left, func(p int) bool { return z[p] })
 		}
 		if len(left) == 0 || time.Now().After(deadline) || runner.DryRun {
 			return left
