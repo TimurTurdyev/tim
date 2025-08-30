@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/procs"
 )
 
 // State: фоновый dev-сервер, запущенный tim serve -d.
@@ -40,13 +42,19 @@ func (s State) Save() error {
 
 func (s State) Remove() { _ = os.Remove(filepath.Join(StateDir(), s.Name+".json")) }
 
-// Alive: процесс ещё есть (сигнал 0 ничего не делает, только проверяет).
+// Alive: процесс ещё есть и это наш (сигнал 0 ничего не делает, только проверяет).
+// Процесс, запущенный позже записи, - чужой, получивший тот же PID после перезагрузки.
 func (s State) Alive() bool {
 	if s.PID <= 0 {
 		return false
 	}
-	err := syscall.Kill(s.PID, 0)
-	return err == nil || err == syscall.EPERM
+	if err := syscall.Kill(s.PID, 0); err != nil && err != syscall.EPERM {
+		return false
+	}
+	if at, ok := procs.Started(s.PID); ok && !s.Started.IsZero() && at.After(s.Started.Add(5*time.Second)) {
+		return false
+	}
+	return true
 }
 
 func LoadState(name string) (State, bool) {
