@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -195,22 +196,36 @@ func diskSystem() error {
 }
 
 // lastTouched: когда трогали проект - последний коммит или изменение в папке над найденной, что позже.
-// Папки вне реестра не получают отметки и в очистку не попадают.
-func lastTouched(path string) time.Time {
+// Папки вне реестра не получают отметки и в очистку не попадают. commits - время коммита по проекту,
+// чтобы git log шёл один раз на проект, а не на каждую найденную папку.
+func lastTouched(path string, commits func(dir string) time.Time) time.Time {
 	p, ok := cfg.ProjectHere(path)
 	if !ok {
 		return time.Time{}
 	}
-	var t time.Time
-	if out, err := runner.Output("git", "-C", cfg.ProjectDir(p), "log", "-1", "--format=%ct"); err == nil {
-		if sec, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64); err == nil {
-			t = time.Unix(sec, 0)
-		}
-	}
+	t := commits(cfg.ProjectDir(p))
 	if st, err := os.Stat(filepath.Dir(path)); err == nil && st.ModTime().After(t) {
 		t = st.ModTime()
 	}
 	return t
+}
+
+func lastCommit(dir string) time.Time {
+	out, err := runner.Output("git", "-C", dir, "log", "-1", "--format=%ct")
+	if err != nil {
+		return time.Time{}
+	}
+	sec, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.Unix(sec, 0)
+}
+
+// tracked: лежит ли в папке что-то под git - закоммиченный vendor или build пересоздать нельзя.
+func tracked(path string) bool {
+	out, err := runner.Output("git", "-C", filepath.Dir(path), "ls-files", "--", filepath.Base(path))
+	return err == nil && strings.TrimSpace(out) != ""
 }
 
 // moveToTrash: в Корзину, откуда можно вернуть, а не rm.
@@ -228,16 +243,36 @@ func cleanStale(items []diskuse.Item, min int64) error {
 	touched := map[string]time.Time{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	commits := map[string]func() time.Time{}
+	commitOf := func(dir string) time.Time {
+		mu.Lock()
+		f, ok := commits[dir]
+		if !ok {
+			f = sync.OnceValue(func() time.Time { return lastCommit(dir) })
+			commits[dir] = f
+		}
+		mu.Unlock()
+		return f()
+	}
+	sem := make(chan struct{}, 8)
 	for _, it := range items {
 		wg.Go(func() {
-			t := lastTouched(it.Path)
+			sem <- struct{}{}
+			t := lastTouched(it.Path, commitOf)
+			<-sem
 			mu.Lock()
 			touched[it.Path] = t
 			mu.Unlock()
 		})
 	}
 	wg.Wait()
-	stale := diskuse.Stale(items, touched, time.Now(), diskDays, min)
+	stale := slices.DeleteFunc(diskuse.Stale(items, touched, time.Now(), diskDays, min), func(it diskuse.Item) bool {
+		if tracked(it.Path) {
+			ui.Println(ui.Dim("пропускаю " + it.Path + ": лежит в git"))
+			return true
+		}
+		return false
+	})
 	if len(stale) == 0 {
 		ui.Println(ui.Dim("заброшенных дольше " + strconv.Itoa(diskDays) + " дн папок крупнее " + diskMin + " нет"))
 		return nil
