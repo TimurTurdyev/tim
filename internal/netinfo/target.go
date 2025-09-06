@@ -1,11 +1,14 @@
 package netinfo
 
 import (
+	"context"
 	"errors"
 	"net"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 type TargetKind int
@@ -67,10 +70,19 @@ func PrivateTarget(t Target) bool {
 	return false
 }
 
-// LookupIPv4 раскрывает домен во все A-записи, отсортированные.
+// lastGood: последний удачный ответ по домену. Пока VPN переключается, резолвер может молчать,
+// а страж маршрутов в это время работать должен.
+var lastGood sync.Map
+
+// LookupIPv4 раскрывает домен во все A-записи, отсортированные; ждёт не дольше 3 секунд.
 func LookupIPv4(host string) []string {
-	ips, err := net.LookupIP(host)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
 	if err != nil {
+		if old, ok := lastGood.Load(host); ok {
+			return old.([]string)
+		}
 		return nil
 	}
 	var out []string
@@ -82,6 +94,7 @@ func LookupIPv4(host string) []string {
 		}
 	}
 	sort.Strings(out)
+	lastGood.Store(host, out)
 	return out
 }
 
