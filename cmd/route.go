@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -280,11 +281,33 @@ func physical() (netinfo.Service, string) {
 	return svc, netinfo.IfaceGateway(svc.Device)
 }
 
+var (
+	tableMu    sync.Mutex
+	tableCache []netinfo.TableRoute
+)
+
+// routeTable: таблица маршрутов, прочитанная один раз на команду, а не на каждую подсеть;
+// tableChanged сбрасывает её после правки маршрутов.
+func routeTable() []netinfo.TableRoute {
+	tableMu.Lock()
+	defer tableMu.Unlock()
+	if tableCache == nil {
+		tableCache = netinfo.Table()
+	}
+	return tableCache
+}
+
+func tableChanged() {
+	tableMu.Lock()
+	tableCache = nil
+	tableMu.Unlock()
+}
+
 // routeState: человеческое состояние пути до адреса или подсети.
 func routeState(dest string, phys netinfo.Service, gw string) (text string, bad bool) {
 	var r netinfo.Route
 	if strings.Contains(dest, "/") {
-		for _, t := range netinfo.Table() {
+		for _, t := range routeTable() {
 			if t.Dest == dest {
 				r = netinfo.Route{Gateway: t.Gateway, Iface: t.Iface}
 			}
@@ -366,6 +389,7 @@ func setRoute(dest, gw, iface string) error {
 	if runtime.GOOS != "linux" {
 		_ = runner.Sudo(netinfo.DelRouteCmd(dest)...)
 	}
+	defer tableChanged()
 	return runner.Sudo(netinfo.AddRouteCmd(dest, gw, iface)...)
 }
 
@@ -400,7 +424,7 @@ func bypassed(dest string, phys netinfo.Service, gw string) bool {
 		r := netinfo.RouteOf(dest)
 		return r.Gateway == gw && r.Iface == phys.Device
 	}
-	for _, t := range netinfo.Table() {
+	for _, t := range routeTable() {
 		if t.Dest == dest && t.Gateway == gw {
 			return true
 		}
@@ -410,6 +434,7 @@ func bypassed(dest string, phys netinfo.Service, gw string) bool {
 
 func routeDown(dests []string) {
 	for _, d := range dests {
+		tableChanged()
 		if err := runner.Sudo(netinfo.DelRouteCmd(d)...); err != nil {
 			ui.Println(ui.Dim(d + ": маршрута не было"))
 		} else {
@@ -445,6 +470,7 @@ func routeClean(all bool) error {
 		return nil
 	}
 	for _, r := range stale {
+		tableChanged()
 		if err := runner.Sudo(netinfo.DelRouteCmd(r.Dest)...); err != nil {
 			ui.Println(ui.Bad(r.Dest + ": снять не удалось"))
 		}
