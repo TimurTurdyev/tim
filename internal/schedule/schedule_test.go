@@ -46,6 +46,11 @@ func TestSystemd(t *testing.T) {
 	if !strings.Contains(svc, `ExecStart="/usr/local/bin/tim" "check"`) || !strings.Contains(timer, "OnCalendar=*-*-* 07:00:00") {
 		t.Fatalf("%s\n%s", svc, timer)
 	}
+	j = Job{Label: "x", Args: []string{"tim", "url", "a%20b", "$HOME", `c:\d "e"`}, Env: map[string]string{"P": "50%"}}
+	svc, _ = j.Systemd()
+	if !strings.Contains(svc, `ExecStart="tim" "url" "a%%20b" "$$HOME" "c:\\d \"e\""`) || !strings.Contains(svc, `Environment="P=50%%"`) {
+		t.Fatalf("экранирование:\n%s", svc)
+	}
 }
 
 func TestEvery(t *testing.T) {
