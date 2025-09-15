@@ -69,15 +69,20 @@ func (j Job) Plist() string {
 	return b.String()
 }
 
+// unitEscape: строка в кавычках unit-файла. systemd сам раскрывает \ и %, а в ExecStart ещё и $.
+func unitEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%").Replace(s)
+}
+
 // Systemd: пара service и timer для systemd --user. Persistent догоняет пропущенный запуск.
 func (j Job) Systemd() (service, timer string) {
 	quoted := make([]string, len(j.Args))
 	for i, a := range j.Args {
-		quoted[i] = `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
+		quoted[i] = `"` + strings.ReplaceAll(unitEscape(a), "$", "$$") + `"`
 	}
 	var env strings.Builder
 	for _, k := range sortedKeys(j.Env) {
-		env.WriteString(`Environment="` + k + "=" + j.Env[k] + "\"\n")
+		env.WriteString(`Environment="` + unitEscape(k+"="+j.Env[k]) + "\"\n")
 	}
 	if j.Daemon {
 		// Постоянная служба: таймер не нужен, после падения systemd поднимет её сам.
