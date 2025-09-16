@@ -66,15 +66,18 @@ func Append(path string, s Sample) error {
 		return err
 	}
 	all := append(Load(path), s)
-	kept := Since(all, s.At.Add(-Keep))
-	if len(kept) < len(all) {
+	if len(all) > 1 && all[0].At.Before(s.At.Add(-Keep-24*time.Hour)) {
 		var b strings.Builder
-		for _, x := range kept {
+		for _, x := range Since(all, s.At.Add(-Keep)) {
 			line, _ := json.Marshal(x)
 			b.Write(line)
 			b.WriteByte('\n')
 		}
-		return os.WriteFile(path, []byte(b.String()), 0o600)
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
+			return err
+		}
+		return os.Rename(tmp, path)
 	}
 	line, err := json.Marshal(s)
 	if err != nil {
