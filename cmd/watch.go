@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +29,8 @@ func probeURL(client *http.Client, url string) (bool, string) {
 	if err != nil {
 		return false, ui.ShortErr(err)
 	}
+	// Дочитать тело, чтобы соединение вернулось в пул: иначе каждый опрос - новый TLS.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	_ = resp.Body.Close()
 	return resp.StatusCode < 500, fmt.Sprintf("%d за %v", resp.StatusCode, took)
 }
