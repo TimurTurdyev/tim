@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/paths"
+
 	"github.com/TimurTurdyev/tim/internal/procs"
 )
 
@@ -24,8 +26,7 @@ type State struct {
 }
 
 func StateDir() string {
-	home, _ := os.UserHomeDir()
-	d := filepath.Join(home, ".local", "state", "tim", "serve")
+	d := paths.State("serve")
 	_ = os.MkdirAll(d, 0o755)
 	return d
 }

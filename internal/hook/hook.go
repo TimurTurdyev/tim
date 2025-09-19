@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
 // MaxBody: больше вебхуки не бывают, а память приёмника не резиновая.
@@ -40,8 +42,7 @@ type Journal struct {
 }
 
 func DefaultPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "state", "tim", "hooks.jsonl")
+	return paths.State("hooks.jsonl")
 }
 
 func (j *Journal) Load() []Record {

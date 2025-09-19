@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
 // Sample: один замер. Нули - "не измерено", а не "ноль".
@@ -27,8 +29,7 @@ const Keep = 90 * 24 * time.Hour
 
 // Dir: где лежат журналы.
 func Dir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "state", "tim", "stats")
+	return paths.State("stats")
 }
 
 // Path: журнал по имени: local для этой машины, ssh-алиас для сервера.

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/paths"
+
 	"github.com/TimurTurdyev/tim/internal/inspect"
 )
 
@@ -19,11 +21,7 @@ type domainCache struct {
 }
 
 func cachePath(domain string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	dir := filepath.Join(home, ".local", "state", "tim", "whois")
+	dir := paths.State("whois")
 	if os.MkdirAll(dir, 0o755) != nil {
 		return ""
 	}

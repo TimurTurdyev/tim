@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
 // CacheTTL: сколько ответ логов сертификатов считается свежим. Сервис часто недоступен,
@@ -19,8 +21,7 @@ type crtCache struct {
 }
 
 func cacheDir() string {
-	home, _ := os.UserHomeDir()
-	d := filepath.Join(home, ".local", "state", "tim", "crt")
+	d := paths.State("crt")
 	_ = os.MkdirAll(d, 0o755)
 	return d
 }
