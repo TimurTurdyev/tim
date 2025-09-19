@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
 // Entry: сколько раз переходили и когда последний.
@@ -32,8 +34,7 @@ func (e Entry) Score(now time.Time) float64 {
 }
 
 func path() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "state", "tim", "visits.json")
+	return paths.State("visits.json")
 }
 
 // Load читает журнал; без файла - пустой.

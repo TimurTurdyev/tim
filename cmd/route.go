@@ -3,11 +3,12 @@ package cmd
 import (
 	"net"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/paths"
 
 	"github.com/spf13/cobra"
 
@@ -207,8 +208,7 @@ func stateDir() string {
 		}
 		return "/var/lib/tim"
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "state", "tim")
+	return paths.State()
 }
 
 // ownerTargets: домен -> автономные системы, из которых видны его адреса. Их часто несколько:

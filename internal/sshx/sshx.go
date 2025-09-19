@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/paths"
+
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
@@ -78,8 +80,7 @@ func IP(target string) string {
 
 // StateDir для сокетов и описаний туннелей.
 func StateDir() string {
-	home, _ := os.UserHomeDir()
-	d := filepath.Join(home, ".local", "state", "tim")
+	d := paths.State()
 	_ = os.MkdirAll(d, 0o755)
 	return d
 }

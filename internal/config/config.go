@@ -85,7 +85,7 @@ type Config struct {
 	Hosts     []Host              `toml:"host"`
 }
 
-// Path отдаёт путь к конфигу: TIM_CONFIG или ~/.config/tim/config.toml.
+// Path отдаёт путь к конфигу: TIM_CONFIG, иначе $XDG_CONFIG_HOME/tim/config.toml или ~/.config/tim/config.toml.
 // Под sudo домашняя папка - того, кто вызвал sudo: у root свой пустой конфиг, и sudo tim route add
 // иначе записал бы цель не туда.
 func Path() string {
@@ -94,6 +94,9 @@ func Path() string {
 	}
 	home := sudoHome()
 	if home == "" {
+		if x := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(x) {
+			return filepath.Join(x, "tim", "config.toml")
+		}
 		home, _ = os.UserHomeDir()
 	}
 	return filepath.Join(home, ".config", "tim", "config.toml")
