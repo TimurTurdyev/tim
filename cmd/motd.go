@@ -125,21 +125,21 @@ func gb(b uint64) string { return fmt.Sprintf("%.0f", float64(b)/(1<<30)) }
 
 func motdSystem() []string {
 	var (
-		wg                         sync.WaitGroup
-		ver, boot, load, mem, disk string
-		batt, ip, docker           string
-		memTotal                   uint64
+		wg                       sync.WaitGroup
+		osName, batt, ip, docker string
+		boot                     time.Time
+		booted                   bool
+		load                     []float64
+		memUsed, memTotal        uint64
+		disk                     sysinfo.Disk
+		diskOK                   bool
 	)
 	run := func(f func()) { wg.Go(f) }
-	run(func() { v, _ := runner.Output("sw_vers", "-productVersion"); ver = strings.TrimSpace(v) })
-	run(func() { boot, _ = runner.Output("sysctl", "-n", "kern.boottime") })
-	run(func() { load, _ = runner.Output("sysctl", "-n", "vm.loadavg") })
-	run(func() {
-		mem, _ = runner.Output("vm_stat")
-		t, _ := runner.Output("sysctl", "-n", "hw.memsize")
-		memTotal, _ = strconv.ParseUint(strings.TrimSpace(t), 10, 64)
-	})
-	run(func() { disk, _ = runner.Output("df", "-k", "/System/Volumes/Data") })
+	run(func() { osName = sysinfo.OS() })
+	run(func() { boot, booted = sysinfo.Boot() })
+	run(func() { load = sysinfo.Load() })
+	run(func() { memUsed, memTotal = sysinfo.Memory() })
+	run(func() { disk, diskOK = sysinfo.DataDisk() })
 	run(func() { batt, _ = runner.Output("pmset", "-g", "batt") })
 	run(func() {
 		if phys, ok := netinfo.PhysIface(); ok {
@@ -164,18 +164,18 @@ func motdSystem() []string {
 	user := os.Getenv("USER")
 	host, _ := os.Hostname()
 	host, _, _ = strings.Cut(host, ".")
-	line1 := ui.Label(user+"@"+host) + "  macOS " + ver + "  " + time.Now().Format("Mon 02 Jan, 15:04")
-	if b, ok := sysinfo.ParseBoottime(boot); ok {
-		line1 += ui.Dim("  up " + human(time.Since(b)))
+	line1 := ui.Label(user+"@"+host) + "  " + osName + "  " + time.Now().Format("Mon 02 Jan, 15:04")
+	if booted {
+		line1 += ui.Dim("  up " + human(time.Since(boot)))
 	}
 	var parts []string
-	if l := sysinfo.ParseLoadavg(load); len(l) == 3 {
+	if l := load; len(l) == 3 {
 		parts = append(parts, ui.Label("load ")+fmt.Sprintf("%.2f %.2f %.2f", l[0], l[1], l[2]))
 	}
-	if used := sysinfo.ParseVMStat(mem); used > 0 && memTotal > 0 {
-		parts = append(parts, ui.Label("mem ")+gb(used)+"/"+gb(memTotal)+" GB")
+	if memUsed > 0 && memTotal > 0 {
+		parts = append(parts, ui.Label("mem ")+gb(memUsed)+"/"+gb(memTotal)+" GB")
 	}
-	if d, ok := sysinfo.ParseDF(disk); ok {
+	if d, ok := disk, diskOK; ok {
 		text := gb(d.Used) + "/" + gb(d.Size) + " GB (" + strconv.Itoa(d.Percent()) + "%)"
 		if d.Percent() >= 90 {
 			text = ui.Bad(text)

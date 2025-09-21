@@ -13,6 +13,19 @@ func TestParseBootAndLoad(t *testing.T) {
 	if l := ParseLoadavg("{ 0.50 0.40 0.30 }"); len(l) != 3 || l[2] != 0.30 {
 		t.Errorf("load dot %v", l)
 	}
+	if l := ParseLoadavg("0.52 0.58 0.59 1/389 12345\n"); len(l) != 3 || l[2] != 0.59 {
+		t.Errorf("load proc %v", l)
+	}
+}
+
+func TestParseMeminfo(t *testing.T) {
+	out := "MemTotal:        8000000 kB\nMemFree:          500000 kB\nMemAvailable:    3000000 kB\nBuffers:  1 kB\n"
+	if used, total := ParseMeminfo(out); total != 8000000*1024 || used != 5000000*1024 {
+		t.Errorf("meminfo %d %d", used, total)
+	}
+	if got := ParseOSRelease("NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\n"); got != "Ubuntu 24.04.1 LTS" {
+		t.Errorf("os-release %q", got)
+	}
 }
 
 func TestParseVMStat(t *testing.T) {
