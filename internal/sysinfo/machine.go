@@ -20,13 +20,15 @@ func ParseBoottime(out string) (time.Time, bool) {
 	return time.Unix(n, 0), err == nil
 }
 
-// ParseLoadavg: "{ 2,12 1,85 1,39 }" или с точками -> три числа.
+// ParseLoadavg: "{ 2,12 1,85 1,39 }" с sysctl или "0.52 0.58 0.59 1/389 12345" из /proc/loadavg -> три числа.
 func ParseLoadavg(out string) []float64 {
 	var vals []float64
 	for _, f := range strings.Fields(strings.Trim(strings.TrimSpace(out), "{}")) {
-		if v, err := strconv.ParseFloat(strings.ReplaceAll(f, ",", "."), 64); err == nil {
-			vals = append(vals, v)
+		v, err := strconv.ParseFloat(strings.ReplaceAll(f, ",", "."), 64)
+		if err != nil || len(vals) == 3 {
+			break
 		}
+		vals = append(vals, v)
 	}
 	return vals
 }

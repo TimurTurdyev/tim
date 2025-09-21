@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/stats"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -32,24 +30,20 @@ func localSample() stats.Sample {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	wg.Go(func() {
-		out, _ := runner.Output("df", "-k", "/System/Volumes/Data")
-		if d, ok := sysinfo.ParseDF(out); ok {
+		if d, ok := sysinfo.DataDisk(); ok {
 			mu.Lock()
 			s.DiskTotal, s.DiskFree = int64(d.Size), int64(d.Size-d.Used)
 			mu.Unlock()
 		}
 	})
 	wg.Go(func() {
-		vm, _ := runner.Output("vm_stat")
-		t, _ := runner.Output("sysctl", "-n", "hw.memsize")
-		total, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		used, total := sysinfo.Memory()
 		mu.Lock()
-		s.MemUsed, s.MemTotal = int64(sysinfo.ParseVMStat(vm)), total
+		s.MemUsed, s.MemTotal = int64(used), int64(total)
 		mu.Unlock()
 	})
 	wg.Go(func() {
-		out, _ := runner.Output("sysctl", "-n", "vm.loadavg")
-		if l := sysinfo.ParseLoadavg(out); len(l) > 0 {
+		if l := sysinfo.Load(); len(l) > 0 {
 			mu.Lock()
 			s.Load = l[0]
 			mu.Unlock()

@@ -106,12 +106,11 @@ func collectHW() hwSnapshot {
 	wg.Go(func() {
 		m, _ := runner.Output("sysctl", "-n", "machdep.cpu.brand_string")
 		c, pc, ec := sysctlInt("hw.ncpu"), sysctlInt("hw.perflevel0.physicalcpu"), sysctlInt("hw.perflevel1.physicalcpu")
-		total := sysctlInt("hw.memsize")
-		set(func() { s.model, s.cores, s.pc, s.ec, s.memTotal = strings.TrimSpace(m), c, pc, ec, int64(total) })
+		set(func() { s.model, s.cores, s.pc, s.ec = strings.TrimSpace(m), c, pc, ec })
 	})
 	wg.Go(func() {
-		vm, _ := runner.Output("vm_stat")
-		set(func() { s.memUsed = int64(sysinfo.ParseVMStat(vm)) })
+		used, total := sysinfo.Memory()
+		set(func() { s.memUsed, s.memTotal = int64(used), int64(total) })
 	})
 	wg.Go(func() {
 		out, _ := runner.Output("memory_pressure")
@@ -121,8 +120,8 @@ func collectHW() hwSnapshot {
 		set(func() { s.freePct, s.swap = n, swap })
 	})
 	wg.Go(func() {
-		out, _ := runner.Output("sysctl", "-n", "vm.loadavg")
-		set(func() { s.loadAvg = sysinfo.ParseLoadavg(out) })
+		l := sysinfo.Load()
+		set(func() { s.loadAvg = l })
 	})
 	wg.Go(func() {
 		list, err := allProcs()
@@ -147,8 +146,7 @@ func collectHW() hwSnapshot {
 	})
 	wg.Go(func() {
 		out, _ := runner.Output("diskutil", "info", "/")
-		df, _ := runner.Output("df", "-k", "/System/Volumes/Data")
-		d, _ := sysinfo.ParseDF(df)
+		d, _ := sysinfo.DataDisk()
 		th, _ := runner.Output("pmset", "-g", "therm")
 		set(func() { s.disk, s.diskPct, s.therm = hwinfo.ParseDiskutil(out), d.Percent(), hwinfo.ParseTherm(th) })
 	})
@@ -294,13 +292,13 @@ func hwSample(base hwSnapshot) tui.HWSample {
 		set(func() { out.GPU, out.GPUValid, out.VRAM = g.Device, g.Valid, g.InUse })
 	})
 	wg.Go(func() {
-		vm, _ := runner.Output("vm_stat")
+		u, _ := sysinfo.Memory()
 		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
 		swap, _ := hwinfo.ParseSwap(sw)
-		la, _ := runner.Output("sysctl", "-n", "vm.loadavg")
+		la := sysinfo.Load()
 		set(func() {
-			used = int64(sysinfo.ParseVMStat(vm))
-			out.SwapUsed, out.SwapTotal, out.Load = swap.Used, swap.Total, sysinfo.ParseLoadavg(la)
+			used = int64(u)
+			out.SwapUsed, out.SwapTotal, out.Load = swap.Used, swap.Total, la
 		})
 	})
 	wg.Go(func() {
