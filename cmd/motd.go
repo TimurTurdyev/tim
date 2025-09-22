@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
-	"github.com/TimurTurdyev/tim/internal/registry"
+	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -232,7 +232,7 @@ func motdProject() []string {
 		return nil
 	}
 	dir := cfg.ProjectDir(p)
-	line := ui.Label("проект   ") + p.Name + ui.Dim("  "+registry.Stack(dir))
+	line := ui.Label("проект   ") + p.Name + ui.Dim("  "+run.Stack(dir))
 	if g, ok := gitState(dir); ok {
 		line += "  " + gitLine(g)
 	}

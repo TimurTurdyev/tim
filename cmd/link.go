@@ -8,7 +8,6 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/hostsfile"
 	"github.com/TimurTurdyev/tim/internal/localca"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/trust"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -34,7 +33,7 @@ var linkCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p, err := registry.Pick(cfg, first(args))
+		p, err := projectFor(first(args))
 		if err != nil {
 			return err
 		}
@@ -86,7 +85,7 @@ var unlinkCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p, err := registry.Pick(cfg, first(args))
+		p, err := projectFor(first(args))
 		if err != nil {
 			return err
 		}

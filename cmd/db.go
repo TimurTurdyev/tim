@@ -14,7 +14,6 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/envfile"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -108,7 +107,7 @@ var dbCmd = &cobra.Command{
 				name = a
 			}
 		}
-		p, err := registry.Pick(cfg, name)
+		p, err := projectFor(name)
 		if err != nil {
 			return err
 		}

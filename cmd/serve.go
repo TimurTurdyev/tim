@@ -15,7 +15,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/newproj"
 	"github.com/TimurTurdyev/tim/internal/phpver"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -24,7 +23,7 @@ import (
 
 // projectFor: по имени, по текущей папке, а при tty - выбором из реестра.
 func projectFor(name string) (*config.Project, error) {
-	p, err := registry.Pick(cfg, name)
+	p, err := cfg.Pick(name)
 	if err != nil && name == "" && len(cfg.Projects) > 0 && tui.Available() {
 		return pickProject()
 	}
@@ -235,7 +234,7 @@ var serveCmd = &cobra.Command{
 					return err
 				}
 				line := "  " + f.url()
-				if hint := httpsHint(registry.Stack(sp.dir)); hint != "" {
+				if hint := httpsHint(run.Stack(sp.dir)); hint != "" {
 					line += ui.Dim("  " + hint)
 				}
 				ui.Println(line)

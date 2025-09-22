@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/TimurTurdyev/tim/internal/registry"
 )
 
 // Facts: всё, что нужно знать о папке, чтобы выбрать команду запуска.
@@ -32,7 +30,7 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // Detect собирает факты о папке проекта.
 func Detect(dir string) Facts {
-	f := Facts{Stack: registry.Stack(dir), PkgManager: "npm"}
+	f := Facts{Stack: Stack(dir), PkgManager: "npm"}
 	f.ComposerDev = hasScript(filepath.Join(dir, "composer.json"), "dev")
 	f.NodeDev = hasScript(filepath.Join(dir, "package.json"), "dev")
 	f.MakeDev = hasMakeTarget(filepath.Join(dir, "Makefile"), "dev")

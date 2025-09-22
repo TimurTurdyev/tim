@@ -11,7 +11,6 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/brew"
 	"github.com/TimurTurdyev/tim/internal/phpver"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -93,7 +92,7 @@ var phpCmd = &cobra.Command{
 		if active != "" {
 			ui.Println(ui.Dim("активная " + active))
 		}
-		if p, err := registry.Pick(cfg, ""); err == nil {
+		if p, err := cfg.Pick(""); err == nil {
 			req := phpver.Required(filepath.Join(cfg.ProjectDir(p), "composer.json"))
 			if req != "" {
 				var fit []string
