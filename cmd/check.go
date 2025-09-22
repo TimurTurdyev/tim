@@ -14,7 +14,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -37,7 +36,7 @@ func checkProjects(args []string) ([]*config.Project, error) {
 	}
 	var out []*config.Project
 	for _, name := range args {
-		p, err := registry.Pick(cfg, name)
+		p, err := cfg.Pick(name)
 		if err != nil {
 			// Домен, которого нет в реестре, проверяем как есть: сайт, сертификат, почта, регистрация.
 			if strings.Contains(name, ".") && !strings.Contains(name, "/") {

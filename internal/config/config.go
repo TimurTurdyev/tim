@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -355,4 +356,23 @@ func HasComments() bool {
 		}
 	}
 	return false
+}
+
+// Pick: проект по имени, а без имени по текущей папке.
+func (cfg *Config) Pick(name string) (*Project, error) {
+	if name != "" {
+		p, ok := cfg.Project(name)
+		if !ok {
+			return nil, fmt.Errorf("нет проекта %s в конфиге: tim proj list", name)
+		}
+		return p, nil
+	}
+	if len(cfg.Projects) == 0 {
+		return nil, fmt.Errorf("реестр пуст: tim config init или tim proj scan")
+	}
+	cwd, _ := os.Getwd()
+	if p, ok := cfg.ProjectHere(cwd); ok {
+		return p, nil
+	}
+	return nil, fmt.Errorf("укажи проект или зайди в его папку: tim proj list")
 }

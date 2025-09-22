@@ -12,7 +12,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/envfile"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/newproj"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/setup"
@@ -122,7 +121,7 @@ var setupCmd = &cobra.Command{
 			if len(args) == 1 {
 				name = args[0]
 			}
-			if p, err = registry.Pick(cfg, name); err != nil {
+			if p, err = projectFor(name); err != nil {
 				return err
 			}
 			dir = cfg.ProjectDir(p)

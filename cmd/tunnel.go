@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
-	"github.com/TimurTurdyev/tim/internal/registry"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -277,7 +276,7 @@ var tunnelDBCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p, err := registry.Pick(cfg, first(args))
+		p, err := projectFor(first(args))
 		if err != nil {
 			return err
 		}

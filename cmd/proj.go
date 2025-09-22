@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/registry"
+	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -50,15 +50,12 @@ var projInfoCmd = &cobra.Command{
 	Short:             "Путь, стек, ssh, деплой, порт, база, ветка",
 	ValidArgsFunction: projectNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p, err := registry.Pick(cfg, first(args))
-		if err != nil && len(args) == 0 && tui.Available() {
-			p, err = pickProject()
-		}
+		p, err := projectFor(first(args))
 		if err != nil {
 			return err
 		}
 		dir := cfg.ProjectDir(p)
-		ui.Println(ui.Label(p.Name) + "  " + ui.Dim(registry.Stack(dir)))
+		ui.Println(ui.Label(p.Name) + "  " + ui.Dim(run.Stack(dir)))
 		ui.Println(ui.Label("путь     ") + dir)
 		ui.Println(ui.Label("ssh      ") + dashIfEmpty(p.SSH))
 		if p.Remote != "" {
