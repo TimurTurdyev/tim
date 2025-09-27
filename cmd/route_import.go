@@ -98,42 +98,44 @@ var routeImportCmd = &cobra.Command{
 --by-owner заменяет сети на автономные системы владельцев (as:N): их сети страж обновляет сам,
 а список, вписанный руками, молча устаревает. Повторы пропускаются.`,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		items := vpnhelpItems()
-		if len(items) == 0 {
-			return ui.Errorf("нечего переносить: нет ни %s, ни %s", importScript, importList)
-		}
-		var hosts []config.Host
-		if importByOwner {
-			hosts = byOwner(items)
-		} else {
-			for _, it := range items {
-				label := it.Label
-				if label == "" {
-					label = "vpn-help"
-				}
-				hosts = append(hosts, config.Host{Addr: it.Addr, Label: label})
+	RunE: func(cmd *cobra.Command, args []string) error { return routeImport(importByOwner) },
+}
+
+func routeImport(byOwnerAS bool) error {
+	items := vpnhelpItems()
+	if len(items) == 0 {
+		return ui.Errorf("нечего переносить: нет ни %s, ни %s", importScript, importList)
+	}
+	var hosts []config.Host
+	if byOwnerAS {
+		hosts = byOwner(items)
+	} else {
+		for _, it := range items {
+			label := it.Label
+			if label == "" {
+				label = "vpn-help"
 			}
+			hosts = append(hosts, config.Host{Addr: it.Addr, Label: label})
 		}
-		added := 0
-		for _, h := range hosts {
-			t, err := netinfo.ParseTarget(h.Addr)
-			if err != nil {
-				ui.Println(ui.Warn(h.Addr + ": " + err.Error()))
-				continue
-			}
-			h.Addr = t.Value
-			if cfg.AddHost(h) {
-				added++
-				ui.Println(ui.Label("добавлен ") + h.Addr + ui.Dim(" "+h.Label))
-			}
+	}
+	added := 0
+	for _, h := range hosts {
+		t, err := netinfo.ParseTarget(h.Addr)
+		if err != nil {
+			ui.Println(ui.Warn(h.Addr + ": " + err.Error()))
+			continue
 		}
-		if err := saveConfig(cfg); err != nil {
-			return err
+		h.Addr = t.Value
+		if cfg.AddHost(h) {
+			added++
+			ui.Println(ui.Label("добавлен ") + h.Addr + ui.Dim(" "+h.Label))
 		}
-		ui.Println(ui.Dim("перенесено " + strconv.Itoa(added) + " из " + strconv.Itoa(len(hosts)) + "; маршруты поставит tim route up или страж"))
-		return nil
-	},
+	}
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+	ui.Println(ui.Dim("перенесено " + strconv.Itoa(added) + " из " + strconv.Itoa(len(hosts)) + "; маршруты поставит tim route up или страж"))
+	return nil
 }
 
 func init() {

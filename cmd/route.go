@@ -35,63 +35,74 @@ var routeCheckCmd = &cobra.Command{
 	RunE:  func(cmd *cobra.Command, args []string) error { return routeStatus(true) },
 }
 
-var (
-	routeOwner bool
-	routeLabel string
-	routeNoUp  bool
-	routeForce bool
-	routeAll   bool
-)
+var routeAll bool
+
+// addOpts: флаги добавления цели; у route add и vpn exclude свои экземпляры.
+type addOpts struct {
+	owner, noUp, force bool
+	label              string
+}
+
+func (o *addOpts) bind(c *cobra.Command) {
+	c.Flags().StringVar(&o.label, "label", "", "пометка (для одной цели)")
+	c.Flags().BoolVar(&o.noUp, "no-up", false, "только сохранить, маршрут не заводить")
+	c.Flags().BoolVar(&o.force, "force", false, "разрешить частные адреса, подсети и CDN")
+	c.Flags().BoolVar(&o.owner, "owner", false, "для домена - все сети его владельца (AS), а не адреса домена")
+}
+
+var routeAddOpts addOpts
 
 var routeAddCmd = &cobra.Command{
 	Use:   "add <адрес|домен|подсеть|as:N...> [--owner] [--label x] [--no-up]",
 	Short: "Добавить цель обхода в конфиг и сразу завести маршрут",
 	Args:  cobra.MinimumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		var dests []string
-		for _, a := range args {
-			t, err := netinfo.ParseTarget(a)
-			if err != nil {
-				return err
-			}
-			targets := []netinfo.Target{t}
-			if routeOwner && t.Kind == netinfo.KindDomain {
-				domain := t.Value
-				var names []string
-				if targets, names, err = ownerTargets(domain); err != nil {
-					return err
-				}
-				if routeLabel == "" && len(args) == 1 {
-					routeLabel = domain
-				}
-				for i, o := range targets {
-					ui.Println(ui.Dim(domain + ": сети " + o.Value + " " + names[i]))
-				}
-			}
-			for _, t := range targets {
-				if netinfo.PrivateTarget(t) && !routeForce {
-					return ui.Errorf("%s - частная сеть, она обычно доступна только через VPN; если точно надо: --force", t.Value)
-				}
-				label := ""
-				if len(args) == 1 {
-					label = routeLabel
-				}
-				if cfg.AddHost(config.Host{Addr: t.Value, Label: label}) {
-					ui.Println(ui.Label("добавлен ") + t.Value + ui.Dim(" "+label))
-				} else {
-					ui.Println(ui.Dim(t.Value + ": уже в списке"))
-				}
-				dests = append(dests, expand(t)...)
-			}
-		}
-		if err := saveConfig(cfg); err != nil {
+	RunE:  func(cmd *cobra.Command, args []string) error { return routeAdd(args, routeAddOpts) },
+}
+
+func routeAdd(args []string, o addOpts) error {
+	var dests []string
+	for _, a := range args {
+		t, err := netinfo.ParseTarget(a)
+		if err != nil {
 			return err
 		}
-		if routeNoUp {
-			return nil
+		targets := []netinfo.Target{t}
+		if o.owner && t.Kind == netinfo.KindDomain {
+			domain := t.Value
+			var names []string
+			if targets, names, err = ownerTargets(domain, o.force); err != nil {
+				return err
+			}
+			if o.label == "" && len(args) == 1 {
+				o.label = domain
+			}
+			for i, o := range targets {
+				ui.Println(ui.Dim(domain + ": сети " + o.Value + " " + names[i]))
+			}
 		}
-		return routeUp(dests)
-	},
+		for _, t := range targets {
+			if netinfo.PrivateTarget(t) && !o.force {
+				return ui.Errorf("%s - частная сеть, она обычно доступна только через VPN; если точно надо: --force", t.Value)
+			}
+			label := ""
+			if len(args) == 1 {
+				label = o.label
+			}
+			if cfg.AddHost(config.Host{Addr: t.Value, Label: label}) {
+				ui.Println(ui.Label("добавлен ") + t.Value + ui.Dim(" "+label))
+			} else {
+				ui.Println(ui.Dim(t.Value + ": уже в списке"))
+			}
+			dests = append(dests, expand(t)...)
+		}
+	}
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+	if o.noUp {
+		return nil
+	}
+	return routeUp(dests)
 }
 
 var routeRmCmd = &cobra.Command{
@@ -214,7 +225,7 @@ func stateDir() string {
 // ownerTargets: домен -> автономные системы, из которых видны его адреса. Их часто несколько:
 // Яндекс анонсирует одни и те же сети и из основной AS, и из дочерней. Берём все - пересечения
 // склеятся при раскрытии.
-func ownerTargets(domain string) ([]netinfo.Target, []string, error) {
+func ownerTargets(domain string, force bool) ([]netinfo.Target, []string, error) {
 	ips := netinfo.LookupIPv4(domain)
 	if len(ips) == 0 {
 		return nil, nil, ui.Errorf("%s не раскрывается в адреса", domain)
@@ -227,7 +238,7 @@ func ownerTargets(domain string) ([]netinfo.Target, []string, error) {
 	var names []string
 	for _, a := range list {
 		name := asn.Holder(a)
-		if domaudit.IsCDN(name) && !routeForce {
+		if domaudit.IsCDN(name) && !force {
 			return nil, nil, ui.Errorf("%s сидит на CDN (%s): в обход ушла бы чужая половина интернета; если точно надо: --force", domain, name)
 		}
 		targets = append(targets, netinfo.Target{Kind: netinfo.KindAS, Value: "as:" + a})
@@ -479,10 +490,7 @@ func routeClean(all bool) error {
 }
 
 func init() {
-	routeAddCmd.Flags().StringVar(&routeLabel, "label", "", "пометка (для одной цели)")
-	routeAddCmd.Flags().BoolVar(&routeNoUp, "no-up", false, "только сохранить, маршрут не заводить")
-	routeAddCmd.Flags().BoolVar(&routeForce, "force", false, "разрешить частные адреса и подсети")
-	routeAddCmd.Flags().BoolVar(&routeOwner, "owner", false, "для домена - все сети его владельца (AS), а не адреса домена")
+	routeAddOpts.bind(routeAddCmd)
 	routeCleanCmd.Flags().BoolVar(&routeAll, "all", false, "по всей таблице, а не только для целей из конфига")
 	routeCmd.AddCommand(routeCheckCmd, routeAddCmd, routeRmCmd, routeUpCmd, routeDownCmd, routeCleanCmd, routeListCmd, routeTableCmd)
 	root.AddCommand(routeCmd)
