@@ -97,8 +97,7 @@ systemd-служба tim-routes. Нужны права root; если забыл
 		// Перенос - до sudo: конфиг пользователя правится от его имени.
 		if os.Geteuid() != 0 && oldDaemonPresent() && !runner.NoInput {
 			if runner.Confirm("стоит демон vpn-help: перенести его сети в tim как сети владельцев (as:N)?") {
-				importByOwner = true
-				if err := routeImportCmd.RunE(routeImportCmd, nil); err != nil {
+				if err := routeImport(true); err != nil {
 					return err
 				}
 			}
