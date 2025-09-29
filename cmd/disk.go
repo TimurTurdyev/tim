@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -94,26 +95,24 @@ func printModels(hub string) {
 }
 
 // topCaches: самые большие подпапки общего кеша, кроме тех, что уже показаны отдельной строкой.
-func topCaches(dir, rel string, known map[string]int64, n int) []diskuse.Item {
-	if known == nil {
-		known = map[string]int64{}
-	}
-	out, _ := runner.Output("sh", "-c", "du -sk "+shellq.Quote(dir)+"/* 2>/dev/null")
+func topCaches(sizes map[string]int64, rel string, skip bool, n int) []diskuse.Item {
 	var items []diskuse.Item
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.SplitN(line, "\t", 2)
-		if len(f) != 2 {
+	for _, it := range diskuse.Children(sizes, rel) {
+		if skip && shownPlace(rel+"/"+it.Path) {
 			continue
 		}
-		name := filepath.Base(f[1])
-		if _, shown := known[rel+"/"+name]; shown {
-			continue
-		}
-		kb, _ := strconv.ParseInt(f[0], 10, 64)
-		items = append(items, diskuse.Item{Path: name, Size: kb * 1024})
+		items = append(items, it)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Size > items[j].Size })
 	return items[:min(n, len(items))]
+}
+
+func shownPlace(rel string) bool {
+	for _, p := range diskuse.SystemPlaces {
+		if slices.Contains(p.Paths, rel) {
+			return true
+		}
+	}
+	return false
 }
 
 // diskSystem: куда делось место кроме проектов. Только показ и команды, ничего не удаляет.
@@ -122,26 +121,36 @@ func diskSystem() error {
 	if err != nil {
 		return err
 	}
-	paths := diskuse.AllPaths(diskuse.SystemPlaces)
+	// Общие кеши - одним du на корень: из него же берутся размеры вложенных мест и топ прочего.
+	// Отдельно меряется только то, что лежит вне них.
+	roots := map[string]string{diskuse.Caches: "2", diskuse.DotCache: "1"}
 	sizes := map[string]int64{}
 	var mu sync.Mutex
 	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
-	for _, rel := range paths {
+	measure := func(rel string, args ...string) {
 		full := filepath.Join(home, rel)
 		if _, err := os.Stat(full); err != nil {
-			continue
+			return
 		}
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			// du без прав на часть подпапок пишет ошибки, но итог печатает - его и берём.
-			out, _ := runner.Output("du", "-sk", full)
-			kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
+			out, _ := runner.Output("du", append(args, full)...)
+			got := diskuse.ParseDu(out, home)
 			mu.Lock()
-			sizes[rel] = kb * 1024
+			maps.Copy(sizes, got)
 			mu.Unlock()
 		})
+	}
+	for rel, depth := range roots {
+		measure(rel, "-k", "-d", depth)
+	}
+	for _, rel := range diskuse.AllPaths(diskuse.SystemPlaces) {
+		if _, root := roots[rel]; !root && !diskuse.Under(rel, diskuse.Caches, diskuse.DotCache) {
+			measure(rel, "-sk")
+		}
 	}
 	wg.Wait()
 	list := diskuse.SummarizeSystem(diskuse.SystemPlaces, sizes)
@@ -159,17 +168,17 @@ func diskSystem() error {
 		ui.Println(line + ui.Dim(strings.Join(hint, "  \u2022  ")))
 		switch m.Paths[0] {
 		case diskuse.DotCache:
-			for _, sub := range topCaches(filepath.Join(home, diskuse.DotCache), diskuse.DotCache, sizes, 3) {
+			for _, sub := range topCaches(sizes, diskuse.DotCache, true, 3) {
 				ui.Println(ui.Dim(subRow(sub.Size, sub.Path, tilde(filepath.Join(diskuse.DotCache, sub.Path)))))
 			}
 		case ".cache/huggingface":
 			printModels(filepath.Join(home, ".cache", "huggingface", "hub"))
 		case diskuse.Caches:
-			for _, sub := range topCaches(filepath.Join(home, diskuse.Caches), diskuse.Caches, sizes, 3) {
+			for _, sub := range topCaches(sizes, diskuse.Caches, true, 3) {
 				ui.Println(ui.Dim(subRow(sub.Size, sub.Path, tilde(filepath.Join(diskuse.Caches, sub.Path)))))
 			}
 		case diskuse.Caches + "/JetBrains":
-			subs := topCaches(filepath.Join(home, m.Paths[0]), m.Paths[0], nil, 20)
+			subs := topCaches(sizes, m.Paths[0], false, 20)
 			names := make([]string, len(subs))
 			for i, sub := range subs {
 				names[i] = sub.Path

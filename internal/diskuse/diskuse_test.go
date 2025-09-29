@@ -146,3 +146,14 @@ func TestModelSizeFollowsSharedBlobs(t *testing.T) {
 		t.Fatalf("размер %d, ожидали 5100: каждый файл один раз, по настоящим данным", got)
 	}
 }
+
+func TestParseDuChildren(t *testing.T) {
+	out := "10\t/h/.cache/uv\n20\t/h/.cache/huggingface\n35\t/h/.cache\ndu: /h/.cache/x: Permission denied\n5\t/other/y\n"
+	sizes := ParseDu(out, "/h")
+	if sizes[".cache"] != 35*1024 || len(sizes) != 3 {
+		t.Fatalf("%v", sizes)
+	}
+	if ch := Children(sizes, ".cache"); len(ch) != 2 || ch[0].Path != "huggingface" {
+		t.Errorf("%v", ch)
+	}
+}
