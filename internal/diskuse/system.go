@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -132,4 +133,45 @@ func OldIDEVersions(names []string) map[string]bool {
 		}
 	}
 	return old
+}
+
+// ParseDu: вывод du -k -d N -> размер в байтах по пути от home.
+func ParseDu(out, home string) map[string]int64 {
+	sizes := map[string]int64{}
+	for _, line := range strings.Split(out, "\n") {
+		kb, path, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(kb), 10, 64)
+		if err != nil {
+			continue
+		}
+		if rel, err := filepath.Rel(home, path); err == nil && !strings.HasPrefix(rel, "..") {
+			sizes[rel] = n * 1024
+		}
+	}
+	return sizes
+}
+
+// Children: прямые подпапки dir из уже измеренного, по убыванию размера.
+func Children(sizes map[string]int64, dir string) []Item {
+	var out []Item
+	for p, s := range sizes {
+		if filepath.Dir(p) == dir {
+			out = append(out, Item{Path: filepath.Base(p), Size: s})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	return out
+}
+
+// Under: путь лежит внутри одного из корней - его размер уже есть в обходе корня.
+func Under(path string, roots ...string) bool {
+	for _, r := range roots {
+		if strings.HasPrefix(path, r+"/") {
+			return true
+		}
+	}
+	return false
 }
