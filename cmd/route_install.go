@@ -2,12 +2,9 @@ package cmd
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,6 +13,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/routewatch"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/schedule"
+	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/vpnhelp"
 )
@@ -39,7 +37,7 @@ func asRoot() error {
 	if err != nil {
 		return err
 	}
-	line := "sudo " + self + " " + strings.Join(os.Args[1:], " ")
+	line := "sudo " + shellq.Join(append([]string{self}, os.Args[1:]...))
 	if runner.DryRun {
 		ui.Println(ui.Dim("$ " + line))
 		return errDone
@@ -50,12 +48,7 @@ func asRoot() error {
 	if !runner.Confirm("нужны права root - повторить через sudo?") {
 		return ui.Errorf("отменено; вручную: %s", line)
 	}
-	sudo, err := exec.LookPath("sudo")
-	if err != nil {
-		return err
-	}
-	argv := append([]string{"sudo", "env", "TIM_CONFIG=" + config.Path(), self}, os.Args[1:]...)
-	return syscall.Exec(sudo, argv, os.Environ())
+	return runner.Replace("sudo", append([]string{"env", "TIM_CONFIG=" + config.Path(), self}, os.Args[1:]...)...)
 }
 
 func stdinTerminal() bool {
