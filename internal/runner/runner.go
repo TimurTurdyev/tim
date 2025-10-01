@@ -260,3 +260,12 @@ func OutputStdin(stdin, name string, args ...string) (string, error) {
 	err := cmd.Run()
 	return out.String(), err
 }
+
+// Replace заменяет текущий процесс командой; возвращается только при ошибке.
+func Replace(name string, args ...string) error {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return err
+	}
+	return syscall.Exec(path, append([]string{name}, args...), os.Environ())
+}
