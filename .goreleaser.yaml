@@ -9,7 +9,7 @@ before:
     - go run -ldflags "-X github.com/TimurTurdyev/tim/cmd.version={{ .Tag }}" ./tools/genman man
 
 builds:
-  - id: tim
+  - id: darwin
     main: .
     binary: tim
     env:
@@ -19,15 +19,34 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w -X github.com/TimurTurdyev/tim/cmd.version={{ .Tag }}
+  - id: linux
+    main: .
+    binary: tim
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/TimurTurdyev/tim/cmd.version={{ .Tag }}
 
+# На macOS один универсальный бинарник на обе архитектуры, на Linux - по архиву на архитектуру.
 universal_binaries:
-  - id: tim
+  - id: darwin
     replace: true
 
 archives:
-  - id: tim
+  - id: darwin
+    ids: [darwin]
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_all"
+    name_template: "{{ .ProjectName }}_{{ .Version }}_darwin_all"
+    files:
+      - README.md
+      - man/*.1
+  - id: linux
+    ids: [linux]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_linux_{{ .Arch }}"
     files:
       - README.md
       - man/*.1
@@ -47,6 +66,7 @@ changelog:
 
 homebrew_casks:
   - name: tim
+    ids: [darwin]
     repository:
       owner: TimurTurdyev
       name: homebrew-tap
