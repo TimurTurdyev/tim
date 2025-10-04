@@ -3,7 +3,6 @@ package procs
 import (
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -14,24 +13,6 @@ type Sample struct {
 	CPU  float64
 	Comm string
 	Args string // командная строка целиком, если её запросили отдельно
-}
-
-// ParseTop разбирает ps -Axo pid=,rss=,pcpu=,comm=. Доля CPU приходит с запятой в русской локали.
-func ParseTop(out string) []Sample {
-	var list []Sample
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 4 {
-			continue
-		}
-		kb, err := strconv.ParseInt(f[1], 10, 64)
-		if err != nil {
-			continue
-		}
-		cpu, _ := strconv.ParseFloat(strings.Replace(f[2], ",", ".", 1), 64)
-		list = append(list, Sample{PID: f[0], RSS: kb * 1024, CPU: cpu, Comm: strings.Join(f[3:], " ")})
-	}
-	return list
 }
 
 // AppName: приложение, которому принадлежит процесс. Помощники внутри .app считаются за само

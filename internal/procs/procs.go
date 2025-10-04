@@ -89,8 +89,7 @@ func Info(pids []string) map[string]Proc {
 	list := strings.Join(pids, ",")
 	ps, _ := runner.Output("ps", "-o", "pid=,etime=,comm=", "-p", list)
 	out := ParsePs(ps)
-	lsof, _ := runner.Output("lsof", "-a", "-d", "cwd", "-Fpn", "-p", list)
-	for pid, cwd := range ParseCwd(lsof) {
+	for pid, cwd := range Cwds(pids) {
 		p := out[pid]
 		p.PID, p.Cwd = pid, cwd
 		out[pid] = p

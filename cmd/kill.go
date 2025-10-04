@@ -27,11 +27,17 @@ var (
 )
 
 func allProcs() ([]procs.Full, error) {
-	out, err := runner.Output("ps", "-Axo", "pid=,ppid=,uid=,rss=,pcpu=,etime=,state=,comm=")
+	out, err := runner.Output("ps", procs.PsAll("pid=,ppid=,uid=,rss=,pcpu=,etime=,state=,comm=")...)
 	if err != nil {
 		return nil, err
 	}
-	return withArgs(procs.ParseFull(out)), nil
+	list := withArgs(procs.ParseFull(out))
+	if recent := procs.RecentCPU(500 * time.Millisecond); recent != nil {
+		for i := range list {
+			list[i].CPU = recent[list[i].PID]
+		}
+	}
+	return list, nil
 }
 
 // rowName: имя строки процесса - описание, если процесс известный, иначе имя файла.

@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/procs"
-	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -21,8 +20,7 @@ var (
 // projectOfPID: проект по рабочей папке процесса; приложения из .app в проекты не записываем -
 // они стартуют в той папке, откуда их открыли.
 func projectOfPID() func(procs.Sample) string {
-	out, _ := runner.Output("lsof", "-a", "-d", "cwd", "-Fpn")
-	cwd := procs.ParseCwd(out)
+	cwd := procs.Cwds(nil)
 	return func(s procs.Sample) string {
 		dir := cwd[s.PID]
 		if dir == "" || dir == "/" || strings.Contains(s.Comm, ".app/") {
@@ -43,16 +41,13 @@ var topCmd = &cobra.Command{
 поэтому у многопроцессных приложений сумма выше, чем в Мониторе системы.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		out, err := runner.Output("ps", "-Axo", "pid=,rss=,pcpu=,comm=")
+		full, err := allProcs()
 		if err != nil {
 			return err
 		}
-		list := procs.ParseTop(out)
-		if a, err := runner.Output("ps", "-Axo", "pid=,args="); err == nil {
-			args := procs.ParseArgs(a)
-			for i := range list {
-				list[i].Args = args[list[i].PID]
-			}
+		list := make([]procs.Sample, len(full))
+		for i, p := range full {
+			list[i] = p.Sample
 		}
 		key := func(s procs.Sample) string { return procs.Name(s.Comm, s.Args) }
 		label := "приложение"

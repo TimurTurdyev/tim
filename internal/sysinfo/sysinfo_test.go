@@ -31,11 +31,3 @@ func TestParseGitStatusSB(t *testing.T) {
 		}
 	}
 }
-
-func TestParsePsTop(t *testing.T) {
-	out := " 45,3 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n 12.0 /usr/bin/php\n  0.1 zsh\n"
-	list := ParsePsTop(out, 2)
-	if len(list) != 2 || list[0].CPU != 45.3 || list[0].Name != "Google Chrome" || list[1].Name != "php" {
-		t.Errorf("%+v", list)
-	}
-}

@@ -2,19 +2,12 @@ package procs
 
 import "testing"
 
-func TestParseTopAndGroup(t *testing.T) {
-	out := `52572 1390896   1,7 /Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper
-12157 470224   3.3 /Applications/Firefox.app/Contents/MacOS/firefox
-53469 322208   0,3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container
-26968 499392  16,9 node
-битая строка
-777 abc 1 x`
-	list := ParseTop(out)
-	if len(list) != 4 {
-		t.Fatalf("разобрано %d", len(list))
-	}
-	if list[0].CPU != 1.7 || list[0].RSS != 1390896*1024 {
-		t.Fatalf("первая: %+v", list[0])
+func TestGroupBy(t *testing.T) {
+	list := []Sample{
+		{PID: "52572", RSS: 1390896 * 1024, CPU: 1.7, Comm: "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper"},
+		{PID: "12157", RSS: 470224 * 1024, CPU: 3.3, Comm: "/Applications/Firefox.app/Contents/MacOS/firefox"},
+		{PID: "53469", RSS: 322208 * 1024, CPU: 0.3, Comm: "/Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"},
+		{PID: "26968", RSS: 499392 * 1024, CPU: 16.9, Comm: "node"},
 	}
 	g := GroupBy(list, func(s Sample) string { return AppName(s.Comm) }, false)
 	// OrbStack Helper внутри OrbStack.app - это OrbStack, а не отдельное приложение.
