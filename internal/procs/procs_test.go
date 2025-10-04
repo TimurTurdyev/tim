@@ -43,3 +43,11 @@ func TestParsePs(t *testing.T) {
 		t.Error("system detection")
 	}
 }
+
+func TestParseStatTicks(t *testing.T) {
+	// Имя с пробелом и скобкой: поля считаются от последней скобки.
+	stat := "4242 (Web Content (x)) S 1 4242 4242 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 1 0 100 0 0"
+	if n, ok := ParseStatTicks(stat); !ok || n != 300 {
+		t.Errorf("%d %v", n, ok)
+	}
+}

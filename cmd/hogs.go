@@ -11,7 +11,7 @@ import (
 
 // withArgs дописывает процессам командные строки: без них эмулятор Android не отличить от любого qemu.
 func withArgs(list []procs.Full) []procs.Full {
-	out, err := runner.Output("ps", "-Axo", "pid=,args=")
+	out, err := runner.Output("ps", procs.PsAll("pid=,args=")...)
 	if err != nil {
 		return list
 	}

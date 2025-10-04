@@ -79,33 +79,3 @@ func ParseGitStatusSB(out string) GitState {
 	}
 	return g
 }
-
-// Proc: процесс и его доля CPU.
-type Proc struct {
-	CPU  float64
-	Name string
-}
-
-// ParsePsTop разбирает ps -Ao pcpu=,comm= -r и отдаёт первые n с коротким именем.
-func ParsePsTop(out string, n int) []Proc {
-	var list []Proc
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		cpu, err := strconv.ParseFloat(strings.ReplaceAll(f[0], ",", "."), 64)
-		if err != nil {
-			continue
-		}
-		name := strings.Join(f[1:], " ")
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:]
-		}
-		list = append(list, Proc{cpu, name})
-		if len(list) == n {
-			break
-		}
-	}
-	return list
-}

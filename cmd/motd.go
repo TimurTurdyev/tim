@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
@@ -374,13 +375,14 @@ func motdRepos() []string {
 }
 
 func motdProcs() []string {
-	out, err := runner.Output("ps", "-Ao", "pcpu=,comm=", "-r")
+	list, err := allProcs()
 	if err != nil {
 		return nil
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].CPU > list[j].CPU })
 	var items []string
-	for _, p := range sysinfo.ParsePsTop(out, 3) {
-		items = append(items, fmt.Sprintf("%s %.0f%%", p.Name, p.CPU))
+	for _, p := range list[:min(3, len(list))] {
+		items = append(items, fmt.Sprintf("%s %.0f%%", procs.Name(p.Comm, p.Args), p.CPU))
 	}
 	return []string{ui.Label("cpu      ") + strings.Join(items, "  ")}
 }
