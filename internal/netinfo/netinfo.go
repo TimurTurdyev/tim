@@ -195,16 +195,55 @@ func ParseLsof(out string) []Listener {
 	return list
 }
 
+// Listening: на Linux через ss (lsof там часто не стоит), на macOS через lsof.
+// Без root процессы видны только свои: у чужих порт есть, а PID и команды нет.
 func Listening() []Listener {
+	if runtime.GOOS == "linux" && runner.Has("ss") {
+		out, _ := runner.Output("ss", "-Hltnp")
+		return ParseSS(out)
+	}
 	out, _ := runner.Output("lsof", "+c", "0", "-nP", "-iTCP", "-sTCP:LISTEN")
 	return ParseLsof(out)
 }
 
+var ssProcRe = regexp.MustCompile(`\(\("([^"]+)",pid=(\d+)`)
+
+// ParseSS: ss -Hltnp -> слушающие порты; один порт на IPv4 и IPv6 - одной строкой.
+func ParseSS(out string) []Listener {
+	seen := map[string]bool{}
+	var list []Listener
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		local := f[3]
+		port := local[strings.LastIndex(local, ":")+1:]
+		if port == "" || seen[port] {
+			continue
+		}
+		seen[port] = true
+		l := Listener{Port: port}
+		if m := ssProcRe.FindStringSubmatch(line); m != nil {
+			l.Command, l.PID = m[1], m[2]
+		}
+		list = append(list, l)
+	}
+	return list
+}
+
+// PortBusy: кто слушает порт. Если список его не знает (чужой процесс без прав, нет lsof или ss),
+// порт пробуется занять: занятый не даст, и тогда он занят неизвестно кем.
 func PortBusy(port string) (Listener, bool) {
 	for _, l := range Listening() {
 		if l.Port == port {
 			return l, true
 		}
 	}
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return Listener{Port: port, Command: "?"}, true
+	}
+	_ = ln.Close()
 	return Listener{}, false
 }

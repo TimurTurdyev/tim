@@ -99,3 +99,15 @@ func TestStale(t *testing.T) {
 		t.Errorf("stale only: %+v", only)
 	}
 }
+
+func TestParseSS(t *testing.T) {
+	out := `LISTEN 0      4096         0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=812,fd=3))
+LISTEN 0      4096            [::]:22           [::]:*    users:(("sshd",pid=812,fd=4))
+LISTEN 0      511        127.0.0.1:5432      0.0.0.0:*
+LISTEN 0      128   [::ffff:127.0.0.1]:8000         *:*    users:(("php",pid=99,fd=7))
+`
+	list := ParseSS(out)
+	if len(list) != 3 || list[0].Port != "22" || list[0].PID != "812" || list[0].Command != "sshd" || list[1].Port != "5432" || list[1].PID != "" || list[2].Port != "8000" {
+		t.Errorf("ss: %+v", list)
+	}
+}
