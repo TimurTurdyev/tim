@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	osuser "os/user"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -144,14 +146,11 @@ func motdSystem() []string {
 	run(func() { batt, _ = runner.Output("pmset", "-g", "batt") })
 	run(func() {
 		if phys, ok := netinfo.PhysIface(); ok {
-			out, _ := runner.Output("ipconfig", "getifaddr", phys.Device)
-			ip = strings.TrimSpace(out)
+			ip = sysinfo.IPv4(phys.Device)
 		}
 	})
 	run(func() {
-		_, orb := runner.Output("pgrep", "-xq", "OrbStack Helper")
-		_, dd := runner.Output("pgrep", "-xq", "com.docker.backend")
-		if orb != nil && dd != nil {
+		if !runner.Has("docker") || !sysinfo.DockerUp() {
 			return
 		}
 		out, err := runner.Output("docker", "ps", "-q")
@@ -163,6 +162,9 @@ func motdSystem() []string {
 	})
 	wg.Wait()
 	user := os.Getenv("USER")
+	if u, err := osuser.Current(); err == nil {
+		user = u.Username
+	}
 	host, _ := os.Hostname()
 	host, _, _ = strings.Cut(host, ".")
 	line1 := ui.Label(user+"@"+host) + "  " + osName + "  " + time.Now().Format("Mon 02 Jan, 15:04")
@@ -249,7 +251,11 @@ func motdNet() []string {
 	if phys.Device == "" {
 		return []string{ui.Bad("сеть     ") + "активного интерфейса нет"}
 	}
-	line := ui.Label("сеть     ") + phys.Name + ui.Dim(" "+phys.Device+" шлюз "+gw)
+	name := phys.Name
+	if name != phys.Device {
+		name += ui.Dim(" " + phys.Device)
+	}
+	line := ui.Label("сеть     ") + name + ui.Dim(" шлюз "+gw)
 	inet := netinfo.InternetIface()
 	if netinfo.IsTunnelIface(inet) {
 		line += "  " + ui.Warn("интернет через "+inet)
@@ -309,6 +315,12 @@ func motdPorts() []string {
 }
 
 func motdServices() []string {
+	if runtime.GOOS == "linux" {
+		if failed := sysinfo.FailedUnits(); len(failed) > 0 {
+			return []string{ui.Label("сервисы  ") + ui.Bad("упали: "+strings.Join(failed, " ")) + ui.Dim("  (tim svc)")}
+		}
+		return nil
+	}
 	out, err := runner.Output("launchctl", "list")
 	if err != nil {
 		return nil
