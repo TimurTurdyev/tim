@@ -12,7 +12,6 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/inspect"
-	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -97,7 +96,7 @@ func writeMap(rep *domaudit.Report, open bool) error {
 	if !open {
 		return nil
 	}
-	return runner.Run("open", path)
+	return openBrowser(path)
 }
 
 func printDomain(rep *domaudit.Report) {

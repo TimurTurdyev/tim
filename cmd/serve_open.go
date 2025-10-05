@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"net"
+	"os"
 	"runtime"
 	"time"
 
@@ -24,11 +25,17 @@ func waitPort(port string, limit time.Duration) bool {
 	return false
 }
 
-func openBrowser(url string) error {
+// openBrowser открывает адрес или файл в приложении по умолчанию. Без графики (сервер по ssh)
+// открывать нечем - печатаем, что открыть. На Debian open - это openvt, его не трогаем.
+func openBrowser(target string) error {
 	if runtime.GOOS == "darwin" {
-		return runner.Run("open", url)
+		return runner.Run("open", target)
 	}
-	return runner.Run("xdg-open", url)
+	if (os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "") || !runner.Has("xdg-open") {
+		ui.Println(ui.Dim("открыть нечем, адрес: ") + target)
+		return nil
+	}
+	return runner.Run("xdg-open", target)
 }
 
 // openWhenReady открывает адрес, как только порт ответит. Поле url проекта не берём:
