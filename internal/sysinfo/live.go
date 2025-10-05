@@ -1,6 +1,7 @@
 package sysinfo
 
 import (
+	"net"
 	"os"
 	"runtime"
 	"strconv"
@@ -109,4 +110,54 @@ func ParseOSRelease(out string) string {
 		}
 	}
 	return ""
+}
+
+// IPv4: первый IPv4-адрес интерфейса.
+func IPv4(iface string) string {
+	ifc, err := net.InterfaceByName(iface)
+	if err != nil {
+		return ""
+	}
+	addrs, _ := ifc.Addrs()
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
+			return n.IP.String()
+		}
+	}
+	return ""
+}
+
+// DockerUp: демон docker отвечает на сокете. Сам docker ps на выключенном движке висит
+// или ругается, поэтому сначала ищется сокет.
+func DockerUp() bool {
+	if os.Getenv("DOCKER_HOST") != "" {
+		return true
+	}
+	home, _ := os.UserHomeDir()
+	for _, s := range []string{"/var/run/docker.sock", home + "/.orbstack/run/docker.sock", home + "/.docker/run/docker.sock"} {
+		if st, err := os.Stat(s); err == nil && st.Mode()&os.ModeSocket != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// FailedUnits: упавшие службы systemd; на macOS и без systemd - пусто.
+func FailedUnits() []string {
+	if runtime.GOOS != "linux" || !runner.Has("systemctl") {
+		return nil
+	}
+	out, _ := runner.Output("systemctl", "list-units", "--state=failed", "--no-legend", "--plain")
+	return ParseFailedUnits(out)
+}
+
+// ParseFailedUnits: первое поле каждой строки systemctl list-units --no-legend --plain.
+func ParseFailedUnits(out string) []string {
+	var list []string
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) > 0 {
+			list = append(list, strings.TrimPrefix(f[0], "●"))
+		}
+	}
+	return list
 }
