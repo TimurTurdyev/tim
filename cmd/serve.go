@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -514,8 +515,11 @@ var openCmd = &cobra.Command{
 		if editor == "" {
 			editor = os.Getenv("VISUAL")
 		}
+		if editor == "" && runtime.GOOS != "darwin" {
+			editor = os.Getenv("EDITOR")
+		}
 		if editor == "" {
-			return runner.Run("open", dir)
+			return openBrowser(dir)
 		}
 		parts := strings.Fields(editor)
 		return runner.Run(parts[0], append(parts[1:], dir)...)
