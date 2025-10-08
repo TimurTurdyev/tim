@@ -157,11 +157,8 @@ func ResolveIPv4(host string) string {
 	if IsIPv4(host) {
 		return host
 	}
-	out, _ := runner.Output("dscacheutil", "-q", "host", "-a", "name", host)
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "ip_address:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "ip_address:"))
-		}
+	if ips := LookupIPv4(host); len(ips) > 0 {
+		return ips[0]
 	}
 	return ""
 }
