@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -48,7 +49,12 @@ var netCheckCmd = &cobra.Command{
 				if gw == "" {
 					return "", fmt.Errorf("шлюза нет: DHCP не выдал адрес?")
 				}
-				if _, err := runner.Output("ping", "-c1", "-t2", gw); err != nil {
+				// Таймаут ответа: -t на macOS, -W на Linux (там -t - это TTL).
+				wait := "-t2"
+				if runtime.GOOS == "linux" {
+					wait = "-W2"
+				}
+				if _, err := runner.Output("ping", "-c1", wait, gw); err != nil {
 					return "", warning(gw + " не отвечает на ping: роутер или VPN могут глушить ICMP, смотри следующие шаги")
 				}
 				return gw + " отвечает", nil

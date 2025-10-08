@@ -1,6 +1,9 @@
 package netinfo
 
 import (
+	"net"
+	"os"
+	"runtime"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -52,8 +55,38 @@ func ParseIfconfigTunnels(out string) []Tunnel {
 }
 
 func Tunnels() []Tunnel {
+	if runtime.GOOS == "linux" {
+		return linuxTunnels()
+	}
 	out, _ := runner.Output("ifconfig")
 	return ParseIfconfigTunnels(out)
+}
+
+// linuxTunnels: ifconfig из net-tools на свежих системах не стоит, адреса берутся у ядра напрямую.
+func linuxTunnels() []Tunnel {
+	ifs, _ := net.Interfaces()
+	var list []Tunnel
+	for _, ifc := range ifs {
+		if !IsTunnelIface(ifc.Name) || ifc.Flags&net.FlagUp == 0 {
+			continue
+		}
+		t := Tunnel{Iface: ifc.Name}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			n, ok := a.(*net.IPNet)
+			switch {
+			case !ok:
+			case n.IP.To4() != nil:
+				t.IPv4 = append(t.IPv4, n.IP.String())
+			case n.IP.IsGlobalUnicast():
+				t.IPv6 = append(t.IPv6, n.IP.String())
+			}
+		}
+		if len(t.IPv4) > 0 || len(t.IPv6) > 0 {
+			list = append(list, t)
+		}
+	}
+	return list
 }
 
 // NetConn: VPN-подключение из настроек macOS.
@@ -82,6 +115,9 @@ func ParseNcList(out string) []NetConn {
 }
 
 func NetConns() []NetConn {
+	if runtime.GOOS == "linux" {
+		return nmcliVPN()
+	}
 	out, _ := runner.Output("scutil", "--nc", "list")
 	return ParseNcList(out)
 }
@@ -115,8 +151,52 @@ func ParseDNS(out string) []string {
 }
 
 func DNSServers() []string {
+	if runtime.GOOS == "linux" {
+		return linuxDNS()
+	}
 	out, _ := runner.Output("scutil", "--dns")
 	return ParseDNS(out)
+}
+
+// linuxDNS: из resolv.conf; если там заглушка systemd-resolved, то её настоящие серверы.
+func linuxDNS() []string {
+	data, _ := os.ReadFile("/etc/resolv.conf")
+	list := ParseResolvConf(string(data))
+	if len(list) == 1 && list[0] == "127.0.0.53" {
+		if data, err := os.ReadFile("/run/systemd/resolve/resolv.conf"); err == nil {
+			if real := ParseResolvConf(string(data)); len(real) > 0 {
+				return real
+			}
+		}
+	}
+	return list
+}
+
+// ParseResolvConf: адреса из строк nameserver.
+func ParseResolvConf(out string) []string {
+	var list []string
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) >= 2 && f[0] == "nameserver" {
+			list = append(list, f[1])
+		}
+	}
+	return list
+}
+
+// nmcliVPN: активные VPN и WireGuard из NetworkManager; на сервере без него - пусто.
+func nmcliVPN() []NetConn {
+	if !runner.Has("nmcli") {
+		return nil
+	}
+	out, _ := runner.Output("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active")
+	var list []NetConn
+	for _, line := range strings.Split(out, "\n") {
+		name, typ, ok := strings.Cut(line, ":")
+		if ok && (typ == "vpn" || typ == "wireguard") {
+			list = append(list, NetConn{Name: name, State: "Connected"})
+		}
+	}
+	return list
 }
 
 // Proxy: системный SOCKS-прокси службы macOS.
