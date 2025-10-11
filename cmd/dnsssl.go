@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -15,9 +16,12 @@ import (
 
 var dnsFlushCmd = &cobra.Command{
 	Use:   "flush",
-	Short: "Сбросить DNS-кэш macOS (sudo)",
+	Short: "Сбросить DNS-кэш системы (sudo)",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if runtime.GOOS == "linux" {
+			return flushLinuxDNS()
+		}
 		if err := runner.Sudo("dscacheutil", "-flushcache"); err != nil {
 			return err
 		}
@@ -29,6 +33,25 @@ var dnsFlushCmd = &cobra.Command{
 	},
 }
 
+// flushLinuxDNS: кэш держит systemd-resolved или nscd; если ни того, ни другого, кэша в системе нет.
+func flushLinuxDNS() error {
+	switch {
+	case runner.Has("resolvectl"):
+		if err := runner.Sudo("resolvectl", "flush-caches"); err != nil {
+			return err
+		}
+	case runner.Has("nscd"):
+		if err := runner.Sudo("nscd", "-i", "hosts"); err != nil {
+			return err
+		}
+	default:
+		ui.Println(ui.Dim("ни systemd-resolved, ни nscd: системного DNS-кэша нет, сбрасывать нечего"))
+		return nil
+	}
+	ui.Println(ui.Label("DNS-кэш сброшен"))
+	return nil
+}
+
 var dnsServersCmd = &cobra.Command{
 	Use:   "servers",
 	Short: "DNS-серверы основного резолвера",
@@ -36,7 +59,7 @@ var dnsServersCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		servers := netinfo.DNSServers()
 		if len(servers) == 0 {
-			return ui.Errorf("основной резолвер не найден в scutil --dns")
+			return ui.Errorf("DNS-серверы системы не нашлись")
 		}
 		for _, s := range servers {
 			ui.Println(s)
