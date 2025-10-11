@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -196,6 +197,9 @@ func ipVia(proxy string) (string, error) {
 
 // systemProxy включает или выключает системный SOCKS у активной службы.
 func systemProxy(on bool) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
 	phys, _ := physical()
 	if phys.Name == "" {
 		ui.Println(ui.Warn("активная сетевая служба не найдена"))
@@ -233,6 +237,9 @@ var tunnelSystemCmd = &cobra.Command{
 			systemProxy(false)
 			return nil
 		case "on":
+			if runtime.GOOS != "darwin" {
+				return ui.Errorf("общего системного прокси на Linux нет; подними tim tunnel up и задай программам ALL_PROXY=socks5h://127.0.0.1:%d", socksPort())
+			}
 			server, err := tunnelServer(second(args))
 			if err != nil {
 				return err

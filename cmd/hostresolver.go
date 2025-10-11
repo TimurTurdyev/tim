@@ -62,6 +62,10 @@ var hostResolverCmd = &cobra.Command{
 			ui.Println(ui.Label("выключено") + ui.Dim("  зона "+tld))
 			return restartDnsmasq()
 		}
+		if runtime.GOOS != "darwin" {
+			// /etc/resolver - механизм macOS, на Linux его никто не читает.
+			return ui.Errorf("на Linux зону целиком так не настроить: имена *.localhost systemd-resolved и так отдаёт 127.0.0.1, точные имена - tim host add")
+		}
 		if !runner.Has("dnsmasq") {
 			hint := "brew install dnsmasq"
 			if runtime.GOOS != "darwin" {
