@@ -161,3 +161,19 @@ func ParseFailedUnits(out string) []string {
 	}
 	return list
 }
+
+// Unit: служба systemd.
+type Unit struct{ Name, Active, Sub, Description string }
+
+// ParseUnits: systemctl list-units --no-legend --plain.
+func ParseUnits(out string) []Unit {
+	var list []Unit
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "●"))
+		if len(f) < 4 {
+			continue
+		}
+		list = append(list, Unit{Name: strings.TrimSuffix(f[0], ".service"), Active: f[2], Sub: f[3], Description: strings.Join(f[4:], " ")})
+	}
+	return list
+}
