@@ -15,7 +15,7 @@ import (
 
 // Aliases перечисляет Host без масок из ~/.ssh/config.
 func Aliases() []string {
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	f, err := os.Open(filepath.Join(home, ".ssh", "config"))
 	if err != nil {
 		return nil
@@ -86,7 +86,7 @@ func StateDir() string {
 }
 
 func sockPath(name string) string {
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	return filepath.Join(home, ".ssh", "tim-"+name+".sock")
 }
 

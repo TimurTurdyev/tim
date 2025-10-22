@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -109,7 +110,7 @@ func shellScript(shell string) (string, error) {
 
 // rcFile: файл настроек для оболочки и имя самой оболочки.
 func rcFile(shell string) (path, name string) {
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	if shell == "" {
 		shell = filepath.Base(os.Getenv("SHELL"))
 	}
@@ -139,7 +140,7 @@ func sourced(path string, depth int) bool {
 	if depth == 0 {
 		return false
 	}
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		after, ok := strings.CutPrefix(line, "source ")

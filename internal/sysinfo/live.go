@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
@@ -133,7 +134,7 @@ func DockerUp() bool {
 	if os.Getenv("DOCKER_HOST") != "" {
 		return true
 	}
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	for _, s := range []string{"/var/run/docker.sock", home + "/.orbstack/run/docker.sock", home + "/.docker/run/docker.sock"} {
 		if st, err := os.Stat(s); err == nil && st.Mode()&os.ModeSocket != 0 {
 			return true

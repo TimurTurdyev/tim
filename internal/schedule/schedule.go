@@ -84,6 +84,11 @@ func (j Job) Systemd() (service, timer string) {
 	for _, k := range sortedKeys(j.Env) {
 		env.WriteString(`Environment="` + unitEscape(k+"="+j.Env[k]) + "\"\n")
 	}
+	if j.Log != "" {
+		// Свой файл, как у launchd: tim подсказывает tail по нему на обеих системах.
+		log := strings.ReplaceAll(j.Log, "%", "%%")
+		env.WriteString("StandardOutput=append:" + log + "\nStandardError=append:" + log + "\n")
+	}
 	if j.Daemon {
 		// Постоянная служба: таймер не нужен, после падения systemd поднимет её сам.
 		service = "[Unit]\nDescription=" + j.Label + "\nAfter=network-online.target\nWants=network-online.target\n\n" +

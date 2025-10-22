@@ -17,6 +17,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/diskuse"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -286,7 +287,7 @@ func cleanStale(items []diskuse.Item, min int64) error {
 		ui.Println(ui.Dim("заброшенных дольше " + strconv.Itoa(diskDays) + " дн папок крупнее " + diskMin + " нет"))
 		return nil
 	}
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	var freed int64
 	for _, it := range stale {
 		owner, _ := cfg.ProjectHere(it.Path)
@@ -363,7 +364,7 @@ var diskCmd = &cobra.Command{
 			return cleanStale(items, min)
 		}
 		s := diskuse.Summarize(items, 20, min)
-		home, _ := os.UserHomeDir()
+		home := paths.Home()
 		for _, it := range s.Top {
 			owner := ""
 			if p, ok := cfg.ProjectHere(it.Path); ok {
