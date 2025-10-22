@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"os"
+	osuser "os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/schedule"
@@ -38,13 +40,38 @@ func checkJob() (schedule.Job, error) {
 }
 
 func launchAgentPath(label string) string {
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	return filepath.Join(home, "Library", "LaunchAgents", label+".plist")
 }
 
+// systemdDir и systemctl: под root задание ставится системным юнитом - на сервере user-юниты
+// живут, только пока открыта сессия; иначе юнит пользователя.
 func systemdDir() string {
-	home, _ := os.UserHomeDir()
+	if os.Geteuid() == 0 {
+		return "/etc/systemd/system"
+	}
+	home := paths.Home()
 	return filepath.Join(home, ".config", "systemd", "user")
+}
+
+func systemctl(args ...string) error {
+	if os.Geteuid() == 0 {
+		return runner.Run("systemctl", args...)
+	}
+	return runner.Run("systemctl", append([]string{"--user"}, args...)...)
+}
+
+// lingerHint: без linger таймеры пользователя на сервере останавливаются вместе с последней ssh-сессией.
+func lingerHint() {
+	u, err := osuser.Current()
+	if err != nil || os.Geteuid() == 0 {
+		return
+	}
+	out, _ := runner.Output("loginctl", "show-user", u.Username, "-p", "Linger")
+	if strings.TrimSpace(out) == "Linger=no" {
+		ui.Println(ui.Warn("задания пользователя работают, только пока ты в системе") +
+			ui.Dim("  чтобы и без входа: sudo loginctl enable-linger "+u.Username))
+	}
 }
 
 // installJob ставит агента launchd или таймер systemd --user; unit - имя без расширения для systemd.
@@ -61,16 +88,25 @@ func installJob(job schedule.Job, unit string) error {
 	case "linux":
 		svc, timer := job.Systemd()
 		dir := systemdDir()
+		if job.Log != "" && !runner.DryRun {
+			if err := os.MkdirAll(filepath.Dir(job.Log), 0o755); err != nil {
+				return err
+			}
+		}
 		if err := runner.WriteRoot(filepath.Join(dir, unit+".service"), []byte(svc)); err != nil {
 			return err
 		}
 		if err := runner.WriteRoot(filepath.Join(dir, unit+".timer"), []byte(timer)); err != nil {
 			return err
 		}
-		if err := runner.Run("systemctl", "--user", "daemon-reload"); err != nil {
+		if err := systemctl("daemon-reload"); err != nil {
 			return err
 		}
-		return runner.Run("systemctl", "--user", "enable", "--now", unit+".timer")
+		if err := systemctl("enable", "--now", unit+".timer"); err != nil {
+			return err
+		}
+		lingerHint()
+		return nil
 	}
 	return ui.Errorf("расписание на %s не поддержано", runtime.GOOS)
 }
@@ -81,7 +117,7 @@ func uninstallJob(label, unit string) error {
 		_ = runner.Run("launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+label)
 		return runner.RemoveRoot(launchAgentPath(label))
 	case "linux":
-		_ = runner.Run("systemctl", "--user", "disable", "--now", unit+".timer")
+		_ = systemctl("disable", "--now", unit+".timer")
 		for _, f := range []string{unit + ".service", unit + ".timer"} {
 			if err := runner.RemoveRoot(filepath.Join(systemdDir(), f)); err != nil {
 				return err

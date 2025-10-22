@@ -13,6 +13,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/doctor"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -178,7 +179,7 @@ func doctorPath(r *report, dirs []string) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	short := func(p string) string { return strings.Replace(p, home, "~", 1) }
 	for _, n := range names {
 		paths := shadow[n]

@@ -3,6 +3,7 @@ package paths
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 )
 
@@ -13,9 +14,20 @@ func State(sub ...string) string {
 		if x := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(x) {
 			base = filepath.Join(x, "tim")
 		} else {
-			home, _ := os.UserHomeDir()
-			base = filepath.Join(home, ".local", "state", "tim")
+			base = filepath.Join(Home(), ".local", "state", "tim")
 		}
 	}
 	return filepath.Join(append([]string{base}, sub...)...)
+}
+
+// Home: домашняя папка. У служб systemd HOME не задан, и тогда она берётся из базы пользователей,
+// иначе пути вышли бы относительными - от корня диска.
+func Home() string {
+	if h, err := os.UserHomeDir(); err == nil {
+		return h
+	}
+	if u, err := user.Current(); err == nil {
+		return u.HomeDir
+	}
+	return ""
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
 type Project struct {
@@ -98,7 +99,7 @@ func Path() string {
 		if x := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(x) {
 			return filepath.Join(x, "tim", "config.toml")
 		}
-		home, _ = os.UserHomeDir()
+		home = paths.Home()
 	}
 	return filepath.Join(home, ".config", "tim", "config.toml")
 }
@@ -139,7 +140,7 @@ func Default() *Config {
 
 // DefaultRoot: первая существующая из привычных папок с проектами, иначе ~/Dev.
 func DefaultRoot() string {
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	for _, d := range []string{"Dev", "Projects", "projects", "code", "src"} {
 		p := filepath.Join(home, d)
 		if st, err := os.Stat(p); err == nil && st.IsDir() {
@@ -216,7 +217,7 @@ func Save(cfg *Config) error {
 
 // ExpandHome раскрывает ~/ в начале пути.
 func collapseHome(p string) string {
-	home, _ := os.UserHomeDir()
+	home := paths.Home()
 	if home != "" && strings.HasPrefix(p, home+"/") {
 		return "~/" + p[len(home)+1:]
 	}
@@ -225,7 +226,7 @@ func collapseHome(p string) string {
 
 func ExpandHome(p string) string {
 	if strings.HasPrefix(p, "~/") {
-		home, _ := os.UserHomeDir()
+		home := paths.Home()
 		return filepath.Join(home, p[2:])
 	}
 	return p
