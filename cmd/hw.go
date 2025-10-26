@@ -231,9 +231,12 @@ func printHW(s hwSnapshot, full bool) {
 	if b, ok := readBattery(); ok {
 		ui.Println(label("батарея") + fmt.Sprintf("%d%%", b.Charge) + ui.Dim(fmt.Sprintf(", %d циклов, ёмкость %d%%", b.Cycles, b.Capacity)))
 	}
-	if s.therm == "" {
+	switch {
+	case s.therm == "" && runtime.GOOS == "linux":
+		// Датчики есть не везде, а у виртуалки их нет вовсе: молчание - не "всё хорошо".
+	case s.therm == "":
 		ui.Println(label("тепло") + ui.Dim("ограничений нет"))
-	} else {
+	default:
 		ui.Println(label("тепло") + ui.Warn(s.therm))
 	}
 }
@@ -246,16 +249,21 @@ var hwCmd = &cobra.Command{
 --watch обновляет процессор, видеокарту и память раз в секунду; выход - Ctrl-C.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if runtime.GOOS != "darwin" {
-			return ui.Errorf("пока только macOS")
+		collect, sample := collectHW, hwSample
+		switch runtime.GOOS {
+		case "darwin":
+		case "linux":
+			collect, sample = collectHWLinux, hwSampleLinux
+		default:
+			return ui.Errorf("на %s пока не умею", runtime.GOOS)
 		}
 		if !hwWatch {
-			printHW(collectHW(), true)
+			printHW(collect(), true)
 			return nil
 		}
-		s0 := collectHW()
+		s0 := collect()
 		title := s0.model + "  " + strconv.Itoa(s0.cores) + " ядер  " + fmtBytes(s0.memTotal)
-		err := tui.RunHW(title, func() tui.HWSample { return hwSample(s0) })
+		err := tui.RunHW(title, func() tui.HWSample { return sample(s0) })
 		if errors.Is(err, tui.ErrNoTTY) {
 			// Без терминала живому экрану негде жить - один снимок.
 			printHW(s0, true)
@@ -310,13 +318,20 @@ func hwSample(base hwSnapshot) tui.HWSample {
 	if base.memTotal > 0 {
 		out.Mem = int(used * 100 / base.memTotal)
 	}
+	out.Top = topRows(list)
+	return out
+}
+
+// topRows: самые занятые приложения для живого экрана.
+func topRows(list []procs.Full) []tui.TopRow {
 	samples := make([]procs.Sample, len(list))
 	for i, p := range list {
 		samples[i] = p.Sample
 	}
 	groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, true)
+	var rows []tui.TopRow
 	for _, g := range groups[:min(6, len(groups))] {
-		out.Top = append(out.Top, tui.TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})
+		rows = append(rows, tui.TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})
 	}
-	return out
+	return rows
 }

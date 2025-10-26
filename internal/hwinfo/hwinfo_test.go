@@ -75,3 +75,18 @@ func TestParseDiskutilAndIostat(t *testing.T) {
 		t.Fatalf("%d %v", n, ok)
 	}
 }
+
+func TestLinuxSources(t *testing.T) {
+	a, ok1 := ParseProcStat("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 1 2 3\n")
+	b, ok2 := ParseProcStat("cpu  200 0 200 750 150 0 0 0 0 0\n")
+	if !ok1 || !ok2 || Busy(a, b) != 66 {
+		t.Errorf("busy %d (%+v %+v)", Busy(a, b), a, b)
+	}
+	if sw, ok := ParseMeminfoSwap("SwapTotal:  2097148 kB\nSwapFree:  1048574 kB\n"); !ok || sw.Used != 1048574*1024 {
+		t.Errorf("swap %+v", sw)
+	}
+	g := ParseNvidiaSmi("NVIDIA GeForce RTX 4090, 87, 20480, 24564\n")
+	if len(g) != 1 || g[0].Util != 87 || g[0].MemTotal != 24564<<20 {
+		t.Errorf("nvidia %+v", g)
+	}
+}
