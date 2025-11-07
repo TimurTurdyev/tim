@@ -11,7 +11,7 @@ import (
 // Place: место, где на машине разработчика копится пересоздаваемое.
 type Place struct {
 	Name  string
-	Paths []string // от домашней папки
+	Paths []string // от домашней папки или абсолютные - системные места сервера
 	Clean string   // чем чистить; пусто - разбирать руками
 }
 
@@ -20,22 +20,26 @@ var SystemPlaces = []Place{
 	{"OrbStack", []string{"Library/Group Containers/HUAQ24HBR6.dev.orbstack", ".orbstack"}, "docker system prune -a"},
 	{"Docker Desktop", []string{"Library/Containers/com.docker.docker"}, "docker system prune -a; не пользуешься - удалить само приложение"},
 	{"npm", []string{".npm"}, "npm cache clean --force"},
-	{"composer", []string{"Library/Caches/composer", ".composer/cache"}, "composer clear-cache"},
-	{"Homebrew", []string{"Library/Caches/Homebrew"}, "brew cleanup --prune=all"},
+	{"composer", []string{"Library/Caches/composer", ".composer/cache", ".cache/composer"}, "composer clear-cache"},
+	{"Homebrew", []string{"Library/Caches/Homebrew", ".cache/Homebrew"}, "brew cleanup --prune=all"},
 	{"go: модули", []string{"go/pkg/mod"}, "go clean -modcache"},
-	{"go: сборка", []string{"Library/Caches/go-build"}, "go clean -cache"},
-	{"pip", []string{"Library/Caches/pip"}, "pip cache purge"},
+	{"go: сборка", []string{"Library/Caches/go-build", ".cache/go-build"}, "go clean -cache"},
+	{"pip", []string{"Library/Caches/pip", ".cache/pip"}, "pip cache purge"},
 	{"bun", []string{".bun/install/cache"}, "bun pm cache rm"},
-	{"pnpm", []string{"Library/pnpm/store", "Library/Caches/pnpm"}, "pnpm store prune"},
-	{"yarn", []string{"Library/Caches/Yarn"}, "yarn cache clean"},
-	{"JetBrains: кеши IDE", []string{"Library/Caches/JetBrains"}, "папки прошлых версий IDE удаляются целиком, текущую не трогать"},
+	{"pnpm", []string{"Library/pnpm/store", "Library/Caches/pnpm", ".local/share/pnpm/store"}, "pnpm store prune"},
+	{"yarn", []string{"Library/Caches/Yarn", ".cache/yarn"}, "yarn cache clean"},
+	{"JetBrains: кеши IDE", []string{"Library/Caches/JetBrains", ".cache/JetBrains"}, "папки прошлых версий IDE удаляются целиком, текущую не трогать"},
 	{"Xcode DerivedData", []string{"Library/Developer/Xcode/DerivedData"}, "rm -rf ~/Library/Developer/Xcode/DerivedData"},
-	{"VS Code: кеш", []string{"Library/Application Support/Code/Cache", "Library/Application Support/Code/CachedData"}, "удалить при закрытом редакторе"},
+	{"VS Code: кеш", []string{"Library/Application Support/Code/Cache", "Library/Application Support/Code/CachedData", ".config/Code/Cache", ".config/Code/CachedData"}, "удалить при закрытом редакторе"},
+	{"podman", []string{".local/share/containers"}, "podman system prune -a"},
+	{"docker", []string{"/var/lib/docker"}, "docker system prune -a"},
+	{"журнал systemd", []string{"/var/log/journal"}, "journalctl --vacuum-size=500M"},
+	{"пакеты apt", []string{"/var/cache/apt"}, "apt-get clean"},
 	{"модели Hugging Face", []string{".cache/huggingface"}, "hf cache delete - выбрать ненужные модели"},
 	{"uv", []string{".cache/uv"}, "uv cache clean"},
 	{"браузеры puppeteer", []string{".cache/puppeteer"}, "удалить папку, скачаются снова при надобности"},
 	{"браузеры chrome-devtools-mcp", []string{".cache/chrome-devtools-mcp"}, "удалить папку, скачаются снова при надобности"},
-	{"Корзина", []string{".Trash"}, "очистить Корзину в Finder"},
+	{"Корзина", []string{".Trash", ".local/share/Trash"}, "очистить Корзину"},
 	{"Загрузки", []string{"Downloads"}, ""},
 }
 
