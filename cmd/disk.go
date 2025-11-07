@@ -44,7 +44,12 @@ func engineHint(name, clean string) string {
 }
 
 // tilde: путь от домашней папки так, как его набирают в терминале.
-func tilde(rel string) string { return "~/" + rel }
+func tilde(rel string) string {
+	if filepath.IsAbs(rel) {
+		return rel
+	}
+	return "~/" + rel
+}
 
 // placePath: где лежит место; у мест из нескольких папок - самая большая из них.
 func placePath(p diskuse.Place, sizes map[string]int64) string {
@@ -130,7 +135,10 @@ func diskSystem() error {
 	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
 	measure := func(rel string, args ...string) {
-		full := filepath.Join(home, rel)
+		full := rel
+		if !filepath.IsAbs(rel) {
+			full = filepath.Join(home, rel)
+		}
 		if _, err := os.Stat(full); err != nil {
 			return
 		}
@@ -140,6 +148,10 @@ func diskSystem() error {
 			// du без прав на часть подпапок пишет ошибки, но итог печатает - его и берём.
 			out, _ := runner.Output("du", append(args, full)...)
 			got := diskuse.ParseDu(out, home)
+			if filepath.IsAbs(rel) {
+				got = diskuse.ParseDu(out, "/")
+				got = map[string]int64{rel: got[strings.TrimPrefix(rel, "/")]}
+			}
 			mu.Lock()
 			maps.Copy(sizes, got)
 			mu.Unlock()
@@ -245,8 +257,36 @@ func moveToTrash(path string) error {
 		return runner.Run("trash", path)
 	case runner.Has("gio"):
 		return runner.Run("gio", "trash", path)
+	case runner.Has("trash-put"):
+		return runner.Run("trash-put", path)
+	case runtime.GOOS == "linux":
+		return freedesktopTrash(path)
 	}
 	return ui.Errorf("не нашёл, чем класть в Корзину (trash на macOS, gio на Linux); %s не тронут", path)
+}
+
+// freedesktopTrash: Корзина по спецификации freedesktop - так её видят файловые менеджеры Linux
+// и trash-cli. Работает в пределах одного диска: перенос, а не копирование.
+func freedesktopTrash(path string) error {
+	dir := filepath.Join(paths.Home(), ".local", "share", "Trash")
+	name := filepath.Base(path) + "." + strconv.FormatInt(time.Now().Unix(), 10)
+	info := fmt.Sprintf("[Trash Info]\nPath=%s\nDeletionDate=%s\n", path, time.Now().Format("2006-01-02T15:04:05"))
+	ui.Println(ui.Dim("$ mv " + shellq.Join([]string{path, filepath.Join(dir, "files", name)})))
+	if runner.DryRun {
+		return nil
+	}
+	for _, sub := range []string{"files", "info"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "info", name+".trashinfo"), []byte(info), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(path, filepath.Join(dir, "files", name)); err != nil {
+		return ui.Errorf("в Корзину не перенести (другой диск?): %v; %s не тронут", err, path)
+	}
+	return nil
 }
 
 func cleanStale(items []diskuse.Item, min int64) error {
