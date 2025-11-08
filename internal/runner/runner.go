@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -268,4 +269,22 @@ func Replace(name string, args ...string) error {
 		return err
 	}
 	return syscall.Exec(path, append([]string{name}, args...), os.Environ())
+}
+
+// InstallHint: как поставить программу на этой системе. linux - имя пакета или ссылка,
+// если в репозиториях дистрибутивов её нет (начинается с http).
+func InstallHint(brew, linux string) string {
+	switch {
+	case runtime.GOOS == "darwin":
+		return "brew install " + brew
+	case strings.HasPrefix(linux, "http"):
+		return linux
+	case Has("apt-get"):
+		return "sudo apt install " + linux
+	case Has("dnf"):
+		return "sudo dnf install " + linux
+	case Has("pacman"):
+		return "sudo pacman -S " + linux
+	}
+	return "поставь " + linux + " пакетным менеджером системы"
 }
