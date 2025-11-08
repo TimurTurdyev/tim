@@ -356,7 +356,7 @@ var tunnelExposeCmd = &cobra.Command{
 			return runner.Exec("ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-R", fmt.Sprintf("0.0.0.0:%d:localhost:%s", remote, port), server)
 		case exposeFRP != "":
 			if !runner.Has("frpc") && !runner.DryRun {
-				return ui.Errorf("frpc не найден: brew install frpc")
+				return ui.Errorf("frpc не найден: %s", runner.InstallHint("frpc", "https://github.com/fatedier/frp/releases"))
 			}
 			host, sport, ok := strings.Cut(exposeFRP, ":")
 			if !ok {
@@ -376,7 +376,7 @@ var tunnelExposeCmd = &cobra.Command{
 			return runner.Exec("frpc", "-c", f.Name())
 		default:
 			if !runner.Has("cloudflared") && !runner.DryRun {
-				return ui.Errorf("cloudflared не найден: brew install cloudflared (или --ssh сервер, --frp host:port)")
+				return ui.Errorf("cloudflared не найден: %s (или --ssh сервер, --frp host:port)", runner.InstallHint("cloudflared", "https://pkg.cloudflare.com"))
 			}
 			ui.Println(ui.Dim("адрес вида https://*.trycloudflare.com cloudflared напечатает ниже"))
 			return runner.Exec("cloudflared", "tunnel", "--no-autoupdate", "--url", "http://localhost:"+port)
@@ -436,7 +436,7 @@ IPv6 sshuttle не перехватывает. sudo спросит пароль 
 			return nil
 		}
 		if !runner.Has("sshuttle") && !runner.DryRun {
-			return ui.Errorf("sshuttle не найден: brew install sshuttle")
+			return ui.Errorf("sshuttle не найден: %s", runner.InstallHint("sshuttle", "sshuttle"))
 		}
 		server, err := tunnelServer(first(args))
 		if err != nil {

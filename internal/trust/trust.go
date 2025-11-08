@@ -135,7 +135,7 @@ func AddBrowsers(certPath, name string) {
 		return
 	}
 	if !runner.Has("certutil") {
-		ui.Println(ui.Dim("Firefox держит своё хранилище: поставь certutil (brew install nss) и повтори"))
+		ui.Println(ui.Dim("Firefox держит своё хранилище: поставь certutil (" + runner.InstallHint("nss", "libnss3-tools") + ") и повтори"))
 		return
 	}
 	for _, d := range profiles {
