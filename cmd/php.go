@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/brew"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/phpver"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -21,7 +23,14 @@ type phpInstall struct {
 }
 
 // phpInstalls: версии PHP из brew; у формулы php версия спрашивается у самого бинарника.
+// На Linux - /usr/bin/php8.3 и соседи (Debian, Ubuntu, PPA ondrej).
 func phpInstalls() []phpInstall {
+	if runtime.GOOS == "linux" {
+		return linuxPHP()
+	}
+	if !runner.Has("brew") {
+		return nil
+	}
 	prefix := brew.Prefix()
 	var out []phpInstall
 	for _, f := range brew.Formulas() {
@@ -45,6 +54,31 @@ func phpInstalls() []phpInstall {
 	return out
 }
 
+// linuxPHP: версии из /usr/bin. Бинарник там называется php8.3, а не php, поэтому для каждой версии
+// заводится папка-шим с php внутри: её и ставим первой в PATH.
+func linuxPHP() []phpInstall {
+	bins, _ := filepath.Glob("/usr/bin/php[0-9]*.[0-9]*")
+	var out []phpInstall
+	for _, b := range bins {
+		v, ok := phpver.Parse(strings.TrimPrefix(filepath.Base(b), "php"))
+		if !ok {
+			continue
+		}
+		dir := paths.State("php", v.String())
+		link := filepath.Join(dir, "php")
+		if _, err := os.Lstat(link); err != nil {
+			if os.MkdirAll(dir, 0o755) != nil || os.Symlink(b, link) != nil {
+				continue
+			}
+		}
+		out = append(out, phpInstall{v, dir})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[j].Version.Less(out[i].Version) })
+	return out
+}
+
+func phpHint(v string) string { return runner.InstallHint("php@"+v, "php"+v+"-cli") }
+
 func findPHP(want string) (phpInstall, error) {
 	w, ok := phpver.Parse(want)
 	if !ok {
@@ -55,7 +89,7 @@ func findPHP(want string) (phpInstall, error) {
 			return i, nil
 		}
 	}
-	return phpInstall{}, ui.Errorf("php %s не установлен: brew install php@%s", w, w)
+	return phpInstall{}, ui.Errorf("php %s не установлен: %s", w, phpHint(w.String()))
 }
 
 // phpPath: PATH без каталогов других версий brew php и с нужной версией первой.
@@ -75,8 +109,10 @@ var phpCmd = &cobra.Command{
 	Short: "Версии PHP: установленные, активная, что требует проект",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := needBrew(); err != nil {
-			return err
+		if runtime.GOOS == "darwin" {
+			if err := needBrew(); err != nil {
+				return err
+			}
 		}
 		active, _ := runner.Output("php", "-r", "echo PHP_VERSION;")
 		installs := phpInstalls()

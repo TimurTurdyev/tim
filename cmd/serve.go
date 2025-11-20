@@ -142,7 +142,7 @@ func phpEnv(dir, stack string) ([]string, string) {
 		return nil, ""
 	}
 	req := phpver.Required(filepath.Join(dir, "composer.json"))
-	if req == "" || !runner.Has("brew") {
+	if req == "" {
 		return nil, ""
 	}
 	if active, err := runner.Output("php", "-r", "echo PHP_VERSION;"); err == nil {
@@ -155,7 +155,7 @@ func phpEnv(dir, stack string) ([]string, string) {
 			return []string{"PATH=" + phpPath(i.Bin)}, "php " + i.Version.String() + " под require.php " + req
 		}
 	}
-	return nil, "подходящего под " + req + " php нет: brew install php@<версия>"
+	return nil, "подходящего под " + req + " php нет: " + phpHint("<версия>")
 }
 
 type servePlan struct {
