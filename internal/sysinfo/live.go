@@ -42,7 +42,8 @@ func DataDisk() (Disk, bool) {
 	if runtime.GOOS == "darwin" {
 		path = "/System/Volumes/Data"
 	}
-	out, err := runner.Output("df", "-k", path)
+	// -P: строка устройства не переносится, даже если имя длинное (/dev/mapper/...).
+	out, err := runner.Output("df", "-kP", path)
 	if err != nil {
 		return Disk{}, false
 	}

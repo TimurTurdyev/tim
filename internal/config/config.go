@@ -147,6 +147,12 @@ func DefaultRoot() string {
 			return p
 		}
 	}
+	// На сервере сайты обычно не в домашней папке.
+	for _, p := range []string{"/var/www", "/srv"} {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			return p
+		}
+	}
 	return filepath.Join(home, "Dev")
 }
 
