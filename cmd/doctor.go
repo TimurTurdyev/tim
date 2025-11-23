@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -273,6 +274,17 @@ func doctorDB(r *report) {
 }
 
 func doctorServices(r *report) {
+	if runtime.GOOS == "linux" {
+		r.title("Службы systemd")
+		failed := sysinfo.FailedUnits()
+		for _, u := range failed {
+			r.bad(u + " упала: tim svc logs " + strings.TrimSuffix(u, ".service"))
+		}
+		if len(failed) == 0 {
+			r.ok("упавших нет")
+		}
+		return
+	}
 	r.title("Сервисы brew")
 	out, err := runner.Output("launchctl", "list")
 	if err != nil {

@@ -192,17 +192,18 @@ func notifyProblems(rows []health.Row) {
 	notify("tim check: плохо в "+strconv.Itoa(bad), strings.Join(lines, "\n"))
 }
 
-// notify: уведомление системы; молча ничего, если показать нечем.
+// notify: уведомление системы. Показать нечем (сервер без графики) - строкой в вывод,
+// у задания по расписанию он уходит в его журнал.
 func notify(title, body string) {
-	switch runtime.GOOS {
-	case "darwin":
+	switch {
+	case runtime.GOOS == "linux" && runner.Has("notify-send") && (os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("DBUS_SESSION_BUS_ADDRESS") != ""):
+		_ = runner.Run("notify-send", title, body)
+	case runtime.GOOS != "darwin":
+		ui.Println(ui.Warn(title) + "\n" + body)
+	default:
 		q := func(s string) string {
 			return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 		}
 		_ = runner.Run("osascript", "-e", "display notification "+q(body)+" with title "+q(title))
-	case "linux":
-		if runner.Has("notify-send") {
-			_ = runner.Run("notify-send", title, body)
-		}
 	}
 }
