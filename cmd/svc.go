@@ -22,6 +22,9 @@ func systemdUnits() []sysinfo.Unit {
 }
 
 func needBrew() error {
+	if runtime.GOOS == "linux" {
+		return ui.Errorf("systemd здесь нет (контейнер?): службами tim управлять не может")
+	}
 	if !runner.Has("brew") {
 		return ui.Errorf("Homebrew не найден: https://brew.sh")
 	}
