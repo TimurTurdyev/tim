@@ -86,3 +86,16 @@ func ShortErr(err error) string {
 	}
 	return s
 }
+
+// Plural: слово по числу - 1 копия, 2 копии, 5 копий.
+func Plural(n int, one, few, many string) string {
+	switch {
+	case n%100 >= 11 && n%100 <= 14:
+		return many
+	case n%10 == 1:
+		return one
+	case n%10 >= 2 && n%10 <= 4:
+		return few
+	}
+	return many
+}

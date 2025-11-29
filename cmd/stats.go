@@ -32,7 +32,7 @@ func localSample() stats.Sample {
 	wg.Go(func() {
 		if d, ok := sysinfo.DataDisk(); ok {
 			mu.Lock()
-			s.DiskTotal, s.DiskFree = int64(d.Size), int64(d.Size-d.Used)
+			s.DiskTotal, s.DiskFree = int64(d.Size), int64(d.Avail)
 			mu.Unlock()
 		}
 	})
