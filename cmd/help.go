@@ -235,8 +235,8 @@ type cobraError struct {
 var cobraErrors = sync.OnceValue(func() []cobraError {
 	return []cobraError{
 		{regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`), "нет команды $1 у $2: $2 --help"},
-		{regexp.MustCompile(`^unknown flag: (\S+)`), "нет флага $1: посмотри --help"},
-		{regexp.MustCompile(`^unknown shorthand flag: '(.)' in (\S+)`), "нет флага -$1: посмотри --help"},
+		{regexp.MustCompile(`^unknown flag: (\S+)`), "нет флага $1, посмотри --help"},
+		{regexp.MustCompile(`^unknown shorthand flag: '(.)' in (\S+)`), "нет флага -$1, посмотри --help"},
 		{regexp.MustCompile(`^flag needs an argument: (\S+)`), "флагу $1 нужно значение"},
 		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)" flag`), "неверное значение $1 для $2"},
 		{regexp.MustCompile(`^requires at least (\d+) arg\(s\), only received (\d+)`), "нужно аргументов не меньше $1, передано $2"},

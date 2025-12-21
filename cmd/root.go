@@ -3,12 +3,14 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -141,8 +143,30 @@ func Root() *cobra.Command {
 
 func Version() string { return resolveVersion() }
 
+// flagSuggestion: на неизвестный флаг - ближайший флаг этой команды. Частая ошибка - лишний
+// знак, скопированный вместе с флагом: --leftovers: вместо --leftovers.
+func flagSuggestion(c *cobra.Command, err error) error {
+	m := regexp.MustCompile(`^unknown flag: --(\S+)`).FindStringSubmatch(err.Error())
+	if m == nil {
+		return err
+	}
+	typed := strings.TrimRight(m[1], ":;,.")
+	var names []string
+	c.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
+	c.InheritedFlags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
+	if len(names) == 0 {
+		return err
+	}
+	best := bestSuggestions(typed, names, 1)[0]
+	if best != typed && editDistance(typed, best) > max(2, len(typed)/3) {
+		return err
+	}
+	return fmt.Errorf("%w\n\nDid you mean this?\n\t--%s\n", err, best)
+}
+
 func Execute() error {
 	assignGroups()
+	root.SetFlagErrorFunc(flagSuggestion)
 	if needsHelp(os.Args[1:]) {
 		applyHelp()
 	}
