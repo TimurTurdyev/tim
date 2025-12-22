@@ -161,7 +161,7 @@ func flagSuggestion(c *cobra.Command, err error) error {
 	if best != typed && editDistance(typed, best) > max(2, len(typed)/3) {
 		return err
 	}
-	return fmt.Errorf("%w\n\nDid you mean this?\n\t--%s\n", err, best)
+	return fmt.Errorf("%w\n\nDid you mean this?\n\t--%s", err, best)
 }
 
 func Execute() error {
