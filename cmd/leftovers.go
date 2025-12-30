@@ -61,6 +61,7 @@ type leftGroup struct {
 	agents  []string // метки агентов launchd, которые надо выгрузить
 	pids    []string
 	similar string
+	app     string // имя удалённой программы, если известно по пути её файла
 }
 
 func leftovers() error {
@@ -124,7 +125,8 @@ func leftovers() error {
 			}
 			v := ix.Judge(a.Label)
 			v.Orphan, v.Sure = true, true
-			g := add(v, leftItem{path: f, note: "автозапуск, программы " + showPath(target) + " уже нет"})
+			g := add(v, leftItem{path: f, note: "автозапуск без программы"})
+			g.app = appOf(target)
 			switch dir {
 			case filepath.Join(lib, "LaunchAgents"), "/Library/LaunchAgents":
 				g.agents = append(g.agents, "gui/"+strconv.Itoa(os.Getuid())+"/"+a.Label)
@@ -147,7 +149,7 @@ func leftovers() error {
 			if r, err := filepath.Rel(filepath.Join(lib, "Application Support"), p.Comm); err == nil && !strings.HasPrefix(r, "..") {
 				owner = strings.Split(r, "/")[0]
 			}
-			g := add(leftover.Verdict{Owner: owner, Orphan: true, Sure: true}, leftItem{note: "процесс " + p.PID + " работает, а его файла " + showPath(p.Comm) + " уже нет"})
+			g := add(leftover.Verdict{Owner: owner, Orphan: true, Sure: true}, leftItem{note: "процесс " + p.PID + " ещё работает, хотя программа удалена"})
 			g.pids = append(g.pids, p.PID)
 		}
 	}
@@ -193,70 +195,167 @@ func leftovers() error {
 		return nil
 	}
 	sort.Slice(shown, func(i, j int) bool { return shown[i].size > shown[j].size })
+	if diskClean {
+		return cleanLeftovers(shown)
+	}
+	ui.Println(ui.Dim("пути от ~/Library") + "\n")
 	for _, g := range shown {
 		printLeftGroup(g)
 	}
 	if small > 0 {
 		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + fmtBytes(smallSize) + ": tim disk --leftovers --all"))
 	}
-	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  команды кладут в Корзину; \"похоже\" - узнано по имени, проверь глазами"))
+	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  убрать с вопросом по каждой: tim disk --leftovers --clean; команды для ручной уборки: --all"))
 	return nil
+}
+
+// groupTitle: имя программы по ID её файлов (Whisky, а не com.isaacmarovitz) и поставщик рядом.
+func groupTitle(g *leftGroup) string {
+	if g.app != "" {
+		return g.app + ui.Dim("  "+g.owner)
+	}
+	for _, it := range g.items {
+		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(it.path), ".plist"), ".savedState")
+		if leftover.BundleID(name) != "" {
+			parts := strings.Split(name, ".")
+			return parts[len(parts)-1] + ui.Dim("  "+g.owner)
+		}
+	}
+	return g.owner
+}
+
+// appOf: имя программы по пути внутри её .app.
+func appOf(p string) string {
+	if i := strings.Index(p, ".app/"); i >= 0 {
+		return filepath.Base(p[:i])
+	}
+	return ""
+}
+
+// libPath: путь короче - от ~/Library, раз все хвосты там; остальное как есть.
+func libPath(p string) string {
+	lib := filepath.Join(paths.Home(), "Library") + "/"
+	if strings.HasPrefix(p, lib) {
+		return strings.TrimPrefix(p, lib)
+	}
+	return p
 }
 
 func printLeftGroup(g *leftGroup) {
 	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
-	title := g.owner
-	for _, it := range g.items {
-		if id := leftover.BundleID(filepath.Base(it.path)); id != "" {
-			parts := strings.Split(filepath.Base(it.path), ".")
-			title = strings.TrimSuffix(strings.TrimSuffix(parts[len(parts)-1], "plist"), "savedState") + ui.Dim("  "+g.owner)
-			break
-		}
-	}
+	title := groupTitle(g)
 	if !g.sure {
-		title += ui.Dim("  похоже, от удалённой программы")
-	}
-	if g.similar != "" {
-		title += ui.Warn("  установлен другой " + g.similar + ": это данные другой версии, проверь, что они не нужны")
+		title += ui.Dim("  похоже, от удалённой программы - проверь")
 	}
 	ui.Println(ui.Label(ui.Pad(fmtBytes(g.size), 10)) + title)
-	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
-	var trash []string
+	if g.similar != "" {
+		ui.Println("          " + ui.Warn("установлен другой "+g.similar+": это данные другой версии, проверь, что они не нужны"))
+	}
+	tiny, tinySize := 0, int64(0)
 	for _, it := range g.items {
+		// Мелочь вроде настроек и куки - одной строкой: смотреть на неё незачем, убирается вместе со всем.
+		if it.note == "" && it.size < 1<<20 && !diskAll {
+			tiny++
+			tinySize += it.size
+			continue
+		}
 		line := "          "
 		if it.path != "" {
-			line += ui.Pad(fmtBytes(it.size), 10) + showPath(it.path)
-			trash = append(trash, it.path)
+			line += ui.Pad(fmtBytes(it.size), 10) + libPath(it.path)
 		}
 		if it.note != "" {
 			line += "  " + ui.Warn(it.note)
 		}
 		ui.Println(line)
 	}
-	for _, a := range g.agents {
-		cmd := "launchctl bootout " + a
-		if strings.HasPrefix(a, "system/") {
-			cmd = "sudo " + cmd
+	if tiny > 0 {
+		ui.Println("          " + ui.Dim(ui.Pad(fmtBytes(tinySize), 10)+"ещё "+strconv.Itoa(tiny)+" "+ui.Plural(tiny, "мелочь", "мелочи", "мелочей")+": настройки, журналы, кеши"))
+	}
+	if diskAll {
+		for _, c := range leftCommands(g) {
+			ui.Println("          " + ui.Dim(c))
 		}
-		ui.Println("          " + ui.Dim(cmd))
+	}
+	ui.Println()
+}
+
+// leftCommands: чем убрать группу руками - то же, что делает --clean.
+func leftCommands(g *leftGroup) []string {
+	var out []string
+	for _, a := range g.agents {
+		c := "launchctl bootout " + a
+		if strings.HasPrefix(a, "system/") {
+			c = "sudo " + c
+		}
+		out = append(out, c)
 	}
 	if len(g.pids) > 0 {
-		ui.Println("          " + ui.Dim("kill "+strings.Join(g.pids, " ")))
+		out = append(out, "kill "+strings.Join(g.pids, " "))
 	}
-	var mine, system []string
-	for _, p := range trash {
-		if strings.HasPrefix(p, paths.Home()+"/") {
-			mine = append(mine, p)
-		} else {
-			system = append(system, p)
-		}
-	}
+	mine, system := splitOwn(g)
 	if len(mine) > 0 {
-		ui.Println("          " + ui.Dim("trash "+shellq.Join(mine)))
+		out = append(out, "trash "+shellq.Join(mine))
 	}
 	// Системные файлы принадлежат root: trash под sudo унёс бы их в Корзину root, а не в твою.
 	for _, p := range system {
-		ui.Println("          " + ui.Dim("sudo mv "+shellq.Join([]string{p})+" ~/.Trash/"))
+		out = append(out, "sudo mv "+shellq.Join([]string{p})+" ~/.Trash/")
 	}
-	ui.Println()
+	return out
+}
+
+func splitOwn(g *leftGroup) (mine, system []string) {
+	for _, it := range g.items {
+		switch {
+		case it.path == "":
+		case strings.HasPrefix(it.path, paths.Home()+"/"):
+			mine = append(mine, it.path)
+		default:
+			system = append(system, it.path)
+		}
+	}
+	return mine, system
+}
+
+// cleanLeftovers: по группе - вопрос и уборка: выгрузить агенты, остановить процессы, файлы в Корзину.
+// "Похоже" по умолчанию - нет: узнано по одному имени.
+func cleanLeftovers(groups []*leftGroup) error {
+	var freed int64
+	for _, g := range groups {
+		printLeftGroup(g)
+		if !runner.ConfirmDefault("убрать "+strings.Split(groupTitle(g), "  ")[0]+" ("+fmtBytes(g.size)+")?", false) {
+			continue
+		}
+		for _, a := range g.agents {
+			if strings.HasPrefix(a, "system/") {
+				_ = runner.Sudo("launchctl", "bootout", a)
+			} else {
+				_ = runner.Run("launchctl", "bootout", a)
+			}
+		}
+		if len(g.pids) > 0 {
+			_ = runner.Run("kill", g.pids...)
+		}
+		mine, system := splitOwn(g)
+		ok := true
+		for _, p := range mine {
+			if err := moveToTrash(p); err != nil {
+				ui.Println(ui.Bad(err.Error()))
+				ok = false
+			}
+		}
+		for _, p := range system {
+			if err := runner.Sudo("mv", p, filepath.Join(paths.Home(), ".Trash")+"/"); err != nil {
+				ui.Println(ui.Bad(p + ": не убрано"))
+				ok = false
+			}
+		}
+		if ok {
+			freed += g.size
+		}
+		ui.Println()
+	}
+	if freed > 0 {
+		ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
+	}
+	return nil
 }
