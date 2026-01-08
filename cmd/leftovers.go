@@ -13,7 +13,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/leftover"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -205,7 +204,8 @@ func leftovers() error {
 	if small > 0 {
 		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + fmtBytes(smallSize) + ": tim disk --leftovers --all"))
 	}
-	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  убрать с вопросом по каждой: tim disk --leftovers --clean; команды для ручной уборки: --all"))
+	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  убрать с вопросом по каждой: tim disk --leftovers --clean"))
+	ui.Println(ui.Dim("какие команды он выполнит, без запуска: tim disk --leftovers --clean --dry-run"))
 	return nil
 }
 
@@ -271,36 +271,7 @@ func printLeftGroup(g *leftGroup) {
 	if tiny > 0 {
 		ui.Println("          " + ui.Dim(ui.Pad(fmtBytes(tinySize), 10)+"ещё "+strconv.Itoa(tiny)+" "+ui.Plural(tiny, "мелочь", "мелочи", "мелочей")+": настройки, журналы, кеши"))
 	}
-	if diskAll {
-		for _, c := range leftCommands(g) {
-			ui.Println("          " + ui.Dim(c))
-		}
-	}
 	ui.Println()
-}
-
-// leftCommands: чем убрать группу руками - то же, что делает --clean.
-func leftCommands(g *leftGroup) []string {
-	var out []string
-	for _, a := range g.agents {
-		c := "launchctl bootout " + a
-		if strings.HasPrefix(a, "system/") {
-			c = "sudo " + c
-		}
-		out = append(out, c)
-	}
-	if len(g.pids) > 0 {
-		out = append(out, "kill "+strings.Join(g.pids, " "))
-	}
-	mine, system := splitOwn(g)
-	if len(mine) > 0 {
-		out = append(out, "trash "+shellq.Join(mine))
-	}
-	// Системные файлы принадлежат root: trash под sudo унёс бы их в Корзину root, а не в твою.
-	for _, p := range system {
-		out = append(out, "sudo mv "+shellq.Join([]string{p})+" ~/.Trash/")
-	}
-	return out
 }
 
 func splitOwn(g *leftGroup) (mine, system []string) {
@@ -354,7 +325,10 @@ func cleanLeftovers(groups []*leftGroup) error {
 		}
 		ui.Println()
 	}
-	if freed > 0 {
+	switch {
+	case freed > 0 && runner.DryRun:
+		ui.Println(ui.Info("ушло бы в Корзину "+fmtBytes(freed)) + ui.Dim("  это --dry-run, ничего не тронуто"))
+	case freed > 0:
 		ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
 	}
 	return nil
