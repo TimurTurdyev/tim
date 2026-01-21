@@ -112,6 +112,7 @@ type mapRow struct {
 	name, hint, path string
 	size             int64
 	items            []diskuse.Spot
+	kind             diskuse.Kind
 }
 
 func diskMap(args []string) error {
@@ -142,43 +143,81 @@ func diskMap(args []string) error {
 	rows := groupSpots(spots, home)
 	var volumes int64
 	if len(args) == 0 {
-		vr := volumeRows()
-		for _, r := range vr {
+		for _, r := range volumeRows() {
 			volumes += r.size
+			rows = append(rows, r)
 		}
-		rows = append(rows, vr...)
 		sort.Slice(rows, func(i, j int) bool { return rows[i].size > rows[j].size })
 	}
+	var unknown int64
 	if d, ok := sysinfo.DataDisk(); ok && len(args) == 0 {
-		ui.Println(ui.Title("занято "+strconv.Itoa(d.Percent())+"%") +
-			ui.Dim(", свободно "+fmtBytes(int64(d.Avail))+" из "+fmtBytes(int64(d.Size))))
-		ui.Println()
-		defer func(rest int64) {
-			if rest > 1<<30 {
-				ui.Println(ui.Dim("ещё " + fmtBytes(rest) + " не разобрано: то, что без прав не прочитать, снимки Time Machine и копии Chrome, если они есть"))
-			}
-		}(int64(d.Size-d.Avail) - measured - volumes)
-		if n := chromeClones(); n > 0 {
-			defer ui.Println(ui.Warn("Chrome держит "+strconv.Itoa(n)+" "+ui.Plural(n, "копию", "копии", "копий")+" самого себя") +
-				ui.Dim(" в /private/var/folders/*/X/com.google.Chrome.code_sign_clone - известная ошибка Chrome на macOS."+
-					" Сколько они занимают на самом деле, du не скажет: копии APFS делят место, пока Chrome не обновится."+
-					" Закрой Chrome и удали эту папку, он создаст её заново"))
+		pct := d.Percent()
+		ui.Println(ui.Title("Диск") + "  " + bar(pct, 30) + ui.Dim("свободно ") + fmtBytes(int64(d.Avail)) + ui.Dim(" из "+fmtBytes(int64(d.Size))))
+		unknown = int64(d.Size-d.Avail) - measured - volumes
+	}
+	// Кратко - по несколько самых больших в разделе; освобождаемого больше: с него и начинают.
+	limit := map[diskuse.Kind]int{diskuse.Free: 8, diskuse.Apps: 3, diskuse.Data: 6, diskuse.System: 2}
+	var shown []mapRow
+	taken := map[diskuse.Kind]int{}
+	for _, r := range rows {
+		if diskAll || taken[r.kind] < limit[r.kind] {
+			shown = append(shown, r)
+			taken[r.kind]++
 		}
 	}
-	shown := rows
-	if !diskAll && len(rows) > 12 {
-		shown = rows[:12]
+	var top int64
+	if len(rows) > 0 {
+		top = rows[0].size
 	}
-	for _, r := range shown {
-		printMapRow(r)
+	sections := []struct {
+		kind  diskuse.Kind
+		title string
+	}{
+		{diskuse.Free, "Можно освободить"},
+		{diskuse.Apps, "Программы"},
+		{diskuse.Data, "Твои файлы - решать тебе"},
+		{diskuse.System, "Система"},
+	}
+	for _, sec := range sections {
+		var in []mapRow
+		var total int64
+		for _, r := range rows {
+			if r.kind == sec.kind {
+				total += r.size
+			}
+		}
+		for _, r := range shown {
+			if r.kind == sec.kind {
+				in = append(in, r)
+			}
+		}
+		if len(in) == 0 {
+			continue
+		}
+		ui.Println()
+		ui.Println(ui.Title(sec.title) + ui.Dim("  "+fmtBytes(total)))
+		for _, r := range in {
+			printMapRow(r, top)
+		}
 	}
 	ui.Println()
-	defer ui.Println(ui.Dim("кеши: --system; зависимости проектов: --deps, --clean; хвосты удалённых программ: --leftovers; tim ничего не удаляет сам"))
+	var notes []string
 	if len(shown) < len(rows) {
-		ui.Println(ui.Dim("показано " + strconv.Itoa(len(shown)) + " мест из " + strconv.Itoa(len(rows)) + " крупнее 1 GB; все, от 100 MB: tim disk --all"))
+		notes = append(notes, "показано "+strconv.Itoa(len(shown))+" из "+strconv.Itoa(len(rows))+", все от 100 MB: --all")
 	}
-	if time.Since(at) > time.Minute {
-		ui.Println(ui.Dim("замер " + strconv.Itoa(int(time.Since(at).Minutes())) + " мин назад; заново: tim disk --fresh"))
+	if age := time.Since(at); age > time.Minute {
+		notes = append(notes, "замер "+strconv.Itoa(int(age.Minutes()))+" мин назад, заново: --fresh")
+	}
+	if len(notes) > 0 {
+		ui.Println(ui.Dim(strings.Join(notes, "  \u2022  ")))
+	}
+	ui.Println(ui.Dim("подробнее: --system кеши  \u2022  --deps зависимости проектов  \u2022  --leftovers хвосты удалённых программ"))
+	if n := chromeClones(); n > 0 && len(args) == 0 {
+		ui.Println(ui.Warn("Chrome хранит "+strconv.Itoa(n)+" "+ui.Plural(n, "копию", "копии", "копий")+" самого себя") +
+			ui.Dim(" - известная ошибка. Закрой Chrome и: trash /private/var/folders/*/*/X/com.google.Chrome.code_sign_clone"))
+	}
+	if unknown > 1<<30 {
+		ui.Println(ui.Dim("не разобрано " + fmtBytes(unknown) + ": без прав не прочитать, снимки Time Machine, копии Chrome"))
 	}
 	return nil
 }
@@ -204,29 +243,74 @@ func groupSpots(spots []diskuse.Spot, home string) []mapRow {
 			if !seen {
 				i = len(rows)
 				groups[group] = i
-				rows = append(rows, mapRow{name: l.Name, hint: l.Hint, path: group})
+				rows = append(rows, mapRow{name: l.Name, hint: l.Hint, path: group, kind: l.Kind})
 			}
 			rows[i].size += s.Size
 			rows[i].items = append(rows[i].items, s)
 			continue
 		}
-		r := mapRow{path: s.Path, size: s.Size}
+		r := mapRow{path: s.Path, size: s.Size, kind: diskuse.Data}
 		switch {
 		case s.Rest:
 			r.name = "прочее в " + filepath.Base(s.Path)
 		case ok:
-			r.name, r.hint = l.Name, l.Hint
+			r.name, r.hint, r.kind = l.Name, l.Hint, l.Kind
 		}
-		if p, found := cfg.ProjectHere(s.Path); found && r.name == "" {
-			r.name = "проект " + p.Name
-		}
+		r.name = placeName(r.name, s.Path)
 		rows = append(rows, r)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].size > rows[j].size })
 	return rows
 }
 
-func printMapRow(r mapRow) {
+// placeName: подпись с тем, чьё это: "файлы Laravel: prvoffice-admin", "бэкап waviot.ru".
+// У безымянной папки - репозиторий, в котором она лежит, и путь внутри него.
+func placeName(name, path string) string {
+	owner := ""
+	if p, ok := cfg.ProjectHere(path); ok {
+		owner = p.Name
+	}
+	switch {
+	case name == "бэкапы":
+		if _, after, ok := strings.Cut(path, "/backups/"); ok {
+			return "бэкап " + strings.Split(after, "/")[0]
+		}
+	case name != "" && owner != "":
+		return name + ": " + owner
+	case name == "":
+		if repo := repoRoot(path); repo != "" && repo != path {
+			r, _ := filepath.Rel(repo, path)
+			return filepath.Base(repo) + ": " + r
+		}
+		if owner != "" {
+			return "проект " + owner
+		}
+		return filepath.Base(filepath.Dir(path)) + "/" + filepath.Base(path)
+	}
+	return name
+}
+
+// repoRoot: ближайшая папка с .git над path.
+func repoRoot(path string) string {
+	for d := filepath.Dir(path); d != "/" && d != "."; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			return d
+		}
+	}
+	return ""
+}
+
+// sizeBar: короткая полоска размера места относительно самого большого - глазом видно, что важно.
+func sizeBar(size, top int64) string {
+	const w = 8
+	n := 1
+	if top > 0 {
+		n = max(1, int(size*w/top))
+	}
+	return ui.Info(strings.Repeat("\u2588", n)) + ui.Dim(strings.Repeat("\u2591", w-n))
+}
+
+func printMapRow(r mapRow, top int64) {
 	name := r.name
 	if name == "" {
 		name = filepath.Base(r.path)
@@ -235,56 +319,61 @@ func printMapRow(r mapRow) {
 	if r.path != "" {
 		where = showPath(r.path)
 	}
-	ui.Println(ui.Label(ui.Pad(fmtBytes(r.size), 10)) + ui.Pad(name, 34) + ui.Dim(where))
+	ui.Println("  " + ui.Label(ui.Pad(fmtBytes(r.size), 9)) + sizeBar(r.size, top) + "  " + ui.Pad(clip(name, 38), 40) + ui.Dim(where))
+	const indent = "                       "
 	if len(r.items) > 0 {
 		var games map[string]diskuse.Game
 		if strings.HasSuffix(r.path, "steamapps/common") {
 			games = diskuse.SteamGames(r.path)
 		}
-		var items []diskuse.Spot
+		var parts []string
 		var rest int64
+		more := 0
 		for _, it := range r.items {
 			if it.Rest {
 				rest += it.Size
 				continue
 			}
-			items = append(items, it)
-		}
-		more := 0
-		if !diskAll && len(items) > 5 {
-			for _, it := range items[5:] {
+			if !diskAll && len(parts) >= 4 {
 				rest += it.Size
+				more++
+				continue
 			}
-			more = len(items) - 5
-			items = items[:5]
-		}
-		for _, it := range items {
 			label := diskuse.ItemName(it.Path)
-			note := ""
 			if g, ok := games[filepath.Base(it.Path)]; ok {
-				label = g.Name
-				note = playedAgo(g.LastPlayed)
+				label = g.Name + " " + fmtBytes(it.Size) + ", " + playedAgo(g.LastPlayed)
+				ui.Println(indent + label)
+				parts = append(parts, "")
+				continue
 			}
-			ui.Println("          " + ui.Dim(ui.Pad(fmtBytes(it.Size), 10)) + ui.Pad(label, 32) + note)
+			parts = append(parts, label+" "+fmtBytes(it.Size))
 		}
-		if rest > 0 {
-			text := "остальное, по мелочи"
-			if more > 0 {
-				text = "ещё " + strconv.Itoa(more) + " и мелочь: tim disk --all"
+		var inline []string
+		for _, p := range parts {
+			if p != "" {
+				inline = append(inline, p)
 			}
-			ui.Println("          " + ui.Dim(ui.Pad(fmtBytes(rest), 10)+text))
+		}
+		if more > 0 {
+			inline = append(inline, "ещё "+strconv.Itoa(more))
+		} else if rest > 0 && len(inline) > 0 {
+			inline = append(inline, "мелочь "+fmtBytes(rest))
+		}
+		// Одна виртуалка или программа в группе - имя и так понятно из строки, разбивка лишняя.
+		if len(inline) > 1 || (len(inline) == 1 && len(r.items) > 1) || (len(inline) == 1 && !strings.HasSuffix(inline[0], fmtBytes(r.size))) {
+			ui.Println(indent + ui.Dim(strings.Join(inline, "  \u00b7  ")))
+		} else if len(inline) == 1 {
+			ui.Println(indent + ui.Dim(strings.TrimSuffix(inline[0], " "+fmtBytes(r.size))))
 		}
 	}
-	hint := r.hint
 	if strings.HasSuffix(r.path, "steamapps/common") && !steamInstalled() {
 		// Удаление Steam игры не трогает: они так и лежат, а удалить их через Steam уже нечем.
 		lib := filepath.Dir(filepath.Dir(r.path))
-		hint = ui.Warn("Steam удалён, а игры остались") + ui.Dim(": убрать всё в Корзину - trash "+shellq.Join([]string{lib}))
-		ui.Println("          " + hint)
+		ui.Println(indent + ui.Warn("Steam удалён, а игры остались") + ui.Dim(": trash "+shellq.Join([]string{lib})))
 		return
 	}
-	if hint != "" {
-		ui.Println("          " + ui.Dim(hint))
+	if r.hint != "" {
+		ui.Println(indent + ui.Dim("\u2192 "+r.hint))
 	}
 }
 
@@ -308,7 +397,7 @@ func volumeRows() []mapRow {
 		return nil
 	}
 	out, _ := runner.Output("diskutil", "apfs", "list")
-	sys := mapRow{name: "macOS: система и служебные тома", hint: "место самой системы, освободить нельзя"}
+	sys := mapRow{name: "macOS и служебные тома", kind: diskuse.System}
 	var rows []mapRow
 	for _, v := range diskuse.ParseAPFS(out, "/System/Volumes/Data") {
 		switch v.Role {
@@ -316,7 +405,7 @@ func volumeRows() []mapRow {
 		case "System", "Preboot", "Recovery", "VM", "Update", "xART", "Hardware":
 			sys.size += v.Size
 		default:
-			rows = append(rows, mapRow{name: "том " + v.Name, size: v.Size, hint: "отдельный том на этом же диске; не нужен - Дисковая утилита, удалить том"})
+			rows = append(rows, mapRow{name: "том " + v.Name, size: v.Size, kind: diskuse.Data, hint: "отдельный том на этом же диске; не нужен - удалить в Дисковой утилите"})
 		}
 	}
 	if sys.size > 0 {
