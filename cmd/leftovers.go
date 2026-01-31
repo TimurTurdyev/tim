@@ -71,6 +71,11 @@ func leftovers() error {
 	home := paths.Home()
 	lib := filepath.Join(home, "Library")
 	ix := leftover.NewIndex(installedApps())
+	projects := map[string]bool{}
+	for _, p := range cfg.Projects {
+		projects[strings.ToLower(p.Name)] = true
+		projects[strings.ToLower(filepath.Base(cfg.ProjectDir(&p)))] = true
+	}
 	groups := map[string]*leftGroup{}
 	add := func(v leftover.Verdict, it leftItem) *leftGroup {
 		g := groups[v.Owner]
@@ -89,6 +94,10 @@ func leftovers() error {
 				continue
 			}
 			v := ix.Judge(e.Name())
+			// Папка с именем проекта из реестра - его же данные: свои программы в разработке не хвост.
+			if !v.Sure && (projects[strings.ToLower(e.Name())] || devFolder(e.Name())) {
+				continue
+			}
 			// По одному имени, без ID, верим только папкам программ: в Caches и Group Containers
 			// такие имена у консольных утилит (go-build, playwright) и у групп с чужими командами.
 			if !v.Orphan || (!v.Sure && place != "Application Support") {
@@ -216,6 +225,8 @@ func groupTitle(g *leftGroup) string {
 	if g.app != "" {
 		return g.app + ui.Dim("  "+g.owner)
 	}
+	// Имя - по самому большому файлу: у Docker это com.docker.docker, а не служебный com.docker.install.
+	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
 	for _, it := range g.items {
 		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(it.path), ".plist"), ".savedState")
 		if leftover.BundleID(name) != "" {
@@ -224,6 +235,17 @@ func groupTitle(g *leftGroup) string {
 		}
 	}
 	return g.owner
+}
+
+// devFolder: папка с таким именем есть среди проектов в корне разработки (~/Dev/projects/simple-talk),
+// даже если её нет в реестре.
+func devFolder(name string) bool {
+	for _, pat := range []string{filepath.Join(cfg.Dev, name), filepath.Join(cfg.Dev, "*", name)} {
+		if m, _ := filepath.Glob(pat); len(m) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // appOf: имя программы по пути внутри её .app.
@@ -300,6 +322,12 @@ func cleanLeftovers(groups []*leftGroup) error {
 			hint := ""
 			if !g.sure {
 				hint = "похоже, проверь"
+			}
+			if hint == "" && len(g.items) > 0 && g.items[0].path != "" {
+				hint = libPath(g.items[0].path)
+				if len(g.items) > 1 {
+					hint += " и ещё " + strconv.Itoa(len(g.items)-1)
+				}
 			}
 			items[i] = tui.Item{Title: ui.Pad(fmtBytes(g.size), 10) + groupName(g), Hint: hint}
 		}
