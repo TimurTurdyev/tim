@@ -263,7 +263,7 @@ func groupSpots(spots []diskuse.Spot, home string) []mapRow {
 	return rows
 }
 
-// placeName: подпись с тем, чьё это: "файлы Laravel: prvoffice-admin", "бэкап waviot.ru".
+// placeName: подпись с тем, чьё это: "файлы Laravel: shop-admin", "бэкап example.com".
 // У безымянной папки - репозиторий, в котором она лежит, и путь внутри него.
 func placeName(name, path string) string {
 	owner := ""

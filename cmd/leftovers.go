@@ -237,7 +237,7 @@ func groupTitle(g *leftGroup) string {
 	return g.owner
 }
 
-// devFolder: папка с таким именем есть среди проектов в корне разработки (~/Dev/projects/simple-talk),
+// devFolder: папка с таким именем есть среди проектов в корне разработки (~/Dev/projects/my-app),
 // даже если её нет в реестре.
 func devFolder(name string) bool {
 	for _, pat := range []string{filepath.Join(cfg.Dev, name), filepath.Join(cfg.Dev, "*", name)} {
