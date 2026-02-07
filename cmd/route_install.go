@@ -15,7 +15,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
-	"github.com/TimurTurdyev/tim/internal/vpnhelp"
 )
 
 const (
@@ -63,11 +62,6 @@ type errDoneT struct{}
 
 func (errDoneT) Error() string { return "" }
 
-func oldDaemonPresent() bool {
-	_, err := os.Stat(vpnhelp.Plist)
-	return runtime.GOOS == "darwin" && err == nil
-}
-
 func routesJob() (schedule.Job, error) {
 	self, err := selfPath()
 	if err != nil {
@@ -82,19 +76,9 @@ var routeInstallCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Поставить стража маршрутов службой системы: обход VPN сам чинится после смены сети",
 	Long: `Ставит tim route watch постоянной службой: на macOS - LaunchDaemon dev.tim.routes, на Linux -
-systemd-служба tim-routes. Нужны права root; если забыл sudo, tim спросит и повторит команду сам.
-Если стоит старый демон vpn-help, предложит перенести его сети в tim и снять его: два стража,
-переставляющие одни маршруты, будут спорить.`,
+systemd-служба tim-routes. Нужны права root; если забыл sudo, tim спросит и повторит команду сам.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Перенос - до sudo: конфиг пользователя правится от его имени.
-		if os.Geteuid() != 0 && oldDaemonPresent() && !runner.NoInput {
-			if runner.Confirm("стоит демон vpn-help: перенести его сети в tim как сети владельцев (as:N)?") {
-				if err := routeImport(true); err != nil {
-					return err
-				}
-			}
-		}
 		if err := asRoot(); err != nil {
 			if err == errDone {
 				return nil
@@ -132,22 +116,6 @@ systemd-служба tim-routes. Нужны права root; если забыл
 			return ui.Errorf("служба на %s не поддержана", runtime.GOOS)
 		}
 		ui.Println(ui.Label("страж установлен") + ui.Dim("  конфиг "+config.Path()+", журнал "+routesLog()))
-		if oldDaemonPresent() {
-			hasTargets := false
-			if c, err := config.Load(); err == nil && len(c.Hosts) > 0 {
-				hasTargets = true
-			}
-			switch {
-			case !hasTargets:
-				ui.Println(ui.Warn("демон vpn-help оставлен: в tim пока нет целей, без него обход пропадёт; перенеси: tim route import --by-owner"))
-			case runner.Confirm("снять старый демон vpn-help? его сети теперь держит tim"):
-				_ = runner.Run("launchctl", "bootout", "system/"+vpnhelp.Label)
-				if err := runner.RemoveRoot(vpnhelp.Plist); err != nil {
-					return err
-				}
-				ui.Println(ui.Label("демон vpn-help снят") + ui.Dim("  сам скрипт остался в "+vpnhelp.Script))
-			}
-		}
 		if runner.DryRun {
 			return nil
 		}

@@ -70,7 +70,7 @@ var examples = map[string]string{
 	"tim proj":        "  tim proj list clients\n  tim proj scan --add\n  tim proj add . --name shop --url https://shop.example.com",
 	"tim serve":       "  tim serve                  # проект текущей папки\n  tim serve shop             # по части имени\n  tim serve shop -d          # в фоне\n  tim serve @work            # группа из [groups]\n  tim serve list\n  tim serve stop all",
 	"tim ssh":         "  tim ssh                    # выбор алиаса\n  tim ssh prod uptime\n  tim ssh shop               # по ssh-полю проекта",
-	"tim route":       "  tim route add git.example.com --label git\n  tim route add yandex.ru --owner   # все сети владельца\n  tim route install               # страж: чинит обход сам\n  tim route status\n  tim route import --by-owner     # из vpn-help",
+	"tim route":       "  tim route add git.example.com --label git\n  tim route add yandex.ru --owner   # все сети владельца\n  tim route install               # страж: чинит обход сам\n  tim route status",
 	"tim vpn":         "  tim vpn\n  tim vpn exclude api.example.com\n  tim vpn exclude ozon.ru --owner\n  tim vpn fix                # после смены сети",
 	"tim tunnel":      "  tim tunnel up prod          # SOCKS на 127.0.0.1:1080\n  tim tunnel all prod         # весь трафик через ssh\n  tim tunnel port 15432:5432 prod\n  tim tunnel db shop\n  tim tunnel expose 8000",
 	"tim db":          "  tim db                     # клиент по .env проекта\n  tim db shop dump\n  tim db shop --via prod",
