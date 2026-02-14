@@ -186,6 +186,6 @@ var projRmCmd = &cobra.Command{
 func init() {
 	projScanCmd.Flags().BoolVar(&scanAdd, "add", false, "добавить все найденные")
 	projAddCmd.Flags().StringVar(&addName, "name", "", "имя в реестре")
-	projAddCmd.Flags().StringVar(&addURL, "url", "", "адрес сайта проекта (для tim ssl)")
+	projAddCmd.Flags().StringVar(&addURL, "url", "", "адрес сайта проекта (для tim check и tim cert)")
 	projCmd.AddCommand(projScanCmd, projAddCmd, projRmCmd)
 }

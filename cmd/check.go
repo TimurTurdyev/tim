@@ -172,7 +172,7 @@ func checkMachine() []string {
 		}
 	}
 	if len(forgotten) > 0 {
-		out = append(out, ui.Warn(fmt.Sprintf("dev-серверы старше %g ч: ", checkHours))+strings.Join(forgotten, " ")+ui.Dim("  (tim stale --kill)"))
+		out = append(out, ui.Warn(fmt.Sprintf("dev-серверы старше %g ч: ", checkHours))+strings.Join(forgotten, " ")+ui.Dim("  (tim ports --old --kill)"))
 	}
 	if d, ok := sysinfo.DataDisk(); ok && d.Percent() >= 85 {
 		out = append(out, ui.Warn(fmt.Sprintf("диск занят на %d%%", d.Percent()))+ui.Dim("  (tim disk)"))

@@ -69,4 +69,4 @@ func linuxWifi() error {
 	return nil
 }
 
-func init() { root.AddCommand(wifiCmd) }
+func init() { netCmd.AddCommand(wifiCmd) }

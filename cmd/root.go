@@ -65,10 +65,14 @@ var groups = []struct {
 	cmds      []string
 }{
 	{"proj", "Проекты:", []string{"proj", "new", "go", "db", "each", "sync", "motd", "disk", "config", "init"}},
-	{"net", "Сервер и сеть:", []string{"ssh", "tunnel", "route", "vpn", "net", "ip", "wifi", "ports", "port", "stale", "dns", "cert", "ssl", "site", "domain", "mail", "http"}},
+	{"net", "Сервер и сеть:", []string{"ssh", "tunnel", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "domain", "mail", "http"}},
 	{"run", "Локальный запуск:", []string{"serve", "env", "logs", "open", "svc", "php"}},
-	{"util", "Утилиты:", []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json", "url", "pass", "qr", "cron", "doctor", "version", "self-update"}},
+	{"util", "Утилиты:", utilCmds},
+	{"self", "Сам tim:", []string{"doctor", "version", "self-update"}},
 }
+
+// utilCmds: мелкие утилиты. В общей справке они одной строкой - полный список: tim help utils.
+var utilCmds = []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json", "url", "pass", "qr", "cron"}
 
 // assignGroups раскладывает команды по разделам справки; вызывается после всех init().
 func assignGroups() {

@@ -24,8 +24,9 @@ const usageTemplate = `{{h "Использование:"}}{{if .Runnable}}
 {{h "Команды:"}}{{range $cmds}}{{if .IsAvailableCommand}}
   {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
 
-{{h .Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) .IsAvailableCommand)}}
-  {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+{{h .Title}}{{if eq .ID "util"}}
+  {{utilLine}}{{else}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) .IsAvailableCommand)}}
+  {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
 {{h "Ещё:"}}{{range $cmds}}{{if (and (eq .GroupID "") .IsAvailableCommand)}}
   {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
@@ -92,7 +93,7 @@ var examples = map[string]string{
 	"tim setup":       "  tim setup shop             # доделать склонированный проект\n  tim setup git@github.com:me/shop.git\n  tim setup shop --dry-run   # посмотреть, что будет сделано",
 	"tim check":       "  tim check                  # все проекты реестра\n  tim check shop             # один проект\n  tim check example.com      # домен не из реестра\n  tim check --local          # без сети",
 	"tim sync":        "  tim sync                   # порт и база из .env\n  tim sync --remote          # боевые домены из nginx на серверах\n  tim sync shop --force",
-	"tim ports":       "  tim ports\n  tim port 8000 kill\n  tim stale --hours 4",
+	"tim ports":       "  tim ports\n  tim port 8000 kill\n  tim ports --old --hours 4",
 	"tim php":         "  tim php\n  tim php use 8.3\n  tim php exec 8.1 composer install",
 	"tim disk":        "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --deps ~/Dev/clients --min 200M",
 	"tim cron":        "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",
@@ -107,6 +108,13 @@ func applyHelp() {
 	cobra.AddTemplateFunc("dim", func(s string) string { return ui.Dim(s) })
 	cobra.AddTemplateFunc("flags", func(s string) string { return colorFlags(s, ui.Label) })
 	cobra.AddTemplateFunc("examples", colorExamples)
+	cobra.AddTemplateFunc("utilLine", func() string {
+		names := make([]string, len(utilCmds))
+		for i, n := range utilCmds {
+			names[i] = ui.Label(n)
+		}
+		return strings.Join(names, " ") + ui.Dim("  - что каждая делает: tim help utils")
+	})
 	cobra.AddTemplateFunc("useline", func(s string) string { return strings.Replace(s, "[flags]", ui.Dim("[флаги]"), 1) })
 	root.SetUsageTemplate(usageTemplate)
 	root.InitDefaultVersionFlag()
@@ -115,6 +123,10 @@ func applyHelp() {
 	}
 	root.SetHelpCommand(&cobra.Command{Use: "help [команда]", Short: "Справка по команде", Hidden: true,
 		Run: func(c *cobra.Command, args []string) {
+			if len(args) == 1 && args[0] == "utils" {
+				printUtils()
+				return
+			}
 			target, _, err := root.Find(args)
 			if err != nil || target == nil {
 				target = root
@@ -163,6 +175,7 @@ var overviewSections = []struct {
 	{"Машина", [][2]string{
 		{"tim motd", "сводка: машина, проект, сеть"},
 		{"tim top", "кто съел память и CPU"},
+		{"tim disk", "куда ушло место и что можно убрать"},
 		{"tim hw", "железо и загрузка: процессор, видеокарта, память"},
 		{"tim kill <имя>", "закрыть зависшее приложение"},
 		{"tim doctor", "что не так в окружении"},
@@ -268,4 +281,16 @@ func translateError(msg string) string {
 		}
 	}
 	return head
+}
+
+// printUtils: полный список мелких утилит, свёрнутых в общей справке.
+func printUtils() {
+	ui.Println(ui.Info("Утилиты:"))
+	for _, n := range utilCmds {
+		if c, _, err := root.Find([]string{n}); err == nil && c != root {
+			ui.Println("  " + ui.Label(ui.Pad(n, 6)) + " " + c.Short)
+		}
+	}
+	ui.Println()
+	ui.Println(ui.Dim("подробнее: tim <утилита> --help"))
 }

@@ -80,5 +80,5 @@ var batteryCmd = &cobra.Command{
 }
 
 func init() {
-	root.AddCommand(batteryCmd)
+	hwCmd.AddCommand(batteryCmd)
 }
