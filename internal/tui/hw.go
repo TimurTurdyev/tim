@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
@@ -82,11 +82,11 @@ func push(h []float64, v int) []float64 {
 
 func (m *hwModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c", "й":
 			return m, tea.Quit
-		case "p", "з", " ":
+		case "p", "з", "space":
 			m.paused = !m.paused
 			if !m.paused {
 				return m, m.fetch()
@@ -178,7 +178,7 @@ func gib(b int64) string {
 	return fmt.Sprintf("%d KB", b>>10)
 }
 
-func (m *hwModel) View() string {
+func (m *hwModel) View() tea.View {
 	d := brand.DetectDepth(os.Getenv("COLORTERM"), os.Getenv("TERM"))
 	mascot := brand.Mascot(m.mood(), d)
 	head := []string{
@@ -243,14 +243,16 @@ func (m *hwModel) View() string {
 	return m.frame(b.String())
 }
 
-func (m *hwModel) frame(body string) string {
+func (m *hwModel) frame(body string) tea.View {
 	keys := []string{"p пауза", "q выход"}
 	for i, k := range keys {
 		key, desc, _ := strings.Cut(k, " ")
 		keys[i] = styleKey.Render(key) + " " + styleHint.Render(desc)
 	}
 	up := styleDimHW.Render("  смотрю " + strconv.Itoa(int(time.Since(m.started).Seconds())) + " с  " + symDot + "  ")
-	return body + "\n" + up + strings.Join(keys, styleHint.Render(" "+symDot+" "))
+	v := tea.NewView(body + "\n" + up + strings.Join(keys, styleHint.Render(" "+symDot+" ")))
+	v.AltScreen = true
+	return v
 }
 
 // RunHW: живой экран загрузки до q или Esc. sample вызывается в фоне и может занимать секунду.
@@ -259,6 +261,6 @@ func RunHW(title string, sample func() HWSample) error {
 		return ErrNoTTY
 	}
 	m := &hwModel{title: title, sample: sample, started: time.Now()}
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(m).Run()
 	return err
 }

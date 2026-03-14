@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Entry: строка обозревателя диска.
@@ -65,7 +65,7 @@ func Browse(o BrowseOpts) (marked []Entry, trash bool, at []string, err error) {
 	}
 	b := &browser{opts: o, marked: map[string]Entry{}, height: 24, width: 100}
 	b.stack = []*level{{entry: o.Root, loading: true}}
-	if _, err := tea.NewProgram(b, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(b).Run(); err != nil {
 		return nil, false, nil, err
 	}
 	for _, e := range b.marked {
@@ -117,7 +117,7 @@ func (b *browser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		b.flash = ""
 		l := b.cur()
 		switch msg.String() {
@@ -151,7 +151,7 @@ func (b *browser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(b.stack) > 1 {
 				b.stack = b.stack[:len(b.stack)-1]
 			}
-		case " ":
+		case "space", " ":
 			if l.loading || len(l.kids) == 0 {
 				break
 			}
@@ -202,9 +202,9 @@ func human(n int64) string {
 	return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
 }
 
-func (b *browser) View() string {
+func (b *browser) View() tea.View {
 	if b.done {
-		return ""
+		return tea.NewView("")
 	}
 	l := b.cur()
 	var s strings.Builder
@@ -279,7 +279,9 @@ func (b *browser) View() string {
 		key, desc, _ := strings.Cut(k, " ")
 		keys[i] = styleKey.Render(key) + " " + styleHint.Render(desc)
 	}
-	return styleFrame.Render(strings.TrimRight(s.String(), "\n")) + "\n" + strings.Join(keys, styleHint.Render(" "+symDot+" "))
+	v := tea.NewView(styleFrame.Render(strings.TrimRight(s.String(), "\n")) + "\n" + strings.Join(keys, styleHint.Render(" "+symDot+" ")))
+	v.AltScreen = true
+	return v
 }
 
 // Outermost: отмеченное без того, что лежит внутри другого отмеченного - иначе оно посчиталось бы

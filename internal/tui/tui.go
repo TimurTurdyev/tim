@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/charmbracelet/x/term"
 )
 
@@ -78,7 +78,7 @@ func run(field huh.Field) error {
 	}
 	defer func() { _ = tty.Close() }()
 	form := huh.NewForm(huh.NewGroup(field)).WithInput(tty).WithOutput(tty).
-		WithTheme(timTheme()).WithKeyMap(ruKeys()).WithShowHelp(true)
+		WithTheme(huh.ThemeFunc(timTheme)).WithKeyMap(ruKeys()).WithShowHelp(true)
 	if err := form.Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return ErrCanceled

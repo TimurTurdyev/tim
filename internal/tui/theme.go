@@ -1,10 +1,10 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
 
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
 
@@ -30,8 +30,8 @@ const (
 	symLR      = "\u2190\u2192"
 )
 
-func timTheme() *huh.Theme {
-	t := huh.ThemeBase()
+func timTheme(isDark bool) *huh.Styles {
+	t := huh.ThemeBase(isDark)
 	f := &t.Focused
 	f.Base = f.Base.BorderForeground(colAccent)
 	f.Card = f.Base

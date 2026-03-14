@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 )
@@ -56,11 +56,13 @@ func Pick(prompt string, items []Item) (int, error) {
 	in := textinput.New()
 	in.Prompt = symPointer + " "
 	in.Placeholder = "начни печатать, чтобы отфильтровать"
-	// Ширина поля с запасом под подсказку.
-	in.Width = 48
-	in.PromptStyle = stylePrompt
-	in.PlaceholderStyle = styleHint
-	in.Cursor.Style = lipgloss.NewStyle().Foreground(colAccent)
+	// Без ширины textinput обрезает подсказку до одной буквы: буфер под неё - ширина плюс один.
+	in.SetWidth(48)
+	st := in.Styles()
+	st.Focused.Prompt = stylePrompt
+	st.Focused.Placeholder = styleHint
+	st.Cursor.Color = colAccent
+	in.SetStyles(st)
 	in.Focus()
 	p := &picker{title: prompt, input: in, items: items, chosen: -1}
 	p.titles = make([]string, len(items))
@@ -93,7 +95,7 @@ func (p *picker) refilter() {
 func (p *picker) Init() tea.Cmd { return textinput.Blink }
 
 func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc", "ctrl+c":
 			p.done = true
@@ -126,9 +128,9 @@ func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return p, cmd
 }
 
-func (p *picker) View() string {
+func (p *picker) View() tea.View {
 	if p.done {
-		return ""
+		return tea.NewView("")
 	}
 	var b strings.Builder
 	count := strconv.Itoa(len(p.matches)) + " из " + strconv.Itoa(len(p.items))
@@ -169,7 +171,7 @@ func (p *picker) View() string {
 		key, desc, _ := strings.Cut(k, " ")
 		keys[i] = styleKey.Render(key) + " " + styleHint.Render(desc)
 	}
-	return body + "\n\n" + strings.Join(keys, styleHint.Render(" "+symDot+" "))
+	return tea.NewView(body + "\n\n" + strings.Join(keys, styleHint.Render(" "+symDot+" ")))
 }
 
 func clipTitle(s string, width int) string {
