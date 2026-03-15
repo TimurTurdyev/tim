@@ -28,10 +28,6 @@ var root = &cobra.Command{
 TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие систему, вместо запуска.`,
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		overview()
-		return nil
-	},
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		tui.Disabled = tui.Disabled || runner.NoInput
