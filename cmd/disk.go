@@ -20,6 +20,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/shellq"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -392,6 +393,13 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 			return diskBrowseRun(args)
 		}
 		if !diskDeps && !diskClean {
+			if tui.Available() && !diskAll {
+				s, err := diskScreen(args)
+				if err != nil {
+					return err
+				}
+				return runScreen(s)
+			}
 			return diskMap(args)
 		}
 		root := cfg.Dev

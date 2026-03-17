@@ -47,7 +47,7 @@ func openUI() error {
 		overview()
 		return nil
 	}
-	dir, err := tui.Run(tui.NewHome(homeOpts()), tui.Options{Commands: commandEntries, RunCommand: runLine})
+	dir, err := tui.Run(tui.NewHome(homeOpts()), uiOptions())
 	if errors.Is(err, tui.ErrNoTTY) {
 		overview()
 		return nil
@@ -81,6 +81,20 @@ func runLine(line string) tui.Action {
 		return tui.Action{Push: projectsScreen("")}
 	case "ui":
 		return tui.Action{}
+	case "disk":
+		if len(args) == 1 {
+			if s, err := diskScreen(nil); err == nil {
+				return tui.Action{Push: s}
+			}
+		}
+		if len(args) == 2 && (args[1] == "-b" || args[1] == "--browse") {
+			if st, err := newDiskState(nil); err == nil {
+				return tui.Action{Push: browseScreen(st)}
+			}
+		}
+		if len(args) == 2 && args[1] == "--leftovers" {
+			return tui.Action{Push: leftScreen()}
+		}
 	}
 	if exitCmds[args[0]] {
 		return tui.Action{Exit: func() { runAfter(args) }}
@@ -199,11 +213,17 @@ func homeOpts() tui.HomeOpts {
 func loadHome() tui.HomeData {
 	host, _ := os.Hostname()
 	host, _, _ = strings.Cut(host, ".")
-	d := tui.HomeData{Status: host + " " + "·" + " " + time.Now().Format("15:04")}
+	d := tui.HomeData{Status: host + " " + "\u00b7" + " " + time.Now().Format("15:04")}
 	d.Recent = recentEntries()
 	d.Sections = []tui.Section{
 		{Key: "p", Title: "Проекты", Hint: "go, serve, db, check", Open: func() tui.Action { return tui.Action{Push: projectsScreen("")} }},
-		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: func() tui.Action { return tui.Action{Exit: func() { runAfter([]string{"disk"}) }} }},
+		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: func() tui.Action {
+			s, err := diskScreen(nil)
+			if err != nil {
+				return tui.Action{}
+			}
+			return tui.Action{Push: s}
+		}},
 		{Key: "m", Title: "Машина", Hint: "процессы, железо, службы", Open: func() tui.Action { return resultAction([]string{"hw"}) }},
 		{Key: "n", Title: "Сеть и VPN", Hint: "обход, туннели, порты", Open: func() tui.Action { return resultAction([]string{"vpn"}) }},
 		{Key: "w", Title: "Сайты", Hint: "домен, почта, сертификат", Open: func() tui.Action { return tui.Action{Exit: func() { runAfter([]string{"check"}) }} }},
@@ -226,7 +246,13 @@ func homeTiles() (tiles []tui.TileData, warning string, open func() tui.Action) 
 		}})
 		if pct >= 85 && warning == "" {
 			warning = fmt.Sprintf("диск занят на %d%%, свободно %s", pct, fmtBytes(int64(disk.Avail)))
-			open = func() tui.Action { return tui.Action{Exit: func() { runAfter([]string{"disk"}) }} }
+			open = func() tui.Action {
+				s, err := diskScreen(nil)
+				if err != nil {
+					return tui.Action{}
+				}
+				return tui.Action{Push: s}
+			}
 		}
 	}
 	if used, total := sysinfo.Memory(); total > 0 {
@@ -254,9 +280,9 @@ func homeTiles() (tiles []tui.TileData, warning string, open func() tui.Action) 
 			warning = "страж маршрутов не установлен: после смены сети обход сломается"
 			open = func() tui.Action { return resultAction([]string{"route", "status"}) }
 		}
-		lamp := ui.OK(fmt.Sprintf("● обход %d/%d", ok, total))
+		lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))
 		if ok < total {
-			lamp = ui.Warn(fmt.Sprintf("▲ обход %d/%d", ok, total))
+			lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", ok, total))
 			if warning == "" {
 				warning = fmt.Sprintf("%d целей идут через VPN вместо обхода", total-ok)
 				open = func() tui.Action { return resultAction([]string{"vpn"}) }
@@ -270,13 +296,13 @@ func homeTiles() (tiles []tui.TileData, warning string, open func() tui.Action) 
 			alive = append(alive, s)
 		}
 	}
-	rows := []string{ui.Dim("○ нет запущенных"), ui.Dim("tim serve <проект> -d")}
+	rows := []string{ui.Dim("\u25cb нет запущенных"), ui.Dim("tim serve <проект> -d")}
 	if len(alive) > 0 {
 		var names []string
 		for _, s := range alive {
 			names = append(names, s.Name+" :"+s.Port)
 		}
-		rows = []string{ui.OK(fmt.Sprintf("● %s", ui.Plural(len(alive), "работает", "работают", "работают"))),
+		rows = []string{ui.OK(fmt.Sprintf("\u25cf %s", ui.Plural(len(alive), "работает", "работают", "работают"))),
 			ui.Dim(strings.Join(names, ", "))}
 	}
 	tiles = append(tiles, tui.TileData{Title: "серверы", Width: 26, Rows: rows})
@@ -323,7 +349,7 @@ func projectHit(p *config.Project, hint string) tui.Hit {
 	name := p.Name
 	note := ""
 	if st, ok := run.LoadState(name); ok && st.Alive() {
-		note = ui.OK("● работает :" + st.Port)
+		note = ui.OK("\u25cf работает :" + st.Port)
 	}
 	return tui.Hit{Kind: "проекты", Title: name, Hint: hint, Note: note, Open: func() tui.Action {
 		return tui.Action{Push: projectsScreen(name)}
@@ -460,10 +486,10 @@ func projectCard(row tui.ProjectRow) tui.ProjectCard {
 	}
 	if row.Running {
 		if st, ok := run.LoadState(row.Name); ok {
-			lines = append(lines, label("сервер")+ui.OK("● работает :"+st.Port)+ui.Dim(", "+human(time.Since(st.Started))))
+			lines = append(lines, label("сервер")+ui.OK("\u25cf работает :"+st.Port)+ui.Dim(", "+human(time.Since(st.Started))))
 		}
 	} else {
-		lines = append(lines, label("сервер")+ui.Dim("○ не запущен, порт "+projectPort(p, row.Dir)))
+		lines = append(lines, label("сервер")+ui.Dim("\u25cb не запущен, порт "+projectPort(p, row.Dir)))
 	}
 	if p.URL != "" {
 		lines = append(lines, label("сайт")+p.URL)

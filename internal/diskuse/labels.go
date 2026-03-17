@@ -12,6 +12,7 @@ import (
 type Label struct {
 	Name, Hint, Group string
 	Stop              bool // внутрь не спускаться: это одно целое
+	Whole             bool // можно убрать целиком, пересоздастся само
 	Kind              Kind
 }
 
@@ -86,7 +87,7 @@ func LabelOf(path, home string) (Label, string, bool) {
 	name := filepath.Base(path)
 	switch {
 	case deps[name]:
-		return Label{Name: "зависимости " + name, Hint: "пересоздаются установкой; заброшенные - tim disk --clean", Stop: true}, "", true
+		return Label{Name: "зависимости " + name, Hint: "пересоздаются установкой; заброшенные - tim disk --clean", Stop: true, Whole: true}, "", true
 	case name == "storage" && exists(filepath.Join(filepath.Dir(path), "artisan")):
 		return Label{Name: "файлы Laravel", Hint: "загрузки и логи: перед удалением проверь, что они есть на сервере", Stop: true, Kind: Data}, "", true
 	case name == "backups" || name == "backup" || strings.Contains(path, "/backups/"):
@@ -103,7 +104,7 @@ func LabelOf(path, home string) (Label, string, bool) {
 				full = filepath.Join(home, rel)
 			}
 			if path == full || strings.HasPrefix(path, full+"/") {
-				return Label{Name: p.Name, Hint: p.Clean, Stop: true}, "", true
+				return Label{Name: p.Name, Hint: p.Clean, Stop: true, Whole: p.Whole}, "", true
 			}
 		}
 	}

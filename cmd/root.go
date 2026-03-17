@@ -26,8 +26,8 @@ var root = &cobra.Command{
 	Long: `tim держит под рукой проекты из реестра, ssh и маршруты мимо VPN, туннели, локальный запуск,
 сводку по машине и мелкие утилиты разработчика. Конфиг: ~/.config/tim/config.toml (TIM_CONFIG).
 TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие систему, вместо запуска.`,
-	SilenceUsage: true,
-	Args:         cobra.NoArgs,
+	SilenceUsage:  true,
+	Args:          cobra.NoArgs,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		tui.Disabled = tui.Disabled || runner.NoInput

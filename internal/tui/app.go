@@ -228,7 +228,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	return a, a.cur().Update(msg, a)
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		return a, a.cur().Update(msg, a)
+	}
+	// Ответ фоновой загрузки должен дойти до своего экрана, даже если поверх уже открыт другой.
+	var cmds []tea.Cmd
+	for _, s := range a.stack {
+		if c := s.Update(msg, a); c != nil {
+			cmds = append(cmds, c)
+		}
+	}
+	return a, tea.Batch(cmds...)
 }
 
 func (a *App) View() tea.View {

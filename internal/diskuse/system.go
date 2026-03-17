@@ -13,34 +13,35 @@ type Place struct {
 	Name  string
 	Paths []string // от домашней папки или абсолютные - системные места сервера
 	Clean string   // чем чистить; пусто - разбирать руками
+	Whole bool     // папку можно убрать целиком: это кэш, он скачается снова
 }
 
 // SystemPlaces: известные места. Порядок не важен, вывод сортируется по размеру.
 var SystemPlaces = []Place{
-	{"OrbStack", []string{"Library/Group Containers/HUAQ24HBR6.dev.orbstack", ".orbstack"}, "docker system prune -a"},
-	{"Docker Desktop", []string{"Library/Containers/com.docker.docker"}, "docker system prune -a; не пользуешься - удалить само приложение"},
-	{"npm", []string{".npm"}, "npm cache clean --force"},
-	{"composer", []string{"Library/Caches/composer", ".composer/cache", ".cache/composer"}, "composer clear-cache"},
-	{"Homebrew", []string{"Library/Caches/Homebrew", ".cache/Homebrew"}, "brew cleanup --prune=all"},
-	{"go: модули", []string{"go/pkg/mod"}, "go clean -modcache"},
-	{"go: сборка", []string{"Library/Caches/go-build", ".cache/go-build"}, "go clean -cache"},
-	{"pip", []string{"Library/Caches/pip", ".cache/pip"}, "pip cache purge"},
-	{"bun", []string{".bun/install/cache"}, "bun pm cache rm"},
-	{"pnpm", []string{"Library/pnpm/store", "Library/Caches/pnpm", ".local/share/pnpm/store"}, "pnpm store prune"},
-	{"yarn", []string{"Library/Caches/Yarn", ".cache/yarn"}, "yarn cache clean"},
-	{"JetBrains: кеши IDE", []string{"Library/Caches/JetBrains", ".cache/JetBrains"}, "папки прошлых версий IDE удаляются целиком, текущую не трогать"},
-	{"Xcode DerivedData", []string{"Library/Developer/Xcode/DerivedData"}, "rm -rf ~/Library/Developer/Xcode/DerivedData"},
-	{"VS Code: кеш", []string{"Library/Application Support/Code/Cache", "Library/Application Support/Code/CachedData", ".config/Code/Cache", ".config/Code/CachedData"}, "удалить при закрытом редакторе"},
-	{"podman", []string{".local/share/containers"}, "podman system prune -a"},
-	{"docker", []string{"/var/lib/docker"}, "docker system prune -a"},
-	{"журнал systemd", []string{"/var/log/journal"}, "journalctl --vacuum-size=500M"},
-	{"пакеты apt", []string{"/var/cache/apt"}, "apt-get clean"},
-	{"модели Hugging Face", []string{".cache/huggingface"}, "hf cache delete - выбрать ненужные модели"},
-	{"uv", []string{".cache/uv"}, "uv cache clean"},
-	{"браузеры puppeteer", []string{".cache/puppeteer"}, "удалить папку, скачаются снова при надобности"},
-	{"браузеры chrome-devtools-mcp", []string{".cache/chrome-devtools-mcp"}, "удалить папку, скачаются снова при надобности"},
-	{"Корзина", []string{".Trash", ".local/share/Trash"}, "очистить Корзину"},
-	{"Загрузки", []string{"Downloads"}, ""},
+	{"OrbStack", []string{"Library/Group Containers/HUAQ24HBR6.dev.orbstack", ".orbstack"}, "docker system prune -a", false},
+	{"Docker Desktop", []string{"Library/Containers/com.docker.docker"}, "docker system prune -a; не пользуешься - удалить само приложение", false},
+	{"npm", []string{".npm"}, "npm cache clean --force", true},
+	{"composer", []string{"Library/Caches/composer", ".composer/cache", ".cache/composer"}, "composer clear-cache", true},
+	{"Homebrew", []string{"Library/Caches/Homebrew", ".cache/Homebrew"}, "brew cleanup --prune=all", true},
+	{"go: модули", []string{"go/pkg/mod"}, "go clean -modcache", true},
+	{"go: сборка", []string{"Library/Caches/go-build", ".cache/go-build"}, "go clean -cache", true},
+	{"pip", []string{"Library/Caches/pip", ".cache/pip"}, "pip cache purge", true},
+	{"bun", []string{".bun/install/cache"}, "bun pm cache rm", true},
+	{"pnpm", []string{"Library/pnpm/store", "Library/Caches/pnpm", ".local/share/pnpm/store"}, "pnpm store prune", true},
+	{"yarn", []string{"Library/Caches/Yarn", ".cache/yarn"}, "yarn cache clean", true},
+	{"JetBrains: кеши IDE", []string{"Library/Caches/JetBrains", ".cache/JetBrains"}, "папки прошлых версий IDE удаляются целиком, текущую не трогать", false},
+	{"Xcode DerivedData", []string{"Library/Developer/Xcode/DerivedData"}, "rm -rf ~/Library/Developer/Xcode/DerivedData", true},
+	{"VS Code: кеш", []string{"Library/Application Support/Code/Cache", "Library/Application Support/Code/CachedData", ".config/Code/Cache", ".config/Code/CachedData"}, "удалить при закрытом редакторе", false},
+	{"podman", []string{".local/share/containers"}, "podman system prune -a", false},
+	{"docker", []string{"/var/lib/docker"}, "docker system prune -a", false},
+	{"журнал systemd", []string{"/var/log/journal"}, "journalctl --vacuum-size=500M", false},
+	{"пакеты apt", []string{"/var/cache/apt"}, "apt-get clean", false},
+	{"модели Hugging Face", []string{".cache/huggingface"}, "hf cache delete - выбрать ненужные модели", true},
+	{"uv", []string{".cache/uv"}, "uv cache clean", true},
+	{"браузеры puppeteer", []string{".cache/puppeteer"}, "удалить папку, скачаются снова при надобности", true},
+	{"браузеры chrome-devtools-mcp", []string{".cache/chrome-devtools-mcp"}, "удалить папку, скачаются снова при надобности", true},
+	{"Корзина", []string{".Trash", ".local/share/Trash"}, "очистить Корзину", false},
+	{"Загрузки", []string{"Downloads"}, "", false},
 }
 
 // Caches: папка общих кешей; из неё вычитается то, что показано отдельной строкой.

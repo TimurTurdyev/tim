@@ -1,35 +1,33 @@
 package tui
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
-// Entry: строка обозревателя диска.
+// Обозреватель диска: папки по размеру, заход внутрь, отметки, уборка в Корзину.
+
+// Entry: строка обозревателя.
 type Entry struct {
 	Name, Path, Hint string
 	Size             int64
 	Dir              bool // можно зайти внутрь
 }
 
-// BrowseOpts: что показывать. Kids может считать долго (du) - зовётся в фоне.
+// BrowseOpts: что показывать и что делать. Kids может считать долго (du) - зовётся в фоне.
 type BrowseOpts struct {
-	Root  Entry
-	Kids  func(path string) []Entry
-	Open  func(path string)
-	Total int64    // занято на диске: от него проценты в заголовке
-	Start []string // куда зайти сразу: пути по порядку, как вернул прошлый Browse
+	Root   Entry
+	Kids   func(path string) []Entry
+	Open   func(path string)
+	Remove func(list []Entry) (freed int64, errs []string)
+	Total  int64 // занято на диске: от него проценты в заголовке
 }
 
 type level struct {
 	entry   Entry
 	kids    []Entry
-	cursor  int
-	top     int
+	list    List
 	loading bool
 }
 
@@ -38,51 +36,57 @@ type kidsMsg struct {
 	kids []Entry
 }
 
-type browser struct {
+type browse struct {
 	opts   BrowseOpts
 	stack  []*level
 	marked map[string]Entry
-	height int
-	width  int
-	done   bool
-	trash  bool
-	flash  string
 }
 
-var (
-	styleBar    = lipgloss.NewStyle().Foreground(colAccent)
-	styleSize   = lipgloss.NewStyle().Foreground(colOK)
-	styleMark   = lipgloss.NewStyle().Foreground(colBad).Bold(true)
-	styleDirNm  = lipgloss.NewStyle().Bold(true)
-	styleCrumbs = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-)
-
-// Browse: папки по размеру с заходом внутрь, как в программах-чистильщиках. Пробел отмечает,
-// d - закончить и убрать отмеченное (вернётся trash=true), q - выйти, ничего не трогая.
-func Browse(o BrowseOpts) (marked []Entry, trash bool, at []string, err error) {
-	if !Available() {
-		return nil, false, nil, ErrNoTTY
-	}
-	b := &browser{opts: o, marked: map[string]Entry{}, height: 24, width: 100}
+// NewBrowse создаёт экран обозревателя.
+func NewBrowse(o BrowseOpts) Screen {
+	b := &browse{opts: o, marked: map[string]Entry{}}
 	b.stack = []*level{{entry: o.Root, loading: true}}
-	if _, err := tea.NewProgram(b).Run(); err != nil {
-		return nil, false, nil, err
-	}
-	for _, e := range b.marked {
-		marked = append(marked, e)
-	}
-	for _, l := range b.stack[1:] {
-		at = append(at, l.entry.Path)
-	}
-	return marked, b.trash, at, nil
+	return b
 }
 
-func (b *browser) load(path string) tea.Cmd {
+func (b *browse) Init() tea.Cmd { return b.load(b.opts.Root.Path) }
+
+func (b *browse) load(path string) tea.Cmd {
 	return func() tea.Msg { return kidsMsg{path, b.opts.Kids(path)} }
 }
 
+func (b *browse) cur() *level { return b.stack[len(b.stack)-1] }
+
+func (b *browse) Crumbs() []string {
+	var c []string
+	for _, l := range b.stack {
+		c = append(c, l.entry.Name)
+	}
+	return c
+}
+
+func (b *browse) Status() string {
+	l := b.cur()
+	s := Human(l.entry.Size)
+	if b.opts.Total > 0 {
+		s += " " + symDot + " " + itoa(int(l.entry.Size*100/b.opts.Total)) + "% занятого"
+	}
+	return s
+}
+
+func (b *browse) Command() string {
+	if len(b.stack) > 1 && b.cur().entry.Path != "" {
+		return "tim disk -b " + b.cur().entry.Path
+	}
+	return "tim disk -b"
+}
+
+func (b *browse) Keys() []Key {
+	return []Key{{symUpDown, "выбор"}, {symLR, "внутрь, назад"}, {"space", "отметить"}, {"x", "убрать"}, {"o", "Finder"}, {"esc", "назад"}}
+}
+
 // under: путь внутри уже отмеченной папки.
-func (b *browser) under(path string) bool {
+func (b *browse) under(path string) bool {
 	for p := range b.marked {
 		if strings.HasPrefix(path, strings.TrimSuffix(p, "/")+"/") {
 			return true
@@ -91,197 +95,172 @@ func (b *browser) under(path string) bool {
 	return false
 }
 
-func (b *browser) cur() *level { return b.stack[len(b.stack)-1] }
+func (b *browse) fill(l *level) {
+	l.list.Rows = nil
+	for _, e := range l.kids {
+		e := e
+		l.list.Rows = append(l.list.Rows, Row{Text: e.Name, Render: func(sel bool, w int) string {
+			pct := 0
+			if l.entry.Size > 0 {
+				pct = int(e.Size * 100 / l.entry.Size)
+			}
+			filled := max(0, min(16, int(e.Size*16/max(1, l.entry.Size))))
+			bar := styleAccent.Render(strings.Repeat(symBlock, filled)) + styleGhost.Render(strings.Repeat(symShade, 16-filled))
+			mark := "  "
+			if _, ok := b.marked[e.Path]; ok && e.Path != "" {
+				mark = styleBad.Render(symCheck) + " "
+			} else if e.Path != "" && b.under(e.Path) {
+				mark = styleDim.Render(symCheck) + " "
+			}
+			name := Pad(e.Name, max(20, min(44, w-62)))
+			if e.Dir {
+				name = styleBold.Render(name)
+			} else {
+				name = styleDim.Render(name)
+			}
+			line := mark + styleText.Render(Pad(Human(e.Size), 9)) + " " + bar + " " + styleDim.Render(Pad(itoa(pct)+"%", 4)) + "  " + name
+			if e.Hint != "" {
+				line += "  " + styleDim.Render(e.Hint)
+			}
+			return SelRow(sel, w, line)
+		}})
+	}
+}
 
-func (b *browser) Init() tea.Cmd { return b.load(b.opts.Root.Path) }
-
-func (b *browser) rows() int { return max(5, b.height-9) }
-
-func (b *browser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		b.height, b.width = msg.Height, msg.Width
 	case kidsMsg:
 		for _, l := range b.stack {
-			if l.entry.Path == msg.path && l.loading {
+			if l.entry.Path == msg.path {
 				l.kids, l.loading = msg.kids, false
-			}
-		}
-		// Возврат после уборки: заходим туда же, где были, пока такие папки ещё есть.
-		if depth := len(b.stack) - 1; depth < len(b.opts.Start) && b.cur().entry.Path == msg.path {
-			for i, e := range msg.kids {
-				if e.Path == b.opts.Start[depth] && e.Dir {
-					b.cur().cursor = i
-					b.stack = append(b.stack, &level{entry: e, loading: true})
-					return b, b.load(e.Path)
+				b.fill(l)
+				if l.list.Cursor >= len(l.kids) {
+					l.list.Cursor = max(0, len(l.kids)-1)
 				}
 			}
 		}
+		return nil
 	case tea.KeyPressMsg:
-		b.flash = ""
 		l := b.cur()
-		switch msg.String() {
-		case "q", "esc", "ctrl+c", "й":
-			b.done = true
-			return b, tea.Quit
-		case "up", "k", "л":
-			l.cursor = max(0, l.cursor-1)
-		case "down", "j", "о":
-			l.cursor = min(len(l.kids)-1, l.cursor+1)
-		case "pgup":
-			l.cursor = max(0, l.cursor-b.rows())
-		case "pgdown":
-			l.cursor = min(len(l.kids)-1, l.cursor+b.rows())
-		case "home", "g":
-			l.cursor = 0
-		case "end", "G":
-			l.cursor = len(l.kids) - 1
+		k := msg.String()
+		if l.list.Key(k, 10) {
+			return nil
+		}
+		switch k {
 		case "enter", "right", "l", "д":
 			if l.loading || len(l.kids) == 0 {
-				break
+				return nil
 			}
-			e := l.kids[l.cursor]
+			e := l.kids[l.list.Cursor]
 			if !e.Dir {
-				b.flash = "внутрь не зайти: это файлы или место без папок"
-				break
+				return app.Toast("warn", "внутрь не зайти: это файлы или место без папок")
 			}
 			b.stack = append(b.stack, &level{entry: e, loading: true})
-			return b, b.load(e.Path)
-		case "left", "h", "backspace", "р":
+			return b.load(e.Path)
+		case "left", "backspace", "р":
 			if len(b.stack) > 1 {
 				b.stack = b.stack[:len(b.stack)-1]
+				return nil
 			}
+			return app.Pop()
 		case "space", " ":
 			if l.loading || len(l.kids) == 0 {
-				break
+				return nil
 			}
-			e := l.kids[l.cursor]
-			if e.Path == "" {
-				b.flash = "это не папка - отметить нельзя"
-				break
+			e := l.kids[l.list.Cursor]
+			switch {
+			case e.Path == "":
+				return app.Toast("warn", "это не папка - отметить нельзя")
+			case b.under(e.Path):
+				return app.Toast("warn", "уже внутри отмеченной папки - уйдёт вместе с ней")
 			}
 			if _, ok := b.marked[e.Path]; ok {
 				delete(b.marked, e.Path)
-			} else if b.under(e.Path) {
-				b.flash = "уже внутри отмеченной папки - уйдёт вместе с ней"
 			} else {
 				b.marked[e.Path] = e
 			}
-			l.cursor = min(len(l.kids)-1, l.cursor+1)
+			l.list.Down()
 		case "o", "щ":
-			if !l.loading && len(l.kids) > 0 && l.kids[l.cursor].Path != "" && b.opts.Open != nil {
-				b.opts.Open(l.kids[l.cursor].Path)
-				b.flash = "открыто в Finder"
+			if !l.loading && len(l.kids) > 0 && l.kids[l.list.Cursor].Path != "" && b.opts.Open != nil {
+				b.opts.Open(l.kids[l.list.Cursor].Path)
+				return app.Toast("ok", "открыто в Finder")
 			}
-		case "d", "в":
-			if len(b.marked) == 0 {
-				b.flash = "сначала отметь пробелом, что убрать"
-				break
-			}
-			b.trash, b.done = true, true
-			return b, tea.Quit
-		}
-		l.cursor = max(0, min(l.cursor, len(l.kids)-1))
-		if l.cursor < l.top {
-			l.top = l.cursor
-		}
-		if l.cursor >= l.top+b.rows() {
-			l.top = l.cursor - b.rows() + 1
+		case "x", "ч":
+			return b.confirmRemove(app)
 		}
 	}
-	return b, nil
+	return nil
 }
 
-func human(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
+func (b *browse) confirmRemove(app *App) tea.Cmd {
+	var all []Entry
+	for _, e := range b.marked {
+		all = append(all, e)
 	}
-	return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	top := Outermost(all)
+	if len(top) == 0 {
+		return app.Toast("warn", "сначала отметь пробелом, что убрать")
+	}
+	var lines, paths []string
+	var sum int64
+	for _, e := range top {
+		lines = append(lines, Pad(Human(e.Size), 9)+"  "+e.Path)
+		paths = append(paths, e.Path)
+		sum += e.Size
+	}
+	return app.Confirm(Dialog{
+		Title:   "Убрать в Корзину?",
+		Lines:   lines,
+		Command: "trash " + strings.Join(paths, " "),
+		Note:    "Из Корзины можно вернуть. Место освободится после её очистки.",
+		OK:      "Убрать " + Human(sum),
+		Danger:  true,
+		Yes: func() tea.Cmd {
+			freed, errs := b.opts.Remove(top)
+			b.marked = map[string]Entry{}
+			cmds := []tea.Cmd{}
+			if len(errs) > 0 {
+				cmds = append(cmds, app.Toast("bad", strings.Join(errs, "; ")))
+			} else {
+				cmds = append(cmds, app.Toast("ok", "в Корзине "+Human(freed)+", место освободится после её очистки"))
+			}
+			// Размеры изменились - перечитать все уровни стопки.
+			for _, l := range b.stack {
+				l.loading = true
+				cmds = append(cmds, b.load(l.entry.Path))
+			}
+			return tea.Batch(cmds...)
+		},
+	})
 }
 
-func (b *browser) View() tea.View {
-	if b.done {
-		return tea.NewView("")
-	}
+func (b *browse) View(width, height int) string {
 	l := b.cur()
-	var s strings.Builder
-	var crumbs []string
-	for _, x := range b.stack {
-		crumbs = append(crumbs, x.entry.Name)
-	}
-	head := styleCrumbs.Render(strings.Join(crumbs, " "+symPointer+" "))
-	head += "  " + styleSize.Render(human(l.entry.Size))
-	if b.opts.Total > 0 {
-		head += styleHint.Render(fmt.Sprintf("  %d%% занятого", l.entry.Size*100/b.opts.Total))
-	}
-	s.WriteString(head + "\n\n")
+	var out []string
+	out = append(out, "")
 	if l.loading {
-		s.WriteString(styleEmpty.Render("считаю, что внутри...") + "\n")
+		out = append(out, "  "+styleEmpty.Render("считаю, что внутри..."))
 	}
-	nameW := max(20, min(46, b.width-60))
-	for i := l.top; i < len(l.kids) && i < l.top+b.rows(); i++ {
-		e := l.kids[i]
-		pct := 0
-		if l.entry.Size > 0 {
-			pct = int(e.Size * 100 / l.entry.Size)
-		}
-		filled := max(0, min(16, int(e.Size*16/max(1, l.entry.Size))))
-		bar := styleBar.Render(strings.Repeat("\u2588", filled)) + styleHint.Render(strings.Repeat("\u2591", 16-filled))
-		mark := "  "
-		if _, ok := b.marked[e.Path]; ok && e.Path != "" {
-			mark = styleMark.Render(symCheck + " ")
-		} else if e.Path != "" && b.under(e.Path) {
-			mark = styleHint.Render(symCheck + " ")
-		}
-		name := clipTitle(e.Name, nameW)
-		if e.Dir {
-			name = styleDirNm.Render(name)
-		} else {
-			name = styleHint.Render(name)
-		}
-		pad := strings.Repeat(" ", max(0, nameW-len([]rune(clipTitle(e.Name, nameW)))))
-		line := fmt.Sprintf("%s%s %s %s  %s%s", mark, styleSize.Render(fmt.Sprintf("%9s", human(e.Size))), bar,
-			styleHint.Render(fmt.Sprintf("%3d%%", pct)), name, pad)
-		if e.Hint != "" {
-			line += "  " + styleHint.Render(clipTitle(e.Hint, max(10, b.width-nameW-40)))
-		}
-		if i == l.cursor {
-			line = styleRow.Render(symPointer) + line
-		} else {
-			line = " " + line
-		}
-		s.WriteString(line + "\n")
+	rows := l.list.View(width, max(3, height-4))
+	out = append(out, rows...)
+	for len(out) < height-1 {
+		out = append(out, "")
 	}
-	if rest := len(l.kids) - (l.top + b.rows()); rest > 0 {
-		s.WriteString(styleHint.Render("   и ещё "+strconv.Itoa(rest)+" ниже") + "\n")
-	}
-	s.WriteString("\n")
 	if len(b.marked) > 0 {
-		var sum int64
 		var all []Entry
 		for _, e := range b.marked {
 			all = append(all, e)
 		}
 		top := Outermost(all)
+		var sum int64
+		var names []string
 		for _, e := range top {
 			sum += e.Size
+			names = append(names, e.Name)
 		}
-		s.WriteString(styleMark.Render(fmt.Sprintf("отмечено %d на %s", len(top), human(sum))) + styleHint.Render("  d - убрать в Корзину") + "\n")
+		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(top))+" "+symDot+" "+Human(sum)) + styleDim.Render("   "+Clip(strings.Join(names, ", "), width-30))
 	}
-	if b.flash != "" {
-		s.WriteString(styleHint.Render(b.flash) + "\n")
-	}
-	keys := []string{symUpDown + " выбор", "enter внутрь", "\u2190 назад", "пробел отметить", "o показать в Finder", "d убрать", "q выход"}
-	for i, k := range keys {
-		key, desc, _ := strings.Cut(k, " ")
-		keys[i] = styleKey.Render(key) + " " + styleHint.Render(desc)
-	}
-	v := tea.NewView(styleFrame.Render(strings.TrimRight(s.String(), "\n")) + "\n" + strings.Join(keys, styleHint.Render(" "+symDot+" ")))
-	v.AltScreen = true
-	return v
+	return strings.Join(out, "\n")
 }
 
 // Outermost: отмеченное без того, что лежит внутри другого отмеченного - иначе оно посчиталось бы

@@ -20,6 +20,8 @@ var (
 	styleGhost  = lipgloss.NewStyle().Foreground(colGhost)
 	styleSelBg  = lipgloss.NewStyle().Background(colRow)
 	stylePaneT  = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleTabOn  = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
+	styleTabOff = lipgloss.NewStyle().Background(colBarBg).Foreground(colDim)
 	styleHead   = lipgloss.NewStyle().Foreground(colDim)
 )
 
@@ -80,22 +82,22 @@ func Clip(s string, w int) string {
 // Pane: панель в рамке; заголовок в верхней кромке, sub - серым рядом. Строки обрезаются по ширине.
 func Pane(title, sub string, rows []string, width int) []string {
 	inner := width - 4
-	head := styleDim.Render("╭─ ") + stylePaneT.Render(title)
+	head := styleDim.Render("╭\u2500 ") + stylePaneT.Render(title)
 	if sub != "" {
-		head += styleDim.Render(" ─ " + sub)
+		head += styleDim.Render(" \u2500 " + sub)
 	}
 	n := lipgloss.Width(head)
-	head += styleDim.Render(" " + strings.Repeat("─", max(0, width-n-2)) + "╮")
+	head += styleDim.Render(" " + strings.Repeat("\u2500", max(0, width-n-2)) + "╮")
 	out := []string{head}
 	for _, r := range rows {
 		if strings.HasPrefix(r, "\x00sep:") {
 			lab := strings.TrimPrefix(r, "\x00sep:")
-			out = append(out, styleDim.Render("├─ "+lab+" "+strings.Repeat("─", max(0, width-len([]rune(lab))-5))+"┤"))
+			out = append(out, styleDim.Render("├\u2500 "+lab+" "+strings.Repeat("\u2500", max(0, width-len([]rune(lab))-5))+"┤"))
 			continue
 		}
 		out = append(out, styleDim.Render("│ ")+Pad(r, inner)+styleDim.Render(" │"))
 	}
-	out = append(out, styleDim.Render("╰"+strings.Repeat("─", width-2)+"╯"))
+	out = append(out, styleDim.Render("\u2570"+strings.Repeat("\u2500", width-2)+"\u256f"))
 	return out
 }
 

@@ -65,8 +65,49 @@ type leftGroup struct {
 }
 
 func leftovers() error {
+	if tui.Available() && !diskClean {
+		return runScreen(leftScreen())
+	}
+	groups, err := gatherLeftovers()
+	if err != nil {
+		return err
+	}
+	var shown []*leftGroup
+	var total, smallSize int64
+	small := 0
+	for _, g := range groups {
+		if !diskAll && g.size < 50<<20 && len(g.agents) == 0 && len(g.pids) == 0 {
+			small++
+			smallSize += g.size
+			continue
+		}
+		shown = append(shown, g)
+		total += g.size
+	}
+	if len(shown) == 0 {
+		ui.Println(ui.Dim("хвостов удалённых программ не нашёл"))
+		return nil
+	}
+	if diskClean {
+		return cleanLeftovers(shown)
+	}
+	ui.Println(ui.Dim("пути от ~/Library") + "\n")
+	for _, g := range shown {
+		printLeftGroup(g)
+	}
+	if small > 0 {
+		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + fmtBytes(smallSize) + ": tim disk --leftovers --all"))
+	}
+	ui.Println(ui.Info("всего " + fmtBytes(total)))
+	ui.Println(ui.Dim("  убрать, отметив нужное:   tim disk --leftovers --clean"))
+	ui.Println(ui.Dim("  только посмотреть команды: tim disk --leftovers --clean --dry-run"))
+	return nil
+}
+
+// gatherLeftovers: всё, что осталось от удалённых программ, по убыванию размера; мелочь по имени отброшена.
+func gatherLeftovers() ([]*leftGroup, error) {
 	if runtime.GOOS != "darwin" {
-		return ui.Errorf("хвосты удалённых программ tim пока ищет только на macOS")
+		return nil, ui.Errorf("хвосты удалённых программ tim пока ищет только на macOS")
 	}
 	home := paths.Home()
 	lib := filepath.Join(home, "Library")
@@ -181,43 +222,19 @@ func leftovers() error {
 		all = append(all, g)
 	}
 	wg.Wait()
-	var shown []*leftGroup
-	var total, smallSize int64
-	small := 0
+	var out []*leftGroup
 	for _, g := range all {
 		for _, it := range g.items {
 			g.size += it.size
 		}
 		// По одному имени без ID - только крупное: мелких папок от утилит без .app слишком много.
-		switch {
-		case !g.sure && g.size < 1<<30:
-		case !diskAll && g.size < 50<<20 && len(g.agents) == 0 && len(g.pids) == 0:
-			small++
-			smallSize += g.size
-		default:
-			shown = append(shown, g)
-			total += g.size
+		if !g.sure && g.size < 1<<30 {
+			continue
 		}
+		out = append(out, g)
 	}
-	if len(shown) == 0 {
-		ui.Println(ui.Dim("хвостов удалённых программ не нашёл"))
-		return nil
-	}
-	sort.Slice(shown, func(i, j int) bool { return shown[i].size > shown[j].size })
-	if diskClean {
-		return cleanLeftovers(shown)
-	}
-	ui.Println(ui.Dim("пути от ~/Library") + "\n")
-	for _, g := range shown {
-		printLeftGroup(g)
-	}
-	if small > 0 {
-		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + fmtBytes(smallSize) + ": tim disk --leftovers --all"))
-	}
-	ui.Println(ui.Info("всего " + fmtBytes(total)))
-	ui.Println(ui.Dim("  убрать, отметив нужное:   tim disk --leftovers --clean"))
-	ui.Println(ui.Dim("  только посмотреть команды: tim disk --leftovers --clean --dry-run"))
-	return nil
+	sort.Slice(out, func(i, j int) bool { return out[i].size > out[j].size })
+	return out, nil
 }
 
 // groupTitle: имя программы по ID её файлов (Whisky, а не com.isaacmarovitz) и поставщик рядом.
