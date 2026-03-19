@@ -104,7 +104,7 @@ func collectHWLinux() hwSnapshot {
 
 // hwSampleLinux: такт живого экрана - секунда замера /proc/stat.
 func hwSampleLinux(base hwSnapshot) tui.HWSample {
-	out := tui.HWSample{MemTotal: base.memTotal}
+	out := tui.HWSample{MemTotal: base.memTotal, Title: hwTitle(base)}
 	var wg sync.WaitGroup
 	var list []procs.Full
 	wg.Go(func() { out.CPU = cpuBusy(time.Second) })

@@ -30,6 +30,11 @@ type Typer interface {
 	Typing() bool
 }
 
+// Escaper: экран, который сначала сам обрабатывает esc (закрыть фильтр), и только потом - назад.
+type Escaper interface {
+	Escape() bool
+}
+
 // Initer: экрану нужно что-то запустить при открытии (замер, запрос).
 type Initer interface {
 	Init() tea.Cmd
@@ -210,6 +215,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.quit = true
 			return a, tea.Quit
 		case "esc":
+			if e, ok := a.cur().(Escaper); ok && e.Escape() {
+				return a, nil
+			}
 			return a, a.Pop()
 		case "?":
 			if !typing {

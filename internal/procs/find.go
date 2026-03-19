@@ -63,9 +63,8 @@ type App struct {
 	IsApp bool // из .app - его можно закрыть как Cmd+Q
 }
 
-// Find: приложения, чьё имя подходит к запросу. Запрос сравнивается без пробелов и регистра
-// и прощает пропущенные буквы: "goglehrome" найдёт Google Chrome.
-func Find(list []Full, query string) []App {
+// Groups: процессы, сложенные по приложению или программе, по имени.
+func Groups(list []Full) []App {
 	groups := map[string]*App{}
 	for _, p := range list {
 		name := Name(p.Comm, p.Args)
@@ -81,23 +80,30 @@ func Find(list []Full, query string) []App {
 			g.Main = p
 		}
 	}
-	names := make([]string, 0, len(groups))
-	for n := range groups {
-		names = append(names, n)
+	out := make([]App, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, *g)
 	}
-	sort.Strings(names)
-	keys := make([]string, len(names))
-	files := make([]string, len(names))
-	for i, n := range names {
-		keys[i] = strings.ReplaceAll(strings.ToLower(n), " ", "")
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Find: приложения, чьё имя подходит к запросу. Запрос сравнивается без пробелов и регистра
+// и прощает пропущенные буквы: "goglehrome" найдёт Google Chrome.
+func Find(list []Full, query string) []App {
+	apps := Groups(list)
+	keys := make([]string, len(apps))
+	files := make([]string, len(apps))
+	for i, a := range apps {
+		keys[i] = strings.ReplaceAll(strings.ToLower(a.Name), " ", "")
 		// Искать можно и по имени файла: человек помнит "qemu", а показываем "Android-эмулятор".
-		files[i] = strings.ToLower(filepath.Base(groups[n].Main.Comm))
+		files[i] = strings.ToLower(filepath.Base(a.Main.Comm))
 	}
 	q := strings.ReplaceAll(strings.ToLower(query), " ", "")
 	// Точное имя - без выбора: kill launchd не должен спрашивать, какой из похожих.
 	for i, k := range keys {
 		if k == q {
-			return []App{*groups[names[i]]}
+			return []App{apps[i]}
 		}
 	}
 	type hit struct {
@@ -115,7 +121,7 @@ func Find(list []Full, query string) []App {
 		if m.Score < len([]rune(q))*2 {
 			continue
 		}
-		a := *groups[names[m.Index]]
+		a := apps[m.Index]
 		// Слово целиком в имени важнее совпадения по буквам, а приложение с окном - служебного
 		// процесса: на "chrome" первым должен быть сам браузер, а не chrome-devtools-mcp.
 		rank := 0

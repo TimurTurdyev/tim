@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"runtime"
 	"sort"
@@ -249,27 +248,16 @@ var hwCmd = &cobra.Command{
 --watch обновляет процессор, видеокарту и память раз в секунду; выход - Ctrl-C.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		collect, sample := collectHW, hwSample
-		switch runtime.GOOS {
-		case "darwin":
-		case "linux":
-			collect, sample = collectHWLinux, hwSampleLinux
-		default:
-			return ui.Errorf("на %s пока не умею", runtime.GOOS)
+		collect, _, err := hwFuncs()
+		if err != nil {
+			return err
 		}
-		if !hwWatch {
+		if !hwWatch || !tui.Available() {
+			// Без терминала живому экрану негде жить - один снимок.
 			printHW(collect(), true)
 			return nil
 		}
-		s0 := collect()
-		title := s0.model + "  " + strconv.Itoa(s0.cores) + " ядер  " + fmtBytes(s0.memTotal)
-		err := tui.RunHW(title, func() tui.HWSample { return sample(s0) })
-		if errors.Is(err, tui.ErrNoTTY) {
-			// Без терминала живому экрану негде жить - один снимок.
-			printHW(s0, true)
-			return nil
-		}
-		return err
+		return runScreen(hwScreen())
 	},
 }
 
@@ -278,10 +266,21 @@ func init() {
 	root.AddCommand(hwCmd)
 }
 
+// hwFuncs: сбор паспорта и замер для этой системы.
+func hwFuncs() (func() hwSnapshot, func(hwSnapshot) tui.HWSample, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return collectHW, hwSample, nil
+	case "linux":
+		return collectHWLinux, hwSampleLinux, nil
+	}
+	return nil, nil, ui.Errorf("на %s пока не умею", runtime.GOOS)
+}
+
 // hwSample: замер для живого экрана. Паспорт машины уже собран, здесь только то, что меняется,
 // и всё параллельно с секундным iostat - он и задаёт такт.
 func hwSample(base hwSnapshot) tui.HWSample {
-	out := tui.HWSample{MemTotal: base.memTotal}
+	out := tui.HWSample{MemTotal: base.memTotal, Title: hwTitle(base)}
 	var (
 		wg   sync.WaitGroup
 		mu   sync.Mutex

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/procs"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -41,6 +42,9 @@ var topCmd = &cobra.Command{
 поэтому у многопроцессных приложений сумма выше, чем в Мониторе системы.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if tui.Available() && topBy == "app" {
+			return runScreen(procsScreen(""))
+		}
 		full, err := allProcs()
 		if err != nil {
 			return err
