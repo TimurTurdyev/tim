@@ -135,6 +135,12 @@ func (a *App) Push(s Screen) tea.Cmd {
 	return nil
 }
 
+// Replace меняет текущий экран на другой: мастер первого запуска уступает место главному.
+func (a *App) Replace(s Screen) tea.Cmd {
+	a.stack = a.stack[:len(a.stack)-1]
+	return a.Push(s)
+}
+
 // Pop закрывает текущий экран; с последнего - выход.
 func (a *App) Pop() tea.Cmd {
 	if len(a.stack) > 1 {

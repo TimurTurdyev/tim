@@ -12,6 +12,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -87,6 +88,9 @@ var serverCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		target := serverTarget(args[0])
+		if tui.Available() && !serverJSON {
+			return runScreen(serverScreen(target))
+		}
 		r, err := collectServer(target, 15*time.Second)
 		if err != nil {
 			return ui.Errorf("%s: %v; маршрут и вход проверит tim ssh %s", target, err, target)

@@ -47,7 +47,12 @@ func openUI() error {
 		overview()
 		return nil
 	}
-	dir, err := tui.Run(tui.NewHome(homeOpts()), uiOptions())
+	first := tui.NewHome(homeOpts())
+	// Без конфига главный экран пуст: вместо него мастер первого запуска.
+	if _, err := os.Stat(config.Path()); err != nil {
+		first = onboardScreen()
+	}
+	dir, err := tui.Run(first, uiOptions())
 	if errors.Is(err, tui.ErrNoTTY) {
 		overview()
 		return nil
@@ -68,7 +73,7 @@ func openUI() error {
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
 var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true,
 	"disk": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
-	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true, "server": true}
+	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true}
 
 // runLine: набранная в ":" команда. Экраны открываются экранами, остальное - результатом или после выхода.
 func runLine(line string) tui.Action {
@@ -94,6 +99,16 @@ func runLine(line string) tui.Action {
 	case "serve":
 		if len(args) == 2 && args[1] == "list" {
 			return tui.Action{Push: serveScreen()}
+		}
+	case "domain":
+		if len(args) == 2 {
+			if d, err := domainOf(args[1]); err == nil {
+				return tui.Action{Push: domainScreen(d)}
+			}
+		}
+	case "server":
+		if len(args) == 2 {
+			return tui.Action{Push: serverScreen(serverTarget(args[1]))}
 		}
 	case "top":
 		if len(args) == 1 {
