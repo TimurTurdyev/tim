@@ -328,6 +328,9 @@ var serveListCmd = &cobra.Command{
 	Short: "Фоновые dev-серверы",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if tui.Available() {
+			return runScreen(serveScreen())
+		}
 		states := run.ListStates()
 		if len(states) == 0 {
 			ui.Println(ui.Dim("фоновых серверов нет: tim serve <проект> -d"))

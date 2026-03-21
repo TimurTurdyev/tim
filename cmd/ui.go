@@ -67,7 +67,7 @@ func openUI() error {
 
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
 var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true,
-	"disk": true, "check": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
+	"disk": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
 	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true, "server": true}
 
 // runLine: набранная в ":" команда. Экраны открываются экранами, остальное - результатом или после выхода.
@@ -83,6 +83,18 @@ func runLine(line string) tui.Action {
 		return tui.Action{}
 	case "hw":
 		return tui.Action{Push: hwScreen()}
+	case "vpn":
+		if len(args) == 1 {
+			return tui.Action{Push: vpnScreen()}
+		}
+	case "check":
+		if len(args) == 1 {
+			return tui.Action{Push: checkScreen()}
+		}
+	case "serve":
+		if len(args) == 2 && args[1] == "list" {
+			return tui.Action{Push: serveScreen()}
+		}
 	case "top":
 		if len(args) == 1 {
 			return tui.Action{Push: procsScreen("")}
@@ -235,8 +247,9 @@ func loadHome() tui.HomeData {
 			return tui.Action{Push: s}
 		}},
 		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: func() tui.Action { return tui.Action{Push: hwScreen()} }},
-		{Key: "n", Title: "Сеть и VPN", Hint: "обход, туннели, порты", Open: func() tui.Action { return resultAction([]string{"vpn"}) }},
-		{Key: "w", Title: "Сайты", Hint: "домен, почта, сертификат", Open: func() tui.Action { return tui.Action{Exit: func() { runAfter([]string{"check"}) }} }},
+		{Key: "n", Title: "Сеть и VPN", Hint: "обход, страж, туннели", Open: func() tui.Action { return tui.Action{Push: vpnScreen()} }},
+		{Key: "s", Title: "Dev-серверы", Hint: "фоновые, журналы", Open: func() tui.Action { return tui.Action{Push: serveScreen()} }},
+		{Key: "w", Title: "Сайты", Hint: "проверка, домен, почта", Open: func() tui.Action { return tui.Action{Push: checkScreen()} }},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: func() tui.Action { return resultAction([]string{"help", "utils"}) }},
 	}
 	d.Tiles, d.Warning, d.WarnOpen = homeTiles()
@@ -288,14 +301,14 @@ func homeTiles() (tiles []tui.TileData, warning string, open func() tui.Action) 
 			guard = ui.Dim("страж работает")
 		} else if warning == "" {
 			warning = "страж маршрутов не установлен: после смены сети обход сломается"
-			open = func() tui.Action { return resultAction([]string{"route", "status"}) }
+			open = func() tui.Action { return tui.Action{Push: vpnScreen()} }
 		}
 		lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))
 		if ok < total {
 			lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", ok, total))
 			if warning == "" {
 				warning = fmt.Sprintf("%d целей идут через VPN вместо обхода", total-ok)
-				open = func() tui.Action { return resultAction([]string{"vpn"}) }
+				open = func() tui.Action { return tui.Action{Push: vpnScreen()} }
 			}
 		}
 		tiles = append(tiles, tui.TileData{Title: "vpn", Width: 24, Rows: []string{lamp, guard}})

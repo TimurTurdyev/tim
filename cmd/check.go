@@ -16,6 +16,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -189,6 +190,9 @@ var checkCmd = &cobra.Command{
 			return installCheck()
 		case checkUninstall:
 			return uninstallCheck()
+		}
+		if len(args) == 0 && !checkNotify && tui.Available() {
+			return runScreen(checkScreen())
 		}
 		projects, err := checkProjects(args)
 		if err != nil {
