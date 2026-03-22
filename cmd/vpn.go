@@ -71,13 +71,32 @@ var vpnCmd = &cobra.Command{
 }
 
 var vpnExcludeCmd = &cobra.Command{
-	Use:   "exclude <адрес|домен|подсеть|as:N...> [--owner] [--label x]",
-	Short: "Пустить мимо VPN: то же, что route add",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  func(cmd *cobra.Command, args []string) error { return routeAdd(args, vpnExcludeOpts) },
+	Use:   "exclude <адрес|домен|подсеть|as:N...> [--owner] [--label x] | --watch [сайт]",
+	Short: "Пустить мимо VPN: то же, что route add; --watch подсмотрит, куда ходит сайт, и предложит сети",
+	Long: `Цель - адрес, домен, подсеть или as:N; --owner берёт все сети владельца домена.
+Сайт часто грузит плеер, CDN и счётчики с чужих сетей, которых по адресу не угадать: --watch
+полминуты смотрит, какие соединения ушли в туннель, пока ты открываешь сайт, и складывает их
+по владельцам сетей - остаётся отметить нужные. Аргумент при --watch - только пометка целей.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if vpnWatchOn {
+			label := vpnExcludeOpts.label
+			if label == "" && len(args) == 1 {
+				label = args[0]
+			}
+			return vpnWatch(vpnWatchSec, label, vpnExcludeOpts)
+		}
+		if len(args) == 0 {
+			return ui.Errorf("что пустить мимо VPN? адрес, домен, подсеть, as:N или --watch")
+		}
+		return routeAdd(args, vpnExcludeOpts)
+	},
 }
 
-var vpnExcludeOpts addOpts
+var (
+	vpnExcludeOpts addOpts
+	vpnWatchOn     bool
+	vpnWatchSec    int
+)
 
 var vpnFixCmd = &cobra.Command{
 	Use:   "fix",
@@ -97,6 +116,8 @@ var vpnFixCmd = &cobra.Command{
 
 func init() {
 	vpnExcludeOpts.bind(vpnExcludeCmd)
+	vpnExcludeCmd.Flags().BoolVar(&vpnWatchOn, "watch", false, "посмотреть, куда ходит сайт через туннель, и выбрать сети")
+	vpnExcludeCmd.Flags().IntVar(&vpnWatchSec, "seconds", 20, "сколько секунд смотреть (с --watch)")
 	vpnCmd.AddCommand(vpnExcludeCmd, vpnFixCmd)
 	root.AddCommand(vpnCmd)
 }
