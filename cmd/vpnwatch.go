@@ -29,8 +29,9 @@ type asGroup struct {
 	names []string // обратные имена - подсказка, что это за сеть
 }
 
-// watchTunnel собирает адреса, в которые за seconds секунд ходили через туннель.
-func watchTunnel(seconds int) (map[string]map[string]bool, error) {
+// watchTunnel собирает адреса, в которые за seconds секунд ходили через туннель; skip - адреса,
+// открытые заранее, они к делу не относятся; note - что сказать человеку, пока идёт отсчёт.
+func watchTunnel(seconds int, skip map[string]bool, note string) (map[string]map[string]bool, error) {
 	tunnelIPs := map[string]bool{}
 	for _, t := range netinfo.Tunnels() {
 		for _, ip := range t.IPv4 {
@@ -44,7 +45,7 @@ func watchTunnel(seconds int) (map[string]map[string]bool, error) {
 	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
 	for {
 		for _, p := range netinfo.Peers() {
-			if !tunnelIPs[p.Local] || !netinfo.IsIPv4(p.Remote) || netinfo.IsPrivate(p.Remote) {
+			if !tunnelIPs[p.Local] || !netinfo.IsIPv4(p.Remote) || netinfo.IsPrivate(p.Remote) || skip[p.Remote] {
 				continue
 			}
 			if seen[p.Remote] == nil {
@@ -57,8 +58,7 @@ func watchTunnel(seconds int) (map[string]map[string]bool, error) {
 			break
 		}
 		if stdoutTerminal() {
-			fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("смотрю в туннель ещё %d с: открой сайт или программу, которая не работает; адресов %d"),
-				int(left.Seconds())+1, len(seen))
+			fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("%s; ещё %d с, адресов в туннеле %d"), note, int(left.Seconds())+1, len(seen))
 		}
 		time.Sleep(time.Second)
 	}
@@ -125,7 +125,7 @@ func (g *asGroup) procList() string {
 
 // vpnWatch: посмотреть, выбрать, завести маршруты. label - пометка целей, обычно сайт, ради которого всё.
 func vpnWatch(seconds int, label string, o addOpts) error {
-	seen, err := watchTunnel(seconds)
+	seen, err := watchTunnel(seconds, nil, "смотрю в туннель: открой сайт или программу, которая не работает")
 	if err != nil {
 		return err
 	}
