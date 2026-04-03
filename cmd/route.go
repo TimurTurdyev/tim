@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -398,11 +400,22 @@ func portOpen(addr, port string) bool {
 // поэтому старый снимается первым; ip route replace на Linux делает это сам.
 func setRoute(dest, gw, iface string) error {
 	if runtime.GOOS != "linux" {
-		_ = runner.Sudo(netinfo.DelRouteCmd(dest)...)
+		// Старого маршрута обычно нет, и route ругается "not in table" - это не ошибка.
+		_, _ = runner.SudoQuiet(netinfo.DelRouteCmd(dest)...)
 	}
 	defer tableChanged()
-	return runner.Sudo(netinfo.AddRouteCmd(dest, gw, iface)...)
+	out, err := runner.SudoQuiet(netinfo.AddRouteCmd(dest, gw, iface)...)
+	if err != nil {
+		if out == "" {
+			out = err.Error()
+		}
+		return errors.New(out)
+	}
+	return nil
 }
+
+// fewDests: до стольких целей печатается строка на каждую, дальше - ход и итог.
+const fewDests = 5
 
 // routeUp заводит маршрут через физический шлюз для каждого адреса или подсети.
 func routeUp(dests []string) error {
@@ -411,20 +424,52 @@ func routeUp(dests []string) error {
 		return ui.Errorf("активный физический интерфейс или его шлюз не найден")
 	}
 	ui.Println(ui.Dim("через ") + phys.Device + ui.Dim(" шлюз ") + gw)
-	for _, d := range dests {
+	verbose := len(dests) <= fewDests || runner.DryRun
+	done, had := 0, 0
+	var failed []string
+	for i, d := range dests {
 		if bypassed(d, phys, gw) {
-			ui.Println(ui.Dim(d + ": уже в обход"))
+			had++
+			if verbose {
+				ui.Println(ui.Dim(d + ": уже в обход"))
+			}
 			continue
+		}
+		if !verbose && stdoutTerminal() {
+			fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("маршруты: %d из %d"), i+1, len(dests))
 		}
 		if err := setRoute(d, gw, phys.Device); err != nil {
-			ui.Println(ui.Bad(d + ": завести не удалось"))
+			failed = append(failed, d+": "+err.Error())
+			if verbose {
+				ui.Println(ui.Bad(d + ": завести не удалось: " + err.Error()))
+			}
 			continue
 		}
-		label := cfg.HostLabel(d)
-		if label != "" {
-			label = " " + ui.Dim(label)
+		done++
+		if verbose {
+			label := cfg.HostLabel(d)
+			if label != "" {
+				label = " " + ui.Dim(label)
+			}
+			ui.Println(ui.Label(d+": маршрут заведён") + label)
 		}
-		ui.Println(ui.Label(d+": маршрут заведён") + label)
+	}
+	if verbose {
+		return nil
+	}
+	if stdoutTerminal() {
+		fmt.Fprint(os.Stderr, "\r\033[2K")
+	}
+	line := ui.Label(fmt.Sprintf("заведено %d", done))
+	if had > 0 {
+		line += ui.Dim(fmt.Sprintf(", уже были %d", had))
+	}
+	if len(failed) > 0 {
+		line += "  " + ui.Bad(fmt.Sprintf("не удалось %d", len(failed)))
+	}
+	ui.Println(line)
+	for _, f := range failed[:min(fewDests, len(failed))] {
+		ui.Println(ui.Bad("  " + f))
 	}
 	return nil
 }
@@ -444,13 +489,23 @@ func bypassed(dest string, phys netinfo.Service, gw string) bool {
 }
 
 func routeDown(dests []string) {
+	verbose := len(dests) <= fewDests || runner.DryRun
+	gone := 0
 	for _, d := range dests {
 		tableChanged()
-		if err := runner.Sudo(netinfo.DelRouteCmd(d)...); err != nil {
-			ui.Println(ui.Dim(d + ": маршрута не было"))
-		} else {
+		if _, err := runner.SudoQuiet(netinfo.DelRouteCmd(d)...); err != nil {
+			if verbose {
+				ui.Println(ui.Dim(d + ": маршрута не было"))
+			}
+			continue
+		}
+		gone++
+		if verbose {
 			ui.Println(ui.Label(d + ": маршрут снят"))
 		}
+	}
+	if !verbose {
+		ui.Println(ui.Label(fmt.Sprintf("снято %d", gone)) + ui.Dim(fmt.Sprintf(" из %d", len(dests))))
 	}
 }
 
@@ -480,12 +535,16 @@ func routeClean(all bool) error {
 	if !runner.Confirm("снять эти маршруты?") {
 		return nil
 	}
+	gone := 0
 	for _, r := range stale {
 		tableChanged()
-		if err := runner.Sudo(netinfo.DelRouteCmd(r.Dest)...); err != nil {
-			ui.Println(ui.Bad(r.Dest + ": снять не удалось"))
+		if out, err := runner.SudoQuiet(netinfo.DelRouteCmd(r.Dest)...); err != nil {
+			ui.Println(ui.Bad(r.Dest + ": снять не удалось: " + out))
+			continue
 		}
+		gone++
 	}
+	ui.Println(ui.Label(fmt.Sprintf("снято %d", gone)))
 	return nil
 }
 
