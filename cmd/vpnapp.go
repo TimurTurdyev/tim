@@ -100,9 +100,17 @@ func appRules(tunnels []netinfo.Tunnel) string {
 	var b strings.Builder
 	b.WriteString("# tim: процессы группы " + novpnGroup + " идут мимо VPN через прокси tim\n")
 	b.WriteString("table <tim_local> { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 }\n")
+	// Источник подменяется на 127.0.0.1: ответ на адрес туннеля ядро отправило бы в сам туннель
+	// (маршрут к своему адресу у utun ведёт в него же), а с check_interface не приняло бы и с en0.
+	for _, t := range tunnels {
+		for _, ip := range t.IPv4 {
+			fmt.Fprintf(&b, "nat on lo0 inet proto tcp from %s to ! <tim_local> -> 127.0.0.1\n", ip)
+		}
+	}
 	fmt.Fprintf(&b, "rdr pass on lo0 inet proto tcp from any to ! <tim_local> -> 127.0.0.1 port %d\n", novpnPort)
 	for _, t := range tunnels {
-		fmt.Fprintf(&b, "pass out quick on %s route-to lo0 inet proto tcp from any to ! <tim_local> group %s keep state\n", t.Iface, novpnGroup)
+		// Следующий узел для lo0 задаётся явно, как у Clash и Surge: без него pf пакет не заворачивает.
+		fmt.Fprintf(&b, "pass out quick on %s route-to (lo0 127.0.0.1) inet proto tcp from any to ! <tim_local> group %s keep state\n", t.Iface, novpnGroup)
 	}
 	return b.String()
 }
@@ -208,7 +216,11 @@ func appRulesOff() error {
 func appStatusRun() error {
 	// Без -q: с ним pfctl молчит и про правила, и про состояния.
 	if info, err := rootRun("pfctl", "-s", "info"); err == nil {
-		ui.Println(ui.Label("pf ") + strings.TrimPrefix(firstLine(info, nil), "Status: "))
+		for _, l := range strings.Split(info, "\n") {
+			if strings.HasPrefix(l, "Status:") {
+				ui.Println(ui.Label("pf ") + strings.TrimSpace(strings.TrimPrefix(l, "Status:")))
+			}
+		}
 	}
 	if pid := novpnProxyPID(); pid > 0 {
 		ui.Println(ui.Label("прокси ") + "работает, pid " + strconv.Itoa(pid) + ui.Dim("  журнал "+novpnLogFile()))
@@ -294,13 +306,12 @@ func appCheckRun() error {
 	}
 	direct := strings.TrimSpace(resp.Out)
 	ui.Println(ui.Dim("через VPN: ") + dashIfEmpty(viaVPN) + ui.Dim("   под группой "+novpnGroup+": ") + dashIfEmpty(direct))
-	switch {
-	case direct == "" && resp.Err != "":
-		ui.Println(ui.Bad("под группой наружу не вышло: " + resp.Err))
-		ui.Println(ui.Dim("так бывает, когда VPN-клиент сам ставит правила pf (kill switch); снять: tim vpn app --off"))
-	case direct == "":
-		ui.Println(ui.Bad("под группой ответа нет: пакеты ушли в " + "интерфейс, а обратно не вернулись; снять: tim vpn app --off"))
-	case direct == viaVPN:
+	switch direct {
+	case "":
+		ui.Println(ui.Bad("под группой наружу не вышло: " + dashIfEmpty(resp.Err)))
+		ui.Println(ui.Dim("снять: tim vpn app --off; ниже - что видит pf"))
+		return appStatusRun()
+	case viaVPN:
 		ui.Println(ui.Warn("страна та же: правило не сработало или обе дороги ведут в одну страну"))
 	default:
 		ui.Println(ui.OK("работает: процессы группы " + novpnGroup + " идут мимо VPN"))
