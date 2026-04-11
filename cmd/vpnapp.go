@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,8 +41,9 @@ var vpnAppCmd = &cobra.Command{
 правило pf "процессы этой группы - в физический интерфейс с его адресом" и запускает приложение под
 этой группой. Всё, что оно откроет, идёт мимо VPN; остальные программы - как раньше. Открытое из
 Dock приложение в группу не попадает: перезапусти его через tim.
---check заводит правило и проверяет на curl, какую страну видят процессы группы. --off снимает
-правило. Пароль sudo спрашивается один раз. Пока только macOS; на Linux - tim vpn unblock по сайтам.`,
+Соединения группы pf заворачивает на прозрачный прокси tim, тот ходит к адресату через физический
+интерфейс. --check заводит всё и проверяет на curl, какую страну видят процессы группы. --off снимает
+правило и прокси. Пароль sudo спрашивается один раз. Пока только macOS; на Linux - tim vpn unblock по сайтам.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if runtime.GOOS != "darwin" {
@@ -91,23 +93,69 @@ func novpnGID() (int, error) {
 	return gid, nil
 }
 
-// appRules: правила pf для текущей сети. После смены шлюза их надо завести заново.
-func appRules(phys netinfo.Service, gw string, tunnels []netinfo.Tunnel) string {
+// appRules: правила pf. Соединения процессов группы заворачиваются на lo0 и дальше (rdr) на прокси
+// tim, который сам ходит к адресату через физический интерфейс. Локальные адреса не трогаем,
+// иначе под раздачу попали бы dev-серверы на 127.0.0.1.
+func appRules(tunnels []netinfo.Tunnel) string {
 	var b strings.Builder
-	b.WriteString("# tim: процессы группы " + novpnGroup + " идут мимо VPN\n")
+	b.WriteString("# tim: процессы группы " + novpnGroup + " идут мимо VPN через прокси tim\n")
+	b.WriteString("table <tim_local> { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 }\n")
+	fmt.Fprintf(&b, "rdr pass on lo0 inet proto tcp from any to ! <tim_local> -> 127.0.0.1 port %d\n", novpnPort)
 	for _, t := range tunnels {
-		for _, ip := range t.IPv4 {
-			fmt.Fprintf(&b, "nat on %s inet from %s to any -> (%s)\n", phys.Device, ip, phys.Device)
-		}
-	}
-	for _, t := range tunnels {
-		// Порядок слов у pf строгий: route-to идёт сразу после интерфейса, до семейства адресов.
-		fmt.Fprintf(&b, "pass out quick on %s route-to (%s %s) inet group %s keep state\n", t.Iface, phys.Device, gw, novpnGroup)
+		fmt.Fprintf(&b, "pass out quick on %s route-to lo0 inet proto tcp from any to ! <tim_local> group %s keep state\n", t.Iface, novpnGroup)
 	}
 	return b.String()
 }
 
-// appRulesOn заводит группу и правила; возвращает gid.
+// ifaceIPv4: адрес интерфейса - источник для исходящих соединений прокси.
+func ifaceIPv4(dev string) string {
+	ifi, err := net.InterfaceByName(dev)
+	if err != nil {
+		return ""
+	}
+	addrs, _ := ifi.Addrs()
+	for _, a := range addrs {
+		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
+			return ipn.IP.To4().String()
+		}
+	}
+	return ""
+}
+
+// novpnProxyUp: прокси под root живёт отдельно от tim; если уже работает - ничего не делаем.
+func novpnProxyUp(phys netinfo.Service) error {
+	if novpnProxyPID() > 0 {
+		return nil
+	}
+	ip := ifaceIPv4(phys.Device)
+	if ip == "" {
+		return ui.Errorf("у %s нет IPv4-адреса", phys.Device)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	resp, err := rootCall(rootReq{Launch: &launchReq{Path: exe, Args: []string{"novpn-proxy", "--iface", phys.Device, "--ip", ip, "--port", strconv.Itoa(novpnPort)},
+		Env: []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/root"}, Dir: "/"}})
+	if err != nil {
+		return err
+	}
+	if resp.Err != "" {
+		return ui.Errorf("прокси не запустился: %s", resp.Err)
+	}
+	if runner.DryRun {
+		return nil
+	}
+	for i := 0; i < 20; i++ {
+		if novpnProxyPID() > 0 {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return ui.Errorf("прокси не поднялся, смотри %s", novpnLogFile())
+}
+
+// appRulesOn заводит группу, прокси и правила; возвращает gid.
 func appRulesOn() (int, error) {
 	phys, gw := physical()
 	if phys.Device == "" || gw == "" {
@@ -121,7 +169,10 @@ func appRulesOn() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rules := appRules(phys, gw, tunnels)
+	if err := novpnProxyUp(phys); err != nil {
+		return 0, err
+	}
+	rules := appRules(tunnels)
 	if runner.DryRun {
 		ui.Println(ui.Dim(strings.TrimRight(rules, "\n")))
 	}
@@ -131,12 +182,12 @@ func appRulesOn() (int, error) {
 	if out, err := rootRun("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
 		return 0, ui.Errorf("pf не включился: %s", firstLine(out, err))
 	}
-	ui.Println(ui.Label("мимо VPN") + ui.Dim("  группа "+novpnGroup+" через "+phys.Device+" "+gw))
+	ui.Println(ui.Label("мимо VPN") + ui.Dim("  группа "+novpnGroup+", прокси 127.0.0.1:"+strconv.Itoa(novpnPort)+" через "+phys.Device+" "+ifaceIPv4(phys.Device)))
 	return gid, nil
 }
 
 func firstLine(out string, err error) string {
-	if out == "" {
+	if out == "" && err != nil {
 		return err.Error()
 	}
 	return strings.SplitN(out, "\n", 2)[0]
@@ -146,20 +197,60 @@ func appRulesOff() error {
 	if _, err := rootRun("pfctl", "-q", "-a", pfAnchor, "-F", "all"); err != nil {
 		return ui.Errorf("снять правила не вышло: %v", err)
 	}
-	ui.Println(ui.Label("правила сняты") + ui.Dim("  запущенные под группой программы снова пойдут через VPN"))
+	if pid := novpnProxyPID(); pid > 0 {
+		_, _ = rootRun("kill", strconv.Itoa(pid))
+	}
+	ui.Println(ui.Label("снято") + ui.Dim("  правила pf и прокси; запущенные под группой программы снова пойдут через VPN"))
 	return nil
 }
 
-// appStatusRun: есть ли правила и кто сейчас работает под группой.
+// appStatusRun: включён ли pf, какие правила стоят, кто сейчас работает под группой.
 func appStatusRun() error {
-	out, err := rootRun("pfctl", "-q", "-a", pfAnchor, "-s", "rules")
+	// Без -q: с ним pfctl молчит и про правила, и про состояния.
+	if info, err := rootRun("pfctl", "-s", "info"); err == nil {
+		ui.Println(ui.Label("pf ") + strings.TrimPrefix(firstLine(info, nil), "Status: "))
+	}
+	if pid := novpnProxyPID(); pid > 0 {
+		ui.Println(ui.Label("прокси ") + "работает, pid " + strconv.Itoa(pid) + ui.Dim("  журнал "+novpnLogFile()))
+	} else {
+		ui.Println(ui.Dim("прокси не запущен"))
+	}
+	rules, err := rootRun("pfctl", "-a", pfAnchor, "-s", "all")
 	switch {
 	case err != nil:
-		ui.Println(ui.Dim("правил pf нет: " + firstLine(out, err)))
-	case strings.TrimSpace(out) == "":
+		ui.Println(ui.Dim("правил pf нет: " + firstLine(rules, err)))
+	case strings.TrimSpace(rules) == "":
 		ui.Println(ui.Dim("правил pf нет: tim vpn app <приложение> или --check"))
 	default:
-		ui.Println(ui.Label("правила pf") + "\n" + ui.Dim(out))
+		ui.Println(ui.Label("правила pf в " + pfAnchor))
+		for _, l := range strings.Split(rules, "\n") {
+			if strings.HasPrefix(l, "nat ") || strings.HasPrefix(l, "rdr ") || strings.HasPrefix(l, "pass ") || strings.HasPrefix(l, "block ") {
+				ui.Println("  " + ui.Dim(l))
+			}
+		}
+	}
+	var tunIPs []string
+	for _, t := range netinfo.Tunnels() {
+		tunIPs = append(tunIPs, t.IPv4...)
+	}
+	if states, err := rootRun("pfctl", "-s", "states"); err == nil {
+		redir, tun := 0, 0
+		for _, l := range strings.Split(states, "\n") {
+			fromTunnel := false
+			for _, ip := range tunIPs {
+				fromTunnel = fromTunnel || strings.Contains(l, ip+":")
+			}
+			switch {
+			case fromTunnel && strings.Contains(l, "127.0.0.1:"+strconv.Itoa(novpnPort)):
+				redir++
+			case fromTunnel:
+				tun++
+			}
+		}
+		ui.Println(ui.Label("состояния: ") + fmt.Sprintf("завёрнуто на прокси %d, в туннеле %d", redir, tun))
+		if redir > 0 {
+			ui.Println(ui.OK("правило срабатывает: соединения группы идут через прокси мимо VPN"))
+		}
 	}
 	gid, err := strconv.Atoi(strings.TrimSpace(func() string {
 		o, _ := runner.Output("dscl", ".", "-read", "/Groups/"+novpnGroup, "PrimaryGroupID")
