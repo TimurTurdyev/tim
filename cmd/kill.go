@@ -65,7 +65,7 @@ func stateHint(s string) string {
 
 func printApp(a procs.App, limit int) {
 	ui.Println(ui.Label(a.Name) + ui.Dim(fmt.Sprintf("  процессов %d, память %s, CPU %.1f%%, работает %s",
-		len(a.Procs), fmtBytes(a.RSS), a.CPU, human(a.Main.Uptime))))
+		len(a.Procs), ui.Bytes(a.RSS), a.CPU, ui.Duration(a.Main.Uptime))))
 	sorted := append([]procs.Full(nil), a.Procs...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].CPU*1e6+float64(sorted[i].RSS) > sorted[j].CPU*1e6+float64(sorted[j].RSS)
@@ -75,7 +75,7 @@ func printApp(a procs.App, limit int) {
 			ui.Println(ui.Dim(fmt.Sprintf("  и ещё %d", len(sorted)-limit)))
 			break
 		}
-		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(fmtBytes(p.RSS), 10) + clip(rowName(p), 48)
+		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(ui.Bytes(p.RSS), 10) + ui.Clip(rowName(p), 48)
 		if p.PID == a.Main.PID && a.IsApp {
 			line += ui.Dim("  главный")
 		}
@@ -291,7 +291,7 @@ var killCmd = &cobra.Command{
 			default:
 				items := make([]tui.Item, len(apps))
 				for i, a := range apps {
-					items[i] = tui.Item{Title: a.Name, Hint: fmt.Sprintf("%d процессов, %s", len(a.Procs), fmtBytes(a.RSS))}
+					items[i] = tui.Item{Title: a.Name, Hint: fmt.Sprintf("%d процессов, %s", len(a.Procs), ui.Bytes(a.RSS))}
 				}
 				k, err := tui.Pick("что закрыть", items)
 				if err != nil {

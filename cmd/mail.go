@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -65,7 +66,7 @@ func mailSummary() error {
 	var domains []string
 	for _, p := range cfg.Projects {
 		if p.URL != "" {
-			h, _ := hostPort(p.URL, "")
+			h, _ := netinfo.HostPort(p.URL, "")
 			domains = append(domains, h)
 		}
 	}
@@ -118,7 +119,7 @@ var mailCmd = &cobra.Command{
 		if len(args) == 0 {
 			return ui.Errorf("укажи домен: tim mail example.com (или --all по доменам реестра)")
 		}
-		domain, _ := hostPort(args[0], "")
+		domain, _ := netinfo.HostPort(args[0], "")
 		sels := append(append([]string{}, mailSelectors...), inspect.DKIMSelectors...)
 		m := inspect.MailCheck(domain, sels)
 		bad := 0

@@ -36,7 +36,7 @@ func templateSteps(stack string) ([]string, bool, error) {
 			own = append(own, t.Name)
 		}
 		return nil, false, ui.Errorf("нет шаблона %s: встроенные %s; свои [[template]] в конфиге: %s",
-			stack, strings.Join(newproj.Stacks(), " "), dashIfEmpty(strings.Join(own, " ")))
+			stack, strings.Join(newproj.Stacks(), " "), ui.Dash(strings.Join(own, " ")))
 	}
 	return steps, stack == "laravel" || stack == "php", nil
 }

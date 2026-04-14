@@ -68,9 +68,9 @@ var watchCmd = &cobra.Command{
 				case watch.Up:
 					line += ui.Label("работает") + "  " + detail
 					if ev.From == watch.Down {
-						line += ui.Dim("  лежал " + human(ev.Was))
+						line += ui.Dim("  лежал " + ui.Duration(ev.Was))
 						if !watchQuiet {
-							notify("tim watch: поднялся", url+" после "+human(ev.Was))
+							notify("tim watch: поднялся", url+" после "+ui.Duration(ev.Was))
 						}
 					}
 				case watch.Down:
@@ -84,7 +84,7 @@ var watchCmd = &cobra.Command{
 			select {
 			case <-stop:
 				ui.Println()
-				ui.Println(ui.Dim(fmt.Sprintf("опросов %d, неудачных %d за %s", probes, fails, human(time.Since(start)))))
+				ui.Println(ui.Dim(fmt.Sprintf("опросов %d, неудачных %d за %s", probes, fails, ui.Duration(time.Since(start)))))
 				return nil
 			case <-ticker.C:
 			}

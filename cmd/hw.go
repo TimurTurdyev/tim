@@ -91,7 +91,7 @@ func gpuHolders(list []procs.Full) []string {
 	sort.Slice(hs, func(i, j int) bool { return hs[i].rss > hs[j].rss })
 	var names []string
 	for _, x := range hs {
-		names = append(names, x.name+" "+fmtBytes(x.rss))
+		names = append(names, x.name+" "+ui.Bytes(x.rss))
 	}
 	return names
 }
@@ -158,7 +158,7 @@ func printHW(s hwSnapshot, full bool) {
 	if s.pc > 0 && s.ec > 0 {
 		cores += ": " + strconv.Itoa(s.pc) + " производительных, " + strconv.Itoa(s.ec) + " эффективных"
 	}
-	ui.Println(ui.Title(s.model) + ui.Dim("  "+cores+"  \u2022  "+fmtBytes(s.memTotal)))
+	ui.Println(ui.Title(s.model) + ui.Dim("  "+cores+"  \u2022  "+ui.Bytes(s.memTotal)))
 	ui.Println()
 	label := func(s string) string { return "  " + ui.Label(ui.Pad(s, 12)) }
 	cpu := label("процессор") + bar(s.cpuPct, 24)
@@ -181,7 +181,7 @@ func printHW(s hwSnapshot, full bool) {
 		ui.Println(line)
 	}
 	if s.gpu.Valid {
-		ui.Println(label("") + bar(s.gpu.Device, 24) + ui.Dim("  видеопамять в работе "+fmtBytes(s.gpu.InUse)))
+		ui.Println(label("") + bar(s.gpu.Device, 24) + ui.Dim("  видеопамять в работе "+ui.Bytes(s.gpu.InUse)))
 		if full && len(s.holders) > 0 {
 			ui.Println(label("") + ui.Dim("держат: "+strings.Join(s.holders[:min(4, len(s.holders))], ", ")))
 		}
@@ -190,13 +190,13 @@ func printHW(s hwSnapshot, full bool) {
 	if s.memTotal > 0 {
 		memPct = int(s.memUsed * 100 / s.memTotal)
 	}
-	mem := label("память") + bar(memPct, 24) + ui.Dim("  "+fmtBytes(s.memUsed)+" из "+fmtBytes(s.memTotal))
+	mem := label("память") + bar(memPct, 24) + ui.Dim("  "+ui.Bytes(s.memUsed)+" из "+ui.Bytes(s.memTotal))
 	if s.freePct > 0 {
 		mem += ui.Dim(", свободно " + strconv.Itoa(s.freePct) + "%")
 	}
 	ui.Println(mem)
 	if s.swap.Total > 0 {
-		sw := fmtBytes(s.swap.Used) + " из " + fmtBytes(s.swap.Total)
+		sw := ui.Bytes(s.swap.Used) + " из " + ui.Bytes(s.swap.Total)
 		// Своп занят больше чем наполовину - памяти не хватает постоянно, а не изредка.
 		if s.swap.Used*2 > s.swap.Total {
 			sw = ui.Warn(sw + ", памяти не хватает")

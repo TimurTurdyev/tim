@@ -34,7 +34,7 @@ var ipCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		inet := netinfo.InternetIface()
-		path := "напрямую через " + dashIfEmpty(inet)
+		path := "напрямую через " + ui.Dash(inet)
 		if netinfo.IsTunnelIface(inet) {
 			path = "через туннель " + inet + " (VPN)"
 		}

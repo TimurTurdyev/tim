@@ -10,12 +10,13 @@ import (
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Экраны машины: живое железо и процессы по приложениям.
 
 func hwTitle(s hwSnapshot) string {
-	return s.model + " \u00b7 " + strconv.Itoa(s.cores) + " ядер \u00b7 " + fmtBytes(s.memTotal)
+	return s.model + " \u00b7 " + strconv.Itoa(s.cores) + " ядер \u00b7 " + ui.Bytes(s.memTotal)
 }
 
 // hwScreen: паспорт собирается при первом замере, уже в фоне - открытие экрана не ждёт system_profiler.

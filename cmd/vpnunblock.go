@@ -57,7 +57,7 @@ func vpnUnblock(site string) error {
 	if !strings.Contains(url, "://") {
 		url = "https://" + url
 	}
-	host, _ := hostPort(url, "")
+	host, _ := netinfo.HostPort(url, "")
 	if host == "" || !strings.Contains(host, ".") {
 		return ui.Errorf("нужен адрес сайта: tim vpn unblock example.com")
 	}
@@ -115,7 +115,7 @@ func vpnUnblock(site string) error {
 		for _, p := range netinfo.Peers() {
 			base[p.Remote] = true
 		}
-		if err := openBrowser(url); err != nil {
+		if err := runner.OpenBrowser(url); err != nil {
 			return err
 		}
 		note := fmt.Sprintf("круг %d из %d: сайт открыт в браузере, если это видео - нажми play", round, unblockRounds)
@@ -156,7 +156,7 @@ func vpnUnblock(site string) error {
 			if len(g.names) > 0 {
 				hint += "  " + strings.Join(g.names, " ")
 			}
-			ui.Println("  " + ui.Label(ui.Pad("as:"+g.as.ASN, 10)) + ui.Pad(clip(g.as.Name, 36), 37) + ui.Pad(strconv.Itoa(len(g.ips)), 4) + ui.Dim(clip(hint, 50)))
+			ui.Println("  " + ui.Label(ui.Pad("as:"+g.as.ASN, 10)) + ui.Pad(ui.Clip(g.as.Name, 36), 37) + ui.Pad(strconv.Itoa(len(g.ips)), 4) + ui.Dim(ui.Clip(hint, 50)))
 			targets = append(targets, netinfo.Target{Kind: netinfo.KindAS, Value: "as:" + g.as.ASN})
 			names = append(names, g.as.Name)
 		}
@@ -174,12 +174,12 @@ func vpnUnblock(site string) error {
 	default:
 		ui.Println(ui.Label(host) + ui.Dim(fmt.Sprintf("  мимо VPN идут %d %s; убрать разом: tim route rm %s",
 			len(added), ui.Plural(len(added), "сеть", "сети", "сетей"), host)))
-		_ = openBrowser(url)
+		_ = runner.OpenBrowser(url)
 	}
 	if len(cdn) > 0 {
 		var list []string
 		for _, g := range cdn {
-			list = append(list, "as:"+g.as.ASN+" "+clip(g.as.Name, 24))
+			list = append(list, "as:"+g.as.ASN+" "+ui.Clip(g.as.Name, 24))
 		}
 		ui.Println(ui.Dim("ещё сайт ходил в общие сети, их мимо VPN не пускаю: " + strings.Join(list, "; ")))
 		ui.Println(ui.Dim("если без них не работает: tim vpn exclude as:N --force, но через них ходит и всё остальное"))

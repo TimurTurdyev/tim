@@ -172,21 +172,9 @@ func printJSON(raw []byte) {
 func ago(t time.Time) string {
 	d := time.Since(t).Round(time.Second)
 	if d < 0 {
-		return "через " + human(-d)
+		return "через " + ui.Duration(-d)
 	}
-	return human(d) + " назад"
-}
-
-func human(d time.Duration) string {
-	switch {
-	case d >= 48*time.Hour:
-		return fmt.Sprintf("%d дн", int(d.Hours()/24))
-	case d >= time.Hour:
-		return fmt.Sprintf("%d ч %d мин", int(d.Hours()), int(d.Minutes())%60)
-	case d >= time.Minute:
-		return fmt.Sprintf("%d мин", int(d.Minutes()))
-	}
-	return fmt.Sprintf("%d с", int(d.Seconds()))
+	return ui.Duration(d) + " назад"
 }
 
 var tsZone string

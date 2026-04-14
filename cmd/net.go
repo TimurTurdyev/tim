@@ -43,7 +43,7 @@ var netCheckCmd = &cobra.Command{
 				if phys.Device == "" {
 					return "", fmt.Errorf("активного нет: Wi-Fi или кабель выключены")
 				}
-				return phys.Device + " (" + phys.Name + "), шлюз " + dashIfEmpty(gw), nil
+				return phys.Device + " (" + phys.Name + "), шлюз " + ui.Dash(gw), nil
 			}},
 			{"шлюз", func() (string, error) {
 				if gw == "" {
@@ -69,7 +69,7 @@ var netCheckCmd = &cobra.Command{
 					return "", fmt.Errorf("example.com не резолвится: %v", err)
 				}
 				servers := strings.Join(netinfo.DNSServers(), " ")
-				return fmt.Sprintf("example.com -> %s за %d мс, серверы %s", ips[0], time.Since(start).Milliseconds(), dashIfEmpty(servers)), nil
+				return fmt.Sprintf("example.com -> %s за %d мс, серверы %s", ips[0], time.Since(start).Milliseconds(), ui.Dash(servers)), nil
 			}},
 			{"внешний ip", externalIP},
 			{"маршрут", func() (string, error) {
@@ -77,7 +77,7 @@ var netCheckCmd = &cobra.Command{
 				if netinfo.IsTunnelIface(inet) {
 					return "через туннель " + inet + " (VPN)", nil
 				}
-				return "напрямую через " + dashIfEmpty(inet), nil
+				return "напрямую через " + ui.Dash(inet), nil
 			}},
 		}
 		failed := ""

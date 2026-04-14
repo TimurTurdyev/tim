@@ -77,11 +77,11 @@ var topCmd = &cobra.Command{
 				ui.Println(ui.Dim(fmt.Sprintf("и ещё %d", len(groups)-topN)))
 				break
 			}
-			ui.Println(ui.Label(ui.Pad(clip(g.Name, 27), 28)) + ui.Pad(fmtBytes(g.RSS), 10) +
+			ui.Println(ui.Label(ui.Pad(ui.Clip(g.Name, 27), 28)) + ui.Pad(ui.Bytes(g.RSS), 10) +
 				ui.Pad(strconv.FormatFloat(g.CPU, 'f', 1, 64)+"%", 8) + ui.Dim(strconv.Itoa(g.Count)))
 		}
 		if topBy == "project" {
-			ui.Println(ui.Dim("всего у проектов " + fmtBytes(total)))
+			ui.Println(ui.Dim("всего у проектов " + ui.Bytes(total)))
 		}
 		return nil
 	},

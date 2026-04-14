@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"net"
-	"os"
-	"runtime"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -25,31 +23,18 @@ func waitPort(port string, limit time.Duration) bool {
 	return false
 }
 
-// openBrowser открывает адрес или файл в приложении по умолчанию. Без графики (сервер по ssh)
-// открывать нечем - печатаем, что открыть. На Debian open - это openvt, его не трогаем.
-func openBrowser(target string) error {
-	if runtime.GOOS == "darwin" {
-		return runner.Run("open", target)
-	}
-	if (os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "") || !runner.Has("xdg-open") {
-		ui.Println(ui.Dim("открыть нечем, адрес: ") + target)
-		return nil
-	}
-	return runner.Run("xdg-open", target)
-}
-
 // openWhenReady открывает адрес, как только порт ответит. Поле url проекта не берём:
 // там часто боевой адрес, а открыть надо локальный.
 func openWhenReady(port, url string) {
 	if runner.DryRun {
-		_ = openBrowser(url)
+		_ = runner.OpenBrowser(url)
 		return
 	}
 	if !waitPort(port, 30*time.Second) {
 		ui.Println(ui.Warn("порт " + port + " за 30 с не ответил, браузер не открываю"))
 		return
 	}
-	if err := openBrowser(url); err != nil {
+	if err := runner.OpenBrowser(url); err != nil {
 		ui.Println(ui.Warn("не открыл " + url + ": " + err.Error()))
 	}
 }

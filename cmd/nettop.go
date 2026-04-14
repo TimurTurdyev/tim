@@ -19,7 +19,7 @@ var (
 )
 
 func rate(bytes int64, d time.Duration) string {
-	return fmtBytes(int64(float64(bytes)/d.Seconds())) + "/с"
+	return ui.Bytes(int64(float64(bytes)/d.Seconds())) + "/с"
 }
 
 var netTopCmd = &cobra.Command{
@@ -46,7 +46,7 @@ var netTopCmd = &cobra.Command{
 				break
 			}
 			name := procs.AppName(f.Name)
-			ui.Println(ui.Label(ui.Pad(clip(name, 29), 30)) + ui.Pad(rate(f.In, d), 14) + rate(f.Out, d) + ui.Dim("  pid "+f.PID))
+			ui.Println(ui.Label(ui.Pad(ui.Clip(name, 29), 30)) + ui.Pad(rate(f.In, d), 14) + rate(f.Out, d) + ui.Dim("  pid "+f.PID))
 		}
 		return nil
 	},

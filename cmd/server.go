@@ -45,13 +45,13 @@ func summaryLine(r srvinfo.Report) string {
 		parts = append(parts, r.OS)
 	}
 	if r.Uptime > 0 {
-		parts = append(parts, "up "+human(r.Uptime))
+		parts = append(parts, "up "+ui.Duration(r.Uptime))
 	}
 	if r.Cores > 0 {
 		parts = append(parts, fmt.Sprintf("load %.2f, ядер %d", r.Load[1], r.Cores))
 	}
 	if r.MemTotal > 0 {
-		parts = append(parts, "память "+fmtBytes(r.MemTotal-r.MemAvail)+" из "+fmtBytes(r.MemTotal))
+		parts = append(parts, "память "+ui.Bytes(r.MemTotal-r.MemAvail)+" из "+ui.Bytes(r.MemTotal))
 	}
 	for _, d := range r.Disks {
 		if d.Mount == "/" {

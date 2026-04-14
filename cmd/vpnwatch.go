@@ -57,12 +57,12 @@ func watchTunnel(seconds int, skip map[string]bool, note string) (map[string]map
 		if left <= 0 {
 			break
 		}
-		if stdoutTerminal() {
+		if ui.Terminal() {
 			fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("%s; ещё %d с, адресов в туннеле %d"), note, int(left.Seconds())+1, len(seen))
 		}
 		time.Sleep(time.Second)
 	}
-	if stdoutTerminal() {
+	if ui.Terminal() {
 		fmt.Fprint(os.Stderr, "\r\033[2K")
 	}
 	return seen, nil
@@ -151,12 +151,12 @@ func vpnWatch(seconds int, label string, o addOpts) error {
 			hint += "  " + strings.Join(g.names, " ")
 		}
 		cdn := domaudit.IsCDN(g.as.Name) && !o.force
-		line := ui.Label(ui.Pad("as:"+g.as.ASN, 10)) + ui.Pad(clip(owner, 33), 34) + ui.Pad(strconv.Itoa(len(g.ips)), 9) + ui.Dim(clip(hint, 60))
+		line := ui.Label(ui.Pad("as:"+g.as.ASN, 10)) + ui.Pad(ui.Clip(owner, 33), 34) + ui.Pad(strconv.Itoa(len(g.ips)), 9) + ui.Dim(ui.Clip(hint, 60))
 		if cdn {
 			line += ui.Warn("  общая сеть, мимо VPN целиком не стоит")
 		}
 		ui.Println(line)
-		items[i] = tui.Item{Title: "as:" + g.as.ASN + "  " + clip(owner, 30), Hint: hint}
+		items[i] = tui.Item{Title: "as:" + g.as.ASN + "  " + ui.Clip(owner, 30), Hint: hint}
 		sel[i] = !cdn
 	}
 	var chosen []int

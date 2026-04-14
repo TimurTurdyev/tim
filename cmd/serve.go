@@ -341,7 +341,7 @@ var serveListCmd = &cobra.Command{
 			if !s.Alive() {
 				state = ui.Bad("умер")
 			}
-			ui.Println(ui.Pad(s.Name, 22) + " " + ui.Pad(state, 10) + " порт " + ui.Pad(s.Port, 6) + ui.Dim(" pid "+strconv.Itoa(s.PID)+", "+human(time.Since(s.Started))+", "+s.Command))
+			ui.Println(ui.Pad(s.Name, 22) + " " + ui.Pad(state, 10) + " порт " + ui.Pad(s.Port, 6) + ui.Dim(" pid "+strconv.Itoa(s.PID)+", "+ui.Duration(time.Since(s.Started))+", "+s.Command))
 		}
 		return nil
 	},
@@ -522,7 +522,7 @@ var openCmd = &cobra.Command{
 			editor = os.Getenv("EDITOR")
 		}
 		if editor == "" {
-			return openBrowser(dir)
+			return runner.OpenBrowser(dir)
 		}
 		parts := strings.Fields(editor)
 		return runner.Run(parts[0], append(parts[1:], dir)...)

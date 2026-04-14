@@ -69,7 +69,7 @@ func forecastLine(list []stats.Sample) string {
 	case math.IsInf(left, 1) || perDay > -float64(100<<20):
 		return "место не убывает" + ui.Dim(fmt.Sprintf("  %+s в сутки", signedBytes(perDay)))
 	}
-	line := fmt.Sprintf("уходит %s в сутки, кончится через %.0f дн", fmtBytes(int64(-perDay)), left)
+	line := fmt.Sprintf("уходит %s в сутки, кончится через %.0f дн", ui.Bytes(int64(-perDay)), left)
 	if left < 14 {
 		return ui.Bad(line)
 	}
@@ -81,9 +81,9 @@ func forecastLine(list []stats.Sample) string {
 
 func signedBytes(v float64) string {
 	if v < 0 {
-		return "-" + fmtBytes(int64(-v))
+		return "-" + ui.Bytes(int64(-v))
 	}
-	return "+" + fmtBytes(int64(v))
+	return "+" + ui.Bytes(int64(v))
 }
 
 // printStats: графики за период и прогноз по одному журналу.
@@ -104,12 +104,12 @@ func printStats(name string, list []stats.Sample) {
 	const width = 48
 	if last.DiskTotal > 0 {
 		ui.Println("  " + ui.Pad("свободно", 10) + stats.Sparkline(series(func(s stats.Sample) float64 { return float64(s.DiskFree) }), width) +
-			"  " + fmtBytes(last.DiskFree) + ui.Dim(" из "+fmtBytes(last.DiskTotal)))
+			"  " + ui.Bytes(last.DiskFree) + ui.Dim(" из "+ui.Bytes(last.DiskTotal)))
 		ui.Println("  " + ui.Pad("", 10) + forecastLine(list))
 	}
 	if last.MemTotal > 0 {
 		ui.Println("  " + ui.Pad("память", 10) + stats.Sparkline(series(func(s stats.Sample) float64 { return float64(s.MemUsed) }), width) +
-			"  " + fmtBytes(last.MemUsed) + ui.Dim(" из "+fmtBytes(last.MemTotal)))
+			"  " + ui.Bytes(last.MemUsed) + ui.Dim(" из "+ui.Bytes(last.MemTotal)))
 	}
 	if last.Load > 0 {
 		ui.Println("  " + ui.Pad("нагрузка", 10) + stats.Sparkline(series(func(s stats.Sample) float64 { return s.Load }), width) +

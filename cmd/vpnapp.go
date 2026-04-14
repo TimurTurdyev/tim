@@ -305,10 +305,10 @@ func appCheckRun() error {
 		return err
 	}
 	direct := strings.TrimSpace(resp.Out)
-	ui.Println(ui.Dim("через VPN: ") + dashIfEmpty(viaVPN) + ui.Dim("   под группой "+novpnGroup+": ") + dashIfEmpty(direct))
+	ui.Println(ui.Dim("через VPN: ") + ui.Dash(viaVPN) + ui.Dim("   под группой "+novpnGroup+": ") + ui.Dash(direct))
 	switch direct {
 	case "":
-		ui.Println(ui.Bad("под группой наружу не вышло: " + dashIfEmpty(resp.Err)))
+		ui.Println(ui.Bad("под группой наружу не вышло: " + ui.Dash(resp.Err)))
 		ui.Println(ui.Dim("снять: tim vpn app --off; ниже - что видит pf"))
 		return appStatusRun()
 	case viaVPN:

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"net"
-	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -16,31 +15,9 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
-
-// hostPort: из "host", "host:port" или url достаёт хост и порт.
-func hostPort(s, defPort string) (string, string) {
-	if u, err := url.Parse(s); err == nil && u.Host != "" {
-		s = u.Host
-	}
-	if h, p, err := net.SplitHostPort(s); err == nil {
-		return h, p
-	}
-	return strings.TrimSuffix(s, "/"), defPort
-}
-
-func daysLeft(t time.Time) string {
-	d := int(time.Until(t).Hours() / 24)
-	s := fmt.Sprintf("%s, осталось %d дн", t.Format("2006-01-02"), d)
-	switch {
-	case d < 0:
-		return ui.Bad(fmt.Sprintf("%s, истёк %d дн назад", t.Format("2006-01-02"), -d))
-	case d < 14:
-		return ui.Warn(s)
-	}
-	return s
-}
 
 var certCmd = &cobra.Command{
 	Use:   "cert [host[:port]...]",
@@ -49,7 +26,7 @@ var certCmd = &cobra.Command{
 		if len(args) != 1 {
 			return certExpiries(args)
 		}
-		host, port := hostPort(args[0], "443")
+		host, port := netinfo.HostPort(args[0], "443")
 		info, err := inspect.Cert(host, port)
 		if err != nil {
 			return ui.Errorf("%s:%s: %v", host, port, err)
@@ -59,7 +36,7 @@ var certCmd = &cobra.Command{
 		ui.Println(ui.Label("кем      ") + leaf.Issuer.CommonName + ui.Dim("  "+strings.Join(leaf.Issuer.Organization, ", ")))
 		ui.Println(ui.Label("имена    ") + strings.Join(leaf.DNSNames, " "))
 		ui.Println(ui.Label("с        ") + leaf.NotBefore.Format("2006-01-02"))
-		ui.Println(ui.Label("до       ") + daysLeft(leaf.NotAfter))
+		ui.Println(ui.Label("до       ") + ui.DaysLeft(leaf.NotAfter))
 		ui.Println(ui.Label("tls      ") + info.Version)
 		for i, c := range info.Chain[1:] {
 			ui.Println(ui.Dim(fmt.Sprintf("цепочка %d  %s", i+1, c.Subject.CommonName)))
@@ -80,7 +57,7 @@ var dnsCmd = &cobra.Command{
 	Short: "Записи A, AAAA, CNAME, MX, NS, TXT, CAA и подписана ли зона (DNSSEC)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		host, _ := hostPort(args[0], "")
+		host, _ := netinfo.HostPort(args[0], "")
 		recs := inspect.DNS(host, dnsServer)
 		if len(recs) == 0 {
 			return ui.Errorf("%s: записей нет", host)
@@ -155,7 +132,7 @@ var siteCmd = &cobra.Command{
 	Short: "Что за сайт: IP и где он, регистрация домена, сертификат, HTTP, CMS",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		host, _ := hostPort(args[0], "")
+		host, _ := netinfo.HostPort(args[0], "")
 		target := args[0]
 		if !strings.Contains(target, "://") {
 			target = "https://" + host
@@ -229,19 +206,19 @@ func printSite(r *siteReport) {
 		ui.Println(line)
 	}
 	if d := r.Domain; d != nil {
-		ui.Println(ui.Label("домен    ") + dashIfEmpty(d.Registrar) + ui.Dim("  "+d.Source))
+		ui.Println(ui.Label("домен    ") + ui.Dash(d.Registrar) + ui.Dim("  "+d.Source))
 		if !d.Created.IsZero() {
 			ui.Println(ui.Label("создан   ") + d.Created.Format("2006-01-02"))
 		}
 		if !d.Expires.IsZero() {
-			ui.Println(ui.Label("оплачен  ") + daysLeft(d.Expires))
+			ui.Println(ui.Label("оплачен  ") + ui.DaysLeft(d.Expires))
 		}
 		if len(d.Nameservers) > 0 {
 			ui.Println(ui.Label("ns       ") + strings.Join(d.Nameservers, " "))
 		}
 	}
 	if t := r.TLS; t != nil {
-		line := ui.Label("tls      ") + t.Issuer + ", до " + daysLeft(t.Expires)
+		line := ui.Label("tls      ") + t.Issuer + ", до " + ui.DaysLeft(t.Expires)
 		if !t.Verified {
 			line += "  " + ui.Bad("не проверен")
 		}
@@ -255,7 +232,7 @@ func printSite(r *siteReport) {
 		if p.Server != "" || p.PoweredBy != "" {
 			ui.Println(ui.Label("сервер   ") + strings.TrimSpace(p.Server+" "+p.PoweredBy))
 		}
-		ui.Println(ui.Label("cms      ") + dashIfEmpty(p.CMS))
+		ui.Println(ui.Label("cms      ") + ui.Dash(p.CMS))
 	}
 	for _, k := range slices.Sorted(maps.Keys(r.Errors)) {
 		ui.Println(ui.Warn(ui.Pad(k, 9)) + ui.Dim(r.Errors[k]))

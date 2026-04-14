@@ -81,7 +81,7 @@ func certExpiries(args []string) error {
 	if len(hosts) == 0 {
 		for _, p := range cfg.Projects {
 			if p.URL != "" {
-				h, _ := hostPort(p.URL, "")
+				h, _ := netinfo.HostPort(p.URL, "")
 				hosts = append(hosts, h)
 			}
 		}
@@ -93,7 +93,7 @@ func certExpiries(args []string) error {
 	var wg sync.WaitGroup
 	for i, h := range hosts {
 		wg.Go(func() {
-			host, port := hostPort(h, "443")
+			host, port := netinfo.HostPort(h, "443")
 			rows[i].host = host
 			info, err := inspect.Cert(host, port)
 			if err != nil {
@@ -120,7 +120,7 @@ func certExpiries(args []string) error {
 			ui.Println(ui.Bad(ui.Pad(r.host, 30)) + " " + ui.Dim(r.err.Error()))
 			continue
 		}
-		line := ui.Pad(r.host, 30) + " " + daysLeft(r.expires) + "  " + ui.Dim(r.issuer)
+		line := ui.Pad(r.host, 30) + " " + ui.DaysLeft(r.expires) + "  " + ui.Dim(r.issuer)
 		if r.err != nil || time.Until(r.expires) < 14*24*time.Hour {
 			bad++
 		}

@@ -71,7 +71,7 @@ func (d *diskState) ensure(fresh bool, progress func(string)) {
 	d.fresh = false
 	d.tree, d.at = measureMap(d.roots, fresh, func(done, total int, root string) {
 		if progress != nil {
-			progress(fmt.Sprintf("считаю %s: %d из %d", showPath(root), done, total))
+			progress(fmt.Sprintf("считаю %s: %d из %d", paths.Show(root), done, total))
 		}
 	})
 }
@@ -102,7 +102,7 @@ func (d *diskState) remove(pathsToTrash []string) (freed int64, errs []string) {
 
 // cliLine: одна перезаписываемая строка хода в stderr - для замера до открытия экрана.
 func cliLine(s string) {
-	if stdoutTerminal() {
+	if ui.Terminal() {
 		fmt.Fprintf(os.Stderr, "\r\033[2K%s", ui.Dim(s))
 	}
 }
@@ -175,7 +175,7 @@ func diskRow(r mapRow, home string) tui.DiskRow {
 	}
 	row := tui.DiskRow{Name: name, Path: r.path, Hint: r.hint, Size: r.size}
 	if r.path != "" {
-		row.Show = showPath(r.path)
+		row.Show = paths.Show(r.path)
 		// Целиком в Корзину - кэши, которые вернутся сами, и свои файлы в домашней папке.
 		// Данные программ (OrbStack, Steam) и систему так не трогаем.
 		l, _, known := diskuse.LabelOf(r.path, home)
@@ -237,7 +237,7 @@ func browseScreen(st *diskState) tui.Screen {
 		var sum int64
 		for _, r := range st.roots {
 			e := entry(r, st.tree[r])
-			e.Name = showPath(r)
+			e.Name = paths.Show(r)
 			list = append(list, e)
 			sum += st.tree[r]
 		}
@@ -255,7 +255,7 @@ func browseScreen(st *diskState) tui.Screen {
 		st.mu.Lock()
 		root = entry(st.roots[0], st.tree[st.roots[0]])
 		st.mu.Unlock()
-		root.Name = showPath(st.roots[0])
+		root.Name = paths.Show(st.roots[0])
 	}
 	kids := func(p string) []tui.Entry {
 		// Зовётся в фоне, поэтому холодный замер здесь не вешает экран.

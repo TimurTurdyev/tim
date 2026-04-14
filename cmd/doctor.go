@@ -264,7 +264,7 @@ func doctorDB(r *report) {
 		if len(found) > 1 {
 			client := map[string]string{"mysql": "mysql", "postgres": "psql"}[fam]
 			which, _ := runner.Output("sh", "-c", "command -v "+client)
-			r.warn(fam + ": формул несколько (" + strings.Join(found, " ") + "), " + client + " в PATH: " + dashIfEmpty(strings.TrimSpace(which)))
+			r.warn(fam + ": формул несколько (" + strings.Join(found, " ") + "), " + client + " в PATH: " + ui.Dash(strings.TrimSpace(which)))
 			issues++
 		}
 	}
