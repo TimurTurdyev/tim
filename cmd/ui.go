@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
@@ -302,18 +303,18 @@ func homeTiles() (tiles []tui.TileData, warning string, open func() tui.Action) 
 		}})
 	}
 	if len(cfg.Hosts) > 0 {
-		phys, gw := physical()
+		phys, gw := bypass.Physical()
 		total, ok := 0, 0
 		for _, h := range cfg.Hosts {
-			for _, dest := range expandAddr(h.Addr) {
+			for _, dest := range bypass.ExpandAddr(h.Addr) {
 				total++
-				if bypassed(dest, phys, gw) {
+				if bypass.Bypassed(dest, phys, gw) {
 					ok++
 				}
 			}
 		}
 		guard := ui.Dim("страж не установлен")
-		if st, found := guardStatus(); found && time.Since(st.LastCheck) < 10*time.Minute {
+		if st, found := bypass.GuardStatus(); found && time.Since(st.LastCheck) < 10*time.Minute {
 			guard = ui.Dim("страж работает")
 		} else if warning == "" {
 			warning = "страж маршрутов не установлен: после смены сети обход сломается"

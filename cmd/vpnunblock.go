@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
@@ -84,7 +85,7 @@ func vpnUnblock(site string) error {
 				}
 				ui.Println(ui.Label("мимо VPN ") + t.Value + ui.Dim(note))
 			}
-			dests = append(dests, expand(t)...)
+			dests = append(dests, bypass.Expand(t)...)
 		}
 		return dests
 	}
@@ -95,11 +96,11 @@ func vpnUnblock(site string) error {
 		if err := saveConfig(cfg); err != nil {
 			return err
 		}
-		return routeUp(dests)
+		return bypass.Up(cfg, dests)
 	}
 
 	// Круг 0: сам сайт по владельцу сети; на CDN - хотя бы его адреса.
-	targets, names, err := ownerTargets(host, false)
+	targets, names, err := bypass.OwnerTargets(host, false)
 	if err != nil {
 		ui.Println(ui.Dim(err.Error()))
 		targets, names = []netinfo.Target{{Kind: netinfo.KindDomain, Value: host}}, []string{"адреса домена"}
@@ -108,7 +109,7 @@ func vpnUnblock(site string) error {
 		return err
 	}
 
-	var cdn []*asGroup
+	var cdn []*bypass.Group
 	for round := 1; round <= unblockRounds; round++ {
 		// Что уже открыто до сайта, к нему не относится.
 		base := map[string]bool{}
@@ -119,7 +120,7 @@ func vpnUnblock(site string) error {
 			return err
 		}
 		note := fmt.Sprintf("круг %d из %d: сайт открыт в браузере, если это видео - нажми play", round, unblockRounds)
-		seen, err := watchTunnel(unblockSeconds, base, note)
+		seen, err := bypass.WatchTunnel(unblockSeconds, base, note)
 		if err != nil {
 			return err
 		}
@@ -134,11 +135,11 @@ func vpnUnblock(site string) error {
 				}
 			}
 		}
-		var fresh []*asGroup
-		for _, g := range groupByAS(seen) {
+		var fresh []*bypass.Group
+		for _, g := range bypass.GroupByAS(seen) {
 			switch {
-			case known["as:"+g.as.ASN]:
-			case domaudit.IsCDN(g.as.Name):
+			case known["as:"+g.AS.ASN]:
+			case domaudit.IsCDN(g.AS.Name):
 				cdn = append(cdn, g)
 			default:
 				fresh = append(fresh, g)
@@ -152,13 +153,13 @@ func vpnUnblock(site string) error {
 		var targets []netinfo.Target
 		var names []string
 		for _, g := range fresh {
-			hint := g.procList()
-			if len(g.names) > 0 {
-				hint += "  " + strings.Join(g.names, " ")
+			hint := g.Procs()
+			if len(g.Names) > 0 {
+				hint += "  " + strings.Join(g.Names, " ")
 			}
-			ui.Println("  " + ui.Label(ui.Pad("as:"+g.as.ASN, 10)) + ui.Pad(ui.Clip(g.as.Name, 36), 37) + ui.Pad(strconv.Itoa(len(g.ips)), 4) + ui.Dim(ui.Clip(hint, 50)))
-			targets = append(targets, netinfo.Target{Kind: netinfo.KindAS, Value: "as:" + g.as.ASN})
-			names = append(names, g.as.Name)
+			ui.Println("  " + ui.Label(ui.Pad("as:"+g.AS.ASN, 10)) + ui.Pad(ui.Clip(g.AS.Name, 36), 37) + ui.Pad(strconv.Itoa(len(g.IPs)), 4) + ui.Dim(ui.Clip(hint, 50)))
+			targets = append(targets, netinfo.Target{Kind: netinfo.KindAS, Value: "as:" + g.AS.ASN})
+			names = append(names, g.AS.Name)
 		}
 		if !unblockYes && !runner.ConfirmDefault("пустить их мимо VPN?", true) {
 			break
@@ -179,7 +180,7 @@ func vpnUnblock(site string) error {
 	if len(cdn) > 0 {
 		var list []string
 		for _, g := range cdn {
-			list = append(list, "as:"+g.as.ASN+" "+ui.Clip(g.as.Name, 24))
+			list = append(list, "as:"+g.AS.ASN+" "+ui.Clip(g.AS.Name, 24))
 		}
 		ui.Println(ui.Dim("ещё сайт ходил в общие сети, их мимо VPN не пускаю: " + strings.Join(list, "; ")))
 		ui.Println(ui.Dim("если без них не работает: tim vpn exclude as:N --force, но через них ходит и всё остальное"))

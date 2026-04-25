@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -45,12 +46,12 @@ var vpnCmd = &cobra.Command{
 		if dns := netinfo.DNSServers(); len(dns) > 0 {
 			ui.Println(ui.Label("dns ") + strings.Join(dns, " "))
 		}
-		phys, gw := physical()
+		phys, gw := bypass.Physical()
 		total, ok := 0, 0
 		for _, h := range cfg.Hosts {
-			for _, d := range expandAddr(h.Addr) {
+			for _, d := range bypass.ExpandAddr(h.Addr) {
 				total++
-				if _, bad := routeState(d, phys, gw); !bad && bypassed(d, phys, gw) {
+				if _, bad := bypass.RouteState(d, phys, gw); !bad && bypass.Bypassed(d, phys, gw) {
 					ok++
 				}
 			}
@@ -61,7 +62,7 @@ var vpnCmd = &cobra.Command{
 				line += "  " + ui.Dim("tim vpn fix")
 			}
 			ui.Println(line)
-			ui.Println(guardLine())
+			ui.Println(bypass.GuardLine())
 		}
 		if hasV6 {
 			ui.Println(ui.Dim("обход работает только для IPv4; IPv6 через туннель остаётся как есть"))
@@ -103,14 +104,14 @@ var vpnFixCmd = &cobra.Command{
 	Short: "После смены сети: снять протухшие маршруты и завести все цели заново",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := routeClean(false); err != nil {
+		if err := bypass.Clean(cfg, false); err != nil {
 			return err
 		}
-		dests, err := collectDests(nil)
+		dests, err := bypass.CollectDests(cfg, nil)
 		if err != nil {
 			return err
 		}
-		return routeUp(dests)
+		return bypass.Up(cfg, dests)
 	},
 }
 

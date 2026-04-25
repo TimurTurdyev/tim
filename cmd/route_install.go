@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/routewatch"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -16,15 +17,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
-
-const (
-	routesLabel = "dev.tim.routes"
-	routesUnit  = "tim-routes"
-)
-
-func routesPlist() string   { return "/Library/LaunchDaemons/" + routesLabel + ".plist" }
-func routesService() string { return "/etc/systemd/system/" + routesUnit + ".service" }
-func routesLog() string     { return "/var/log/tim-routes.log" }
 
 // asRoot: команда нужна под root. Забыли sudo - спрашиваем и повторяем ту же команду через sudo,
 // передав путь к своему конфигу: у root своя домашняя папка. Без ввода - ошибка с готовой командой.
@@ -69,7 +61,7 @@ func routesJob() (schedule.Job, error) {
 	}
 	env := map[string]string{"TIM_CONFIG": config.Path(), "TIM_NO_INPUT": "1",
 		"PATH": "/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin"}
-	return schedule.Job{Label: routesLabel, Args: []string{self, "route", "watch"}, Daemon: true, Env: env, Log: routesLog()}, nil
+	return schedule.Job{Label: bypass.GuardLabel, Args: []string{self, "route", "watch"}, Daemon: true, Env: env, Log: bypass.GuardLog()}, nil
 }
 
 var routeInstallCmd = &cobra.Command{
@@ -94,40 +86,40 @@ systemd-служба tim-routes. Нужны права root; если забыл
 		}
 		switch runtime.GOOS {
 		case "darwin":
-			_ = runner.Run("launchctl", "bootout", "system/"+routesLabel)
-			if err := runner.WriteRoot(routesPlist(), []byte(job.Plist())); err != nil {
+			_ = runner.Run("launchctl", "bootout", "system/"+bypass.GuardLabel)
+			if err := runner.WriteRoot(bypass.GuardPlist(), []byte(job.Plist())); err != nil {
 				return err
 			}
-			if err := runner.Run("launchctl", "bootstrap", "system", routesPlist()); err != nil {
+			if err := runner.Run("launchctl", "bootstrap", "system", bypass.GuardPlist()); err != nil {
 				return err
 			}
 		case "linux":
 			svc, _ := job.Systemd()
-			if err := runner.WriteRoot(routesService(), []byte(svc)); err != nil {
+			if err := runner.WriteRoot(bypass.GuardService(), []byte(svc)); err != nil {
 				return err
 			}
 			if err := runner.Run("systemctl", "daemon-reload"); err != nil {
 				return err
 			}
-			if err := runner.Run("systemctl", "enable", "--now", routesUnit); err != nil {
+			if err := runner.Run("systemctl", "enable", "--now", bypass.GuardUnit); err != nil {
 				return err
 			}
 		default:
 			return ui.Errorf("служба на %s не поддержана", runtime.GOOS)
 		}
-		ui.Println(ui.Label("страж установлен") + ui.Dim("  конфиг "+config.Path()+", журнал "+routesLog()))
+		ui.Println(ui.Label("страж установлен") + ui.Dim("  конфиг "+config.Path()+", журнал "+bypass.GuardLog()))
 		if runner.DryRun {
 			return nil
 		}
 		// Первый цикл стража идёт сразу после запуска - ждём его отчёт, чтобы сказать, как дела.
 		for i := 0; i < 10; i++ {
 			time.Sleep(500 * time.Millisecond)
-			if st, ok := routewatch.Load(stateDir()); ok && time.Since(st.LastCheck) < 10*time.Second {
+			if st, ok := routewatch.Load(bypass.StateDir()); ok && time.Since(st.LastCheck) < 10*time.Second {
 				ui.Println(ui.Dim("первая проверка: в порядке " + strconv.Itoa(st.OK) + " из " + strconv.Itoa(st.Want)))
 				return nil
 			}
 		}
-		ui.Println(ui.Warn("страж пока не отчитался; посмотри журнал: tail " + routesLog()))
+		ui.Println(ui.Warn("страж пока не отчитался; посмотри журнал: tail " + bypass.GuardLog()))
 		return nil
 	},
 }
@@ -145,18 +137,18 @@ var routeUninstallCmd = &cobra.Command{
 		}
 		switch runtime.GOOS {
 		case "darwin":
-			_ = runner.Run("launchctl", "bootout", "system/"+routesLabel)
-			if err := runner.RemoveRoot(routesPlist()); err != nil {
+			_ = runner.Run("launchctl", "bootout", "system/"+bypass.GuardLabel)
+			if err := runner.RemoveRoot(bypass.GuardPlist()); err != nil {
 				return err
 			}
 		case "linux":
-			_ = runner.Run("systemctl", "disable", "--now", routesUnit)
-			if err := runner.RemoveRoot(routesService()); err != nil {
+			_ = runner.Run("systemctl", "disable", "--now", bypass.GuardUnit)
+			if err := runner.RemoveRoot(bypass.GuardService()); err != nil {
 				return err
 			}
 			_ = runner.Run("systemctl", "daemon-reload")
 		}
-		_ = os.Remove(filepath.Join(stateDir(), "routes-status.json"))
+		_ = os.Remove(filepath.Join(bypass.StateDir(), "routes-status.json"))
 		ui.Println(ui.Label("страж убран") + ui.Dim("  после смены сети маршруты придётся поднимать: tim vpn fix"))
 		return nil
 	},

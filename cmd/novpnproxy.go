@@ -6,13 +6,13 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/tproxy"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -24,11 +24,6 @@ var (
 	proxyIface string
 	proxyIP    string
 )
-
-const novpnPort = 7788
-
-func novpnPidFile() string { return filepath.Join(guardDir(), "novpn-proxy.pid") }
-func novpnLogFile() string { return "/var/log/tim-novpn.log" }
 
 var novpnProxyCmd = &cobra.Command{
 	Use:    "novpn-proxy",
@@ -42,12 +37,12 @@ var novpnProxyCmd = &cobra.Command{
 		if ip == nil || proxyIface == "" {
 			return ui.Errorf("нужны --iface и --ip")
 		}
-		_ = os.MkdirAll(guardDir(), 0o755)
-		if err := os.WriteFile(novpnPidFile(), []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		_ = os.MkdirAll(bypass.GuardDir(), 0o755)
+		if err := os.WriteFile(bypass.ProxyPidFile(), []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
 			return err
 		}
-		defer func() { _ = os.Remove(novpnPidFile()) }()
-		logFile, err := os.OpenFile(novpnLogFile(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		defer func() { _ = os.Remove(bypass.ProxyPidFile()) }()
+		logFile, err := os.OpenFile(bypass.ProxyLogFile(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return err
 		}
@@ -64,21 +59,8 @@ var novpnProxyCmd = &cobra.Command{
 	},
 }
 
-// novpnProxyPID: pid живого прокси или 0.
-func novpnProxyPID() int {
-	data, err := os.ReadFile(novpnPidFile())
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(string(data))
-	if err != nil || pid <= 0 || !alive(pid) {
-		return 0
-	}
-	return pid
-}
-
 func init() {
-	novpnProxyCmd.Flags().IntVar(&proxyPort, "port", novpnPort, "порт на 127.0.0.1")
+	novpnProxyCmd.Flags().IntVar(&proxyPort, "port", bypass.ProxyPort, "порт на 127.0.0.1")
 	novpnProxyCmd.Flags().StringVar(&proxyIface, "iface", "", "физический интерфейс")
 	novpnProxyCmd.Flags().StringVar(&proxyIP, "ip", "", "его адрес")
 	root.AddCommand(novpnProxyCmd)

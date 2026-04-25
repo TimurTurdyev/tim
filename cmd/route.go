@@ -1,24 +1,13 @@
 package cmd
 
 import (
-	"fmt"
-	"net"
-	"os"
-	"runtime"
 	"strings"
-	"sync"
-	"time"
-
-	"github.com/TimurTurdyev/tim/internal/paths"
-	"github.com/TimurTurdyev/tim/internal/privileged"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/asn"
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
-	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -72,7 +61,7 @@ func routeAdd(args []string, o addOpts) error {
 		if o.owner && t.Kind == netinfo.KindDomain {
 			domain := t.Value
 			var names []string
-			if targets, names, err = ownerTargets(domain, o.force); err != nil {
+			if targets, names, err = bypass.OwnerTargets(domain, o.force); err != nil {
 				return err
 			}
 			if o.label == "" && len(args) == 1 {
@@ -95,7 +84,7 @@ func routeAdd(args []string, o addOpts) error {
 			} else {
 				ui.Println(ui.Dim(t.Value + ": уже в списке"))
 			}
-			dests = append(dests, expand(t)...)
+			dests = append(dests, bypass.Expand(t)...)
 		}
 	}
 	if err := saveConfig(cfg); err != nil {
@@ -104,7 +93,7 @@ func routeAdd(args []string, o addOpts) error {
 	if o.noUp {
 		return nil
 	}
-	return routeUp(dests)
+	return bypass.Up(cfg, dests)
 }
 
 var routeRmCmd = &cobra.Command{
@@ -124,14 +113,14 @@ var routeRmCmd = &cobra.Command{
 				return ui.Errorf("в списке нет %s: tim route list", a)
 			}
 			for _, h := range removed {
-				dests = append(dests, expandAddr(h.Addr)...)
+				dests = append(dests, bypass.ExpandAddr(h.Addr)...)
 				ui.Println(ui.Label("убран ") + h.Addr)
 			}
 		}
 		if err := saveConfig(cfg); err != nil {
 			return err
 		}
-		routeDown(dests)
+		bypass.Down(dests)
 		return nil
 	},
 }
@@ -140,11 +129,11 @@ var routeUpCmd = &cobra.Command{
 	Use:   "up [цель|пометка...]",
 	Short: "Завести маршруты через физический шлюз (sudo); без аргументов все цели",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dests, err := collectDests(args)
+		dests, err := bypass.CollectDests(cfg, args)
 		if err != nil {
 			return err
 		}
-		return routeUp(dests)
+		return bypass.Up(cfg, dests)
 	},
 }
 
@@ -152,11 +141,11 @@ var routeDownCmd = &cobra.Command{
 	Use:   "down [цель|пометка...]",
 	Short: "Снять маршруты (sudo); без аргументов все цели",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dests, err := collectDests(args)
+		dests, err := bypass.CollectDests(cfg, args)
 		if err != nil {
 			return err
 		}
-		routeDown(dests)
+		bypass.Down(dests)
 		return nil
 	},
 }
@@ -166,7 +155,7 @@ var routeCleanCmd = &cobra.Command{
 	Short: "Снять протухшие маршруты на прежний шлюз после смены сети",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return routeClean(routeAll)
+		return bypass.Clean(cfg, routeAll)
 	},
 }
 
@@ -198,153 +187,8 @@ var routeTableCmd = &cobra.Command{
 	},
 }
 
-func expand(t netinfo.Target) []string {
-	switch t.Kind {
-	case netinfo.KindDomain:
-		return netinfo.LookupIPv4(t.Value)
-	case netinfo.KindAS:
-		nets, err := asn.Prefixes(stateDir(), strings.TrimPrefix(t.Value, "as:"))
-		if err != nil {
-			ui.Println(ui.Warn(t.Value + ": сети не получены: " + ui.ShortErr(err)))
-		}
-		return nets
-	}
-	return []string{t.Value}
-}
-
-// stateDir: служебные файлы. Страж работает под root, и в домашней папке он наплодил бы файлов,
-// которые пользователь потом не перезапишет, поэтому у root своё место.
-func stateDir() string {
-	if os.Geteuid() == 0 {
-		if runtime.GOOS == "darwin" {
-			return "/var/db/tim"
-		}
-		return "/var/lib/tim"
-	}
-	return paths.State()
-}
-
-// ownerTargets: домен -> автономные системы, из которых видны его адреса. Их часто несколько:
-// Яндекс анонсирует одни и те же сети и из основной AS, и из дочерней. Берём все - пересечения
-// склеятся при раскрытии.
-func ownerTargets(domain string, force bool) ([]netinfo.Target, []string, error) {
-	ips := netinfo.LookupIPv4(domain)
-	if len(ips) == 0 {
-		return nil, nil, ui.Errorf("%s не раскрывается в адреса", domain)
-	}
-	list, err := asn.Origins(ips)
-	if err != nil || len(list) == 0 {
-		return nil, nil, ui.Errorf("%s: владелец сети не определился: %v", domain, err)
-	}
-	var targets []netinfo.Target
-	var names []string
-	for _, a := range list {
-		name := asn.Holder(a)
-		if domaudit.IsCDN(name) && !force {
-			return nil, nil, ui.Errorf("%s сидит на CDN (%s): в обход ушла бы чужая половина интернета; если точно надо: --force", domain, name)
-		}
-		targets = append(targets, netinfo.Target{Kind: netinfo.KindAS, Value: "as:" + a})
-		names = append(names, name)
-	}
-	return targets, names, nil
-}
-
-func expandAddr(addr string) []string {
-	t, err := netinfo.ParseTarget(addr)
-	if err != nil {
-		return nil
-	}
-	return expand(t)
-}
-
-// collectDests: аргументы как пометки, цели из конфига или новые цели; без аргументов все цели конфига.
-func collectDests(args []string) ([]string, error) {
-	if len(args) == 0 {
-		var all []string
-		for _, h := range cfg.Hosts {
-			all = append(all, expandAddr(h.Addr)...)
-		}
-		return all, nil
-	}
-	var out []string
-	for _, a := range args {
-		if addr, ok := cfg.ResolveHost(a); ok {
-			out = append(out, expandAddr(addr)...)
-			continue
-		}
-		t, err := netinfo.ParseTarget(a)
-		if err != nil {
-			return nil, err
-		}
-		ips := expand(t)
-		if len(ips) == 0 {
-			return nil, ui.Errorf("%s не раскрывается в адреса", a)
-		}
-		out = append(out, ips...)
-	}
-	return out, nil
-}
-
-// physical: активный интерфейс и его шлюз, пусто если сети нет.
-func physical() (netinfo.Service, string) {
-	svc, ok := netinfo.PhysIface()
-	if !ok {
-		return svc, ""
-	}
-	return svc, netinfo.IfaceGateway(svc.Device)
-}
-
-var (
-	tableMu    sync.Mutex
-	tableCache []netinfo.TableRoute
-)
-
-// routeTable: таблица маршрутов, прочитанная один раз на команду, а не на каждую подсеть;
-// tableChanged сбрасывает её после правки маршрутов.
-func routeTable() []netinfo.TableRoute {
-	tableMu.Lock()
-	defer tableMu.Unlock()
-	if tableCache == nil {
-		tableCache = netinfo.Table()
-	}
-	return tableCache
-}
-
-func tableChanged() {
-	tableMu.Lock()
-	tableCache = nil
-	tableMu.Unlock()
-}
-
-// routeState: человеческое состояние пути до адреса или подсети.
-func routeState(dest string, phys netinfo.Service, gw string) (text string, bad bool) {
-	var r netinfo.Route
-	if strings.Contains(dest, "/") {
-		for _, t := range routeTable() {
-			if t.Dest == dest {
-				r = netinfo.Route{Gateway: t.Gateway, Iface: t.Iface}
-			}
-		}
-		if r.Iface == "" {
-			ip, _, _ := net.ParseCIDR(dest)
-			r = netinfo.RouteOf(ip.String())
-		}
-	} else {
-		r = netinfo.RouteOf(dest)
-	}
-	switch {
-	case netinfo.IsTunnelIface(r.Iface):
-		return ui.Warn("идёт в туннель " + r.Iface), true
-	case gw != "" && r.Gateway != "" && r.Iface == phys.Device && r.Gateway != gw && netinfo.IsIPv4(r.Gateway):
-		return ui.Bad("шлюз устарел " + r.Gateway + ", нужен tim route up"), true
-	case gw != "" && r.Gateway == gw:
-		return ui.Label("в обход"), false
-	}
-	return ui.Dim("без своего маршрута"), false
-}
-
 func routeStatus(probe bool) error {
-	phys, gw := physical()
+	phys, gw := bypass.Physical()
 	if phys.Device == "" {
 		ui.Println(ui.Warn("физический интерфейс не найден: сеть выключена?"))
 	} else {
@@ -360,10 +204,10 @@ func routeStatus(probe bool) error {
 		ui.Println(ui.Dim("целей обхода нет: tim route add <адрес|домен|подсеть>"))
 		return nil
 	}
-	ui.Println(guardLine())
+	ui.Println(bypass.GuardLine())
 	ui.Println(ui.Dim(ui.Pad("ЦЕЛЬ", 24) + " " + ui.Pad("ПОМЕТКА", 11) + " " + ui.Pad("АДРЕС", 18) + " СОСТОЯНИЕ"))
 	for _, h := range cfg.Hosts {
-		dests := expandAddr(h.Addr)
+		dests := bypass.ExpandAddr(h.Addr)
 		if len(dests) == 0 {
 			ui.Println(ui.Pad(h.Addr, 24) + " " + ui.Pad(h.Label, 11) + " " + ui.Bad("не раскрывается в адреса"))
 			continue
@@ -373,9 +217,9 @@ func routeStatus(probe bool) error {
 			if i > 0 {
 				name, label = "", ""
 			}
-			state, _ := routeState(d, phys, gw)
+			state, _ := bypass.RouteState(d, phys, gw)
 			if probe && !strings.Contains(d, "/") {
-				if portOpen(d, "22") {
+				if bypass.PortOpen(d, "22") {
 					state += "  " + ui.Label("порт 22 отвечает")
 				} else {
 					state += "  " + ui.Bad("порт 22 молчит")
@@ -384,161 +228,6 @@ func routeStatus(probe bool) error {
 			ui.Println(ui.Pad(name, 24) + " " + ui.Pad(label, 11) + " " + ui.Pad(d, 18) + " " + state)
 		}
 	}
-	return nil
-}
-
-func portOpen(addr, port string) bool {
-	c, err := net.DialTimeout("tcp", net.JoinHostPort(addr, port), 2*time.Second)
-	if err != nil {
-		return false
-	}
-	_ = c.Close()
-	return true
-}
-
-// setRoute ставит маршрут через шлюз. macOS не меняет существующий маршрут командой add,
-// поэтому старый снимается первым; ip route replace на Linux делает это сам.
-func setRoute(dest, gw, iface string) error {
-	if runtime.GOOS != "linux" {
-		// Старого маршрута обычно нет, и route ругается "not in table" - это не ошибка.
-		_, _ = privileged.Run(netinfo.DelRouteCmd(dest)...)
-	}
-	defer tableChanged()
-	_, err := privileged.Run(netinfo.AddRouteCmd(dest, gw, iface)...)
-	return err
-}
-
-// fewDests: до стольких целей печатается строка на каждую, дальше - ход и итог.
-const fewDests = 5
-
-// routeUp заводит маршрут через физический шлюз для каждого адреса или подсети.
-func routeUp(dests []string) error {
-	phys, gw := physical()
-	if phys.Device == "" || gw == "" {
-		return ui.Errorf("активный физический интерфейс или его шлюз не найден")
-	}
-	ui.Println(ui.Dim("через ") + phys.Device + ui.Dim(" шлюз ") + gw)
-	verbose := len(dests) <= fewDests || runner.DryRun
-	done, had := 0, 0
-	var failed []string
-	for i, d := range dests {
-		if bypassed(d, phys, gw) {
-			had++
-			if verbose {
-				ui.Println(ui.Dim(d + ": уже в обход"))
-			}
-			continue
-		}
-		if !verbose && ui.Terminal() {
-			fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("маршруты: %d из %d"), i+1, len(dests))
-		}
-		if err := setRoute(d, gw, phys.Device); err != nil {
-			failed = append(failed, d+": "+err.Error())
-			if verbose {
-				ui.Println(ui.Bad(d + ": завести не удалось: " + err.Error()))
-			}
-			continue
-		}
-		done++
-		if verbose {
-			label := cfg.HostLabel(d)
-			if label != "" {
-				label = " " + ui.Dim(label)
-			}
-			ui.Println(ui.Label(d+": маршрут заведён") + label)
-		}
-	}
-	if verbose {
-		return nil
-	}
-	if ui.Terminal() {
-		fmt.Fprint(os.Stderr, "\r\033[2K")
-	}
-	line := ui.Label(fmt.Sprintf("заведено %d", done))
-	if had > 0 {
-		line += ui.Dim(fmt.Sprintf(", уже были %d", had))
-	}
-	if len(failed) > 0 {
-		line += "  " + ui.Bad(fmt.Sprintf("не удалось %d", len(failed)))
-	}
-	ui.Println(line)
-	for _, f := range failed[:min(fewDests, len(failed))] {
-		ui.Println(ui.Bad("  " + f))
-	}
-	return nil
-}
-
-// bypassed: у адреса или подсети уже есть свой маршрут через нужный шлюз.
-func bypassed(dest string, phys netinfo.Service, gw string) bool {
-	if !strings.Contains(dest, "/") {
-		r := netinfo.RouteOf(dest)
-		return r.Gateway == gw && r.Iface == phys.Device
-	}
-	for _, t := range routeTable() {
-		if t.Dest == dest && t.Gateway == gw {
-			return true
-		}
-	}
-	return false
-}
-
-func routeDown(dests []string) {
-	verbose := len(dests) <= fewDests || runner.DryRun
-	gone := 0
-	for _, d := range dests {
-		tableChanged()
-		if _, err := privileged.Run(netinfo.DelRouteCmd(d)...); err != nil {
-			if verbose {
-				ui.Println(ui.Dim(d + ": маршрута не было"))
-			}
-			continue
-		}
-		gone++
-		if verbose {
-			ui.Println(ui.Label(d + ": маршрут снят"))
-		}
-	}
-	if !verbose {
-		ui.Println(ui.Label(fmt.Sprintf("снято %d", gone)) + ui.Dim(fmt.Sprintf(" из %d", len(dests))))
-	}
-}
-
-// routeClean снимает маршруты на прежний шлюз; all - по всей таблице, иначе только цели конфига.
-func routeClean(all bool) error {
-	_, gw := physical()
-	if gw == "" {
-		return ui.Errorf("шлюз физического интерфейса не найден: не с чем сравнивать")
-	}
-	var only map[string]bool
-	if !all {
-		only = map[string]bool{}
-		for _, h := range cfg.Hosts {
-			for _, d := range expandAddr(h.Addr) {
-				only[d] = true
-			}
-		}
-	}
-	stale := netinfo.Stale(netinfo.Table(), gw, only)
-	if len(stale) == 0 {
-		ui.Println(ui.Dim("протухших маршрутов нет"))
-		return nil
-	}
-	for _, r := range stale {
-		ui.Println(ui.Warn(ui.Pad(r.Dest, 20)) + " через " + r.Gateway + " " + ui.Dim(r.Iface+", сейчас шлюз "+gw))
-	}
-	if !runner.Confirm("снять эти маршруты?") {
-		return nil
-	}
-	gone := 0
-	for _, r := range stale {
-		tableChanged()
-		if _, err := privileged.Run(netinfo.DelRouteCmd(r.Dest)...); err != nil {
-			ui.Println(ui.Bad(r.Dest + ": снять не удалось: " + err.Error()))
-			continue
-		}
-		gone++
-	}
-	ui.Println(ui.Label(fmt.Sprintf("снято %d", gone)))
 	return nil
 }
 
