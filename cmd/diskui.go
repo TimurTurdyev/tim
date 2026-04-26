@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/diskuse"
+	"github.com/TimurTurdyev/tim/internal/leftover"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/trash"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -50,7 +52,7 @@ type diskState struct {
 }
 
 func newDiskState(args []string) (*diskState, error) {
-	roots := mapRoots()
+	roots := diskuse.DefaultRoots()
 	if len(args) > 0 {
 		r, err := filepath.Abs(filepathExpand(args[0]))
 		if err != nil {
@@ -69,7 +71,7 @@ func (d *diskState) ensure(fresh bool, progress func(string)) {
 	}
 	fresh = fresh || d.fresh
 	d.fresh = false
-	d.tree, d.at = measureMap(d.roots, fresh, func(done, total int, root string) {
+	d.tree, d.at = diskuse.Map(d.roots, fresh, func(done, total int, root string) {
 		if progress != nil {
 			progress(fmt.Sprintf("считаю %s: %d из %d", paths.Show(root), done, total))
 		}
@@ -84,7 +86,7 @@ func (d *diskState) remove(pathsToTrash []string) (freed int64, errs []string) {
 	for _, p := range pathsToTrash {
 		var err error
 		if strings.HasPrefix(p, home+"/") {
-			err = moveToTrash(p)
+			err = trash.Move(p)
 		} else {
 			err = runner.Sudo("mv", p, filepath.Join(home, ".Trash")+"/")
 		}
@@ -93,10 +95,10 @@ func (d *diskState) remove(pathsToTrash []string) (freed int64, errs []string) {
 			continue
 		}
 		freed += d.tree[p]
-		moveInTree(d.tree, p, filepath.Join(home, ".Trash"))
+		d.tree.MoveInTree(p, filepath.Join(home, ".Trash"))
 	}
 	// Сохранённый замер устарел: следующий обзор из терминала посчитает заново.
-	_ = os.Remove(mapCachePath())
+	_ = os.Remove(diskuse.CachePath())
 	return freed, errs
 }
 
@@ -138,10 +140,10 @@ func diskData(st *diskState) tui.DiskData {
 	for _, r := range st.roots {
 		spots = append(spots, diskuse.Spots(st.tree, r, 100<<20, stop)...)
 	}
-	rows := groupSpots(spots, home)
+	rows := diskuse.Rows(spots, home, projectOwner)
 	if len(st.args) == 0 {
-		rows = append(rows, volumeRows()...)
-		sort.Slice(rows, func(i, j int) bool { return rows[i].size > rows[j].size })
+		rows = append(rows, diskuse.VolumeRows()...)
+		sort.Slice(rows, func(i, j int) bool { return rows[i].Size > rows[j].Size })
 	}
 	data := tui.DiskData{MeasuredAt: st.at}
 	if d, ok := sysinfo.DataDisk(); ok {
@@ -151,53 +153,53 @@ func diskData(st *diskState) tui.DiskData {
 	for _, kind := range []diskuse.Kind{diskuse.Free, diskuse.Apps, diskuse.Data, diskuse.System} {
 		tab := tui.DiskTab{Title: titles[kind]}
 		for _, r := range rows {
-			if r.kind != kind {
+			if r.Kind != kind {
 				continue
 			}
-			tab.Total += r.size
+			tab.Total += r.Size
 			tab.Rows = append(tab.Rows, diskRow(r, home))
 		}
 		if len(tab.Rows) > 0 {
 			data.Tabs = append(data.Tabs, tab)
 		}
 	}
-	if n := chromeClones(); n > 0 && len(st.args) == 0 {
+	if n := diskuse.ChromeClones(); n > 0 && len(st.args) == 0 {
 		data.Notes = append(data.Notes, "Chrome хранит "+strconv.Itoa(n)+" "+ui.Plural(n, "копию", "копии", "копий")+
 			" самого себя (известная ошибка): закрой Chrome и убери /private/var/folders/*/*/X/com.google.Chrome.code_sign_clone")
 	}
 	return data
 }
 
-func diskRow(r mapRow, home string) tui.DiskRow {
-	name := r.name
+func diskRow(r diskuse.Row, home string) tui.DiskRow {
+	name := r.Name
 	if name == "" {
-		name = filepath.Base(r.path)
+		name = filepath.Base(r.Path)
 	}
-	row := tui.DiskRow{Name: name, Path: r.path, Hint: r.hint, Size: r.size}
-	if r.path != "" {
-		row.Show = paths.Show(r.path)
+	row := tui.DiskRow{Name: name, Path: r.Path, Hint: r.Hint, Size: r.Size}
+	if r.Path != "" {
+		row.Show = paths.Show(r.Path)
 		// Целиком в Корзину - кэши, которые вернутся сами, и свои файлы в домашней папке.
 		// Данные программ (OrbStack, Steam) и систему так не трогаем.
-		l, _, known := diskuse.LabelOf(r.path, home)
-		row.Removable = strings.HasPrefix(r.path, home+"/") && ((known && l.Whole) || (r.kind == diskuse.Data && !l.Stop))
+		l, _, known := diskuse.LabelOf(r.Path, home)
+		row.Removable = strings.HasPrefix(r.Path, home+"/") && ((known && l.Whole) || (r.Kind == diskuse.Data && !l.Stop))
 	}
 	var games map[string]diskuse.Game
-	if strings.HasSuffix(r.path, "steamapps/common") {
-		games = diskuse.SteamGames(r.path)
-		if !steamInstalled() {
+	if strings.HasSuffix(r.Path, "steamapps/common") {
+		games = diskuse.SteamGames(r.Path)
+		if !diskuse.SteamInstalled() {
 			row.Warn = "Steam удалён, а игры остались: можно убрать папку Steam целиком"
-			row.Hint = "trash " + filepath.Dir(filepath.Dir(r.path))
+			row.Hint = "trash " + filepath.Dir(filepath.Dir(r.Path))
 		}
 	}
 	var rest int64
-	for _, it := range r.items {
+	for _, it := range r.Items {
 		if it.Rest {
 			rest += it.Size
 			continue
 		}
 		item := tui.DiskItem{Name: diskuse.ItemName(it.Path), Size: it.Size}
 		if g, ok := games[filepath.Base(it.Path)]; ok {
-			item.Name, item.Note = g.Name, playedAgo(g.LastPlayed)
+			item.Name, item.Note = g.Name, diskuse.PlayedAgo(g.LastPlayed)
 		}
 		row.Items = append(row.Items, item)
 	}
@@ -222,9 +224,9 @@ func browseScreen(st *diskState) tui.Screen {
 		}
 		return e
 	}
-	var vols []mapRow
+	var vols []diskuse.Row
 	if len(st.args) == 0 {
-		vols = volumeRows()
+		vols = diskuse.VolumeRows()
 	}
 	var used int64
 	if d, ok := sysinfo.DataDisk(); ok && len(st.args) == 0 {
@@ -242,8 +244,8 @@ func browseScreen(st *diskState) tui.Screen {
 			sum += st.tree[r]
 		}
 		for _, v := range vols {
-			list = append(list, tui.Entry{Name: v.name, Size: v.size, Hint: v.hint})
-			sum += v.size
+			list = append(list, tui.Entry{Name: v.Name, Size: v.Size, Hint: v.Hint})
+			sum += v.Size
 		}
 		if rest := used - sum; rest > 1<<30 && used > 0 {
 			list = append(list, tui.Entry{Name: "не разобрано", Size: rest, Hint: "без прав не прочитать, снимки Time Machine, копии Chrome"})
@@ -316,30 +318,30 @@ func browseScreen(st *diskState) tui.Screen {
 func leftScreen() tui.Screen {
 	return tui.NewLeftovers(tui.LeftOpts{
 		Load: func() []tui.LeftGroup {
-			groups, err := gatherLeftovers()
+			groups, err := leftover.Gather(ownName, runningProcs())
 			if err != nil {
 				return nil
 			}
 			var out []tui.LeftGroup
 			for _, g := range groups {
-				lg := tui.LeftGroup{ID: g.owner, Name: groupName(g), Owner: g.owner, Size: g.size, Sure: g.sure}
+				lg := tui.LeftGroup{ID: g.Owner, Name: g.Name(), Owner: g.Owner, Size: g.Size, Sure: g.Sure}
 				switch {
-				case g.similar != "":
-					lg.Note = "установлен другой " + g.similar + ": данные другой версии"
-				case !g.sure:
+				case g.Similar != "":
+					lg.Note = "установлен другой " + g.Similar + ": данные другой версии"
+				case !g.Sure:
 					lg.Note = "похоже, проверь"
-				case len(g.agents) > 0:
+				case len(g.Agents) > 0:
 					lg.Note = "автозапуск без программы"
-				case len(g.pids) > 0:
+				case len(g.PIDs) > 0:
 					lg.Note = "процесс ещё работает, хотя программа удалена"
 				default:
 					lg.Note = "программа удалена"
 				}
-				lg.Hidden = g.size < 50<<20 && len(g.agents) == 0 && len(g.pids) == 0
-				for _, it := range g.items {
-					li := tui.LeftItem{Path: libPath(it.path), Size: it.size, Note: it.note}
-					if it.path == "" {
-						li.Path = it.note
+				lg.Hidden = g.Size < 50<<20 && len(g.Agents) == 0 && len(g.PIDs) == 0
+				for _, it := range g.Items {
+					li := tui.LeftItem{Path: leftover.LibPath(it.Path), Size: it.Size, Note: it.Note}
+					if it.Path == "" {
+						li.Path = it.Note
 						li.Note = ""
 					}
 					lg.Items = append(lg.Items, li)
@@ -352,13 +354,13 @@ func leftScreen() tui.Screen {
 			return out
 		},
 		Remove: func(lg tui.LeftGroup) error {
-			groups, err := gatherLeftovers()
+			groups, err := leftover.Gather(ownName, runningProcs())
 			if err != nil {
 				return err
 			}
 			for _, g := range groups {
-				if g.owner == lg.ID {
-					if !removeGroup(g) {
+				if g.Owner == lg.ID {
+					if !leftover.Remove(g) {
 						return fmt.Errorf("убрано не всё")
 					}
 					return nil
@@ -370,19 +372,19 @@ func leftScreen() tui.Screen {
 }
 
 // leftCommands: что выполнит уборка группы - для окна подтверждения.
-func leftCommands(g *leftGroup) []string {
+func leftCommands(g *leftover.Group) []string {
 	var out []string
-	for _, a := range g.agents {
+	for _, a := range g.Agents {
 		if strings.HasPrefix(a, "system/") {
 			out = append(out, "sudo launchctl bootout "+a)
 		} else {
 			out = append(out, "launchctl bootout "+a)
 		}
 	}
-	if len(g.pids) > 0 {
-		out = append(out, "kill "+strings.Join(g.pids, " "))
+	if len(g.PIDs) > 0 {
+		out = append(out, "kill "+strings.Join(g.PIDs, " "))
 	}
-	mine, system := splitOwn(g)
+	mine, system := g.SplitOwn()
 	if len(mine) > 0 {
 		out = append(out, "trash "+strings.Join(mine, " "))
 	}
