@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -45,7 +46,7 @@ var topCmd = &cobra.Command{
 		if tui.Available() && topBy == "app" {
 			return runScreen(procsScreen(""))
 		}
-		full, err := allProcs()
+		full, err := machine.All()
 		if err != nil {
 			return err
 		}

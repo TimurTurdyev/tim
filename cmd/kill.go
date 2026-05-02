@@ -1,20 +1,15 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -25,43 +20,6 @@ var (
 	killForce bool
 	killYes   bool
 )
-
-func allProcs() ([]procs.Full, error) {
-	out, err := runner.Output("ps", procs.PsAll("pid=,ppid=,uid=,rss=,pcpu=,etime=,state=,comm=")...)
-	if err != nil {
-		return nil, err
-	}
-	list := withArgs(procs.ParseFull(out))
-	if recent := procs.RecentCPU(500 * time.Millisecond); recent != nil {
-		for i := range list {
-			list[i].CPU = recent[list[i].PID]
-		}
-	}
-	return list, nil
-}
-
-// rowName: имя строки процесса - описание, если процесс известный, иначе имя файла.
-func rowName(p procs.Full) string {
-	if n, note, ok := procs.Describe(p.Comm, p.Args); ok {
-		if note != "" {
-			return n + ", " + note
-		}
-		return n
-	}
-	return filepath.Base(p.Comm)
-}
-
-func stateHint(s string) string {
-	switch {
-	case strings.HasPrefix(s, "Z"):
-		return ui.Warn("зомби: уже завершился, ждёт родителя")
-	case strings.HasPrefix(s, "U"), strings.HasPrefix(s, "D"):
-		return ui.Warn("ждёт диск или сеть и не прерывается")
-	case strings.HasPrefix(s, "T"):
-		return ui.Warn("остановлен")
-	}
-	return ""
-}
 
 func printApp(a procs.App, limit int) {
 	ui.Println(ui.Label(a.Name) + ui.Dim(fmt.Sprintf("  процессов %d, память %s, CPU %.1f%%, работает %s",
@@ -75,11 +33,11 @@ func printApp(a procs.App, limit int) {
 			ui.Println(ui.Dim(fmt.Sprintf("  и ещё %d", len(sorted)-limit)))
 			break
 		}
-		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(ui.Bytes(p.RSS), 10) + ui.Clip(rowName(p), 48)
+		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(ui.Bytes(p.RSS), 10) + ui.Clip(machine.RowName(p), 48)
 		if p.PID == a.Main.PID && a.IsApp {
 			line += ui.Dim("  главный")
 		}
-		if h := stateHint(p.State); h != "" {
+		if h := machine.StateHint(p.State); h != "" {
 			line += "  " + h
 		}
 		ui.Println(line)
@@ -94,7 +52,7 @@ var psCmd = &cobra.Command{
 		if tui.Available() {
 			return runScreen(procsScreen(args[0]))
 		}
-		list, err := allProcs()
+		list, err := machine.All()
 		if err != nil {
 			return err
 		}
@@ -114,111 +72,14 @@ var psCmd = &cobra.Command{
 	},
 }
 
-func alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
-}
-
-// waitGone ждёт, пока все процессы завершатся; возвращает тех, кто остался.
-func waitGone(pids []int, limit time.Duration) []int {
-	deadline := time.Now().Add(limit)
-	for {
-		var left []int
-		for _, p := range pids {
-			if alive(p) {
-				left = append(left, p)
-			}
-		}
-		// Зомби на сигнал 0 отвечает, но он уже завершён: ждать его нечего.
-		if len(left) > 0 {
-			z := procs.Zombies(left)
-			left = slices.DeleteFunc(left, func(p int) bool { return z[p] })
-		}
-		if len(left) == 0 || time.Now().After(deadline) || runner.DryRun {
-			return left
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-func signalAll(sig string, pids []int) error {
-	args := []string{"-" + sig}
-	for _, p := range pids {
-		args = append(args, strconv.Itoa(p))
-	}
-	err := runner.Run("kill", args...)
-	if err != nil && os.Geteuid() != 0 {
-		// Чужие процессы, обычно root: без sudo kill отказывает.
-		if runner.Confirm("часть процессов чужие - повторить через sudo?") {
-			return runner.Sudo(append([]string{"kill"}, args...)...)
-		}
-	}
-	return err
-}
-
 func confirmKill(q string) bool { return killYes || runner.Confirm(q) }
 
 // confirmGentle: бережное закрытие ты и так попросил, словом kill, - Enter соглашается.
 func confirmGentle(q string) bool { return killYes || runner.ConfirmDefault(q, true) }
 
-// killable: процессы приложения, которые можно трогать; системные не отдаём.
-func killable(a procs.App) ([]int, error) {
-	for _, p := range a.Procs {
-		if procs.Protected(p) {
-			return nil, ui.Errorf("%s (pid %s) - системный процесс, без него машина или сеанс упадут; не трогаю", a.Name, p.PID)
-		}
-	}
-	var pids []int
-	for _, p := range a.Procs {
-		if n, err := strconv.Atoi(p.PID); err == nil && n != os.Getpid() && n != os.Getppid() {
-			pids = append(pids, n)
-		}
-	}
-	if len(pids) == 0 {
-		return nil, ui.Errorf("закрывать нечего")
-	}
-	return pids, nil
-}
-
-// closeApp без вопросов: бережно - Cmd+Q у приложения или SIGTERM, и подождать; force - SIGKILL.
-// Что осталось живым, возвращается ошибкой: кто спрашивает, тот и решает, добивать ли.
-func closeApp(a procs.App, force bool) (string, error) {
-	pids, err := killable(a)
-	if err != nil {
-		return "", err
-	}
-	if force {
-		_ = signalAll("KILL", pids)
-		if left := waitGone(pids, 3*time.Second); len(left) > 0 {
-			return "", ui.Errorf("не убился (pid %v): похоже, ждёт диск или сеть; поможет только перезагрузка", left)
-		}
-		return a.Name + " убит", nil
-	}
-	if a.IsApp && runtime.GOOS == "darwin" {
-		// Приложение само спросит про несохранённое и закроет окна - бережнее, чем сигнал.
-		_ = runner.Run("osascript", "-e", `quit app "`+strings.ReplaceAll(a.Name, `"`, `\"`)+`"`)
-	} else {
-		_ = signalAll("TERM", pids)
-	}
-	// Приложению нужно время спросить про несохранённое, программе хватит и пяти секунд.
-	wait := 5 * time.Second
-	if a.IsApp {
-		wait = 8 * time.Second
-	}
-	left := waitGone(pids, wait)
-	if len(left) > 0 && a.IsApp && runtime.GOOS == "darwin" {
-		_ = signalAll("TERM", left)
-		left = waitGone(left, 3*time.Second)
-	}
-	if len(left) > 0 {
-		return "", ui.Errorf("%s не закрылся: осталось процессов %d; принудительно - X", a.Name, len(left))
-	}
-	return a.Name + " закрыт", nil
-}
-
 // killApp: сначала как человек - Cmd+Q у приложения или SIGTERM у программы; не помогло - SIGKILL.
 func killApp(a procs.App) error {
-	pids, err := killable(a)
+	pids, err := machine.Killable(a)
 	if err != nil {
 		return err
 	}
@@ -227,7 +88,7 @@ func killApp(a procs.App) error {
 		if a.IsApp && runtime.GOOS == "darwin" && !killForce {
 			_ = runner.Run("osascript", "-e", `quit app "`+a.Name+`"`)
 		}
-		_ = signalAll("TERM", pids)
+		_ = machine.SignalAll("TERM", pids)
 		ui.Println(ui.Dim("не закроется за 8 с - следом SIGKILL; dry-run: ничего не отправлено"))
 		return nil
 	}
@@ -239,7 +100,7 @@ func killApp(a procs.App) error {
 		if !confirmGentle(q) {
 			return ui.Errorf("отменено")
 		}
-		text, err := closeApp(a, false)
+		text, err := machine.Close(a, false)
 		if err == nil {
 			ui.Println(ui.Label(text))
 			return nil
@@ -249,7 +110,7 @@ func killApp(a procs.App) error {
 	if !confirmKill("убить принудительно? несохранённое пропадёт") {
 		return ui.Errorf("оставлен как есть")
 	}
-	text, err := closeApp(a, true)
+	text, err := machine.Close(a, true)
 	if err != nil {
 		return err
 	}
@@ -266,7 +127,7 @@ var killCmd = &cobra.Command{
 получает SIGTERM, потом SIGKILL. Системные процессы (launchd, WindowServer и т.п.) не трогаются.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		list, err := allProcs()
+		list, err := machine.All()
 		if err != nil {
 			return err
 		}

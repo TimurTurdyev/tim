@@ -1,4 +1,4 @@
-package cmd
+package machine
 
 import (
 	"os"
@@ -12,7 +12,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
-	"github.com/TimurTurdyev/tim/internal/tui"
 )
 
 // Источники Linux: /proc, /sys и nvidia-smi. Без build-тега: на macOS эти функции просто не вызываются.
@@ -55,33 +54,33 @@ func hotZone() int {
 	return hwinfo.HotZone(temps)
 }
 
-func collectHWLinux() hwSnapshot {
-	s := hwSnapshot{cores: runtime.NumCPU()}
+func CollectLinux() Snapshot {
+	s := Snapshot{Cores: runtime.NumCPU()}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
 	wg.Go(func() {
 		out, _ := runner.Output("lscpu")
-		set(func() { s.model = hwinfo.ParseLscpuModel(out) })
+		set(func() { s.Model = hwinfo.ParseLscpuModel(out) })
 	})
 	wg.Go(func() {
 		used, total := sysinfo.Memory()
 		sw := linuxSwap()
 		load := sysinfo.Load()
-		set(func() { s.memUsed, s.memTotal, s.swap, s.loadAvg = int64(used), int64(total), sw, load })
+		set(func() { s.MemUsed, s.MemTotal, s.Swap, s.LoadAvg = int64(used), int64(total), sw, load })
 	})
 	wg.Go(func() {
 		n := cpuBusy(300 * time.Millisecond)
-		set(func() { s.cpuPct = n })
+		set(func() { s.CPUPct = n })
 	})
 	wg.Go(func() {
 		gs := nvidia()
 		set(func() {
 			for _, g := range gs {
-				s.gpus = append(s.gpus, hwinfo.GPU{Model: g.Name})
+				s.GPUs = append(s.GPUs, hwinfo.GPU{Model: g.Name})
 			}
 			if len(gs) > 0 {
-				s.gpu = hwinfo.GPULoad{Device: gs[0].Util, InUse: gs[0].MemUsed, Valid: true}
+				s.GPU = hwinfo.GPULoad{Device: gs[0].Util, InUse: gs[0].MemUsed, Valid: true}
 			}
 		})
 	})
@@ -89,22 +88,22 @@ func collectHWLinux() hwSnapshot {
 		d, _ := sysinfo.DataDisk()
 		hot := hotZone()
 		set(func() {
-			s.diskPct = d.Percent()
+			s.DiskPct = d.Percent()
 			if hot >= 85 {
-				s.therm = "горячо: " + strconv.Itoa(hot) + "\u00b0C"
+				s.Therm = "горячо: " + strconv.Itoa(hot) + "\u00b0C"
 			}
 		})
 	})
 	wg.Wait()
-	if s.model == "" {
-		s.model = "Linux"
+	if s.Model == "" {
+		s.Model = "Linux"
 	}
 	return s
 }
 
-// hwSampleLinux: такт живого экрана - секунда замера /proc/stat.
-func hwSampleLinux(base hwSnapshot) tui.HWSample {
-	out := tui.HWSample{MemTotal: base.memTotal, Title: hwTitle(base)}
+// SampleLinux: такт живого экрана - секунда замера /proc/stat.
+func SampleLinux(base Snapshot) Live {
+	out := Live{MemTotal: base.MemTotal, Title: Title(base)}
 	var wg sync.WaitGroup
 	var list []procs.Full
 	wg.Go(func() { out.CPU = cpuBusy(time.Second) })
@@ -113,14 +112,14 @@ func hwSampleLinux(base hwSnapshot) tui.HWSample {
 			out.GPU, out.GPUValid, out.VRAM = gs[0].Util, true, gs[0].MemUsed
 		}
 	})
-	wg.Go(func() { list, _ = allProcs() })
+	wg.Go(func() { list, _ = All() })
 	used, _ := sysinfo.Memory()
 	sw := linuxSwap()
 	out.MemUsed, out.SwapUsed, out.SwapTotal, out.Load = int64(used), sw.Used, sw.Total, sysinfo.Load()
 	wg.Wait()
-	if base.memTotal > 0 {
-		out.Mem = int(out.MemUsed * 100 / base.memTotal)
+	if base.MemTotal > 0 {
+		out.Mem = int(out.MemUsed * 100 / base.MemTotal)
 	}
-	out.Top = topRows(list)
+	out.Top = TopRows(list)
 	return out
 }

@@ -3,170 +3,32 @@ package cmd
 import (
 	"fmt"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/hwinfo"
-	"github.com/TimurTurdyev/tim/internal/procs"
-	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 var hwWatch bool
 
-// bar: полоска загрузки в фирменных цветах: спокойно, внимание, плохо.
-func bar(pct, width int) string {
-	pct = max(0, min(100, pct))
-	full := pct * width / 100
-	head := strings.Repeat("\u2588", full)
-	var b string
-	switch {
-	case pct >= 85:
-		b = ui.Bad(head) + ui.Dim(strings.Repeat("\u2591", width-full))
-	case pct >= 60:
-		b = ui.Warn(head) + ui.Dim(strings.Repeat("\u2591", width-full))
-	default:
-		b = ui.OK(head) + ui.Dim(strings.Repeat("\u2591", width-full))
+func printHW(s machine.Snapshot, full bool) {
+	cores := strconv.Itoa(s.Cores) + " ядер"
+	if s.PC > 0 && s.EC > 0 {
+		cores += ": " + strconv.Itoa(s.PC) + " производительных, " + strconv.Itoa(s.EC) + " эффективных"
 	}
-	return b + " " + ui.Pad(strconv.Itoa(pct)+"%", 5)
-}
-
-type hwSnapshot struct {
-	model         string
-	cores, pc, ec int
-	memTotal      int64
-	memUsed       int64
-	freePct       int
-	swap          hwinfo.Swap
-	loadAvg       []float64
-	cpuPct        int
-	gpus          []hwinfo.GPU
-	gpu           hwinfo.GPULoad
-	holders       []string
-	disk          hwinfo.Disk
-	diskPct       int
-	therm         string
-}
-
-func sysctlInt(name string) int {
-	out, _ := runner.Output("sysctl", "-n", name)
-	n, _ := strconv.Atoi(strings.TrimSpace(out))
-	return n
-}
-
-// gpuHolders: свои процессы, которые держат видеокарту, тяжёлые первыми. Системные службы не показываем:
-// они держат её всегда, и сделать с ними ничего нельзя.
-func gpuHolders(list []procs.Full) []string {
-	out, _ := runner.Output("ioreg", "-r", "-c", "AGXDeviceUserClient", "-w", "0")
-	byPID := map[string]procs.Full{}
-	for _, p := range list {
-		byPID[p.PID] = p
-	}
-	type h struct {
-		name string
-		rss  int64
-	}
-	// Процессы одного приложения - одной строкой, память суммой: у браузера их несколько.
-	idx := map[string]int{}
-	var hs []h
-	for _, c := range hwinfo.ParseGPUClients(out) {
-		p, ok := byPID[c.PID]
-		if !ok || p.UID == 0 || procs.Protected(p) || strings.HasPrefix(p.Comm, "/System/") || strings.HasPrefix(p.Comm, "/usr/libexec/") {
-			continue
-		}
-		name := procs.Name(p.Comm, p.Args)
-		if i, seen := idx[name]; seen {
-			hs[i].rss += p.RSS
-			continue
-		}
-		idx[name] = len(hs)
-		hs = append(hs, h{name, p.RSS})
-	}
-	sort.Slice(hs, func(i, j int) bool { return hs[i].rss > hs[j].rss })
-	var names []string
-	for _, x := range hs {
-		names = append(names, x.name+" "+ui.Bytes(x.rss))
-	}
-	return names
-}
-
-// collectHW: всё разом и параллельно; загрузка процессора - по ps, без секундного iostat.
-func collectHW() hwSnapshot {
-	var s hwSnapshot
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
-	wg.Go(func() {
-		m, _ := runner.Output("sysctl", "-n", "machdep.cpu.brand_string")
-		c, pc, ec := sysctlInt("hw.ncpu"), sysctlInt("hw.perflevel0.physicalcpu"), sysctlInt("hw.perflevel1.physicalcpu")
-		set(func() { s.model, s.cores, s.pc, s.ec = strings.TrimSpace(m), c, pc, ec })
-	})
-	wg.Go(func() {
-		used, total := sysinfo.Memory()
-		set(func() { s.memUsed, s.memTotal = int64(used), int64(total) })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("memory_pressure")
-		n, _ := hwinfo.ParseFreePercent(out)
-		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
-		swap, _ := hwinfo.ParseSwap(sw)
-		set(func() { s.freePct, s.swap = n, swap })
-	})
-	wg.Go(func() {
-		l := sysinfo.Load()
-		set(func() { s.loadAvg = l })
-	})
-	wg.Go(func() {
-		list, err := allProcs()
-		if err != nil {
-			return
-		}
-		var sum float64
-		for _, p := range list {
-			sum += p.CPU
-		}
-		ncpu := runtime.NumCPU()
-		holders := gpuHolders(list)
-		set(func() { s.cpuPct, s.holders = int(sum/float64(ncpu)+0.5), holders })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("system_profiler", "SPDisplaysDataType", "-json")
-		set(func() { s.gpus = hwinfo.ParseDisplays([]byte(out)) })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
-		set(func() { s.gpu = hwinfo.ParseGPULoad(out) })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("diskutil", "info", "/")
-		d, _ := sysinfo.DataDisk()
-		th, _ := runner.Output("pmset", "-g", "therm")
-		set(func() { s.disk, s.diskPct, s.therm = hwinfo.ParseDiskutil(out), d.Percent(), hwinfo.ParseTherm(th) })
-	})
-	wg.Wait()
-	return s
-}
-
-func printHW(s hwSnapshot, full bool) {
-	cores := strconv.Itoa(s.cores) + " ядер"
-	if s.pc > 0 && s.ec > 0 {
-		cores += ": " + strconv.Itoa(s.pc) + " производительных, " + strconv.Itoa(s.ec) + " эффективных"
-	}
-	ui.Println(ui.Title(s.model) + ui.Dim("  "+cores+"  \u2022  "+ui.Bytes(s.memTotal)))
+	ui.Println(ui.Title(s.Model) + ui.Dim("  "+cores+"  \u2022  "+ui.Bytes(s.MemTotal)))
 	ui.Println()
 	label := func(s string) string { return "  " + ui.Label(ui.Pad(s, 12)) }
-	cpu := label("процессор") + bar(s.cpuPct, 24)
-	if len(s.loadAvg) == 3 {
-		cpu += ui.Dim(fmt.Sprintf("  load %.1f %.1f %.1f", s.loadAvg[0], s.loadAvg[1], s.loadAvg[2]))
+	cpu := label("процессор") + ui.Bar(s.CPUPct, 24)
+	if len(s.LoadAvg) == 3 {
+		cpu += ui.Dim(fmt.Sprintf("  load %.1f %.1f %.1f", s.LoadAvg[0], s.LoadAvg[1], s.LoadAvg[2]))
 	}
 	ui.Println(cpu)
-	for _, g := range s.gpus {
+	for _, g := range s.GPUs {
 		line := label("видеокарта") + g.Model
 		var extra []string
 		if g.Cores > 0 {
@@ -180,25 +42,25 @@ func printHW(s hwSnapshot, full bool) {
 		}
 		ui.Println(line)
 	}
-	if s.gpu.Valid {
-		ui.Println(label("") + bar(s.gpu.Device, 24) + ui.Dim("  видеопамять в работе "+ui.Bytes(s.gpu.InUse)))
-		if full && len(s.holders) > 0 {
-			ui.Println(label("") + ui.Dim("держат: "+strings.Join(s.holders[:min(4, len(s.holders))], ", ")))
+	if s.GPU.Valid {
+		ui.Println(label("") + ui.Bar(s.GPU.Device, 24) + ui.Dim("  видеопамять в работе "+ui.Bytes(s.GPU.InUse)))
+		if full && len(s.Holders) > 0 {
+			ui.Println(label("") + ui.Dim("держат: "+strings.Join(s.Holders[:min(4, len(s.Holders))], ", ")))
 		}
 	}
 	memPct := 0
-	if s.memTotal > 0 {
-		memPct = int(s.memUsed * 100 / s.memTotal)
+	if s.MemTotal > 0 {
+		memPct = int(s.MemUsed * 100 / s.MemTotal)
 	}
-	mem := label("память") + bar(memPct, 24) + ui.Dim("  "+ui.Bytes(s.memUsed)+" из "+ui.Bytes(s.memTotal))
-	if s.freePct > 0 {
-		mem += ui.Dim(", свободно " + strconv.Itoa(s.freePct) + "%")
+	mem := label("память") + ui.Bar(memPct, 24) + ui.Dim("  "+ui.Bytes(s.MemUsed)+" из "+ui.Bytes(s.MemTotal))
+	if s.FreePct > 0 {
+		mem += ui.Dim(", свободно " + strconv.Itoa(s.FreePct) + "%")
 	}
 	ui.Println(mem)
-	if s.swap.Total > 0 {
-		sw := ui.Bytes(s.swap.Used) + " из " + ui.Bytes(s.swap.Total)
+	if s.Swap.Total > 0 {
+		sw := ui.Bytes(s.Swap.Used) + " из " + ui.Bytes(s.Swap.Total)
 		// Своп занят больше чем наполовину - памяти не хватает постоянно, а не изредка.
-		if s.swap.Used*2 > s.swap.Total {
+		if s.Swap.Used*2 > s.Swap.Total {
 			sw = ui.Warn(sw + ", памяти не хватает")
 		}
 		ui.Println(label("swap") + sw)
@@ -206,19 +68,19 @@ func printHW(s hwSnapshot, full bool) {
 	if !full {
 		return
 	}
-	disk := "занято " + strconv.Itoa(s.diskPct) + "%"
-	if s.disk.SSD {
-		disk = "SSD " + s.disk.Protocol + ", " + disk
+	disk := "занято " + strconv.Itoa(s.DiskPct) + "%"
+	if s.Disk.SSD {
+		disk = "SSD " + s.Disk.Protocol + ", " + disk
 	}
-	switch s.disk.SMART {
+	switch s.Disk.SMART {
 	case "Verified":
 		disk += ui.Dim(", SMART в порядке")
 	case "":
 	default:
-		disk += ", " + ui.Bad("SMART: "+s.disk.SMART)
+		disk += ", " + ui.Bad("SMART: "+s.Disk.SMART)
 	}
 	ui.Println(label("диск") + disk)
-	for _, g := range s.gpus {
+	for _, g := range s.GPUs {
 		for _, d := range g.Displays {
 			line := label("экран") + d.Name + ui.Dim("  "+d.Pixels)
 			if d.Looks != "" {
@@ -231,12 +93,12 @@ func printHW(s hwSnapshot, full bool) {
 		ui.Println(label("батарея") + fmt.Sprintf("%d%%", b.Charge) + ui.Dim(fmt.Sprintf(", %d циклов, ёмкость %d%%", b.Cycles, b.Capacity)))
 	}
 	switch {
-	case s.therm == "" && runtime.GOOS == "linux":
+	case s.Therm == "" && runtime.GOOS == "linux":
 		// Датчики есть не везде, а у виртуалки их нет вовсе: молчание - не "всё хорошо".
-	case s.therm == "":
+	case s.Therm == "":
 		ui.Println(label("тепло") + ui.Dim("ограничений нет"))
 	default:
-		ui.Println(label("тепло") + ui.Warn(s.therm))
+		ui.Println(label("тепло") + ui.Warn(s.Therm))
 	}
 }
 
@@ -248,7 +110,7 @@ var hwCmd = &cobra.Command{
 --watch обновляет процессор, видеокарту и память раз в секунду; выход - Ctrl-C.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		collect, _, err := hwFuncs()
+		collect, _, err := machine.Funcs()
 		if err != nil {
 			return err
 		}
@@ -264,73 +126,4 @@ var hwCmd = &cobra.Command{
 func init() {
 	hwCmd.Flags().BoolVarP(&hwWatch, "watch", "w", false, "обновлять раз в секунду")
 	root.AddCommand(hwCmd)
-}
-
-// hwFuncs: сбор паспорта и замер для этой системы.
-func hwFuncs() (func() hwSnapshot, func(hwSnapshot) tui.HWSample, error) {
-	switch runtime.GOOS {
-	case "darwin":
-		return collectHW, hwSample, nil
-	case "linux":
-		return collectHWLinux, hwSampleLinux, nil
-	}
-	return nil, nil, ui.Errorf("на %s пока не умею", runtime.GOOS)
-}
-
-// hwSample: замер для живого экрана. Паспорт машины уже собран, здесь только то, что меняется,
-// и всё параллельно с секундным iostat - он и задаёт такт.
-func hwSample(base hwSnapshot) tui.HWSample {
-	out := tui.HWSample{MemTotal: base.memTotal, Title: hwTitle(base)}
-	var (
-		wg   sync.WaitGroup
-		mu   sync.Mutex
-		used int64
-		list []procs.Full
-	)
-	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
-	wg.Go(func() {
-		o, _ := runner.Output("iostat", "-c", "2", "-w", "1")
-		n, _ := hwinfo.ParseIostatCPU(o)
-		set(func() { out.CPU = n })
-	})
-	wg.Go(func() {
-		o, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
-		g := hwinfo.ParseGPULoad(o)
-		set(func() { out.GPU, out.GPUValid, out.VRAM = g.Device, g.Valid, g.InUse })
-	})
-	wg.Go(func() {
-		u, _ := sysinfo.Memory()
-		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
-		swap, _ := hwinfo.ParseSwap(sw)
-		la := sysinfo.Load()
-		set(func() {
-			used = int64(u)
-			out.SwapUsed, out.SwapTotal, out.Load = swap.Used, swap.Total, la
-		})
-	})
-	wg.Go(func() {
-		l, _ := allProcs()
-		set(func() { list = l })
-	})
-	wg.Wait()
-	out.MemUsed = used
-	if base.memTotal > 0 {
-		out.Mem = int(used * 100 / base.memTotal)
-	}
-	out.Top = topRows(list)
-	return out
-}
-
-// topRows: самые занятые приложения для живого экрана.
-func topRows(list []procs.Full) []tui.TopRow {
-	samples := make([]procs.Sample, len(list))
-	for i, p := range list {
-		samples[i] = p.Sample
-	}
-	groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, true)
-	var rows []tui.TopRow
-	for _, g := range groups[:min(6, len(groups))] {
-		rows = append(rows, tui.TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})
-	}
-	return rows
 }

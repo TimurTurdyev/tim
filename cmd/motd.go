@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/bypass"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -204,7 +205,7 @@ func motdSystem() []string {
 		line2 += "   " + ui.Dim(docker)
 	}
 	// Пожиратели CPU - сюда же: про них и надо узнать при открытии терминала, а не через три дня.
-	return append([]string{line1, line2}, hogLines("")...)
+	return append([]string{line1, line2}, machine.HogLines("")...)
 }
 
 func gitState(dir string) (sysinfo.GitState, bool) {
@@ -388,7 +389,7 @@ func motdRepos() []string {
 }
 
 func motdProcs() []string {
-	list, err := allProcs()
+	list, err := machine.All()
 	if err != nil {
 		return nil
 	}

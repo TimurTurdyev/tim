@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/leftover"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -171,6 +172,6 @@ func ownName(name string) bool {
 }
 
 func runningProcs() []procs.Full {
-	list, _ := allProcs()
+	list, _ := machine.All()
 	return list
 }
