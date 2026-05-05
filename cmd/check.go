@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -11,12 +9,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/health"
-	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/machine"
-	"github.com/TimurTurdyev/tim/internal/netinfo"
-	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -51,56 +46,6 @@ func checkProjects(args []string) ([]*config.Project, error) {
 		out = append(out, p)
 	}
 	return out, nil
-}
-
-// envGit: два вопроса к git про .env; ответ "нет" при любой ошибке, чтобы не шуметь.
-func envGit(dir string) health.EnvGit {
-	var e health.EnvGit
-	if _, err := os.Stat(filepath.Join(dir, ".env")); err == nil {
-		e.Exists = true
-		_, err := runner.Output("git", "-C", dir, "check-ignore", "-q", ".env")
-		e.Ignored = err == nil
-	}
-	_, err := runner.Output("git", "-C", dir, "ls-files", "--error-unmatch", ".env")
-	e.Tracked = err == nil
-	return e
-}
-
-// gitCheck: состояние клона. Сам запуск git остаётся здесь, решение об уровне - в health.
-func gitCheck(dir string) health.Check {
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
-	}
-	g, ok := gitState(dir)
-	if !ok {
-		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
-	}
-	return health.GitCheck(g, envGit(dir))
-}
-
-// checkRow: все проверки одного проекта. Сетевые идут параллельно.
-func checkRow(p *config.Project) health.Row {
-	r := health.Row{Name: p.Name}
-	var mu sync.Mutex
-	add := func(c health.Check) {
-		mu.Lock()
-		r.Checks = append(r.Checks, c)
-		mu.Unlock()
-	}
-	var wg sync.WaitGroup
-	if !checkNet {
-		add(gitCheck(cfg.ProjectDir(p)))
-	}
-	host, _ := netinfo.HostPort(p.URL, "")
-	if !checkLocal && p.URL != "" && host != "" && !fill.Local(host) {
-		wg.Go(func() { add(health.Site(p.URL)) })
-		wg.Go(func() { add(health.Cert(host)) })
-		base := inspect.Registrable(host)
-		wg.Go(func() { add(health.Mail(base)) })
-		wg.Go(func() { add(health.DomainReg(base)) })
-	}
-	wg.Wait()
-	return r
 }
 
 var checkCols = []struct {
@@ -202,7 +147,7 @@ var checkCmd = &cobra.Command{
 			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				rows[i] = checkRow(p)
+				rows[i] = sites.CheckRow(p, cfg.ProjectDir(p), checkLocal, checkNet)
 			})
 		}
 		wg.Wait()

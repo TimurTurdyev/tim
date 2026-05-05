@@ -4,18 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"net"
 	"os"
 	"slices"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -109,22 +107,6 @@ var portCheckCmd = &cobra.Command{
 	},
 }
 
-type siteReport struct {
-	Host   string            `json:"host"`
-	IPs    []string          `json:"ips,omitempty"`
-	Geo    *inspect.Geo      `json:"geo,omitempty"`
-	Domain *inspect.Domain   `json:"domain,omitempty"`
-	TLS    *siteTLS          `json:"tls,omitempty"`
-	HTTP   *inspect.Page     `json:"http,omitempty"`
-	Errors map[string]string `json:"errors,omitempty"`
-}
-
-type siteTLS struct {
-	Issuer   string    `json:"issuer"`
-	Expires  time.Time `json:"expires"`
-	Verified bool      `json:"verified"`
-}
-
 var siteJSON bool
 
 var siteCmd = &cobra.Command{
@@ -137,7 +119,7 @@ var siteCmd = &cobra.Command{
 		if !strings.Contains(target, "://") {
 			target = "https://" + host
 		}
-		r := collectSite(host, target)
+		r := sites.Collect(host, target)
 		if siteJSON {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -148,55 +130,7 @@ var siteCmd = &cobra.Command{
 	},
 }
 
-func collectSite(host, target string) *siteReport {
-	r := &siteReport{Host: host, Errors: map[string]string{}}
-	var mu sync.Mutex
-	fail := func(k string, err error) {
-		mu.Lock()
-		r.Errors[k] = err.Error()
-		mu.Unlock()
-	}
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		ips, err := net.LookupHost(host)
-		if err != nil {
-			fail("dns", err)
-			return
-		}
-		r.IPs = ips
-		if g, err := inspect.IPGeo(ips[0]); err == nil {
-			r.Geo = g
-		} else {
-			fail("geo", err)
-		}
-	})
-	wg.Go(func() {
-		if d, err := inspect.Registration(inspect.Registrable(host)); err == nil {
-			r.Domain = d
-		} else {
-			fail("domain", err)
-		}
-	})
-	wg.Go(func() {
-		info, err := inspect.Cert(host, "443")
-		if err != nil {
-			fail("tls", err)
-			return
-		}
-		r.TLS = &siteTLS{Issuer: info.Leaf().Issuer.CommonName, Expires: info.Leaf().NotAfter, Verified: info.VerifyErr == nil}
-	})
-	wg.Go(func() {
-		if p, err := inspect.HTTP(target); err == nil {
-			r.HTTP = p
-		} else {
-			fail("http", err)
-		}
-	})
-	wg.Wait()
-	return r
-}
-
-func printSite(r *siteReport) {
+func printSite(r *sites.Report) {
 	ui.Println(ui.Info(r.Host))
 	if len(r.IPs) > 0 {
 		line := ui.Label("ip       ") + strings.Join(r.IPs, " ")

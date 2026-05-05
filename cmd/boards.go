@@ -18,6 +18,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -366,7 +367,7 @@ func checkAll() []health.Row {
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			rows[i] = checkRow(p)
+			rows[i] = sites.CheckRow(p, cfg.ProjectDir(p), checkLocal, checkNet)
 		})
 	}
 	wg.Wait()

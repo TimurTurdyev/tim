@@ -3,12 +3,12 @@ package cmd
 import (
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -57,12 +57,8 @@ func fixes(domain string, m *inspect.Mail) {
 
 var mailAll bool
 
-// mailAll: сводка по всем доменам реестра одной таблицей.
+// mailSummary: сводка по всем доменам реестра одной таблицей.
 func mailSummary() error {
-	type row struct {
-		domain, level string
-		missing       []string
-	}
 	var domains []string
 	for _, p := range cfg.Projects {
 		if p.URL != "" {
@@ -74,31 +70,19 @@ func mailSummary() error {
 		return ui.Errorf("ни у одного проекта нет поля url: tim proj add --url")
 	}
 	sort.Strings(domains)
-	rows := make([]row, len(domains))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	for i, d := range domains {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			m := inspect.MailCheck(d, inspect.DKIMSelectors)
-			level, missing := m.Verdict()
-			rows[i] = row{d, level, missing}
-		})
-	}
-	wg.Wait()
+	rows := sites.MailVerdicts(domains)
 	bad := 0
 	ui.Println(ui.Dim(ui.Pad("ДОМЕН", 30) + " ИТОГ"))
 	for _, r := range rows {
-		switch r.level {
+		switch r.Level {
 		case "ok":
-			ui.Println(ui.Label(ui.Pad(r.domain, 30)) + " настроена верно")
+			ui.Println(ui.Label(ui.Pad(r.Domain, 30)) + " настроена верно")
 		case "warn":
 			bad++
-			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Warn(strings.Join(r.missing, ", ")))
+			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Warn(strings.Join(r.Missing, ", ")))
 		default:
 			bad++
-			ui.Println(ui.Pad(r.domain, 30) + " " + ui.Bad("проблемы: "+strings.Join(r.missing, ", ")))
+			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Bad("проблемы: "+strings.Join(r.Missing, ", ")))
 		}
 	}
 	ui.Println(ui.Dim("подробно по домену: tim mail <домен>"))
@@ -150,7 +134,7 @@ var mailCmd = &cobra.Command{
 			if len(rec) > 70 {
 				rec = rec[:70] + "..."
 			}
-			if dkimRevoked(m.DKIM[s]) {
+			if sites.DKIMRevoked(m.DKIM[s]) {
 				ui.Println("  " + ui.Warn("!  ") + s + "._domainkey  ключ отозван (пустой p=)")
 				continue
 			}
@@ -174,17 +158,6 @@ var mailCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-// dkimRevoked: тег p= пустой - ключ отозван.
-func dkimRevoked(rec string) bool {
-	for _, part := range strings.Split(rec, ";") {
-		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
-		if ok && strings.TrimSpace(k) == "p" {
-			return strings.TrimSpace(v) == ""
-		}
-	}
-	return false
 }
 
 func init() {
