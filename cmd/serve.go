@@ -15,7 +15,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/envfile"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/newproj"
-	"github.com/TimurTurdyev/tim/internal/phpver"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -52,7 +51,7 @@ func servable(dir string) bool {
 // которого нет ни у кого в реестре, и записывает его: иначе у всех таких проектов будет 8000
 // и при запуске вместе второй молча уедет на другой порт.
 func pinPort(p *config.Project, dir string) string {
-	port := projectPort(p, dir)
+	port := run.ProjectPort(p, dir)
 	if p.Port > 0 || port != "8000" {
 		return port
 	}
@@ -66,18 +65,6 @@ func pinPort(p *config.Project, dir string) string {
 		ui.Println(ui.Dim("закрепил за " + p.Name + " порт " + strconv.Itoa(n) + "; поменять - поле port в реестре"))
 	}
 	return strconv.Itoa(n)
-}
-
-func projectPort(p *config.Project, dir string) string {
-	if p.Port > 0 {
-		return strconv.Itoa(p.Port)
-	}
-	if u, ok := envfile.Get(filepath.Join(dir, ".env"), "APP_URL"); ok {
-		if port := envfile.Port(u); port != "" {
-			return port
-		}
-	}
-	return "8000"
 }
 
 // resolveProjects: имена, группы @имя и части имён; пусто - проект текущей папки или пикер.
@@ -136,56 +123,6 @@ func resolveProjects(args []string) ([]*config.Project, error) {
 	return out, nil
 }
 
-// phpEnv: если активный php не подходит под require.php проекта, PATH с подходящей версией из brew.
-func phpEnv(dir, stack string) ([]string, string) {
-	if stack != "laravel" && stack != "php" {
-		return nil, ""
-	}
-	req := phpver.Required(filepath.Join(dir, "composer.json"))
-	if req == "" {
-		return nil, ""
-	}
-	if active, err := runner.Output("php", "-r", "echo PHP_VERSION;"); err == nil {
-		if v, ok := phpver.Parse(active); ok && phpver.Satisfies(v, req) {
-			return nil, ""
-		}
-	}
-	for _, i := range phpInstalls() {
-		if phpver.Satisfies(i.Version, req) {
-			return []string{"PATH=" + phpPath(i.Bin)}, "php " + i.Version.String() + " под require.php " + req
-		}
-	}
-	return nil, "подходящего под " + req + " php нет: " + phpHint("<версия>")
-}
-
-type servePlan struct {
-	p    *config.Project
-	dir  string
-	port string
-	cmd  run.Command
-	note string
-}
-
-func planServe(p *config.Project, port string) (servePlan, error) {
-	dir := cfg.ProjectDir(p)
-	facts := run.Detect(dir)
-	facts.Custom = p.Serve
-	c, err := run.Serve(facts, port)
-	if err != nil {
-		return servePlan{}, ui.Errorf("%s: %v", p.Name, err)
-	}
-	env, note := phpEnv(dir, facts.Stack)
-	c.Env = append(c.Env, env...)
-	switch {
-	case note != "":
-	case p.Serve != "":
-		note = "своя команда"
-	default:
-		note = facts.Stack
-	}
-	return servePlan{p: p, dir: dir, port: port, cmd: c, note: note}, nil
-}
-
 var (
 	servePortFlag int
 	serveDetach   bool
@@ -221,11 +158,11 @@ var serveCmd = &cobra.Command{
 			if l, busy := netinfo.PortBusy(port); busy {
 				return ui.Errorf("порт %s занят: %s (pid %s); освободить: tim port %s kill", port, l.Command, l.PID, port)
 			}
-			sp, err := planServe(p, port)
+			sp, err := run.NewPlan(p, cfg.ProjectDir(p), port)
 			if err != nil {
 				return err
 			}
-			ui.Println(ui.Label(p.Name) + "  " + ui.Dim(sp.note+", порт "+port+", "+sp.dir))
+			ui.Println(ui.Label(p.Name) + "  " + ui.Dim(sp.Note+", порт "+port+", "+sp.Dir))
 			if serveHTTPS {
 				f, err := planHTTPS(p, map[string]bool{port: true})
 				if err != nil {
@@ -235,7 +172,7 @@ var serveCmd = &cobra.Command{
 					return err
 				}
 				line := "  " + f.url()
-				if hint := httpsHint(run.Stack(sp.dir)); hint != "" {
+				if hint := httpsHint(run.Stack(sp.Dir)); hint != "" {
 					line += ui.Dim("  " + hint)
 				}
 				ui.Println(line)
@@ -245,7 +182,7 @@ var serveCmd = &cobra.Command{
 			} else if serveOpen {
 				go openWhenReady(port, "http://localhost:"+port)
 			}
-			return runner.ExecIn(sp.dir, sp.cmd.Env, sp.cmd.Name, sp.cmd.Args...)
+			return runner.ExecIn(sp.Dir, sp.Cmd.Env, sp.Cmd.Name, sp.Cmd.Args...)
 		}
 		return serveBackground(list, port)
 	},
@@ -274,20 +211,20 @@ func serveBackground(list []*config.Project, port string) error {
 	}
 	failed := 0
 	for i, p := range todo {
-		sp, err := planServe(p, ports[i])
+		sp, err := run.NewPlan(p, cfg.ProjectDir(p), ports[i])
 		if err != nil {
 			failed++
 			ui.Println(ui.Bad(err.Error()))
 			continue
 		}
 		logPath := run.LogPath(p.Name)
-		pid, err := runner.Start(sp.dir, sp.cmd.Env, logPath, sp.cmd.Name, sp.cmd.Args...)
+		pid, err := runner.Start(sp.Dir, sp.Cmd.Env, logPath, sp.Cmd.Name, sp.Cmd.Args...)
 		if err != nil {
 			failed++
 			ui.Println(ui.Bad(p.Name + ": не запустился: " + err.Error()))
 			continue
 		}
-		line := ui.Label(ui.Pad(p.Name, 22)) + " порт " + ports[i] + ui.Dim("  "+sp.note)
+		line := ui.Label(ui.Pad(p.Name, 22)) + " порт " + ports[i] + ui.Dim("  "+sp.Note)
 		if ports[i] != wanted[i] {
 			line += "  " + ui.Warn("вместо "+wanted[i]+" (занят); APP_URL мог остаться на "+wanted[i])
 		}
@@ -309,7 +246,7 @@ func serveBackground(list []*config.Project, port string) error {
 		if runner.DryRun {
 			continue
 		}
-		st := run.State{Name: p.Name, PID: pid, Port: ports[i], Dir: sp.dir, Command: sp.cmd.String(), Log: logPath, Started: time.Now()}
+		st := run.State{Name: p.Name, PID: pid, Port: ports[i], Dir: sp.Dir, Command: sp.Cmd.String(), Log: logPath, Started: time.Now()}
 		if err := st.Save(); err != nil {
 			return err
 		}

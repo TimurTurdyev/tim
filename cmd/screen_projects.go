@@ -92,7 +92,7 @@ func projectCard(row tui.ProjectRow) tui.ProjectCard {
 			lines = append(lines, label("сервер")+ui.OK("\u25cf работает :"+st.Port)+ui.Dim(", "+ui.Duration(time.Since(st.Started))))
 		}
 	} else {
-		lines = append(lines, label("сервер")+ui.Dim("\u25cb не запущен, порт "+projectPort(p, row.Dir)))
+		lines = append(lines, label("сервер")+ui.Dim("\u25cb не запущен, порт "+run.ProjectPort(p, row.Dir)))
 	}
 	if p.URL != "" {
 		lines = append(lines, label("сайт")+p.URL)

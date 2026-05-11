@@ -233,7 +233,7 @@ func motdProject() []string {
 	if g, ok := sysinfo.GitStatus(dir); ok {
 		line += "  " + gitLine(g)
 	}
-	port := projectPort(p, dir)
+	port := run.ProjectPort(p, dir)
 	if l, busy := netinfo.PortBusy(port); busy {
 		line += "  " + ui.Info("порт "+port+" занят "+l.Command)
 	}
