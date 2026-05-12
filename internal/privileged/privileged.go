@@ -49,7 +49,7 @@ type Response struct {
 
 // allowed: что помощник вообще запускает. Это не защита от злоумышленника (sudo и так у
 // пользователя), а страховка от ошибки в коде.
-var allowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true}
+var allowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true, "sysctl": true}
 
 // Serve: сторона root - читает запросы построчно и отвечает на каждый.
 func Serve(in io.Reader, out io.Writer) error {

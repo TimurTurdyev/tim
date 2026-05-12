@@ -169,6 +169,9 @@ func AppOn() (int, error) {
 	if out, err := privileged.RunStdin(rules, "pfctl", "-q", "-a", Anchor, "-f", "-"); err != nil {
 		return 0, ui.Errorf("pf не принял правила: %s", firstLine(out, err))
 	}
+	if err := forwardingOn(); err != nil {
+		return 0, err
+	}
 	if out, err := privileged.Run("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
 		return 0, ui.Errorf("pf не включился: %s", firstLine(out, err))
 	}
@@ -183,6 +186,34 @@ func firstLine(out string, err error) string {
 	return strings.SplitN(out, "\n", 2)[0]
 }
 
+// forwardingFile: каким был net.inet.ip.forwarding до нас - --off вернёт как было.
+func forwardingFile() string { return filepath.Join(GuardDir(), "novpn-forwarding.prev") }
+
+// forwardingOn: без ip forwarding ядро выбрасывает завёрнутый на lo0 пакет с чужим адресатом
+// раньше, чем rdr успевает подменить адрес, - прокси его не увидит. Тот же шаг у Clash и Surge.
+func forwardingOn() error {
+	cur, _ := runner.Output("sysctl", "-n", "net.inet.ip.forwarding")
+	if strings.TrimSpace(cur) == "1" {
+		return nil
+	}
+	if _, err := privileged.Run("sysctl", "-w", "net.inet.ip.forwarding=1"); err != nil {
+		return ui.Errorf("ip forwarding не включился: %v", err)
+	}
+	if !runner.DryRun {
+		_ = os.WriteFile(forwardingFile(), []byte("0"), 0o644)
+	}
+	ui.Println(ui.Dim("включён net.inet.ip.forwarding - без него pf не довозит пакет до прокси; --off вернёт 0"))
+	return nil
+}
+
+func forwardingRestore() {
+	if _, err := os.Stat(forwardingFile()); err != nil {
+		return
+	}
+	_, _ = privileged.Run("sysctl", "-w", "net.inet.ip.forwarding=0")
+	_ = os.Remove(forwardingFile())
+}
+
 func AppOff() error {
 	if _, err := privileged.Run("pfctl", "-q", "-a", Anchor, "-F", "all"); err != nil {
 		return ui.Errorf("снять правила не вышло: %v", err)
@@ -190,6 +221,7 @@ func AppOff() error {
 	if pid := ProxyPID(); pid > 0 {
 		_, _ = privileged.Run("kill", strconv.Itoa(pid))
 	}
+	forwardingRestore()
 	ui.Println(ui.Label("снято") + ui.Dim("  правила pf и прокси; запущенные под группой программы снова пойдут через VPN"))
 	return nil
 }
@@ -229,6 +261,7 @@ func AppStatus() error {
 	}
 	if states, err := privileged.Run("pfctl", "-s", "states"); err == nil {
 		redir, tun := 0, 0
+		var sample []string
 		for _, l := range strings.Split(states, "\n") {
 			fromTunnel := false
 			for _, ip := range tunIPs {
@@ -237,11 +270,19 @@ func AppStatus() error {
 			switch {
 			case fromTunnel && strings.Contains(l, "127.0.0.1:"+strconv.Itoa(ProxyPort)):
 				redir++
+				if len(sample) < 3 {
+					sample = append(sample, strings.TrimSpace(l))
+				}
 			case fromTunnel:
 				tun++
 			}
 		}
 		ui.Println(ui.Label("состояния: ") + fmt.Sprintf("завёрнуто на прокси %d, в туннеле %d", redir, tun))
+		for _, l := range sample {
+			ui.Println("  " + ui.Dim(l))
+		}
+		fw, _ := runner.Output("sysctl", "-n", "net.inet.ip.forwarding")
+		ui.Println(ui.Label("ip forwarding ") + ui.Dash(strings.TrimSpace(fw)))
 		if redir > 0 {
 			ui.Println(ui.OK("правило срабатывает: соединения группы идут через прокси мимо VPN"))
 		}
