@@ -322,6 +322,30 @@ func AppCheck() error {
 		o, _ := runner.Output("curl", "-s", "--max-time", "8", "https://ifconfig.co/country")
 		return o
 	}())
+	// Пока curl идёт, tcpdump под root пишет, что видно на lo0 и в туннеле: по этому понятно,
+	// где пакет застрял. Шесть секунд, потом tcpdump выходит сам.
+	pcap := filepath.Join(GuardDir(), "novpn-check.pcap")
+	started := time.Now()
+	ifaces := "pktap,lo0"
+	for _, t := range netinfo.Tunnels() {
+		ifaces += "," + t.Iface
+	}
+	filter := "tcp and port " + strconv.Itoa(ProxyPort)
+	if ips, err := net.LookupIP("ifconfig.co"); err == nil {
+		for _, ip := range ips {
+			if ip.To4() != nil {
+				filter = "tcp and (port " + strconv.Itoa(ProxyPort) + " or host " + ip.String() + ")"
+				break
+			}
+		}
+	}
+	capturing := false
+	if !runner.DryRun {
+		r, err := privileged.Launch(privileged.LaunchReq{Path: "/usr/sbin/tcpdump", Args: []string{"-i", ifaces, "-n", "-G", "6", "-W", "1", "-w", pcap, filter},
+			Env: []string{"PATH=/usr/sbin:/usr/bin:/bin"}, Dir: "/"})
+		capturing = err == nil && r.Err == ""
+		time.Sleep(800 * time.Millisecond)
+	}
 	resp, err := privileged.Launch(privileged.LaunchReq{Path: "/usr/bin/curl", Args: []string{"-s", "--max-time", "8", "https://ifconfig.co/country"},
 		Env: os.Environ(), Dir: paths.Home(), UID: os.Getuid(), GID: gid, Groups: myGroups(), Wait: true})
 	if err != nil {
@@ -333,7 +357,27 @@ func AppCheck() error {
 	case "":
 		ui.Println(ui.Bad("под группой наружу не вышло: " + ui.Dash(resp.Err)))
 		ui.Println(ui.Dim("снять: tim vpn app --off; ниже - что видит pf"))
-		return AppStatus()
+		err := AppStatus()
+		if capturing {
+			if wait := 7*time.Second - time.Since(started); wait > 0 {
+				time.Sleep(wait)
+			}
+			if out, err := runner.Output("tcpdump", "-n", "-r", pcap); err == nil {
+				ui.Println(ui.Label("пакеты за время проверки ") + ui.Dim("(lo0 и туннель, порт прокси и ifconfig.co)"))
+				lines := strings.Split(strings.TrimSpace(out), "\n")
+				for i, l := range lines {
+					if i >= 16 {
+						ui.Println(ui.Dim(fmt.Sprintf("  ещё %d", len(lines)-16)))
+						break
+					}
+					ui.Println("  " + ui.Dim(l))
+				}
+				if strings.TrimSpace(out) == "" {
+					ui.Println(ui.Dim("  ничего: пакеты до lo0 не дошли"))
+				}
+			}
+		}
+		return err
 	case viaVPN:
 		ui.Println(ui.Warn("страна та же: правило не сработало или обе дороги ведут в одну страну"))
 	default:
