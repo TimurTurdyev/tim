@@ -82,14 +82,10 @@ func Rules(tunnels []netinfo.Tunnel) string {
 	var b strings.Builder
 	b.WriteString("# tim: процессы группы " + GroupName + " идут мимо VPN через прокси tim\n")
 	b.WriteString("table <tim_local> { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 }\n")
-	// Источник подменяется на 127.0.0.1: ответ на адрес туннеля ядро отправило бы в сам туннель
-	// (маршрут к своему адресу у utun ведёт в него же), а с check_interface не приняло бы и с en0.
-	for _, t := range tunnels {
-		for _, ip := range t.IPv4 {
-			fmt.Fprintf(&b, "nat on lo0 inet proto tcp from %s to ! <tim_local> -> 127.0.0.1\n", ip)
-		}
-	}
-	fmt.Fprintf(&b, "rdr pass on lo0 inet proto tcp from any to ! <tim_local> -> 127.0.0.1 port %d\n", ProxyPort)
+	fmt.Fprintf(&b, "rdr on lo0 inet proto tcp from any to ! <tim_local> -> 127.0.0.1 port %d\n", ProxyPort)
+	// Ответ прокси идёт на адрес туннеля, а маршрут к нему у utun ведёт в сам туннель: reply-to
+	// возвращает ответ на lo0, где он доходит до приложения.
+	fmt.Fprintf(&b, "pass in quick on lo0 reply-to (lo0 127.0.0.1) inet proto tcp from any to 127.0.0.1 port %d keep state\n", ProxyPort)
 	for _, t := range tunnels {
 		// Следующий узел для lo0 задаётся явно, как у Clash и Surge: без него pf пакет не заворачивает.
 		fmt.Fprintf(&b, "pass out quick on %s route-to (lo0 127.0.0.1) inet proto tcp from any to ! <tim_local> group %s keep state\n", t.Iface, GroupName)
@@ -362,7 +358,7 @@ func AppCheck() error {
 			if wait := 7*time.Second - time.Since(started); wait > 0 {
 				time.Sleep(wait)
 			}
-			if out, err := runner.Output("tcpdump", "-n", "-r", pcap); err == nil {
+			if out, err := runner.Output("tcpdump", "-n", "-k", "-r", pcap); err == nil {
 				ui.Println(ui.Label("пакеты за время проверки ") + ui.Dim("(lo0 и туннель, порт прокси и ifconfig.co)"))
 				lines := strings.Split(strings.TrimSpace(out), "\n")
 				for i, l := range lines {
