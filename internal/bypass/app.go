@@ -168,6 +168,9 @@ func AppOn() (int, error) {
 	if err := forwardingOn(); err != nil {
 		return 0, err
 	}
+	if err := scopedDefaultOn(phys, gw); err != nil {
+		return 0, err
+	}
 	if out, err := privileged.Run("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
 		return 0, ui.Errorf("pf не включился: %s", firstLine(out, err))
 	}
@@ -202,6 +205,36 @@ func forwardingOn() error {
 	return nil
 }
 
+// scopedFile: мы ли завели scoped-маршрут - --off снимет только свой.
+func scopedFile() string { return filepath.Join(GuardDir(), "novpn-scoped.prev") }
+
+// scopedDefaultOn: сокет прокси привязан к en0 (IP_BOUND_IF), и маршрут для него ядро ищет только
+// среди scoped-маршрутов этого интерфейса. VPN-клиент, забирая маршрут по умолчанию, обычно сносит
+// и scoped-копию - тогда "no route to host". Заводим её заново; глобальную таблицу она не трогает.
+func scopedDefaultOn(phys netinfo.Service, gw string) error {
+	out, _ := runner.Output("route", "-n", "get", "-ifscope", phys.Device, "1.1.1.1")
+	if strings.Contains(out, "gateway: "+gw) {
+		return nil
+	}
+	if _, err := privileged.Run("route", "-n", "add", "-ifscope", phys.Device, "default", gw); err != nil && !strings.Contains(err.Error(), "exists") {
+		return ui.Errorf("scoped-маршрут для %s не завёлся: %v", phys.Device, err)
+	}
+	if !runner.DryRun {
+		_ = os.WriteFile(scopedFile(), []byte(phys.Device), 0o644)
+	}
+	ui.Println(ui.Dim("заведён scoped-маршрут по умолчанию для " + phys.Device + " через " + gw + " - по нему ходит прокси; --off снимет"))
+	return nil
+}
+
+func scopedRestore() {
+	data, err := os.ReadFile(scopedFile())
+	if err != nil {
+		return
+	}
+	_, _ = privileged.Run("route", "-n", "delete", "-ifscope", strings.TrimSpace(string(data)), "default")
+	_ = os.Remove(scopedFile())
+}
+
 func forwardingRestore() {
 	if _, err := os.Stat(forwardingFile()); err != nil {
 		return
@@ -218,6 +251,7 @@ func AppOff() error {
 		_, _ = privileged.Run("kill", strconv.Itoa(pid))
 	}
 	forwardingRestore()
+	scopedRestore()
 	ui.Println(ui.Label("снято") + ui.Dim("  правила pf и прокси; запущенные под группой программы снова пойдут через VPN"))
 	return nil
 }
@@ -255,6 +289,7 @@ func AppStatus() error {
 	for _, t := range netinfo.Tunnels() {
 		tunIPs = append(tunIPs, t.IPv4...)
 	}
+	phys, _ := Physical()
 	if states, err := privileged.Run("pfctl", "-s", "states"); err == nil {
 		redir, tun := 0, 0
 		var sample []string
@@ -279,6 +314,14 @@ func AppStatus() error {
 		}
 		fw, _ := runner.Output("sysctl", "-n", "net.inet.ip.forwarding")
 		ui.Println(ui.Label("ip forwarding ") + ui.Dash(strings.TrimSpace(fw)))
+		sc, _ := runner.Output("route", "-n", "get", "-ifscope", phys.Device, "1.1.1.1")
+		scoped := "нет"
+		for _, l := range strings.Split(sc, "\n") {
+			if strings.Contains(l, "gateway:") {
+				scoped = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "gateway:"))
+			}
+		}
+		ui.Println(ui.Label("scoped-маршрут "+phys.Device+" ") + scoped)
 		if redir > 0 {
 			ui.Println(ui.OK("правило срабатывает: соединения группы идут через прокси мимо VPN"))
 		}
