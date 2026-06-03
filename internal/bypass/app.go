@@ -2,14 +2,13 @@ package bypass
 
 import (
 	"errors"
-	"fmt"
-	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/paths"
@@ -19,129 +18,22 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Обход по приложению: процессы группы novpn pf заворачивает на прозрачный прокси tim, тот ходит
-// к адресату через физический интерфейс. Маршруты приложений не различают, pf - различает по группе.
+// Обход по приложению: программа запускается под группой novpn, и её трафик ядро уводит в
+// физический интерфейс. Маршруты приложений не различают, а группу процесса различают и pf на
+// macOS (через прозрачный прокси tim, app_pf.go), и netfilter на Linux (метка и своя таблица
+// маршрутов, app_netfilter.go). Снаружи одно и то же: AppOn, AppOff, AppStatus, AppCheck, AppLaunch.
 
-const (
-	GroupName = "novpn"
-	Anchor    = "com.apple/tim" // внутри com.apple/*, который pf.conf macOS подключает сам
-)
-
-const ProxyPort = 7788
-
-func ProxyPidFile() string { return filepath.Join(GuardDir(), "novpn-proxy.pid") }
-func ProxyLogFile() string { return "/var/log/tim-novpn.log" }
-
-// ProxyPID: pid живого прокси или 0.
-func ProxyPID() int {
-	data, err := os.ReadFile(ProxyPidFile())
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(string(data))
-	if err != nil || pid <= 0 || !alive(pid) {
-		return 0
-	}
-	return pid
-}
+const GroupName = "novpn"
 
 // GID: группа novpn, при первом разе заводится.
 func GID() (int, error) {
-	if out, err := runner.Output("dscl", ".", "-read", "/Groups/"+GroupName, "PrimaryGroupID"); err == nil {
-		if _, v, ok := strings.Cut(strings.TrimSpace(out), ":"); ok {
-			if gid, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-				return gid, nil
-			}
-		}
+	if runtime.GOOS == "linux" {
+		return linuxGID()
 	}
-	used := map[int]bool{}
-	out, _ := runner.Output("dscl", ".", "-list", "/Groups", "PrimaryGroupID")
-	for _, line := range strings.Split(out, "\n") {
-		if f := strings.Fields(line); len(f) == 2 {
-			if n, err := strconv.Atoi(f[1]); err == nil {
-				used[n] = true
-			}
-		}
-	}
-	gid := 700
-	for used[gid] {
-		gid++
-	}
-	if _, err := privileged.Run("dscl", ".", "-create", "/Groups/"+GroupName, "PrimaryGroupID", strconv.Itoa(gid)); err != nil {
-		return 0, ui.Errorf("группа %s не завелась: %v", GroupName, err)
-	}
-	_, _ = privileged.Run("dscl", ".", "-create", "/Groups/"+GroupName, "RealName", "tim: мимо VPN")
-	ui.Println(ui.Label("группа "+GroupName) + ui.Dim("  gid "+strconv.Itoa(gid)))
-	return gid, nil
+	return darwinGID()
 }
 
-// Rules: правила pf. Соединения процессов группы заворачиваются на lo0 и дальше (rdr) на прокси
-// tim, который сам ходит к адресату через физический интерфейс. Локальные адреса не трогаем,
-// иначе под раздачу попали бы dev-серверы на 127.0.0.1.
-func Rules(tunnels []netinfo.Tunnel) string {
-	var b strings.Builder
-	b.WriteString("# tim: процессы группы " + GroupName + " идут мимо VPN через прокси tim\n")
-	b.WriteString("table <tim_local> { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 }\n")
-	fmt.Fprintf(&b, "rdr on lo0 inet proto tcp from any to ! <tim_local> -> 127.0.0.1 port %d\n", ProxyPort)
-	// Ответ прокси идёт на адрес туннеля, а маршрут к нему у utun ведёт в сам туннель: reply-to
-	// возвращает ответ на lo0, где он доходит до приложения.
-	fmt.Fprintf(&b, "pass in quick on lo0 reply-to (lo0 127.0.0.1) inet proto tcp from any to 127.0.0.1 port %d keep state\n", ProxyPort)
-	for _, t := range tunnels {
-		// Следующий узел для lo0 задаётся явно, как у Clash и Surge: без него pf пакет не заворачивает.
-		fmt.Fprintf(&b, "pass out quick on %s route-to (lo0 127.0.0.1) inet proto tcp from any to ! <tim_local> group %s keep state\n", t.Iface, GroupName)
-	}
-	return b.String()
-}
-
-// IfaceIPv4: адрес интерфейса - источник для исходящих соединений прокси.
-func IfaceIPv4(dev string) string {
-	ifi, err := net.InterfaceByName(dev)
-	if err != nil {
-		return ""
-	}
-	addrs, _ := ifi.Addrs()
-	for _, a := range addrs {
-		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
-			return ipn.IP.To4().String()
-		}
-	}
-	return ""
-}
-
-// ProxyUp: прокси под root живёт отдельно от tim; если уже работает - ничего не делаем.
-func ProxyUp(phys netinfo.Service) error {
-	if ProxyPID() > 0 {
-		return nil
-	}
-	ip := IfaceIPv4(phys.Device)
-	if ip == "" {
-		return ui.Errorf("у %s нет IPv4-адреса", phys.Device)
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	resp, err := privileged.Launch(privileged.LaunchReq{Path: exe, Args: []string{"novpn-proxy", "--iface", phys.Device, "--ip", ip, "--port", strconv.Itoa(ProxyPort)},
-		Env: []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/root"}, Dir: "/"})
-	if err != nil {
-		return err
-	}
-	if resp.Err != "" {
-		return ui.Errorf("прокси не запустился: %s", resp.Err)
-	}
-	if runner.DryRun {
-		return nil
-	}
-	for i := 0; i < 20; i++ {
-		if ProxyPID() > 0 {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return ui.Errorf("прокси не поднялся, смотри %s", ProxyLogFile())
-}
-
-// AppOn заводит группу, прокси и правила; возвращает gid.
+// AppOn готовит группу и правила; возвращает gid, под которым запускать программы.
 func AppOn() (int, error) {
 	phys, gw := Physical()
 	if phys.Device == "" || gw == "" {
@@ -155,186 +47,43 @@ func AppOn() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := ProxyUp(phys); err != nil {
-		return 0, err
+	if runtime.GOOS == "linux" {
+		return gid, linuxOn(gid, phys, gw)
 	}
-	rules := Rules(tunnels)
-	if runner.DryRun {
-		ui.Println(ui.Dim(strings.TrimRight(rules, "\n")))
-	}
-	if out, err := privileged.RunStdin(rules, "pfctl", "-q", "-a", Anchor, "-f", "-"); err != nil {
-		return 0, ui.Errorf("pf не принял правила: %s", firstLine(out, err))
-	}
-	if err := forwardingOn(); err != nil {
-		return 0, err
-	}
-	if err := scopedDefaultOn(phys, gw); err != nil {
-		return 0, err
-	}
-	if out, err := privileged.Run("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
-		return 0, ui.Errorf("pf не включился: %s", firstLine(out, err))
-	}
-	ui.Println(ui.Label("мимо VPN") + ui.Dim("  группа "+GroupName+", прокси 127.0.0.1:"+strconv.Itoa(ProxyPort)+" через "+phys.Device+" "+IfaceIPv4(phys.Device)))
-	return gid, nil
+	return gid, pfOn(phys, gw, tunnels)
 }
 
-func firstLine(out string, err error) string {
-	if out == "" && err != nil {
-		return err.Error()
-	}
-	return strings.SplitN(out, "\n", 2)[0]
-}
-
-// forwardingFile: каким был net.inet.ip.forwarding до нас - --off вернёт как было.
-func forwardingFile() string { return filepath.Join(GuardDir(), "novpn-forwarding.prev") }
-
-// forwardingOn: без ip forwarding ядро выбрасывает завёрнутый на lo0 пакет с чужим адресатом
-// раньше, чем rdr успевает подменить адрес, - прокси его не увидит. Тот же шаг у Clash и Surge.
-func forwardingOn() error {
-	cur, _ := runner.Output("sysctl", "-n", "net.inet.ip.forwarding")
-	if strings.TrimSpace(cur) == "1" {
-		return nil
-	}
-	if _, err := privileged.Run("sysctl", "-w", "net.inet.ip.forwarding=1"); err != nil {
-		return ui.Errorf("ip forwarding не включился: %v", err)
-	}
-	if !runner.DryRun {
-		_ = os.WriteFile(forwardingFile(), []byte("0"), 0o644)
-	}
-	ui.Println(ui.Dim("включён net.inet.ip.forwarding - без него pf не довозит пакет до прокси; --off вернёт 0"))
-	return nil
-}
-
-// scopedFile: мы ли завели scoped-маршрут - --off снимет только свой.
-func scopedFile() string { return filepath.Join(GuardDir(), "novpn-scoped.prev") }
-
-// scopedDefaultOn: сокет прокси привязан к en0 (IP_BOUND_IF), и маршрут для него ядро ищет только
-// среди scoped-маршрутов этого интерфейса. VPN-клиент, забирая маршрут по умолчанию, обычно сносит
-// и scoped-копию - тогда "no route to host". Заводим её заново; глобальную таблицу она не трогает.
-func scopedDefaultOn(phys netinfo.Service, gw string) error {
-	out, _ := runner.Output("route", "-n", "get", "-ifscope", phys.Device, "1.1.1.1")
-	if strings.Contains(out, "gateway: "+gw) {
-		return nil
-	}
-	if _, err := privileged.Run("route", "-n", "add", "-ifscope", phys.Device, "default", gw); err != nil && !strings.Contains(err.Error(), "exists") {
-		return ui.Errorf("scoped-маршрут для %s не завёлся: %v", phys.Device, err)
-	}
-	if !runner.DryRun {
-		_ = os.WriteFile(scopedFile(), []byte(phys.Device), 0o644)
-	}
-	ui.Println(ui.Dim("заведён scoped-маршрут по умолчанию для " + phys.Device + " через " + gw + " - по нему ходит прокси; --off снимет"))
-	return nil
-}
-
-func scopedRestore() {
-	data, err := os.ReadFile(scopedFile())
-	if err != nil {
-		return
-	}
-	_, _ = privileged.Run("route", "-n", "delete", "-ifscope", strings.TrimSpace(string(data)), "default")
-	_ = os.Remove(scopedFile())
-}
-
-func forwardingRestore() {
-	if _, err := os.Stat(forwardingFile()); err != nil {
-		return
-	}
-	_, _ = privileged.Run("sysctl", "-w", "net.inet.ip.forwarding=0")
-	_ = os.Remove(forwardingFile())
-}
-
+// AppOff снимает правила; запущенные под группой программы снова пойдут через VPN.
 func AppOff() error {
-	if _, err := privileged.Run("pfctl", "-q", "-a", Anchor, "-F", "all"); err != nil {
-		return ui.Errorf("снять правила не вышло: %v", err)
+	if runtime.GOOS == "linux" {
+		return linuxOff()
 	}
-	if pid := ProxyPID(); pid > 0 {
-		_, _ = privileged.Run("kill", strconv.Itoa(pid))
-	}
-	forwardingRestore()
-	scopedRestore()
-	ui.Println(ui.Label("снято") + ui.Dim("  правила pf и прокси; запущенные под группой программы снова пойдут через VPN"))
-	return nil
+	return pfOff()
 }
 
-// AppStatus: включён ли pf, какие правила стоят, кто сейчас работает под группой.
+// AppStatus: правила на месте ли, срабатывают ли, кто сейчас работает под группой.
 func AppStatus() error {
-	// Без -q: с ним pfctl молчит и про правила, и про состояния.
-	if info, err := privileged.Run("pfctl", "-s", "info"); err == nil {
-		for _, l := range strings.Split(info, "\n") {
-			if strings.HasPrefix(l, "Status:") {
-				ui.Println(ui.Label("pf ") + strings.TrimSpace(strings.TrimPrefix(l, "Status:")))
-			}
-		}
-	}
-	if pid := ProxyPID(); pid > 0 {
-		ui.Println(ui.Label("прокси ") + "работает, pid " + strconv.Itoa(pid) + ui.Dim("  журнал "+ProxyLogFile()))
+	if runtime.GOOS == "linux" {
+		linuxStatus()
 	} else {
-		ui.Println(ui.Dim("прокси не запущен"))
+		pfStatus()
 	}
-	rules, err := privileged.Run("pfctl", "-a", Anchor, "-s", "all")
-	switch {
-	case err != nil:
-		ui.Println(ui.Dim("правил pf нет: " + firstLine(rules, err)))
-	case strings.TrimSpace(rules) == "":
-		ui.Println(ui.Dim("правил pf нет: tim vpn app <приложение> или --check"))
-	default:
-		ui.Println(ui.Label("правила pf в " + Anchor))
-		for _, l := range strings.Split(rules, "\n") {
-			if strings.HasPrefix(l, "nat ") || strings.HasPrefix(l, "rdr ") || strings.HasPrefix(l, "pass ") || strings.HasPrefix(l, "block ") {
-				ui.Println("  " + ui.Dim(l))
-			}
-		}
-	}
-	var tunIPs []string
-	for _, t := range netinfo.Tunnels() {
-		tunIPs = append(tunIPs, t.IPv4...)
-	}
-	phys, _ := Physical()
-	if states, err := privileged.Run("pfctl", "-s", "states"); err == nil {
-		redir, tun := 0, 0
-		var sample []string
-		for _, l := range strings.Split(states, "\n") {
-			fromTunnel := false
-			for _, ip := range tunIPs {
-				fromTunnel = fromTunnel || strings.Contains(l, ip+":")
-			}
-			switch {
-			case fromTunnel && strings.Contains(l, "127.0.0.1:"+strconv.Itoa(ProxyPort)):
-				redir++
-				if len(sample) < 3 {
-					sample = append(sample, strings.TrimSpace(l))
-				}
-			case fromTunnel:
-				tun++
-			}
-		}
-		ui.Println(ui.Label("состояния: ") + fmt.Sprintf("завёрнуто на прокси %d, в туннеле %d", redir, tun))
-		for _, l := range sample {
-			ui.Println("  " + ui.Dim(l))
-		}
-		fw, _ := runner.Output("sysctl", "-n", "net.inet.ip.forwarding")
-		ui.Println(ui.Label("ip forwarding ") + ui.Dash(strings.TrimSpace(fw)))
-		sc, _ := runner.Output("route", "-n", "get", "-ifscope", phys.Device, "1.1.1.1")
-		scoped := "нет"
-		for _, l := range strings.Split(sc, "\n") {
-			if strings.Contains(l, "gateway:") {
-				scoped = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "gateway:"))
-			}
-		}
-		ui.Println(ui.Label("scoped-маршрут "+phys.Device+" ") + scoped)
-		if redir > 0 {
-			ui.Println(ui.OK("правило срабатывает: соединения группы идут через прокси мимо VPN"))
-		}
-	}
-	gid, err := strconv.Atoi(strings.TrimSpace(func() string {
-		o, _ := runner.Output("dscl", ".", "-read", "/Groups/"+GroupName, "PrimaryGroupID")
-		_, v, _ := strings.Cut(strings.TrimSpace(o), ":")
-		return v
-	}()))
+	gid, err := GID()
 	if err != nil {
 		ui.Println(ui.Dim("группы " + GroupName + " нет"))
 		return nil
 	}
+	mine := runningUnder(gid)
+	if len(mine) == 0 {
+		ui.Println(ui.Dim("под группой " + GroupName + " сейчас никто не работает"))
+		return nil
+	}
+	ui.Println(ui.Label("мимо VPN сейчас ") + strings.Join(mine, ", "))
+	return nil
+}
+
+// runningUnder: имена программ, чьи процессы идут под группой.
+func runningUnder(gid int) []string {
 	ps, _ := runner.Output("ps", "-axo", "pid=,gid=,comm=")
 	var mine []string
 	for _, line := range strings.Split(ps, "\n") {
@@ -343,49 +92,23 @@ func AppStatus() error {
 			mine = append(mine, procs.AppName(f[2]))
 		}
 	}
-	if len(mine) == 0 {
-		ui.Println(ui.Dim("под группой " + GroupName + " сейчас никто не работает"))
-		return nil
-	}
-	ui.Println(ui.Label("мимо VPN сейчас ") + strings.Join(Uniq(mine), ", "))
-	return nil
+	return Uniq(mine)
 }
 
-// AppCheck: правило на месте и действительно работает - curl под группой видит другую страну.
+// AppCheck: правила на месте и действительно работают - curl под группой видит другую страну.
 func AppCheck() error {
 	gid, err := AppOn()
 	if err != nil {
 		return err
 	}
-	viaVPN := strings.TrimSpace(func() string {
-		o, _ := runner.Output("curl", "-s", "--max-time", "8", "https://ifconfig.co/country")
-		return o
-	}())
-	// Пока curl идёт, tcpdump под root пишет, что видно на lo0 и в туннеле: по этому понятно,
-	// где пакет застрял. Шесть секунд, потом tcpdump выходит сам.
-	pcap := filepath.Join(GuardDir(), "novpn-check.pcap")
-	started := time.Now()
-	ifaces := "pktap,lo0"
-	for _, t := range netinfo.Tunnels() {
-		ifaces += "," + t.Iface
+	curl, err := exec.LookPath("curl")
+	if err != nil {
+		return ui.Errorf("для проверки нужен curl")
 	}
-	filter := "tcp and port " + strconv.Itoa(ProxyPort)
-	if ips, err := net.LookupIP("ifconfig.co"); err == nil {
-		for _, ip := range ips {
-			if ip.To4() != nil {
-				filter = "tcp and (port " + strconv.Itoa(ProxyPort) + " or host " + ip.String() + ")"
-				break
-			}
-		}
-	}
-	capturing := false
-	if !runner.DryRun {
-		r, err := privileged.Launch(privileged.LaunchReq{Path: "/usr/sbin/tcpdump", Args: []string{"-i", ifaces, "-n", "-G", "6", "-W", "1", "-w", pcap, filter},
-			Env: []string{"PATH=/usr/sbin:/usr/bin:/bin"}, Dir: "/"})
-		capturing = err == nil && r.Err == ""
-		time.Sleep(800 * time.Millisecond)
-	}
-	resp, err := privileged.Launch(privileged.LaunchReq{Path: "/usr/bin/curl", Args: []string{"-s", "--max-time", "8", "https://ifconfig.co/country"},
+	probe := []string{"-s", "--max-time", "8", "https://ifconfig.co/country"}
+	viaVPN := strings.TrimSpace(func() string { o, _ := runner.Output(curl, probe...); return o }())
+	stop := pfCaptureStart()
+	resp, err := privileged.Launch(privileged.LaunchReq{Path: curl, Args: probe,
 		Env: os.Environ(), Dir: paths.Home(), UID: os.Getuid(), GID: gid, Groups: myGroups(), Wait: true})
 	if err != nil {
 		return err
@@ -395,31 +118,15 @@ func AppCheck() error {
 	switch direct {
 	case "":
 		ui.Println(ui.Bad("под группой наружу не вышло: " + ui.Dash(resp.Err)))
-		ui.Println(ui.Dim("снять: tim vpn app --off; ниже - что видит pf"))
+		ui.Println(ui.Dim("снять: tim direct --off; ниже - что видит система"))
 		err := AppStatus()
-		if capturing {
-			if wait := 7*time.Second - time.Since(started); wait > 0 {
-				time.Sleep(wait)
-			}
-			if out, err := runner.Output("tcpdump", "-n", "-k", "-r", pcap); err == nil {
-				ui.Println(ui.Label("пакеты за время проверки ") + ui.Dim("(lo0 и туннель, порт прокси и ifconfig.co)"))
-				lines := strings.Split(strings.TrimSpace(out), "\n")
-				for i, l := range lines {
-					if i >= 16 {
-						ui.Println(ui.Dim(fmt.Sprintf("  ещё %d", len(lines)-16)))
-						break
-					}
-					ui.Println("  " + ui.Dim(l))
-				}
-				if strings.TrimSpace(out) == "" {
-					ui.Println(ui.Dim("  ничего: пакеты до lo0 не дошли"))
-				}
-			}
-		}
+		stop(true)
 		return err
 	case viaVPN:
+		stop(false)
 		ui.Println(ui.Warn("страна та же: правило не сработало или обе дороги ведут в одну страну"))
 	default:
+		stop(false)
 		ui.Println(ui.OK("работает: процессы группы " + GroupName + " идут мимо VPN"))
 	}
 	return nil
@@ -430,8 +137,19 @@ func myGroups() []int {
 	return g
 }
 
-// AppBundle: путь к .app и его исполняемому файлу по имени, пути или части имени.
+// AppBundle: что запускать. На macOS - .app по имени, части имени или пути; на Linux - команда
+// из PATH или путь. Возвращает "дом" программы (для поиска запущенного экземпляра) и исполняемый файл.
 func AppBundle(name string) (bundle, exe string, err error) {
+	if runtime.GOOS != "darwin" {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			return "", "", ui.Errorf("программа %s не найдена в PATH; укажи путь", name)
+		}
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		return p, p, nil
+	}
 	if strings.Contains(name, "/") {
 		bundle = name
 		if i := strings.Index(name, ".app/"); i >= 0 {
@@ -470,6 +188,14 @@ func AppBundle(name string) (bundle, exe string, err error) {
 	return bundle, exe, nil
 }
 
+// AppExists: по имени находится приложение - так tim direct отличает "Firefox" от сайта.
+func AppExists(name string) bool {
+	_, _, err := AppBundle(name)
+	return err == nil
+}
+
+// AppLaunch запускает программу под группой novpn. closeRunning закрывает уже открытый экземпляр:
+// иначе новое окно откроется в старом процессе, под VPN.
 func AppLaunch(name string, closeRunning func(bundle, appName string) error) error {
 	bundle, exe, err := AppBundle(name)
 	if err != nil {
@@ -480,7 +206,6 @@ func AppLaunch(name string, closeRunning func(bundle, appName string) error) err
 	if err != nil {
 		return err
 	}
-	// Запущенный экземпляр новое окно откроет в старом процессе - под VPN. Сначала закрываем.
 	if err := closeRunning(bundle, appName); err != nil {
 		return err
 	}
@@ -493,7 +218,7 @@ func AppLaunch(name string, closeRunning func(bundle, appName string) error) err
 		return ui.Errorf("%s не запустился: %s", appName, resp.Err)
 	}
 	ui.Println(ui.Label(appName+" запущен мимо VPN") + ui.Dim("  pid "+strconv.Itoa(resp.PID)+"; проверить: открой в нём ifconfig.co"))
-	ui.Println(ui.Dim("вернуть под VPN: закрой приложение и открой из Dock; снять правило: tim vpn app --off"))
+	ui.Println(ui.Dim("вернуть под VPN: закрой программу и открой как обычно; снять правила: tim direct --off"))
 	return nil
 }
 
@@ -501,3 +226,31 @@ func alive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
+
+func firstLine(out string, err error) string {
+	if out == "" && err != nil {
+		return err.Error()
+	}
+	return strings.SplitN(out, "\n", 2)[0]
+}
+
+// prevFile: что было до нас (sysctl, маршрут) - --off вернёт как было.
+func prevFile(name string) string { return filepath.Join(GuardDir(), "novpn-"+name+".prev") }
+
+func remember(name, value string) {
+	if runner.DryRun {
+		return
+	}
+	_ = os.MkdirAll(GuardDir(), 0o755)
+	_ = os.WriteFile(prevFile(name), []byte(value), 0o644)
+}
+
+func recall(name string) (string, bool) {
+	data, err := os.ReadFile(prevFile(name))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(data)), true
+}
+
+func forget(name string) { _ = os.Remove(prevFile(name)) }

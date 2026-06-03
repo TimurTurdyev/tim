@@ -72,7 +72,7 @@ func openUI() error {
 }
 
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
-var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true,
+var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true, "direct": true,
 	"disk": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
 	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true}
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,7 +50,8 @@ type Response struct {
 
 // allowed: что помощник вообще запускает. Это не защита от злоумышленника (sudo и так у
 // пользователя), а страховка от ошибки в коде.
-var allowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true, "sysctl": true}
+var allowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true, "sysctl": true,
+	"iptables": true, "iptables-nft": true, "iptables-legacy": true, "groupadd": true}
 
 // Serve: сторона root - читает запросы построчно и отвечает на каждый.
 func Serve(in io.Reader, out io.Writer) error {
@@ -74,7 +76,7 @@ func handle(req Request) Response {
 	switch {
 	case req.Launch != nil:
 		return launchAs(*req.Launch)
-	case len(req.Cmd) > 0 && allowed[req.Cmd[0]]:
+	case len(req.Cmd) > 0 && allowed[filepath.Base(req.Cmd[0])]:
 		c := exec.Command(req.Cmd[0], req.Cmd[1:]...)
 		if req.Stdin != "" {
 			c.Stdin = strings.NewReader(req.Stdin)
@@ -165,9 +167,7 @@ func start() (*conn, error) {
 }
 
 func Call(req Request) (Response, error) {
-	if os.Geteuid() == 0 {
-		return handle(req), nil
-	}
+	// Сначала dry-run: под root помощник не нужен, но и делать ничего нельзя.
 	if runner.DryRun {
 		switch {
 		case req.Launch != nil:
@@ -176,6 +176,9 @@ func Call(req Request) (Response, error) {
 			ui.Println(ui.Dim("$ sudo " + shellq.Join(req.Cmd)))
 		}
 		return Response{}, nil
+	}
+	if os.Geteuid() == 0 {
+		return handle(req), nil
 	}
 	l, err := start()
 	if err != nil {

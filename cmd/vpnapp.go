@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"runtime"
 	"strings"
 	"time"
 
@@ -32,12 +31,10 @@ var vpnAppCmd = &cobra.Command{
 Dock приложение в группу не попадает: перезапусти его через tim.
 Соединения группы pf заворачивает на прозрачный прокси tim, тот ходит к адресату через физический
 интерфейс. --check заводит всё и проверяет на curl, какую страну видят процессы группы. --off снимает
-правило и прокси. Пароль sudo спрашивается один раз. Пока только macOS; на Linux - tim vpn unblock по сайтам.`,
+правило и прокси. Пароль sudo спрашивается один раз. То же самое: tim direct <приложение>.
+На Linux вместо pf - метка netfilter по группе и своя таблица маршрутов, прокси не нужен.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if runtime.GOOS != "darwin" {
-			return ui.Errorf("пока только macOS; на Linux - tim vpn unblock <сайт>")
-		}
 		switch {
 		case appOff:
 			return bypass.AppOff()
@@ -66,7 +63,7 @@ func closeRunningApp(bundle, appName string) error {
 		return nil
 	}
 	for _, a := range procs.Find(list, appName) {
-		if !a.IsApp || !strings.HasPrefix(a.Main.Comm, bundle+"/") {
+		if a.Main.Comm != bundle && !strings.HasPrefix(a.Main.Comm, bundle+"/") {
 			continue
 		}
 		ui.Println(ui.Dim("закрываю " + a.Name + ": открытый экземпляр остался бы под VPN"))
