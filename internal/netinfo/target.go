@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// lastGood: последний удачный ответ по домену. Пока VPN переключается, резолвер может молчать,
+// а страж маршрутов в это время работать должен.
+var lastGood sync.Map
+
 type TargetKind int
 
 const (
@@ -69,10 +73,6 @@ func PrivateTarget(t Target) bool {
 	}
 	return false
 }
-
-// lastGood: последний удачный ответ по домену. Пока VPN переключается, резолвер может молчать,
-// а страж маршрутов в это время работать должен.
-var lastGood sync.Map
 
 // LookupIPv4 раскрывает домен во все A-записи, отсортированные; ждёт не дольше 3 секунд.
 func LookupIPv4(host string) []string {

@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+var skip = map[string]bool{"node_modules": true, "vendor": true, ".venv": true, "venv": true, "archive": true}
+
 // JSONVersion: значение ключа key из JSON-файла; пусто, если файла или ключа нет.
 func JSONVersion(path, key string) string {
 	data, err := os.ReadFile(path)
@@ -79,8 +81,6 @@ func Locate(candidates []string, marker string) []string {
 	}
 	return out
 }
-
-var skip = map[string]bool{"node_modules": true, "vendor": true, ".venv": true, "venv": true, "archive": true}
 
 // Scan ищет marker под root не глубже depth.
 func Scan(root, marker string, depth int) []string {

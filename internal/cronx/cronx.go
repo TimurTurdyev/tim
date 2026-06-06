@@ -8,6 +8,19 @@ import (
 	"time"
 )
 
+var macros = map[string]string{
+	"@yearly": "0 0 1 1 *", "@annually": "0 0 1 1 *", "@monthly": "0 0 1 * *",
+	"@weekly": "0 0 * * 0", "@daily": "0 0 * * *", "@midnight": "0 0 * * *", "@hourly": "0 * * * *",
+}
+
+var monNames = map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+
+var dowNames = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+
+var monRu = []string{"", "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"}
+
+var dowRu = []string{"воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"}
+
 type field struct {
 	vals map[int]bool
 	any  bool
@@ -18,14 +31,6 @@ type field struct {
 type Schedule struct {
 	min, hour, dom, mon, dow field
 }
-
-var macros = map[string]string{
-	"@yearly": "0 0 1 1 *", "@annually": "0 0 1 1 *", "@monthly": "0 0 1 * *",
-	"@weekly": "0 0 * * 0", "@daily": "0 0 * * *", "@midnight": "0 0 * * *", "@hourly": "0 * * * *",
-}
-
-var monNames = map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
-var dowNames = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
 
 func Parse(expr string) (Schedule, error) {
 	e := strings.TrimSpace(strings.ToLower(expr))
@@ -143,9 +148,6 @@ func (s Schedule) Next(from time.Time, n int) []time.Time {
 	}
 	return out
 }
-
-var monRu = []string{"", "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"}
-var dowRu = []string{"воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"}
 
 // Describe: человеческое описание выражения.
 func (s Schedule) Describe() string {

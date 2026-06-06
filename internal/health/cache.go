@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/paths"
-
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
 // CacheTTL: срок регистрации меняется раз в год, а RDAP и whois ограничивают частоту запросов.

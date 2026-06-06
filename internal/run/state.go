@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
-
 	"github.com/TimurTurdyev/tim/internal/procs"
 )
 

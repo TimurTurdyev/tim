@@ -2,7 +2,6 @@ package bypass
 
 import (
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -63,7 +62,7 @@ func linuxRules(gid int, phys string) [][]string {
 
 func iptables() (string, error) {
 	for _, name := range []string{"iptables", "iptables-nft", "iptables-legacy"} {
-		if p, err := exec.LookPath(name); err == nil {
+		if p, err := runner.LookPath(name); err == nil {
 			return p, nil
 		}
 	}

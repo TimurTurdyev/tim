@@ -11,11 +11,11 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
-// PsAll: ps по всем процессам. -A понимают и BSD ps, и procps; -Axo procps не принимает.
-func PsAll(format string) []string { return []string{"-A", "-o", format} }
-
 // clockTicks: USER_HZ в Linux, на всех распространённых сборках 100.
 const clockTicks = 100
+
+// PsAll: ps по всем процессам. -A понимают и BSD ps, и procps; -Axo procps не принимает.
+func PsAll(format string) []string { return []string{"-A", "-o", format} }
 
 // RecentCPU: загрузка процессов за последний интервал, процент одного ядра. Только Linux:
 // там pcpu в ps - среднее за всю жизнь процесса, и давно запущенный простаивающий процесс

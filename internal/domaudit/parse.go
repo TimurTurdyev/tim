@@ -12,6 +12,35 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
+var cdnWords = []string{"cloudflare", "akamai", "fastly", "cloudfront", "amazon", "google", "microsoft", "azure",
+	"ddos-guard", "stormwall", "qrator", "incapsula", "imperva", "sucuri", "stackpath", "bunny", "cdnvideo", "ngenix", "gcore", "selectel-cdn"}
+
+var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+
+var trackerRes = []struct {
+	kind string
+	re   *regexp.Regexp
+}{
+	{"Яндекс.Метрика", regexp.MustCompile(`(?:ym\(|mc\.yandex\.ru/watch/|id:\s*)(\d{6,9})`)},
+	{"Google Analytics", regexp.MustCompile(`\b(G-[A-Z0-9]{6,12}|UA-\d{4,10}-\d{1,4})\b`)},
+	{"Google Tag Manager", regexp.MustCompile(`\b(GTM-[A-Z0-9]{4,8})\b`)},
+	{"AdSense", regexp.MustCompile(`\b(ca-pub-\d{10,20})\b`)},
+	{"Facebook Pixel", regexp.MustCompile(`fbq\('init',\s*'(\d{10,20})'`)},
+	{"VK Pixel", regexp.MustCompile(`\b(VK-RTRG-\d+-\w+)\b`)},
+}
+
+var hostLine = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+// Common: частые имена поддоменов для перебора через DNS.
+var Common = []string{
+	"www", "mail", "webmail", "smtp", "imap", "pop", "mx", "ns1", "ns2", "api", "api2", "app", "admin", "panel",
+	"cp", "cpanel", "dev", "stage", "staging", "test", "demo", "beta", "old", "new", "shop", "store", "blog",
+	"news", "forum", "wiki", "docs", "doc", "help", "support", "status", "cdn", "static", "assets", "img",
+	"images", "media", "files", "upload", "download", "db", "mysql", "pgsql", "redis", "git", "gitlab", "jenkins",
+	"ci", "build", "deploy", "vpn", "ssh", "ftp", "sftp", "backup", "monitor", "grafana", "metrics", "logs",
+	"kibana", "portal", "my", "lk", "office", "crm", "erp", "lms", "edu", "m", "mobile", "ws", "socket", "chat",
+}
+
 // ParseCRT разбирает ответ crt.sh: поддомены домена и другие регистрируемые домены из тех же сертификатов.
 func ParseCRT(data []byte, domain string) (subs, related []string, err error) {
 	var rows []struct {
@@ -56,9 +85,6 @@ func ParseCymru(out string) map[string]ASInfo {
 	return m
 }
 
-var cdnWords = []string{"cloudflare", "akamai", "fastly", "cloudfront", "amazon", "google", "microsoft", "azure",
-	"ddos-guard", "stormwall", "qrator", "incapsula", "imperva", "sucuri", "stackpath", "bunny", "cdnvideo", "ngenix", "gcore", "selectel-cdn"}
-
 // IsCDN: адрес принадлежит CDN или крупному облаку. На таком адресе соседние домены чужие и ни о чём не говорят.
 func IsCDN(asName string) bool {
 	l := strings.ToLower(asName)
@@ -69,8 +95,6 @@ func IsCDN(asName string) bool {
 	}
 	return false
 }
-
-var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
 // Title достаёт заголовок страницы, схлопывая пробелы.
 func Title(body string) string {
@@ -92,18 +116,6 @@ type Tracker struct {
 	ID   string `json:"id"`
 }
 
-var trackerRes = []struct {
-	kind string
-	re   *regexp.Regexp
-}{
-	{"Яндекс.Метрика", regexp.MustCompile(`(?:ym\(|mc\.yandex\.ru/watch/|id:\s*)(\d{6,9})`)},
-	{"Google Analytics", regexp.MustCompile(`\b(G-[A-Z0-9]{6,12}|UA-\d{4,10}-\d{1,4})\b`)},
-	{"Google Tag Manager", regexp.MustCompile(`\b(GTM-[A-Z0-9]{4,8})\b`)},
-	{"AdSense", regexp.MustCompile(`\b(ca-pub-\d{10,20})\b`)},
-	{"Facebook Pixel", regexp.MustCompile(`fbq\('init',\s*'(\d{10,20})'`)},
-	{"VK Pixel", regexp.MustCompile(`\b(VK-RTRG-\d+-\w+)\b`)},
-}
-
 // Trackers: счётчики аналитики со страницы. Полезно, чтобы свериться, тот ли счётчик стоит на сайте.
 func Trackers(body string) []Tracker {
 	var out []Tracker
@@ -121,8 +133,6 @@ func Trackers(body string) []Tracker {
 	return out
 }
 
-var hostLine = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
-
 // ParseNeighbors: список доменов на том же адресе, по строке на домен.
 func ParseNeighbors(out string, self string) []string {
 	var list []string
@@ -137,16 +147,6 @@ func ParseNeighbors(out string, self string) []string {
 	}
 	sort.Strings(list)
 	return list
-}
-
-// Common: частые имена поддоменов для перебора через DNS.
-var Common = []string{
-	"www", "mail", "webmail", "smtp", "imap", "pop", "mx", "ns1", "ns2", "api", "api2", "app", "admin", "panel",
-	"cp", "cpanel", "dev", "stage", "staging", "test", "demo", "beta", "old", "new", "shop", "store", "blog",
-	"news", "forum", "wiki", "docs", "doc", "help", "support", "status", "cdn", "static", "assets", "img",
-	"images", "media", "files", "upload", "download", "db", "mysql", "pgsql", "redis", "git", "gitlab", "jenkins",
-	"ci", "build", "deploy", "vpn", "ssh", "ftp", "sftp", "backup", "monitor", "grafana", "metrics", "logs",
-	"kibana", "portal", "my", "lk", "office", "crm", "erp", "lms", "edu", "m", "mobile", "ws", "socket", "chat",
 }
 
 // ParseCertSpotter разбирает ответ api.certspotter.com: имена из поля dns_names.

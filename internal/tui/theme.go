@@ -2,9 +2,9 @@ package tui
 
 import (
 	"charm.land/bubbles/v2/key"
-
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
 

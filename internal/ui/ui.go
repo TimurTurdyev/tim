@@ -4,7 +4,6 @@ package ui
 import (
 	"bytes"
 	"fmt"
-
 	"io"
 	"os"
 	"strings"

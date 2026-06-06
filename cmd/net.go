@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -67,7 +68,7 @@ var netCheckCmd = &cobra.Command{
 				start := time.Now()
 				ips, err := net.DefaultResolver.LookupHost(ctx, "example.com")
 				if err != nil {
-					return "", fmt.Errorf("example.com не резолвится: %v", err)
+					return "", fmt.Errorf("example.com не резолвится: %w", err)
 				}
 				servers := strings.Join(netinfo.DNSServers(), " ")
 				return fmt.Sprintf("example.com -> %s за %d мс, серверы %s", ips[0], time.Since(start).Milliseconds(), ui.Dash(servers)), nil
@@ -84,7 +85,7 @@ var netCheckCmd = &cobra.Command{
 		failed := ""
 		for _, s := range steps {
 			res, err := s.run()
-			if w, ok := err.(warning); ok {
+			if w, ok := errors.AsType[warning](err); ok {
 				ui.Println(ui.Warn(ui.Pad(s.name, 11)) + string(w))
 				continue
 			}
@@ -108,7 +109,7 @@ func dialTimed(addr string) (string, error) {
 	start := time.Now()
 	c, err := net.DialTimeout("tcp", addr, 3*time.Second)
 	if err != nil {
-		return "", fmt.Errorf("%s недоступен: %v", addr, err)
+		return "", fmt.Errorf("%s недоступен: %w", addr, err)
 	}
 	_ = c.Close()
 	return fmt.Sprintf("%s за %d мс", addr, time.Since(start).Milliseconds()), nil
@@ -118,7 +119,7 @@ func externalIP() (string, error) {
 	client := &http.Client{Timeout: 4 * time.Second}
 	resp, err := client.Get("https://api.ipify.org")
 	if err != nil {
-		return "", fmt.Errorf("не узнать: %v", err)
+		return "", fmt.Errorf("не узнать: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 64))

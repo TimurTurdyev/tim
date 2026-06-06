@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+var single = map[string][]string{
+	"pyenv": {"python"}, "nvm": {"node"}, "fnm": {"node"}, "volta": {"node"}, "rbenv": {"ruby"}, "goenv": {"go"},
+}
+
+var envHints = map[string]string{
+	"PYENV_ROOT": "pyenv", "NVM_DIR": "nvm", "FNM_DIR": "fnm", "VOLTA_HOME": "volta", "RBENV_ROOT": "rbenv", "GOENV_ROOT": "goenv",
+}
+
 func isExec(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && !st.IsDir() && st.Mode()&0o111 != 0
@@ -66,14 +74,6 @@ func Shadowed(dirs, names []string) map[string][]string {
 type Manager struct {
 	Name  string
 	Langs []string
-}
-
-var single = map[string][]string{
-	"pyenv": {"python"}, "nvm": {"node"}, "fnm": {"node"}, "volta": {"node"}, "rbenv": {"ruby"}, "goenv": {"go"},
-}
-
-var envHints = map[string]string{
-	"PYENV_ROOT": "pyenv", "NVM_DIR": "nvm", "FNM_DIR": "fnm", "VOLTA_HOME": "volta", "RBENV_ROOT": "rbenv", "GOENV_ROOT": "goenv",
 }
 
 // Managers находит менеджеры по каталогам PATH и переменным окружения.

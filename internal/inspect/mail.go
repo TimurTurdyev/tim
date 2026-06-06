@@ -8,6 +8,21 @@ import (
 	"sync"
 )
 
+// DKIMSelectors: частые селекторы почтовых провайдеров и рассыльщиков. Селектор может быть любым,
+// поэтому их отсутствие в этом списке не доказывает, что подписи нет.
+var DKIMSelectors = []string{
+	// общие
+	"default", "dkim", "mail", "smtp", "mx", "key1", "dkim1", "dkim2",
+	// Mail.ru, Яндекс, VK, российские хостинги
+	"mailru", "yandex", "beget", "timeweb", "reg", "rumail",
+	// Google Workspace, Microsoft 365, Zoho, Fastmail, Proton, Apple
+	"google", "selector1", "selector2", "zoho", "zohomail", "fm1", "fm2", "fm3",
+	"protonmail", "protonmail2", "protonmail3", "sig1",
+	// рассыльщики
+	"k1", "k2", "k3", "s1", "s2", "s1024", "sendgrid", "mandrill", "mailjet",
+	"pm", "postmark", "hs1", "hs2", "cm", "everlytickey1", "titan",
+}
+
 // Finding: вывод проверки, Level: ok, warn, bad, info.
 type Finding struct {
 	Level string
@@ -100,21 +115,6 @@ func AnalyzeDMARC(txt []string) (string, []Finding) {
 		out = append(out, Finding{"info", "нет rua: отчёты о подделках никуда не приходят", ""})
 	}
 	return rec, out
-}
-
-// DKIMSelectors: частые селекторы почтовых провайдеров и рассыльщиков. Селектор может быть любым,
-// поэтому их отсутствие в этом списке не доказывает, что подписи нет.
-var DKIMSelectors = []string{
-	// общие
-	"default", "dkim", "mail", "smtp", "mx", "key1", "dkim1", "dkim2",
-	// Mail.ru, Яндекс, VK, российские хостинги
-	"mailru", "yandex", "beget", "timeweb", "reg", "rumail",
-	// Google Workspace, Microsoft 365, Zoho, Fastmail, Proton, Apple
-	"google", "selector1", "selector2", "zoho", "zohomail", "fm1", "fm2", "fm3",
-	"protonmail", "protonmail2", "protonmail3", "sig1",
-	// рассыльщики
-	"k1", "k2", "k3", "s1", "s2", "s1024", "sendgrid", "mandrill", "mailjet",
-	"pm", "postmark", "hs1", "hs2", "cm", "everlytickey1", "titan",
 }
 
 // Mail: записи почты домена.

@@ -10,6 +10,12 @@ import (
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 )
 
+// protected: без этих процессов система не живёт - убить их значит выйти из сеанса или уронить машину.
+var protected = map[string]bool{
+	"launchd": true, "kernel_task": true, "WindowServer": true, "loginwindow": true,
+	"systemd": true, "init": true, "sshd": true, "login": true,
+}
+
 // Full: процесс со всем, что нужно, чтобы решить, как его закрыть.
 type Full struct {
 	Sample
@@ -40,12 +46,6 @@ func ParseFull(out string) []Full {
 		})
 	}
 	return list
-}
-
-// protected: без этих процессов система не живёт - убить их значит выйти из сеанса или уронить машину.
-var protected = map[string]bool{
-	"launchd": true, "kernel_task": true, "WindowServer": true, "loginwindow": true,
-	"systemd": true, "init": true, "sshd": true, "login": true,
 }
 
 // Protected: процесс трогать нельзя.

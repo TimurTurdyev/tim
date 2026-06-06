@@ -12,6 +12,12 @@ import (
 
 // Наложения поверх экрана: подтверждение, справка, командная строка.
 
+var (
+	styleBtnDanger = lipgloss.NewStyle().Background(colBad).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Padding(0, 2)
+	styleBtnMain   = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true).Padding(0, 2)
+	styleBtnQuiet  = lipgloss.NewStyle().Background(colKeyBg).Foreground(colText).Padding(0, 2)
+)
+
 // Dialog: окно подтверждения. Что именно, какой командой, можно ли вернуть - и одно действие.
 type Dialog struct {
 	Title   string
@@ -27,12 +33,6 @@ type confirmOverlay struct {
 	d     Dialog
 	onYes bool // выбрана ли кнопка действия; по умолчанию - отмена, она безопасная
 }
-
-var (
-	styleBtnDanger = lipgloss.NewStyle().Background(colBad).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Padding(0, 2)
-	styleBtnMain   = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true).Padding(0, 2)
-	styleBtnQuiet  = lipgloss.NewStyle().Background(colKeyBg).Foreground(colText).Padding(0, 2)
-)
 
 func (c *confirmOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	switch msg.String() {

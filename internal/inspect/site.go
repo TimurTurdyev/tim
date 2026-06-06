@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+var generatorRe = regexp.MustCompile(`(?i)<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)`)
+
 type Page struct {
 	Final     string   `json:"final"`
 	Status    int      `json:"status"`
@@ -52,8 +54,6 @@ func HTTP(url string) (*Page, error) {
 		CMS:       DetectCMS(resp.Header, cookies, string(body)),
 	}, nil
 }
-
-var generatorRe = regexp.MustCompile(`(?i)<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)`)
 
 // DetectCMS угадывает движок по meta generator, cookie, заголовкам и характерным путям в HTML.
 func DetectCMS(h http.Header, cookies []string, html string) string {

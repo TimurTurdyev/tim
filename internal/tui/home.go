@@ -3,10 +3,9 @@ package tui
 import (
 	"strings"
 
-	"charm.land/lipgloss/v2"
-
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Главный экран: строка поиска, недавнее и разделы, плитки состояния, одно предупреждение.

@@ -7,31 +7,6 @@ import (
 	"strings"
 )
 
-// Label: что это за место и как его освободить. Group - папка, все места внутри которой
-// показываются одной строкой с разбивкой (игры Steam, виртуалки).
-type Label struct {
-	Name, Hint, Group string
-	Stop              bool // внутрь не спускаться: это одно целое
-	Whole             bool // можно убрать целиком, пересоздастся само
-	Kind              Kind
-}
-
-// Kind: раздел обзора - что можно освободить без потерь, программы и то, что решать человеку.
-type Kind int
-
-const (
-	Free Kind = iota
-	Apps
-	Data
-	System
-)
-
-type rule struct {
-	path  string // от домашней папки или абсолютный; */ в начале - в любом месте пути
-	label Label
-	group bool // путь rule - группа, а места внутри - её строки
-}
-
 var rules = []rule{
 	{"*/steamapps/common", Label{Name: "игры Steam", Hint: "удалить в Steam: Библиотека - игра - Управление - Удалить", Stop: true}, true},
 	{"Library/Containers/com.utmapp.UTM/Data/Documents", Label{Name: "виртуалки UTM", Hint: "ненужные удалить в самом UTM", Stop: true}, true},
@@ -58,6 +33,33 @@ var rules = []rule{
 }
 
 var deps = map[string]bool{"node_modules": true, "vendor": true, ".venv": true, "venv": true, "target": true, ".next": true, ".nuxt": true}
+
+var plistName = regexp.MustCompile(`<key>name</key>\s*<string>([^<]+)</string>`)
+
+// Label: что это за место и как его освободить. Group - папка, все места внутри которой
+// показываются одной строкой с разбивкой (игры Steam, виртуалки).
+type Label struct {
+	Name, Hint, Group string
+	Stop              bool // внутрь не спускаться: это одно целое
+	Whole             bool // можно убрать целиком, пересоздастся само
+	Kind              Kind
+}
+
+// Kind: раздел обзора - что можно освободить без потерь, программы и то, что решать человеку.
+type Kind int
+
+const (
+	Free Kind = iota
+	Apps
+	Data
+	System
+)
+
+type rule struct {
+	path  string // от домашней папки или абсолютный; */ в начале - в любом месте пути
+	label Label
+	group bool // путь rule - группа, а места внутри - её строки
+}
 
 // LabelOf: подпись места. ok=false - ничего про место не известно, показывается как есть.
 func LabelOf(path, home string) (Label, string, bool) {
@@ -112,8 +114,6 @@ func LabelOf(path, home string) (Label, string, bool) {
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
-
-var plistName = regexp.MustCompile(`<key>name</key>\s*<string>([^<]+)</string>`)
 
 // ItemName: человеческое имя строки внутри группы - у бутылок Whisky это не UUID, а имя из
 // Metadata.plist, у виртуалок без расширения.

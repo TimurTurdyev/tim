@@ -7,9 +7,6 @@ import (
 	"strings"
 )
 
-// RGB: цвет палитры.
-type RGB struct{ R, G, B uint8 }
-
 // Палитра взята у маскота: бирюзовое худи, зелёное свечение экрана, синий конец градиента логотипа.
 var (
 	Teal  = RGB{40, 170, 160}
@@ -20,6 +17,19 @@ var (
 	Gray  = RGB{125, 130, 140}
 	Shade = RGB{26, 58, 56} // фон выделенной строки: тёмный с бирюзой
 )
+
+// Title: слово tim крупными буквами, по строке на цвет градиента.
+var Title = []string{
+	"\u2588\u2580\u2588\u2580\u2588 \u2588 \u2588\u2580\u2584\u2580\u2588",
+	"  \u2588   \u2588 \u2588 \u2580 \u2588",
+	"  \u2580   \u2580 \u2580   \u2580",
+}
+
+// TitleGradient: зелёный экран - бирюзовое худи - синий.
+var TitleGradient = []RGB{Green, Teal, Blue}
+
+// RGB: цвет палитры.
+type RGB struct{ R, G, B uint8 }
 
 // Hex для lipgloss.
 func (c RGB) Hex() string { return fmt.Sprintf("#%02X%02X%02X", c.R, c.G, c.B) }
@@ -80,13 +90,3 @@ func (c RGB) BG(d Depth) string {
 	}
 	return ""
 }
-
-// Title: слово tim крупными буквами, по строке на цвет градиента.
-var Title = []string{
-	"\u2588\u2580\u2588\u2580\u2588 \u2588 \u2588\u2580\u2584\u2580\u2588",
-	"  \u2588   \u2588 \u2588 \u2580 \u2588",
-	"  \u2580   \u2580 \u2580   \u2580",
-}
-
-// TitleGradient: зелёный экран - бирюзовое худи - синий.
-var TitleGradient = []RGB{Green, Teal, Blue}

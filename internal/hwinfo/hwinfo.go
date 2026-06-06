@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+var perfStat = regexp.MustCompile(`"([^"]+)"=(\d+)`)
+
+var clientRe = regexp.MustCompile(`"IOUserClientCreator" = "pid (\d+), ([^"]+)"`)
+
+var swapRe = regexp.MustCompile(`total = ([\d.,]+)M\s+used = ([\d.,]+)M`)
+
 // GPU: видеокарта и экраны на ней.
 type GPU struct {
 	Model    string
@@ -78,8 +84,6 @@ type GPULoad struct {
 	Valid    bool
 }
 
-var perfStat = regexp.MustCompile(`"([^"]+)"=(\d+)`)
-
 // ParseGPULoad разбирает ioreg -r -d 1 -w 0 -c IOAccelerator.
 func ParseGPULoad(out string) GPULoad {
 	i := strings.Index(out, `"PerformanceStatistics" = {`)
@@ -111,8 +115,6 @@ type GPUClient struct {
 	Name string
 }
 
-var clientRe = regexp.MustCompile(`"IOUserClientCreator" = "pid (\d+), ([^"]+)"`)
-
 // ParseGPUClients разбирает ioreg -r -c AGXDeviceUserClient: кто открыл видеокарту. Сколько каждый
 // её грузит, без root не узнать - только кто держит.
 func ParseGPUClients(out string) []GPUClient {
@@ -129,8 +131,6 @@ func ParseGPUClients(out string) []GPUClient {
 
 // Swap: занятый своп, байты.
 type Swap struct{ Total, Used int64 }
-
-var swapRe = regexp.MustCompile(`total = ([\d.,]+)M\s+used = ([\d.,]+)M`)
 
 // ParseSwap разбирает sysctl -n vm.swapusage; дробная часть бывает с запятой в русской локали.
 func ParseSwap(out string) (Swap, bool) {

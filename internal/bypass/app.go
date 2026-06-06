@@ -3,7 +3,6 @@ package bypass
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -101,7 +100,7 @@ func AppCheck() error {
 	if err != nil {
 		return err
 	}
-	curl, err := exec.LookPath("curl")
+	curl, err := runner.LookPath("curl")
 	if err != nil {
 		return ui.Errorf("для проверки нужен curl")
 	}
@@ -141,7 +140,7 @@ func myGroups() []int {
 // из PATH или путь. Возвращает "дом" программы (для поиска запущенного экземпляра) и исполняемый файл.
 func AppBundle(name string) (bundle, exe string, err error) {
 	if runtime.GOOS != "darwin" {
-		p, err := exec.LookPath(name)
+		p, err := runner.LookPath(name)
 		if err != nil {
 			return "", "", ui.Errorf("программа %s не найдена в PATH; укажи путь", name)
 		}

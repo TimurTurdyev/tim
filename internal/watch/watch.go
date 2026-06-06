@@ -3,6 +3,9 @@ package watch
 
 import "time"
 
+// DownAfter: сколько неудач подряд считать падением. Одна - это ещё сеть моргнула.
+const DownAfter = 2
+
 // State: что известно о сайте сейчас.
 type State int
 
@@ -11,9 +14,6 @@ const (
 	Up
 	Down
 )
-
-// DownAfter: сколько неудач подряд считать падением. Одна - это ещё сеть моргнула.
-const DownAfter = 2
 
 // Tracker копит опросы и сообщает только о смене состояния.
 type Tracker struct {

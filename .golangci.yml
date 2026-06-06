@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  enable:
+    - errorlint
+    - gocritic
+
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections: [standard, default, localmodule]

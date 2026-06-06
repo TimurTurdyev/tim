@@ -96,11 +96,12 @@ func (l *leftovers) refill() {
 				box = styleBad.Render("[" + symCheck + "]")
 			}
 			name := Pad(g.Name, 22)
-			if sel {
+			switch {
+			case sel:
 				name = styleBold.Render(name)
-			} else if g.Hidden {
+			case g.Hidden:
 				name = styleDim.Render(name)
-			} else {
+			default:
 				name = styleText.Render(name)
 			}
 			note := styleDim.Render(g.Note)

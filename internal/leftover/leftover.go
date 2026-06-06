@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+var teamPrefix = regexp.MustCompile(`^[A-Z0-9]{10}\.`)
+
+var second = map[string]bool{"co": true, "com": true, "org": true, "net": true, "ac": true, "gov": true}
+
+// keep: папки самой macOS и общие, у которых нет своей программы.
+var keep = map[string]bool{}
+
 // App: установленная программа.
 type App struct{ ID, Name string }
 
@@ -35,8 +42,6 @@ func NewIndex(apps []App) Index {
 	}
 	return ix
 }
-
-var teamPrefix = regexp.MustCompile(`^[A-Z0-9]{10}\.`)
 
 // BundleID: имя папки или файла в Library как ID программы: без .plist и .savedState, без
 // префикса команды разработчика у Group Containers и без group. в начале. Пусто - имя не ID.
@@ -69,8 +74,6 @@ func vendor(id string) string {
 	}
 	return parts[0] + "." + parts[1]
 }
-
-var second = map[string]bool{"co": true, "com": true, "org": true, "net": true, "ac": true, "gov": true}
 
 // Verdict: чьё это и осталось ли от удалённой программы.
 type Verdict struct {
@@ -117,9 +120,6 @@ func simplify(s string) string {
 	}
 	return b.String()
 }
-
-// keep: папки самой macOS и общие, у которых нет своей программы.
-var keep = map[string]bool{}
 
 func init() {
 	for _, n := range []string{"AddressBook", "Animoji", "App Store", "AskPermission", "CallHistoryDB", "CallHistoryTransactions",

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -72,7 +73,7 @@ systemd-служба tim-routes. Нужны права root; если забыл
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := asRoot(); err != nil {
-			if err == errDone {
+			if errors.Is(err, errDone) {
 				return nil
 			}
 			return err
@@ -130,7 +131,7 @@ var routeUninstallCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := asRoot(); err != nil {
-			if err == errDone {
+			if errors.Is(err, errDone) {
 				return nil
 			}
 			return err

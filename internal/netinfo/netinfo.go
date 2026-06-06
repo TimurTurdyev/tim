@@ -12,6 +12,8 @@ import (
 
 var ipv4 = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
 
+var ssProcRe = regexp.MustCompile(`\(\("([^"]+)",pid=(\d+)`)
+
 func IsIPv4(s string) bool { return ipv4.MatchString(s) }
 
 // IsPrivate: 10/8, 172.16/12, 192.168/16. Такие адреса достижимы только через
@@ -51,16 +53,16 @@ func ParseServiceOrder(out string) []Service {
 	var name string
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "("):
-			if i := strings.Index(line, ") "); i > 0 && !strings.HasPrefix(line, "(Hardware") {
-				name = line[i+2:]
-			}
-			if strings.HasPrefix(line, "(Hardware Port:") {
-				if i := strings.Index(line, "Device: "); i >= 0 {
-					dev := strings.TrimSuffix(line[i+len("Device: "):], ")")
-					list = append(list, Service{Name: name, Device: dev})
-				}
+		if !strings.HasPrefix(line, "(") {
+			continue
+		}
+		if i := strings.Index(line, ") "); i > 0 && !strings.HasPrefix(line, "(Hardware") {
+			name = line[i+2:]
+		}
+		if strings.HasPrefix(line, "(Hardware Port:") {
+			if i := strings.Index(line, "Device: "); i >= 0 {
+				dev := strings.TrimSuffix(line[i+len("Device: "):], ")")
+				list = append(list, Service{Name: name, Device: dev})
 			}
 		}
 	}
@@ -202,8 +204,6 @@ func Listening() []Listener {
 	out, _ := runner.Output("lsof", "+c", "0", "-nP", "-iTCP", "-sTCP:LISTEN")
 	return ParseLsof(out)
 }
-
-var ssProcRe = regexp.MustCompile(`\(\("([^"]+)",pid=(\d+)`)
 
 // ParseSS: ss -Hltnp -> слушающие порты; один порт на IPv4 и IPv6 - одной строкой.
 func ParseSS(out string) []Listener {

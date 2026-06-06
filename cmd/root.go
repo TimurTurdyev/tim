@@ -12,13 +12,18 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-var cfg *config.Config
+// env - окружение команд разделов; cfg - его конфиг для команд, которые ещё живут в cmd.
+var (
+	env = &app.Env{}
+	cfg *config.Config
+)
 
 var root = &cobra.Command{
 	Use:   "tim",
@@ -36,6 +41,7 @@ TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие
 		if err != nil {
 			return ui.Errorf("конфиг %s: %v", config.Path(), err)
 		}
+		env.Cfg = cfg
 		return nil
 	},
 }

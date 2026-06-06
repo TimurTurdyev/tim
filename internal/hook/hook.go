@@ -24,6 +24,11 @@ const MaxBody = 4 << 20
 // Keep: сколько последних запросов держать в журнале.
 const Keep = 200
 
+// skipHeaders: то, что добавляет любой клиент и прокси, - шум при чтении.
+var skipHeaders = map[string]bool{"Accept-Encoding": true, "Connection": true, "Content-Length": true,
+	"X-Forwarded-For": true, "X-Forwarded-Proto": true, "Cf-Ray": true, "Cf-Visitor": true,
+	"Cf-Connecting-Ip": true, "Cdn-Loop": true, "Cf-Ipcountry": true, "Cf-Warp-Tag-Id": true}
+
 // Record: принятый запрос.
 type Record struct {
 	N       int         `json:"n"`
@@ -111,11 +116,6 @@ func Handler(status int, body []byte, got func(Record)) http.Handler {
 		_, _ = w.Write(body)
 	})
 }
-
-// skipHeaders: то, что добавляет любой клиент и прокси, - шум при чтении.
-var skipHeaders = map[string]bool{"Accept-Encoding": true, "Connection": true, "Content-Length": true,
-	"X-Forwarded-For": true, "X-Forwarded-Proto": true, "Cf-Ray": true, "Cf-Visitor": true,
-	"Cf-Connecting-Ip": true, "Cdn-Loop": true, "Cf-Ipcountry": true, "Cf-Warp-Tag-Id": true}
 
 // Pretty: запрос в читаемом виде - важные заголовки и тело, JSON с отступами, форма по полям.
 func Pretty(r Record) string {

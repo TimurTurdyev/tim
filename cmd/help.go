@@ -103,9 +103,9 @@ var examples = map[string]string{
 
 // applyHelp: шаблон, русские подписи справочных флагов и примеры; вызывается после всех init().
 func applyHelp() {
-	cobra.AddTemplateFunc("h", func(s string) string { return ui.Info(s) })
-	cobra.AddTemplateFunc("name", func(s string) string { return ui.Label(s) })
-	cobra.AddTemplateFunc("dim", func(s string) string { return ui.Dim(s) })
+	cobra.AddTemplateFunc("h", ui.Info)
+	cobra.AddTemplateFunc("name", ui.Label)
+	cobra.AddTemplateFunc("dim", ui.Dim)
 	cobra.AddTemplateFunc("flags", func(s string) string { return colorFlags(s, ui.Label) })
 	cobra.AddTemplateFunc("examples", colorExamples)
 	cobra.AddTemplateFunc("utilLine", func() string {

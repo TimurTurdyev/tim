@@ -10,6 +10,10 @@ import (
 
 var bootRe = regexp.MustCompile(`sec = (\d+)`)
 
+var pageRe = regexp.MustCompile(`page size of (\d+) bytes`)
+
+var battRe = regexp.MustCompile(`(\d+)%;\s*([^;]+);\s*(\S+)?`)
+
 // ParseBoottime: sysctl -n kern.boottime -> время загрузки.
 func ParseBoottime(out string) (time.Time, bool) {
 	m := bootRe.FindStringSubmatch(out)
@@ -32,8 +36,6 @@ func ParseLoadavg(out string) []float64 {
 	}
 	return vals
 }
-
-var pageRe = regexp.MustCompile(`page size of (\d+) bytes`)
 
 // ParseVMStat: занятая память в байтах - active, wired и сжатое.
 func ParseVMStat(out string) uint64 {
@@ -91,8 +93,6 @@ type Battery struct {
 	Remaining string
 	AC        bool
 }
-
-var battRe = regexp.MustCompile(`(\d+)%;\s*([^;]+);\s*(\S+)?`)
 
 func ParsePmset(out string) (Battery, bool) {
 	var b Battery

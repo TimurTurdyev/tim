@@ -22,6 +22,12 @@ var NoInput = os.Getenv("TIM_NO_INPUT") != ""
 // DryRun печатает команды, меняющие систему, вместо запуска.
 var DryRun = os.Getenv("TIM_DRY_RUN") != ""
 
+// ConfirmFunc задаёт интерактивный вопрос; asked=false - спросить не вышло, спрашиваем строкой.
+var ConfirmFunc func(question string, def bool) (yes, asked bool)
+
+// LookPath: полный путь программы из PATH.
+func LookPath(name string) (string, error) { return exec.LookPath(name) }
+
 // Output запускает команду только для чтения и возвращает stdout.
 func Output(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
@@ -108,9 +114,6 @@ func SudoQuiet(args ...string) (string, error) {
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
-
-// ConfirmFunc задаёт интерактивный вопрос; asked=false - спросить не вышло, спрашиваем строкой.
-var ConfirmFunc func(question string, def bool) (yes, asked bool)
 
 // Confirm спрашивает подтверждение, по умолчанию "нет"; в dry-run всегда да.
 func Confirm(question string) bool { return ConfirmDefault(question, false) }

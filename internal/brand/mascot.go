@@ -33,6 +33,14 @@ var mascotBase = []string{
 	"LLLLLLLLLL..",
 }
 
+const (
+	halfUp   = "\u2580"
+	halfDown = "\u2584"
+)
+
+// MascotWidth: ширина картинки в колонках терминала.
+const MascotWidth = 12
+
 // Mood: выражение лица.
 type Mood int
 
@@ -78,11 +86,6 @@ func mascotGrid(m Mood) [][]byte {
 	return g
 }
 
-const (
-	halfUp   = "\u2580"
-	halfDown = "\u2584"
-)
-
 // Mascot: строки картинки для терминала. Без хотя бы 256 цветов рисовать нечем - пусто.
 func Mascot(m Mood, d Depth) []string {
 	if d == Basic {
@@ -110,6 +113,3 @@ func Mascot(m Mood, d Depth) []string {
 	}
 	return lines
 }
-
-// MascotWidth: ширина картинки в колонках терминала.
-const MascotWidth = 12

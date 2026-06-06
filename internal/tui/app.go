@@ -11,6 +11,22 @@ import (
 // Экранный режим tim: один каркас у всех экранов - верхняя строка с крошками, тело, строка клавиш.
 // Экраны лежат стопкой: esc возвращает на предыдущий, с первого - выходит.
 
+var (
+	styleTop     = lipgloss.NewStyle().Background(colBarBg)
+	styleBrand   = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
+	styleCrumb   = lipgloss.NewStyle().Foreground(colText).Background(colBarBg)
+	styleStatus  = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
+	styleKeyBar  = lipgloss.NewStyle().Background(colBarBg)
+	styleKeyCap  = lipgloss.NewStyle().Background(colKeyBg).Foreground(colInfo)
+	styleKeyDesc = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
+	styleToastOK = lipgloss.NewStyle().Foreground(colOK).Bold(true)
+	styleToastWn = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
+	styleToastBd = lipgloss.NewStyle().Foreground(colBad).Bold(true)
+)
+
+// globalKeys: то, что одинаково на всех экранах - для справки.
+var globalKeys = []Key{{"esc", "назад, с первого - выход"}, {"?", "справка"}, {":", "любая команда tim"}, {"q", "выход"}}
+
 // Key: подсказка клавиши для нижней строки и справки.
 type Key struct{ K, D string }
 
@@ -86,19 +102,6 @@ type App struct {
 	after   func()
 	quit    bool
 }
-
-var (
-	styleTop     = lipgloss.NewStyle().Background(colBarBg)
-	styleBrand   = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
-	styleCrumb   = lipgloss.NewStyle().Foreground(colText).Background(colBarBg)
-	styleStatus  = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
-	styleKeyBar  = lipgloss.NewStyle().Background(colBarBg)
-	styleKeyCap  = lipgloss.NewStyle().Background(colKeyBg).Foreground(colInfo)
-	styleKeyDesc = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
-	styleToastOK = lipgloss.NewStyle().Foreground(colOK).Bold(true)
-	styleToastWn = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
-	styleToastBd = lipgloss.NewStyle().Foreground(colBad).Bold(true)
-)
 
 // Run открывает экран на весь терминал и держит, пока пользователь не выйдет.
 // Возвращает папку, куда просили перейти (через TIM_CD_FILE её подхватит шим).
@@ -318,6 +321,3 @@ func (a *App) keyBar(s Screen) string {
 	}
 	return styleKeyBar.Render(left + strings.Repeat(" ", gap) + right)
 }
-
-// globalKeys: то, что одинаково на всех экранах - для справки.
-var globalKeys = []Key{{"esc", "назад, с первого - выход"}, {"?", "справка"}, {":", "любая команда tim"}, {"q", "выход"}}

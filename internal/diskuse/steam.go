@@ -8,13 +8,13 @@ import (
 	"time"
 )
 
+var acfField = regexp.MustCompile(`"(name|installdir|LastPlayed)"\s+"([^"]*)"`)
+
 // Game: установленная игра Steam.
 type Game struct {
 	Name, Dir  string // Dir - папка в steamapps/common
 	LastPlayed time.Time
 }
-
-var acfField = regexp.MustCompile(`"(name|installdir|LastPlayed)"\s+"([^"]*)"`)
 
 // ParseACF: appmanifest_*.acf - имя игры, её папка и когда в неё играли.
 func ParseACF(data string) Game {

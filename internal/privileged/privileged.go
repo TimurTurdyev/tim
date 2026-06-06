@@ -24,6 +24,16 @@ import (
 // HelperArg: скрытая команда tim, под которой работает помощник.
 const HelperArg = "root-helper"
 
+// allowed: что помощник вообще запускает. Это не защита от злоумышленника (sudo и так у
+// пользователя), а страховка от ошибки в коде.
+var allowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true, "sysctl": true,
+	"iptables": true, "iptables-nft": true, "iptables-legacy": true, "groupadd": true}
+
+var (
+	link   *conn
+	failed error // sudo уже отказал: второй раз за запуск не спрашиваем
+)
+
 type Request struct {
 	Cmd    []string   `json:"cmd,omitempty"`
 	Stdin  string     `json:"stdin,omitempty"`
@@ -47,11 +57,6 @@ type Response struct {
 	Err string `json:"err,omitempty"`
 	PID int    `json:"pid,omitempty"`
 }
-
-// allowed: что помощник вообще запускает. Это не защита от злоумышленника (sudo и так у
-// пользователя), а страховка от ошибки в коде.
-var allowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true, "sysctl": true,
-	"iptables": true, "iptables-nft": true, "iptables-legacy": true, "groupadd": true}
 
 // Serve: сторона root - читает запросы построчно и отвечает на каждый.
 func Serve(in io.Reader, out io.Writer) error {
@@ -130,11 +135,6 @@ type conn struct {
 	in  io.WriteCloser
 	out *bufio.Scanner
 }
-
-var (
-	link   *conn
-	failed error // sudo уже отказал: второй раз за запуск не спрашиваем
-)
 
 func start() (*conn, error) {
 	if link != nil {

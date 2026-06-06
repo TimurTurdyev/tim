@@ -14,13 +14,13 @@ var (
 	ErrNoTTY    = errors.New("нет терминала")
 )
 
+// Disabled: спрашивать нельзя, даже если терминал есть (--no-input, TIM_NO_INPUT).
+var Disabled = os.Getenv("TIM_NO_INPUT") != ""
+
 type Item struct {
 	Title string
 	Hint  string
 }
-
-// Disabled: спрашивать нельзя, даже если терминал есть (--no-input, TIM_NO_INPUT).
-var Disabled = os.Getenv("TIM_NO_INPUT") != ""
 
 // Available: можно спросить человека. stdout может быть перехвачен шимом, поэтому смотрим только stdin.
 func Available() bool {

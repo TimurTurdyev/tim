@@ -11,8 +11,12 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
 	"github.com/TimurTurdyev/tim/internal/paths"
 )
+
+// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
+var backedUp bool
 
 type Project struct {
 	Name   string `toml:"name"`
@@ -178,9 +182,6 @@ func Load() (*Config, error) {
 	cfg.Dev = ExpandHome(cfg.Dev)
 	return cfg, nil
 }
-
-// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
-var backedUp bool
 
 func Save(cfg *Config) error {
 	path := Path()

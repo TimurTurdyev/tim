@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/TimurTurdyev/tim/internal/paths"
-
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
+
+var keepAlive = []string{"-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "ConnectTimeout=15"}
 
 // Aliases перечисляет Host без масок из ~/.ssh/config.
 func Aliases() []string {
@@ -91,8 +92,6 @@ func sockPath(name string) string {
 }
 
 func statePath(name string) string { return filepath.Join(StateDir(), "tunnel-"+name) }
-
-var keepAlive = []string{"-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "ConnectTimeout=15"}
 
 // Tunnel: фоновый ssh с control-сокетом.
 type Tunnel struct {

@@ -8,14 +8,6 @@ import (
 	"strings"
 )
 
-// Place: место, где на машине разработчика копится пересоздаваемое.
-type Place struct {
-	Name  string
-	Paths []string // от домашней папки или абсолютные - системные места сервера
-	Clean string   // чем чистить; пусто - разбирать руками
-	Whole bool     // папку можно убрать целиком: это кэш, он скачается снова
-}
-
 // SystemPlaces: известные места. Порядок не важен, вывод сортируется по размеру.
 var SystemPlaces = []Place{
 	{"OrbStack", []string{"Library/Group Containers/HUAQ24HBR6.dev.orbstack", ".orbstack"}, "docker system prune -a", false},
@@ -46,6 +38,23 @@ var SystemPlaces = []Place{
 
 // Caches: папка общих кешей; из неё вычитается то, что показано отдельной строкой.
 const Caches = "Library/Caches"
+
+// Parents: общие папки кешей. Из них вычитается то, что показано отдельными строками, остаток - "прочее".
+var Parents = []struct{ Path, Name, Clean string }{
+	{Caches, "~/Library/Caches: прочее", "приложения пересоздадут сами; чистить при закрытых приложениях"},
+	{DotCache, "~/.cache: прочее", ""},
+}
+
+// DotCache: кеши консольных программ и моделей.
+const DotCache = ".cache"
+
+// Place: место, где на машине разработчика копится пересоздаваемое.
+type Place struct {
+	Name  string
+	Paths []string // от домашней папки или абсолютные - системные места сервера
+	Clean string   // чем чистить; пусто - разбирать руками
+	Whole bool     // папку можно убрать целиком: это кэш, он скачается снова
+}
 
 // Measured: место с размером в байтах.
 type Measured struct {
@@ -80,15 +89,6 @@ func SummarizeSystem(places []Place, sizes map[string]int64) []Measured {
 	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
 	return out
 }
-
-// Parents: общие папки кешей. Из них вычитается то, что показано отдельными строками, остаток - "прочее".
-var Parents = []struct{ Path, Name, Clean string }{
-	{Caches, "~/Library/Caches: прочее", "приложения пересоздадут сами; чистить при закрытых приложениях"},
-	{DotCache, "~/.cache: прочее", ""},
-}
-
-// DotCache: кеши консольных программ и моделей.
-const DotCache = ".cache"
 
 // AllPaths: все пути, которые надо измерить.
 func AllPaths(places []Place) []string {

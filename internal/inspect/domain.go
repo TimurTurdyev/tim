@@ -13,6 +13,10 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
+var httpClient = &http.Client{Timeout: Timeout}
+
+var whoisDates = []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02", "2006.01.02", "02-Jan-2006"}
+
 type Domain struct {
 	Registrar   string    `json:"registrar,omitempty"`
 	Created     time.Time `json:"created,omitzero"`
@@ -20,8 +24,6 @@ type Domain struct {
 	Nameservers []string  `json:"nameservers,omitempty"`
 	Source      string    `json:"source"`
 }
-
-var httpClient = &http.Client{Timeout: Timeout}
 
 // Registration: RDAP, а для зон без RDAP (например .ru) whois по порту 43.
 func Registration(domain string) (*Domain, error) {
@@ -149,8 +151,6 @@ func whoisQuery(server, q string) (string, error) {
 	data, err := io.ReadAll(io.LimitReader(c, 1<<20))
 	return string(data), err
 }
-
-var whoisDates = []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02", "2006.01.02", "02-Jan-2006"}
 
 // ParseWhois понимает ключи gTLD и зоны .ru/.рф (registrar, created, paid-till, nserver).
 func ParseWhois(text string) *Domain {

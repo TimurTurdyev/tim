@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// safeMethods и safeHeaders не требуют разрешения в preflight.
+var safeMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true}
+
+var safeHeaders = map[string]bool{"accept": true, "accept-language": true, "content-language": true, "content-type": true}
+
 // Request: что собирается сделать фронтенд.
 type Request struct {
 	Origin      string
@@ -19,10 +24,6 @@ type Problem struct {
 	Bad  bool
 	Text string
 }
-
-// safeMethods и safeHeaders не требуют разрешения в preflight.
-var safeMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true}
-var safeHeaders = map[string]bool{"accept": true, "accept-language": true, "content-language": true, "content-type": true}
 
 func listHas(header, want string) bool {
 	for _, v := range strings.Split(header, ",") {

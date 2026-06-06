@@ -6,19 +6,19 @@ import (
 	"strings"
 )
 
-// Volume: том APFS. Тома одного контейнера делят одно место, поэтому занятое другими томами
-// уменьшает свободное на основном, хотя в его папках этого не видно.
-type Volume struct {
-	Name, Role, Mount string
-	Size              int64
-}
-
 var (
 	apfsRole = regexp.MustCompile(`APFS Volume Disk \(Role\):\s+\S+ \(([^)]*)\)`)
 	apfsName = regexp.MustCompile(`Name:\s+(.+?)(?: \(Case-(?:in)?sensitive\))?$`)
 	apfsSize = regexp.MustCompile(`Capacity Consumed:\s+(\d+) B`)
 	apfsMnt  = regexp.MustCompile(`Mount Point:\s+(.+)$`)
 )
+
+// Volume: том APFS. Тома одного контейнера делят одно место, поэтому занятое другими томами
+// уменьшает свободное на основном, хотя в его папках этого не видно.
+type Volume struct {
+	Name, Role, Mount string
+	Size              int64
+}
 
 // ParseAPFS: diskutil apfs list -> тома контейнера, где лежит mount (обычно /System/Volumes/Data).
 func ParseAPFS(out, mount string) []Volume {
