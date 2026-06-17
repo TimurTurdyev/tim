@@ -3,6 +3,8 @@ package runner
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -10,7 +12,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -25,18 +29,76 @@ var DryRun = os.Getenv("TIM_DRY_RUN") != ""
 // ConfirmFunc задаёт интерактивный вопрос; asked=false - спросить не вышло, спрашиваем строкой.
 var ConfirmFunc func(question string, def bool) (yes, asked bool)
 
+// parseEnv: окружение утилит, чей вывод разбирается: числа с точкой, даты и сообщения по-английски.
+// Кодировка остаётся пользовательской, иначе ps и lsof экранируют кириллицу в именах.
+var parseEnv = sync.OnceValue(func() []string {
+	env := make([]string, 0, len(os.Environ())+4)
+	ctype := ""
+	for _, e := range os.Environ() {
+		k, v, _ := strings.Cut(e, "=")
+		switch k {
+		case "LC_ALL":
+			ctype = v
+		case "LC_NUMERIC", "LC_TIME", "LC_MESSAGES":
+		default:
+			env = append(env, e)
+		}
+	}
+	if ctype != "" && os.Getenv("LC_CTYPE") == "" {
+		env = append(env, "LC_CTYPE="+ctype)
+	}
+	return append(env, "LC_NUMERIC=C", "LC_TIME=C", "LC_MESSAGES=C")
+})
+
 // LookPath: полный путь программы из PATH.
 func LookPath(name string) (string, error) { return exec.LookPath(name) }
 
-// Output запускает команду только для чтения и возвращает stdout.
+// Output запускает команду только для чтения и возвращает stdout. Дольше минуты не ждёт: зависший
+// lsof или system_profiler не должен вешать команду и экран.
 func Output(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
+	return OutputWithin(time.Minute, name, args...)
+}
+
+// OutputWithin как Output, но со своим пределом времени; 0 - без предела (du по большому дереву).
+func OutputWithin(limit time.Duration, name string, args ...string) (string, error) {
+	return output(limit, nil, name, args...)
+}
+
+// OutputStdin как Output, но с данными на stdin: для скрипта, который уходит на сервер через ssh.
+func OutputStdin(stdin, name string, args ...string) (string, error) {
+	return output(time.Minute, strings.NewReader(stdin), name, args...)
+}
+
+func output(limit time.Duration, stdin io.Reader, name string, args ...string) (string, error) {
+	ctx := context.Background()
+	if limit > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, limit)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = time.Second
+	cmd.Env = parseEnv()
+	cmd.Stdin = stdin
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err := cmd.Run()
+	switch {
+	case ctx.Err() == context.DeadlineExceeded:
+		err = fmt.Errorf("%s не ответил за %s", filepath.Base(name), limit)
+	case err != nil && errOut.Len() > 0:
+		err = fmt.Errorf("%w: %s", err, firstLine(errOut.String()))
+	}
 	return out.String(), err
 }
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return line
+}
+
+// Note печатает в dry-run то, что было бы сделано без внешней команды: "$ # записал бы ...".
+func Note(what string) { ui.Println(ui.Dim("$ # " + what)) }
 
 // Run выполняет команду, меняющую систему: в dry-run только печатает.
 func Run(name string, args ...string) error {
@@ -125,8 +187,8 @@ func ConfirmDefault(question string, def bool) bool {
 		return true
 	}
 	if NoInput {
-		ui.Println(ui.Dim(question + " - " + answer(def) + " (без ввода)"))
-		return def
+		ui.Println(ui.Dim(question + " - нет (без ввода)"))
+		return false
 	}
 	if ConfirmFunc != nil {
 		if yes, asked := ConfirmFunc(question, def); asked {
@@ -245,21 +307,67 @@ func StopGroup(pid int) error {
 // а если прав не хватило - через временный файл и sudo. Недостающие папки создаются.
 func WriteRoot(path string, data []byte) error {
 	if DryRun {
-		ui.Println(ui.Dim("$ # записал бы " + path + ", " + strconv.Itoa(len(data)) + " байт"))
+		Note("записал бы " + path + ", " + strconv.Itoa(len(data)) + " байт")
 		return nil
 	}
 	if os.MkdirAll(filepath.Dir(path), 0o755) == nil && os.WriteFile(path, data, 0o644) == nil {
 		return nil
 	}
-	tmp := filepath.Join(os.TempDir(), "tim-"+filepath.Base(path))
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// Имя случайное и файл новый: в общем /tmp чужая ссылка с тем же именем не подсунет sudo cp другой файл.
+	tmp, err := os.CreateTemp("", "tim-*")
+	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(tmp) }()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp.Name(), 0o644)
+	}
+	if err != nil {
+		return err
+	}
 	if err := Sudo("mkdir", "-p", filepath.Dir(path)); err != nil {
 		return err
 	}
-	return Sudo("cp", tmp, path)
+	return Sudo("cp", tmp.Name(), path)
+}
+
+// WriteFile пишет файл пользователя целиком или никак: временный файл рядом и rename.
+// В dry-run только печатает.
+func WriteFile(path string, data []byte, mode os.FileMode) error {
+	if DryRun {
+		Note("записал бы " + path + ", " + strconv.Itoa(len(data)) + " байт")
+		return nil
+	}
+	return WriteAtomic(path, data, mode)
+}
+
+// WriteAtomic пишет служебный файл tim (кэш, памятку, состояние) целиком или никак, без оглядки на
+// dry-run: прерванная запись не оставляет полупустой файл.
+func WriteAtomic(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp.Name(), mode)
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // RemoveRoot убирает файл, который может принадлежать системе.
@@ -271,16 +379,6 @@ func RemoveRoot(path string) error {
 		return nil
 	}
 	return Sudo("rm", "-f", path)
-}
-
-// OutputStdin как Output, но с данными на stdin: для скрипта, который уходит на сервер через ssh.
-func OutputStdin(stdin, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin = strings.NewReader(stdin)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	return out.String(), err
 }
 
 // Replace заменяет текущий процесс командой; возвращается только при ошибке.

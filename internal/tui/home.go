@@ -6,6 +6,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Главный экран: строка поиска, недавнее и разделы, плитки состояния, одно предупреждение.
@@ -116,7 +118,7 @@ func (h *home) refill() {
 				tw = 18
 			}
 			rest := w - 3 - tw - lipgloss.Width(e.Note)
-			body := Pad(styleBold.Render(e.Title), tw) + Pad(styleDim.Render(e.Hint), max(8, rest-1)) + e.Note
+			body := ui.Fit(styleBold.Render(e.Title), tw) + ui.Fit(styleDim.Render(e.Hint), max(8, rest-1)) + e.Note
 			return SelRow(sel, w, body)
 		}})
 	}
@@ -213,7 +215,7 @@ func (h *home) View(width, height int) string {
 	art := h.data.Art
 	for i, l := range head {
 		if i < len(art) && width >= 90 {
-			out = append(out, Pad(l, width-14)+art[i])
+			out = append(out, ui.Fit(l, width-14)+art[i])
 		} else {
 			out = append(out, l)
 		}
@@ -222,7 +224,7 @@ func (h *home) View(width, height int) string {
 	wide := width >= 90 && len(h.data.Sections) > 0
 	var secs []string
 	for _, sc := range h.data.Sections {
-		secs = append(secs, styleKeyCap.Render(" "+sc.Key+" ")+" "+Pad(styleText.Render(sc.Title), 13)+styleDim.Render(sc.Hint))
+		secs = append(secs, styleKeyCap.Render(" "+sc.Key+" ")+" "+ui.Fit(styleText.Render(sc.Title), 13)+styleDim.Render(sc.Hint))
 	}
 	switch {
 	case !typing && wide:
@@ -235,7 +237,7 @@ func (h *home) View(width, height int) string {
 		rows := Beside(left, 52, right, width)
 		for i, r := range rows {
 			if i+len(head) < len(art) {
-				rows[i] = Pad(r, width-14) + art[i+len(head)]
+				rows[i] = ui.Fit(r, width-14) + art[i+len(head)]
 			}
 		}
 		out = append(out, rows...)

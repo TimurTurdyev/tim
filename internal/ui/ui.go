@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
 
@@ -75,17 +77,13 @@ func Errorf(format string, a ...any) error {
 	return fmt.Errorf(format, a...)
 }
 
-// Pad добивает строку пробелами до width для таблиц.
+// Pad добивает строку пробелами до width колонок для таблиц; цвет и широкие символы учитываются.
 func Pad(s string, width int) string {
-	n := len([]rune(s))
+	n := ansi.StringWidth(s)
 	if n >= width {
 		return s
 	}
-	b := make([]rune, width-n)
-	for i := range b {
-		b[i] = ' '
-	}
-	return s + string(b)
+	return s + strings.Repeat(" ", width-n)
 }
 
 // ShortErr: последняя, самая содержательная часть обёрнутой ошибки.

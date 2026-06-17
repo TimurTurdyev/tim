@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Обозреватель диска: папки по размеру, заход внутрь, отметки, уборка в Корзину.
@@ -112,13 +114,13 @@ func (b *browse) fill(l *level) {
 			} else if e.Path != "" && b.under(e.Path) {
 				mark = styleDim.Render(symCheck) + " "
 			}
-			name := Pad(e.Name, max(20, min(44, w-62)))
+			name := ui.Fit(e.Name, max(20, min(44, w-62)))
 			if e.Dir {
 				name = styleBold.Render(name)
 			} else {
 				name = styleDim.Render(name)
 			}
-			line := mark + styleText.Render(Pad(Human(e.Size), 9)) + " " + bar + " " + styleDim.Render(Pad(itoa(pct)+"%", 4)) + "  " + name
+			line := mark + styleText.Render(ui.Fit(Human(e.Size), 9)) + " " + bar + " " + styleDim.Render(ui.Fit(itoa(pct)+"%", 4)) + "  " + name
 			if e.Hint != "" {
 				line += "  " + styleDim.Render(e.Hint)
 			}
@@ -204,7 +206,7 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 	var lines, paths []string
 	var sum int64
 	for _, e := range top {
-		lines = append(lines, Pad(Human(e.Size), 9)+"  "+e.Path)
+		lines = append(lines, ui.Fit(Human(e.Size), 9)+"  "+e.Path)
 		paths = append(paths, e.Path)
 		sum += e.Size
 	}
@@ -258,7 +260,7 @@ func (b *browse) View(width, height int) string {
 			sum += e.Size
 			names = append(names, e.Name)
 		}
-		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(top))+" "+symDot+" "+Human(sum)) + styleDim.Render("   "+Clip(strings.Join(names, ", "), width-30))
+		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(top))+" "+symDot+" "+Human(sum)) + styleDim.Render("   "+ui.Clip(strings.Join(names, ", "), width-30))
 	}
 	return strings.Join(out, "\n")
 }

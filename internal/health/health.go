@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Level: насколько всё плохо. Порядок важен: худший уровень - наибольший.
@@ -91,11 +93,17 @@ func Sort(rows []Row) {
 
 // Deadline: проверка на срок - сертификат, регистрация домена. warn и bad в днях.
 func Deadline(name string, t time.Time, warn, bad int) Check {
-	days := int(time.Until(t).Hours() / 24)
+	return DeadlineAt(name, t, time.Now(), warn, bad)
+}
+
+// DeadlineAt как Deadline, но на момент now. Остаток считается вверх: 12 часов - это "1 дн",
+// истёкшим срок становится, только когда прошёл.
+func DeadlineAt(name string, t, now time.Time, warn, bad int) Check {
+	days := ui.DaysUntil(t, now)
 	c := Check{Name: name, Level: OK, Text: fmt.Sprintf("%d дн", days)}
 	switch {
-	case days < 0:
-		c.Level, c.Text = Bad, fmt.Sprintf("истёк %d дн назад", -days)
+	case days <= 0:
+		c.Level, c.Text = Bad, ui.Expired(days)
 		c.Detail = fmt.Sprintf("%s истёк %s", name, t.Format("2006-01-02"))
 	case days <= bad:
 		c.Level = Bad

@@ -9,14 +9,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
-// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
-var backedUp bool
+var (
+	// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
+	backedUp bool
+	// hereMu: индекс папок строится лениво и из нескольких горутин сразу (обход диска, процессы).
+	hereMu sync.Mutex
+)
 
 type Project struct {
 	Name   string `toml:"name"`
@@ -89,6 +94,17 @@ type Config struct {
 	Tunnel    Tunnel              `toml:"tunnel,omitempty"`
 	Projects  []Project           `toml:"project"`
 	Hosts     []Host              `toml:"host"`
+
+	here *dirIndex
+}
+
+// dirIndex: настоящая папка проекта -> его номер. Строится один раз и заново, только когда
+// поменялся реестр или корень проектов.
+type dirIndex struct {
+	dev   string
+	first *Project
+	n     int
+	dirs  map[string]int
 }
 
 // Path отдаёт путь к конфигу: TIM_CONFIG, иначе $XDG_CONFIG_HOME/tim/config.toml или ~/.config/tim/config.toml.
@@ -256,23 +272,43 @@ func (c *Config) ProjectDir(p *Project) string {
 	return filepath.Join(c.Dev, p.Path)
 }
 
-// ProjectHere ищет проект, в чью папку входит cwd, самый глубокий из подходящих.
+// ProjectHere ищет проект, в чью папку входит cwd, самый глубокий из подходящих: подъём от cwd
+// к корню по индексу папок, первое совпадение и есть самое глубокое.
 func (c *Config) ProjectHere(cwd string) (*Project, bool) {
-	cwd, _ = filepath.EvalSymlinks(cwd)
-	var best *Project
-	bestLen := 0
-	for i := range c.Projects {
-		dir, err := filepath.EvalSymlinks(c.ProjectDir(&c.Projects[i]))
-		if err != nil {
-			continue
+	cwd, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return nil, false
+	}
+	dirs := c.dirs()
+	for d := cwd; ; d = filepath.Dir(d) {
+		if i, ok := dirs[d]; ok {
+			return &c.Projects[i], true
 		}
-		if cwd == dir || strings.HasPrefix(cwd, dir+string(filepath.Separator)) {
-			if len(dir) > bestLen {
-				best, bestLen = &c.Projects[i], len(dir)
-			}
+		if parent := filepath.Dir(d); parent == d {
+			return nil, false
 		}
 	}
-	return best, best != nil
+}
+
+func (c *Config) dirs() map[string]int {
+	hereMu.Lock()
+	defer hereMu.Unlock()
+	var first *Project
+	if len(c.Projects) > 0 {
+		first = &c.Projects[0]
+	}
+	if h := c.here; h != nil && h.dev == c.Dev && h.first == first && h.n == len(c.Projects) {
+		return h.dirs
+	}
+	h := &dirIndex{dev: c.Dev, first: first, n: len(c.Projects), dirs: map[string]int{}}
+	for i := range c.Projects {
+		dir, err := filepath.EvalSymlinks(c.ProjectDir(&c.Projects[i]))
+		if _, dup := h.dirs[dir]; err == nil && !dup {
+			h.dirs[dir] = i
+		}
+	}
+	c.here = h
+	return h.dirs
 }
 
 // Relative: путь от корня проектов, если проект внутри него, иначе абсолютный.

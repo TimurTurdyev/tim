@@ -72,7 +72,7 @@ var phpExecCmd = &cobra.Command{
 			return err
 		}
 		cwd, _ := os.Getwd()
-		return runner.ExecIn(cwd, []string{"PATH=" + phpver.Path(i.Bin)}, args[1], args[2:]...)
+		return runner.ExecIn(cwd, []string{"PATH=" + i.PathEnv()}, args[1], args[2:]...)
 	},
 }
 
@@ -87,7 +87,7 @@ var phpUseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		line := fmt.Sprintf("export PATH=%q", phpver.Path(i.Bin))
+		line := fmt.Sprintf("export PATH=%q", i.PathEnv())
 		if phpUsePrint {
 			fmt.Println(line)
 			return nil

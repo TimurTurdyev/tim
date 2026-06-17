@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // TTL: анонсы меняются, но не каждый час; сутки - разумный срок.
@@ -119,8 +121,7 @@ func Prefixes(dir, as string) ([]string, error) {
 		return nil, errors.New("у AS" + as + " нет анонсированных IPv4-сетей")
 	}
 	if data, err := json.Marshal(cache{Fetched: time.Now(), Prefixes: list}); err == nil {
-		_ = os.MkdirAll(filepath.Dir(path), 0o755)
-		_ = os.WriteFile(path, data, 0o644)
+		_ = runner.WriteAtomic(path, data, 0o644)
 	}
 	return list, nil
 }

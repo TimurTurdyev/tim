@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Форматирование чисел и дат одинаково во всех командах.
@@ -38,12 +40,20 @@ func Duration(d time.Duration) string {
 
 // Clip обрезает строку до width рун, помечая обрез тильдой.
 func Clip(s string, width int) string {
-	r := []rune(s)
-	if len(r) <= width {
+	if width <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= width {
 		return s
 	}
-	return string(r[:width-1]) + "~"
+	return ansi.Truncate(s, width, "~")
 }
+
+// Fit: ровно width колонок - короткое добивается пробелами, длинное обрезается с тильдой.
+func Fit(s string, width int) string { return Pad(Clip(s, width), width) }
+
+// Width: ширина строки в колонках терминала - без кодов цвета, широкие символы за два.
+func Width(s string) int { return ansi.StringWidth(s) }
 
 // Dash: прочерк вместо пустого значения.
 func Dash(s string) string {
@@ -55,15 +65,33 @@ func Dash(s string) string {
 
 // DaysLeft: дата и сколько до неё осталось; близкий срок жёлтым, прошедший красным.
 func DaysLeft(t time.Time) string {
-	d := int(time.Until(t).Hours() / 24)
-	s := fmt.Sprintf("%s, осталось %d дн", t.Format("2006-01-02"), d)
+	d := DaysUntil(t, time.Now())
+	date := t.Format("2006-01-02")
 	switch {
-	case d < 0:
-		return Bad(fmt.Sprintf("%s, истёк %d дн назад", t.Format("2006-01-02"), -d))
+	case d <= 0:
+		return Bad(date + ", " + Expired(d))
 	case d < 14:
-		return Warn(s)
+		return Warn(fmt.Sprintf("%s, осталось %d дн", date, d))
 	}
-	return s
+	return fmt.Sprintf("%s, осталось %d дн", date, d)
+}
+
+// DaysUntil: сколько дней до t на момент now, с округлением вверх: 12 часов - это 1 день.
+// Ноль и меньше - срок прошёл: 0 - меньше суток назад, -N - N полных дней назад.
+func DaysUntil(t, now time.Time) int {
+	const day = 24 * time.Hour
+	if d := t.Sub(now); d > 0 {
+		return int((d + day - 1) / day)
+	}
+	return -int(now.Sub(t) / day)
+}
+
+// Expired: "истёк сегодня" или "истёк N дн назад" для DaysUntil <= 0.
+func Expired(days int) string {
+	if days == 0 {
+		return "истёк сегодня"
+	}
+	return fmt.Sprintf("истёк %d дн назад", -days)
 }
 
 // Terminal: stderr смотрит в терминал - туда можно рисовать перезаписываемую строку хода.

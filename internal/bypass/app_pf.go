@@ -1,6 +1,7 @@
 package bypass
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -175,12 +176,17 @@ func forwardingOn() error {
 	return nil
 }
 
-func forwardingRestore() {
-	if _, ok := recall("forwarding"); !ok {
-		return
+// forwardingRestore возвращает forwarding, если его включал tim; памятка стирается только после удачи.
+func forwardingRestore() error {
+	prev, ok := recall("forwarding")
+	if !ok {
+		return nil
 	}
-	_, _ = privileged.Run("sysctl", "-w", "net.inet.ip.forwarding=0")
+	if out, err := privileged.Run("sysctl", "-w", "net.inet.ip.forwarding="+prev); err != nil {
+		return ui.Errorf("ip forwarding не вернулся в %s: %s", prev, firstLine(out, err))
+	}
 	forget("forwarding")
+	return nil
 }
 
 // scopedDefaultOn: сокет прокси привязан к en0 (IP_BOUND_IF), и маршрут для него ядро ищет только
@@ -208,24 +214,34 @@ func scopedGateway(dev string) string {
 	return ""
 }
 
-func scopedRestore() {
+func scopedRestore() error {
 	dev, ok := recall("scoped")
 	if !ok {
-		return
+		return nil
 	}
-	_, _ = privileged.Run("route", "-n", "delete", "-ifscope", dev, "default")
+	out, err := privileged.Run("route", "-n", "delete", "-ifscope", dev, "default")
+	if err != nil && !strings.Contains(out+err.Error(), "not in table") {
+		return ui.Errorf("scoped-маршрут %s не снялся: %s", dev, firstLine(out, err))
+	}
 	forget("scoped")
+	return nil
 }
 
+// pfOff снимает всё, что снимается, и возвращает то, что снять не вышло.
 func pfOff() error {
-	if _, err := privileged.Run("pfctl", "-q", "-a", Anchor, "-F", "all"); err != nil {
-		return ui.Errorf("снять правила не вышло: %v", err)
+	var errs []error
+	if out, err := privileged.Run("pfctl", "-q", "-a", Anchor, "-F", "all"); err != nil {
+		errs = append(errs, ui.Errorf("правила pf не снялись: %s", firstLine(out, err)))
 	}
 	if pid := ProxyPID(); pid > 0 {
-		_, _ = privileged.Run("kill", strconv.Itoa(pid))
+		if out, err := privileged.Run("kill", strconv.Itoa(pid)); err != nil {
+			errs = append(errs, ui.Errorf("прокси (pid %d) не остановился: %s", pid, firstLine(out, err)))
+		}
 	}
-	forwardingRestore()
-	scopedRestore()
+	errs = append(errs, forwardingRestore(), scopedRestore())
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
 	ui.Println(ui.Label("снято") + ui.Dim("  правила pf, прокси, forwarding и scoped-маршрут; программы под группой снова пойдут через VPN"))
 	return nil
 }

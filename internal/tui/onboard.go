@@ -5,6 +5,8 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Первый запуск: где проекты, что нашлось, подключить ли к оболочке. Три шага, каждый можно
@@ -114,15 +116,15 @@ func (o *onboard) fillRoots() {
 	for _, r := range o.roots {
 		r := r
 		o.list.Rows = append(o.list.Rows, Row{Text: r.Path, Render: func(sel bool, w int) string {
-			name := styleText.Render(Pad(r.Path, 22))
+			name := styleText.Render(ui.Fit(r.Path, 22))
 			if sel {
-				name = styleBold.Render(Pad(r.Path, 22))
+				name = styleBold.Render(ui.Fit(r.Path, 22))
 			}
 			return SelRow(sel, w, name+styleDim.Render(r.Note))
 		}})
 	}
 	o.list.Rows = append(o.list.Rows, Row{Text: "другая", Render: func(sel bool, w int) string {
-		return SelRow(sel, w, styleDim.Render(Pad("другая папка...", 22)+"введи путь"))
+		return SelRow(sel, w, styleDim.Render(ui.Fit("другая папка...", 22)+"введи путь"))
 	}})
 	if o.list.Cursor >= len(o.list.Rows) {
 		o.list.Cursor = 0
@@ -139,11 +141,11 @@ func (o *onboard) fillFound() {
 			if p.Checked {
 				box = styleGood.Render("[" + symCheck + "]")
 			}
-			name := styleText.Render(Pad(p.Name, 22))
+			name := styleText.Render(ui.Fit(p.Name, 22))
 			if sel {
-				name = styleBold.Render(Pad(p.Name, 22))
+				name = styleBold.Render(ui.Fit(p.Name, 22))
 			}
-			return SelRow(sel, w, box+" "+name+styleDim.Render(Pad(p.Stack, 11)+Pad(p.Age, 10)+Clip(p.Dir, max(10, w-56))))
+			return SelRow(sel, w, box+" "+name+styleDim.Render(ui.Fit(p.Stack, 11)+ui.Fit(p.Age, 10)+ui.Clip(p.Dir, max(10, w-56))))
 		}})
 	}
 	o.list.Cursor = 0
@@ -288,7 +290,7 @@ func (o *onboard) View(width, height int) string {
 			"  " + stylePaneT.Render("Нашёл "+plural(len(o.found), "репозиторий", "репозитория", "репозиториев")+" в "+o.root) +
 				styleDim.Render("  сними галочку с того, что не нужно в реестре"),
 			"",
-			"  " + styleHead.Render("    "+Pad("ИМЯ", 22)+Pad("СТЕК", 11)+Pad("МЕНЯЛСЯ", 10)+"ПАПКА") + styleDim.Render("   отмечено "+itoa(n)),
+			"  " + styleHead.Render("    "+ui.Fit("ИМЯ", 22)+ui.Fit("СТЕК", 11)+ui.Fit("МЕНЯЛСЯ", 10)+"ПАПКА") + styleDim.Render("   отмечено "+itoa(n)),
 		}
 	default:
 		head = []string{"",
@@ -342,7 +344,7 @@ func withArt(lines, art []string, width int) []string {
 			l = lines[i]
 		}
 		if i < len(art) {
-			l = Pad(l, col) + art[i]
+			l = ui.Fit(l, col) + art[i]
 		}
 		out[i] = l
 	}

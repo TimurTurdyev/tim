@@ -6,6 +6,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/envfile"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/phpver"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -36,13 +37,13 @@ func PHPEnv(dir, stack string) ([]string, string) {
 	}
 	for _, i := range phpver.Installs() {
 		if phpver.Satisfies(i.Version, req) {
-			return []string{"PATH=" + phpver.Path(i.Bin)}, "php " + i.Version.String() + " под require.php " + req
+			return []string{"PATH=" + i.PathEnv()}, "php " + i.Version.String() + " под require.php " + req
 		}
 	}
 	return nil, "подходящего под " + req + " php нет: " + phpver.Hint("<версия>")
 }
 
-// ProjectPort: порт из реестра, иначе из APP_URL в .env, иначе 8000.
+// ProjectPort: порт из реестра, иначе из APP_URL в .env, иначе netinfo.DefaultPort.
 func ProjectPort(p *config.Project, dir string) string {
 	if p.Port > 0 {
 		return strconv.Itoa(p.Port)
@@ -52,7 +53,7 @@ func ProjectPort(p *config.Project, dir string) string {
 			return port
 		}
 	}
-	return "8000"
+	return netinfo.Port(netinfo.DefaultPort)
 }
 
 // NewPlan: команда запуска по стеку и полю serve, с подходящим php в PATH.

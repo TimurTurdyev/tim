@@ -120,8 +120,7 @@ var routeRmCmd = &cobra.Command{
 		if err := saveConfig(cfg); err != nil {
 			return err
 		}
-		bypass.Down(dests)
-		return nil
+		return bypass.Down(dests)
 	},
 }
 
@@ -145,8 +144,7 @@ var routeDownCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		bypass.Down(dests)
-		return nil
+		return bypass.Down(dests)
 	},
 }
 

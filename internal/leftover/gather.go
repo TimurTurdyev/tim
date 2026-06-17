@@ -171,7 +171,7 @@ func Gather(own func(name string) bool, running []procs.Full) ([]*Group, error) 
 			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				out, _ := runner.Output("du", "-sk", g.Items[i].Path)
+				out, _ := runner.OutputWithin(0, "du", "-sk", g.Items[i].Path)
 				kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
 				g.Items[i].Size = kb * 1024
 			})

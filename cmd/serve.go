@@ -43,7 +43,7 @@ func registryPorts() []int {
 
 // servable: проект можно поднять через serve - только таким нужен свой порт.
 func servable(dir string) bool {
-	_, err := run.Serve(run.Detect(dir), "8000")
+	_, err := run.Serve(run.Detect(dir), netinfo.Port(netinfo.DefaultPort))
 	return err == nil
 }
 
@@ -52,10 +52,10 @@ func servable(dir string) bool {
 // и при запуске вместе второй молча уедет на другой порт.
 func pinPort(p *config.Project, dir string) string {
 	port := run.ProjectPort(p, dir)
-	if p.Port > 0 || port != "8000" {
+	if p.Port > 0 || port != netinfo.Port(netinfo.DefaultPort) {
 		return port
 	}
-	n := newproj.NextPort(registryPorts(), 8000, func(s string) bool { _, b := netinfo.PortBusy(s); return b })
+	n := newproj.NextPort(registryPorts(), netinfo.DefaultPort, netinfo.BusyPorts().Busy)
 	p.Port = n
 	if err := saveConfig(cfg); err != nil {
 		ui.Println(ui.Warn("порт не закреплён: " + err.Error()))
@@ -204,7 +204,7 @@ func serveBackground(list []*config.Project, port string) error {
 			wanted[i] = pinPort(p, cfg.ProjectDir(p))
 		}
 	}
-	ports := run.AllocPorts(wanted, func(p string) bool { _, busy := netinfo.PortBusy(p); return busy })
+	ports := run.AllocPorts(wanted, netinfo.BusyPorts().Busy)
 	taken := map[string]bool{}
 	for _, p := range ports {
 		taken[p] = true

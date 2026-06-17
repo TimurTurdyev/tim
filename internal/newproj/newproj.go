@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/shellq"
 )
 
@@ -63,8 +64,8 @@ func NextPort(used []int, base int, busy func(string) bool) int {
 			p = u + 1
 		}
 	}
-	for busy(strconv.Itoa(p)) {
-		p++
+	if free, ok := netinfo.FirstFree(p, func(n int) bool { return busy(strconv.Itoa(n)) }); ok {
+		return free
 	}
 	return p
 }

@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // MaxBody: больше вебхуки не бывают, а память приёмника не резиновая.
@@ -90,10 +90,7 @@ func (j *Journal) Add(r Record) (Record, error) {
 		b.Write(line)
 		b.WriteByte('\n')
 	}
-	if err := os.MkdirAll(filepath.Dir(j.Path), 0o755); err != nil {
-		return r, err
-	}
-	return r, os.WriteFile(j.Path, b.Bytes(), 0o600)
+	return r, runner.WriteAtomic(j.Path, b.Bytes(), 0o600)
 }
 
 // Find: запрос по номеру.

@@ -197,14 +197,14 @@ func copyFile(src, dst string) error {
 func setupFinish(p *config.Project, dir string, fresh bool) error {
 	if fresh {
 		// Порт выдаём только тем, кого потом можно поднять: репозиторию без стека он ни к чему.
-		if _, err := run.Serve(run.Detect(dir), "8000"); err == nil && p.Port == 0 {
+		if _, err := run.Serve(run.Detect(dir), netinfo.Port(netinfo.DefaultPort)); err == nil && p.Port == 0 {
 			var used []int
 			for _, q := range cfg.Projects {
 				if q.Port > 0 {
 					used = append(used, q.Port)
 				}
 			}
-			p.Port = newproj.NextPort(used, 8000, func(s string) bool { _, b := netinfo.PortBusy(s); return b })
+			p.Port = newproj.NextPort(used, netinfo.DefaultPort, netinfo.BusyPorts().Busy)
 		}
 		if err := cfg.AddProject(*p); err != nil {
 			return err

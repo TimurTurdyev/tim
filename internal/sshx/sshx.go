@@ -113,7 +113,9 @@ func (t Tunnel) Start(forward ...string) error {
 	if t.Alive() {
 		return nil
 	}
-	_ = os.Remove(sockPath(t.Name))
+	if !runner.DryRun {
+		_ = os.Remove(sockPath(t.Name))
+	}
 	args := append([]string{"-f", "-N", "-M", "-S", sockPath(t.Name)}, keepAlive...)
 	args = append(args, forward...)
 	args = append(args, t.Host)
@@ -123,12 +125,15 @@ func (t Tunnel) Start(forward ...string) error {
 	if runner.DryRun {
 		return nil
 	}
-	return os.WriteFile(statePath(t.Name), []byte(t.Host+"\t"+t.Desc+"\n"), 0o600)
+	return runner.WriteAtomic(statePath(t.Name), []byte(t.Host+"\t"+t.Desc+"\n"), 0o600)
 }
 
 func (t Tunnel) Stop() {
 	if _, err := os.Stat(sockPath(t.Name)); err == nil {
-		_, _ = runner.Output("ssh", "-S", sockPath(t.Name), "-O", "exit", t.Host)
+		_ = runner.Run("ssh", "-S", sockPath(t.Name), "-O", "exit", t.Host)
+	}
+	if runner.DryRun {
+		return
 	}
 	_ = os.Remove(sockPath(t.Name))
 	_ = os.Remove(statePath(t.Name))

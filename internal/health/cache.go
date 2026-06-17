@@ -9,6 +9,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // CacheTTL: срок регистрации меняется раз в год, а RDAP и whois ограничивают частоту запросов.
@@ -58,7 +59,7 @@ func Registration(domain string) (*inspect.Domain, error) {
 	}
 	if path != "" {
 		if data, e := json.Marshal(domainCache{Fetched: time.Now(), Domain: d}); e == nil {
-			_ = os.WriteFile(path, data, 0o600)
+			_ = runner.WriteAtomic(path, data, 0o600)
 		}
 	}
 	return d, nil

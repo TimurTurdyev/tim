@@ -1,6 +1,7 @@
 package bypass
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -92,11 +93,11 @@ func linuxOn(gid int, phys netinfo.Service, gw string) error {
 	}
 	if rules, _ := runner.Output("ip", "rule", "show"); !strings.Contains(rules, "fwmark "+linuxMark+" lookup "+linuxTable) {
 		if _, err := privileged.Run("ip", "rule", "add", "fwmark", linuxMark, "lookup", linuxTable); err != nil {
-			return ui.Errorf("ip rule: %v", err)
+			return ui.Errorf("маршрут по метке не добавился: %v", err)
 		}
 	}
 	if _, err := privileged.Run("ip", "route", "replace", "default", "via", gw, "dev", phys.Device, "table", linuxTable); err != nil {
-		return ui.Errorf("ip route: %v", err)
+		return ui.Errorf("маршрут через %s в таблице %s не добавился: %v", phys.Device, linuxTable, err)
 	}
 	// Ответы приходят на физический интерфейс, а обратный путь по основной таблице ведёт в туннель:
 	// строгий rp_filter их выбросил бы.
@@ -124,34 +125,50 @@ func linuxOff() error {
 	if err != nil {
 		return err
 	}
+	phys, _ := Physical()
 	if gid, ok := linuxGroup(); ok {
-		phys, _ := Physical()
 		for _, rule := range linuxRules(gid, phys.Device) {
 			// Снимаем, пока снимается: правило могло попасть в цепочку не один раз.
-			for i := 0; i < 5; i++ {
+			for range 5 {
 				if _, err := privileged.Run(append([]string{ipt}, withAction(rule, "-D")...)...); err != nil || runner.DryRun {
 					break
 				}
 			}
 		}
 	}
-	_, _ = privileged.Run("ip", "rule", "del", "fwmark", linuxMark, "lookup", linuxTable)
-	_, _ = privileged.Run("ip", "route", "flush", "table", linuxTable)
-	for _, key := range []string{"net.ipv4.conf.all.rp_filter"} {
-		if prev, ok := recall(strings.ReplaceAll(key, ".", "_")); ok {
-			_, _ = privileged.Run("sysctl", "-w", key+"="+prev)
-			forget(strings.ReplaceAll(key, ".", "_"))
+	var errs []error
+	if rules, _ := runner.Output("ip", "rule", "show"); strings.Contains(rules, "fwmark "+linuxMark+" lookup "+linuxTable) {
+		if out, err := privileged.Run("ip", "rule", "del", "fwmark", linuxMark, "lookup", linuxTable); err != nil {
+			errs = append(errs, ui.Errorf("маршрут по метке не снялся: %s", firstLine(out, err)))
 		}
 	}
-	phys, _ := Physical()
+	if out, err := privileged.Run("ip", "route", "flush", "table", linuxTable); err != nil {
+		errs = append(errs, ui.Errorf("таблица %s не очистилась: %s", linuxTable, firstLine(out, err)))
+	}
+	keys := []string{"net.ipv4.conf.all.rp_filter"}
 	if phys.Device != "" {
-		key := "net.ipv4.conf." + phys.Device + ".rp_filter"
-		if prev, ok := recall(strings.ReplaceAll(key, ".", "_")); ok {
-			_, _ = privileged.Run("sysctl", "-w", key+"="+prev)
-			forget(strings.ReplaceAll(key, ".", "_"))
-		}
+		keys = append(keys, "net.ipv4.conf."+phys.Device+".rp_filter")
+	}
+	for _, key := range keys {
+		errs = append(errs, sysctlRestore(key))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
 	}
 	ui.Println(ui.Label("снято") + ui.Dim("  метка, маскарад, таблица маршрутов; программы под группой снова пойдут через VPN"))
+	return nil
+}
+
+func sysctlRestore(key string) error {
+	memo := strings.ReplaceAll(key, ".", "_")
+	prev, ok := recall(memo)
+	if !ok {
+		return nil
+	}
+	if out, err := privileged.Run("sysctl", "-w", key+"="+prev); err != nil {
+		return ui.Errorf("%s не вернулся в %s: %s", key, prev, firstLine(out, err))
+	}
+	forget(memo)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"time"
 
@@ -84,6 +85,19 @@ type overlay interface {
 
 type toastMsg struct{ id int }
 
+// ownedMsg: ответ команды, которую запустил экран id. Доходит только до него, даже если поверх открыт
+// такой же экран; у закрытого экрана ответ пропадает, и его тикер останавливается.
+type ownedMsg struct {
+	id  int
+	msg tea.Msg
+}
+
+// frame: экран в стопке и его номер для ответов.
+type frame struct {
+	s  Screen
+	id int
+}
+
 type toastState struct {
 	text string
 	cls  lipgloss.Style
@@ -93,7 +107,8 @@ type toastState struct {
 // App: стопка экранов и общее состояние.
 type App struct {
 	opts    Options
-	stack   []Screen
+	stack   []frame
+	lastID  int
 	width   int
 	height  int
 	overlay overlay
@@ -114,7 +129,7 @@ func Run(root Screen, opts Options) (dir string, err error) {
 		return "", ErrNoTTY
 	}
 	defer func() { _ = tty.Close() }()
-	app := &App{opts: opts, stack: []Screen{root}, width: 100, height: 30}
+	app := &App{opts: opts, stack: []frame{{s: root, id: 1}}, lastID: 1, width: 100, height: 30}
 	m, err := tea.NewProgram(app, tea.WithInput(tty), tea.WithOutput(tty)).Run()
 	if err != nil {
 		return "", err
@@ -126,14 +141,22 @@ func Run(root Screen, opts Options) (dir string, err error) {
 	return a.Dir, nil
 }
 
-func (a *App) cur() Screen { return a.stack[len(a.stack)-1] }
+func (a *App) cur() Screen { return a.top().s }
+
+func (a *App) top() frame { return a.stack[len(a.stack)-1] }
 
 // Push открывает экран поверх текущего.
 func (a *App) Push(s Screen) tea.Cmd {
-	a.stack = append(a.stack, s)
+	a.lastID++
+	f := frame{s: s, id: a.lastID}
+	a.stack = append(a.stack, f)
 	a.overlay = nil
-	if in, ok := s.(Initer); ok {
-		return in.Init()
+	return a.init(f)
+}
+
+func (a *App) init(f frame) tea.Cmd {
+	if in, ok := f.s.(Initer); ok {
+		return own(f.id, in.Init())
 	}
 	return nil
 }
@@ -194,12 +217,7 @@ func (a *App) Confirm(d Dialog) tea.Cmd {
 	return nil
 }
 
-func (a *App) Init() tea.Cmd {
-	if in, ok := a.cur().(Initer); ok {
-		return in.Init()
-	}
-	return nil
-}
+func (a *App) Init() tea.Cmd { return a.init(a.top()) }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -213,7 +231,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case tea.KeyPressMsg:
 		if a.overlay != nil {
-			return a, a.overlay.update(msg, a)
+			// Окно открыл верхний экран: ответ его действия - ему.
+			return a, own(a.top().id, a.overlay.update(msg, a))
 		}
 		typing := false
 		if t, ok := a.cur().(Typer); ok {
@@ -246,16 +265,58 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if _, ok := msg.(tea.KeyPressMsg); ok {
-		return a, a.cur().Update(msg, a)
+		f := a.top()
+		return a, own(f.id, f.s.Update(msg, a))
 	}
 	// Ответ фоновой загрузки должен дойти до своего экрана, даже если поверх уже открыт другой.
+	if m, ok := msg.(ownedMsg); ok {
+		for _, f := range a.stack {
+			if f.id == m.id {
+				return a, own(f.id, f.s.Update(m.msg, a))
+			}
+		}
+		return a, nil
+	}
 	var cmds []tea.Cmd
-	for _, s := range a.stack {
-		if c := s.Update(msg, a); c != nil {
-			cmds = append(cmds, c)
+	for _, f := range a.stack {
+		if c := f.s.Update(msg, a); c != nil {
+			cmds = append(cmds, own(f.id, c))
 		}
 	}
 	return a, tea.Batch(cmds...)
+}
+
+// own помечает ответы команды экрана его номером. Сообщения самого bubbletea (выход, запуск
+// программы, пачки) идут как есть - их разбирает рантайм, а пачка помечается поштучно.
+func own(id int, c tea.Cmd) tea.Cmd {
+	if c == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		switch m := c().(type) {
+		case nil, ownedMsg:
+			return m
+		case tea.BatchMsg:
+			out := make(tea.BatchMsg, len(m))
+			for i, cc := range m {
+				out[i] = own(id, cc)
+			}
+			return out
+		default:
+			if runtimeMsg(m) {
+				return m
+			}
+			return ownedMsg{id: id, msg: m}
+		}
+	}
+}
+
+func runtimeMsg(m tea.Msg) bool {
+	t := reflect.TypeOf(m)
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return strings.HasPrefix(t.PkgPath(), "charm.land/bubbletea/")
 }
 
 func (a *App) View() tea.View {

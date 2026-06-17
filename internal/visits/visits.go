@@ -3,12 +3,13 @@ package visits
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // Entry: сколько раз переходили и когда последний.
@@ -37,18 +38,31 @@ func path() string {
 	return paths.State("visits.json")
 }
 
-// Load читает журнал; без файла - пустой.
+// Load читает журнал; без файла или с битым файлом - пустой.
 func Load() map[string]Entry {
-	m := map[string]Entry{}
-	if data, err := os.ReadFile(path()); err == nil {
-		_ = json.Unmarshal(data, &m)
-	}
+	m, _ := load()
 	return m
 }
 
+func load() (map[string]Entry, error) {
+	m := map[string]Entry{}
+	data, err := os.ReadFile(path())
+	if errors.Is(err, os.ErrNotExist) {
+		return m, nil
+	}
+	if err != nil {
+		return m, err
+	}
+	return m, json.Unmarshal(data, &m)
+}
+
 // Record отмечает переход. Ошибки записи молча проглатываются: журнал - удобство, не данные.
+// Нечитаемый журнал не перезаписывается: одна запись вместо всей истории хуже, чем ни одной.
 func Record(name string, now time.Time) {
-	m := Load()
+	m, err := load()
+	if err != nil {
+		return
+	}
 	e := m[name]
 	e.Count++
 	e.Last = now
@@ -57,8 +71,7 @@ func Record(name string, now time.Time) {
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(filepath.Dir(path()), 0o755)
-	_ = os.WriteFile(path(), data, 0o600)
+	_ = runner.WriteAtomic(path(), data, 0o600)
 }
 
 // Order: индексы names по убыванию счёта; кого не посещали - в исходном порядке после остальных.

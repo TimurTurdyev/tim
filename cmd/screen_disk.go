@@ -278,7 +278,7 @@ func browseScreen(st *diskState) tui.Screen {
 		st.mu.Unlock()
 		// В кэше только папки от 50 MB и до глубины замера: внутри большой папки без детей меряем сами.
 		if len(list) == 0 && size > 100<<20 {
-			out, _ := runner.Output("du", "-xk", "-d", "1", p)
+			out, _ := runner.OutputWithin(0, "du", "-xk", "-d", "1", p)
 			fresh := diskuse.ParseDuAbs(out)
 			st.mu.Lock()
 			list, sum = nil, 0

@@ -155,7 +155,7 @@ var syncCmd = &cobra.Command{
 			}
 			// Проекту, который поднимается через serve, - свой порт, чтобы двое не делили 8000.
 			if p.Port == 0 && servable(cfg.ProjectDir(p)) {
-				n := newproj.NextPort(registryPorts(), 8000, func(s string) bool { _, b := netinfo.PortBusy(s); return b })
+				n := newproj.NextPort(registryPorts(), netinfo.DefaultPort, netinfo.BusyPorts().Busy)
 				changes = append(changes, change{p.Name, "port", "", strconv.Itoa(n)})
 				p.Port = n
 			}

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Обзор диска: полоса занятости, разделы вкладками, список мест и панель с подробностями.
@@ -130,12 +132,12 @@ func (d *disk) refill() {
 			if _, ok := d.marked[r.Path]; ok && r.Path != "" {
 				mark = styleBad.Render(symCheck) + " "
 			}
-			size := styleText.Render(Pad(Human(r.Size), 9))
+			size := styleText.Render(ui.Fit(Human(r.Size), 9))
 			bar := styleAccent.Render(strings.Repeat(symBlock, max(1, int(r.Size*8/max(1, top))))) +
 				styleGhost.Render(strings.Repeat(symShade, 8-max(1, int(r.Size*8/max(1, top)))))
-			name := styleText.Render(Pad(r.Name, 34))
+			name := styleText.Render(ui.Fit(r.Name, 34))
 			if sel {
-				name = styleBold.Render(Pad(r.Name, 34))
+				name = styleBold.Render(ui.Fit(r.Name, 34))
 			}
 			tail := styleDim.Render(r.Hint)
 			if r.Warn != "" {
@@ -230,7 +232,7 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 	var lines, paths []string
 	var sum int64
 	for _, r := range d.marked {
-		lines = append(lines, Pad(Human(r.Size), 9)+"  "+r.Name+"  "+styleDim.Render(r.shown()))
+		lines = append(lines, ui.Fit(Human(r.Size), 9)+"  "+r.Name+"  "+styleDim.Render(r.shown()))
 		paths = append(paths, r.Path)
 		sum += r.Size
 	}
@@ -288,7 +290,7 @@ func (d *disk) View(width, height int) string {
 				rows = append(rows, styleDim.Render("ещё "+itoa(len(cur.Items)-6)))
 				break
 			}
-			rows = append(rows, styleDim.Render(Pad(Human(it.Size), 9))+"  "+Pad(it.Name, 32)+it.Note)
+			rows = append(rows, styleDim.Render(ui.Fit(Human(it.Size), 9))+"  "+ui.Fit(it.Name, 32)+it.Note)
 		}
 		if cur.Warn != "" {
 			rows = append(rows, styleAmber.Render(symWarn+" "+cur.Warn))

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // CacheTTL: сколько ответ логов сертификатов считается свежим. Сервис часто недоступен,
@@ -53,5 +54,5 @@ func writeCache(domain string, subs, related []string) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(cachePath(domain), data, 0o600)
+	_ = runner.WriteAtomic(cachePath(domain), data, 0o600)
 }

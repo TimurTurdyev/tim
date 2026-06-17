@@ -62,7 +62,7 @@ func Measure(root string, depth int, skip map[string]bool, progress func(done, t
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			// du без прав на часть подпапок пишет ошибки, но итоги печатает - их и берём.
-			out, _ := runner.Output("du", "-xk", "-d", strconv.Itoa(max(depth-2, 0)), p)
+			out, _ := runner.OutputWithin(0, "du", "-xk", "-d", strconv.Itoa(max(depth-2, 0)), p)
 			got := ParseDuAbs(out)
 			mu.Lock()
 			for k, v := range got {

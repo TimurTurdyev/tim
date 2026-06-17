@@ -136,7 +136,7 @@ func Up(cfg *config.Config, dests []string) error {
 		}
 	}
 	if verbose {
-		return nil
+		return upError(failed, len(dests))
 	}
 	if ui.Terminal() {
 		fmt.Fprint(os.Stderr, "\r\033[2K")
@@ -152,7 +152,14 @@ func Up(cfg *config.Config, dests []string) error {
 	for _, f := range failed[:min(fewDests, len(failed))] {
 		ui.Println(ui.Bad("  " + f))
 	}
-	return nil
+	return upError(failed, len(dests))
+}
+
+func upError(failed []string, total int) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	return ui.Errorf("не завелось маршрутов: %d из %d", len(failed), total)
 }
 
 // Bypassed: у адреса или подсети уже есть свой маршрут через нужный шлюз.
@@ -169,25 +176,46 @@ func Bypassed(dest string, phys netinfo.Service, gw string) bool {
 	return false
 }
 
-func Down(dests []string) {
+// Down снимает маршруты. Маршрута не было - не ошибка; отказ системы или sudo - ошибка.
+func Down(dests []string) error {
 	verbose := len(dests) <= fewDests || runner.DryRun
 	gone := 0
+	var failed []string
 	for _, d := range dests {
 		TableChanged()
-		if _, err := privileged.Run(netinfo.DelRouteCmd(d)...); err != nil {
+		out, err := privileged.Run(netinfo.DelRouteCmd(d)...)
+		switch {
+		case err == nil:
+			gone++
+			if verbose {
+				ui.Println(ui.Label(d + ": маршрут снят"))
+			}
+		case routeMissing(out + " " + err.Error()):
 			if verbose {
 				ui.Println(ui.Dim(d + ": маршрута не было"))
 			}
-			continue
-		}
-		gone++
-		if verbose {
-			ui.Println(ui.Label(d + ": маршрут снят"))
+		default:
+			failed = append(failed, d+": "+firstLine(out, err))
+			if verbose {
+				ui.Println(ui.Bad(d + ": снять не удалось: " + firstLine(out, err)))
+			}
 		}
 	}
 	if !verbose {
 		ui.Println(ui.Label(fmt.Sprintf("снято %d", gone)) + ui.Dim(fmt.Sprintf(" из %d", len(dests))))
+		for _, f := range failed[:min(fewDests, len(failed))] {
+			ui.Println(ui.Bad("  " + f))
+		}
 	}
+	if len(failed) > 0 {
+		return ui.Errorf("не снялось маршрутов: %d из %d", len(failed), len(dests))
+	}
+	return nil
+}
+
+// routeMissing: route (macOS) и ip (Linux) так отвечают, когда снимать нечего.
+func routeMissing(msg string) bool {
+	return strings.Contains(msg, "not in table") || strings.Contains(msg, "No such process")
 }
 
 // Clean снимает маршруты на прежний шлюз; all - по всей таблице, иначе только цели конфига.

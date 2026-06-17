@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // Sample: один замер. Нули - "не измерено", а не "ноль".
@@ -74,11 +75,7 @@ func Append(path string, s Sample) error {
 			b.Write(line)
 			b.WriteByte('\n')
 		}
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
-			return err
-		}
-		return os.Rename(tmp, path)
+		return runner.WriteAtomic(path, []byte(b.String()), 0o600)
 	}
 	line, err := json.Marshal(s)
 	if err != nil {

@@ -2,7 +2,7 @@
 package netinfo
 
 import (
-	"net"
+	"net/netip"
 	"regexp"
 	"runtime"
 	"strings"
@@ -10,28 +10,22 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
-var ipv4 = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
+// ipv4Shape: похоже на IPv4 по виду, даже если числа неверные (300.1.1.1) - это ошибка, а не домен.
+var ipv4Shape = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
 
 var ssProcRe = regexp.MustCompile(`\(\("([^"]+)",pid=(\d+)`)
 
-func IsIPv4(s string) bool { return ipv4.MatchString(s) }
+// IsIPv4: строка - правильный адрес IPv4.
+func IsIPv4(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Is4()
+}
 
 // IsPrivate: 10/8, 172.16/12, 192.168/16. Такие адреса достижимы только через
 // VPN, и маршрут в обход им только навредит.
 func IsPrivate(ip string) bool {
-	parsed := net.ParseIP(ip).To4()
-	if parsed == nil {
-		return false
-	}
-	switch {
-	case parsed[0] == 10:
-		return true
-	case parsed[0] == 172 && parsed[1] >= 16 && parsed[1] <= 31:
-		return true
-	case parsed[0] == 192 && parsed[1] == 168:
-		return true
-	}
-	return false
+	a, err := netip.ParseAddr(ip)
+	return err == nil && a.Is4() && a.IsPrivate()
 }
 
 // IsTunnelIface: utun, tun, tap, ppp считаются туннелями.
@@ -229,18 +223,5 @@ func ParseSS(out string) []Listener {
 	return list
 }
 
-// PortBusy: кто слушает порт. Если список его не знает (чужой процесс без прав, нет lsof или ss),
-// порт пробуется занять: занятый не даст, и тогда он занят неизвестно кем.
-func PortBusy(port string) (Listener, bool) {
-	for _, l := range Listening() {
-		if l.Port == port {
-			return l, true
-		}
-	}
-	ln, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		return Listener{Port: port, Command: "?"}, true
-	}
-	_ = ln.Close()
-	return Listener{}, false
-}
+// PortBusy: кто слушает порт - для одной проверки; для перебора - BusyPorts.
+func PortBusy(port string) (Listener, bool) { return BusyPorts().Who(port) }

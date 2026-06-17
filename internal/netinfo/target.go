@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 // lastGood: последний удачный ответ по домену. Пока VPN переключается, резолвер может молчать,
@@ -30,7 +33,8 @@ type Target struct {
 	Value string
 }
 
-// ParseTarget различает IPv4, подсеть CIDR и домен; подсеть приводится к адресу сети.
+// ParseTarget различает IPv4, подсеть CIDR, номер AS и домен; подсеть приводится к адресу сети,
+// /32 - к адресу, у адреса и домена отбрасываются схема, порт и путь.
 func ParseTarget(s string) (Target, error) {
 	t := strings.TrimSpace(strings.ToLower(s))
 	if i := strings.Index(t, "://"); i >= 0 {
@@ -40,26 +44,34 @@ func ParseTarget(s string) (Target, error) {
 	if num, ok := asNumber(t); ok {
 		return Target{KindAS, "as:" + num}, nil
 	}
-	if IsIPv4(t) {
-		if net.ParseIP(t) == nil {
-			return Target{}, errors.New("неверный адрес: " + s)
-		}
-		return Target{KindHost, t}, nil
-	}
-	if strings.Contains(t, "/") {
-		ip, n, err := net.ParseCIDR(t)
-		if err != nil || ip.To4() == nil {
-			return Target{}, errors.New("неверная подсеть: " + s)
-		}
-		return Target{KindNet, n.String()}, nil
-	}
 	if h, _, err := net.SplitHostPort(t); err == nil {
 		t = h
 	}
-	if !strings.Contains(t, ".") || strings.ContainsAny(t, " _") {
+	if first, _, cut := strings.Cut(t, "/"); cut && !ipv4Shape.MatchString(first) {
+		t = first
+	}
+	switch {
+	case strings.Contains(t, "/"):
+		p, err := netip.ParsePrefix(t)
+		if err != nil || !p.Addr().Is4() {
+			return Target{}, errors.New("неверная подсеть: " + s)
+		}
+		if p = p.Masked(); p.IsSingleIP() {
+			return Target{KindHost, p.Addr().String()}, nil
+		}
+		return Target{KindNet, p.String()}, nil
+	case ipv4Shape.MatchString(t):
+		a, err := netip.ParseAddr(t)
+		if err != nil {
+			return Target{}, errors.New("неверный адрес: " + s)
+		}
+		return Target{KindHost, a.String()}, nil
+	}
+	domain, err := idna.Lookup.ToASCII(t)
+	if err != nil || !strings.Contains(domain, ".") || strings.ContainsAny(domain, " _") {
 		return Target{}, errors.New("не адрес, не подсеть и не домен: " + s)
 	}
-	return Target{KindDomain, t}, nil
+	return Target{KindDomain, domain}, nil
 }
 
 // PrivateTarget: адрес или подсеть целиком внутри частных диапазонов.
@@ -169,9 +181,9 @@ func asNumber(s string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	rest = strings.TrimPrefix(rest, ":")
-	if n, err := strconv.ParseUint(rest, 10, 32); err != nil || n == 0 {
+	n, err := strconv.ParseUint(strings.TrimPrefix(rest, ":"), 10, 32)
+	if err != nil || n == 0 {
 		return "", false
 	}
-	return rest, true
+	return strconv.FormatUint(n, 10), true
 }

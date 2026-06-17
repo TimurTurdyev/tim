@@ -2,15 +2,36 @@ package netinfo
 
 import "testing"
 
-func TestParseTargetAS(t *testing.T) {
-	for _, in := range []string{"as:13238", "AS13238", "as13238"} {
-		got, err := ParseTarget(in)
-		if err != nil || got.Kind != KindAS || got.Value != "as:13238" {
-			t.Errorf("%s -> %+v %v", in, got, err)
+func TestParseTarget(t *testing.T) {
+	cases := []struct {
+		in   string
+		kind TargetKind
+		val  string
+	}{
+		{"203.0.113.7", KindHost, "203.0.113.7"},
+		{"203.0.113.7:22", KindHost, "203.0.113.7"},
+		{"10.0.0.5:22", KindHost, "10.0.0.5"},
+		{"203.0.113.7/32", KindHost, "203.0.113.7"},
+		{"203.0.113.77/24", KindNet, "203.0.113.0/24"},
+		{"as:13238", KindAS, "as:13238"},
+		{"AS13238", KindAS, "as:13238"},
+		{"as013238", KindAS, "as:13238"},
+		{"Example.COM.", KindDomain, "example.com"},
+		{"Example.COM/path", KindDomain, "example.com"},
+		{"https://git.example.com:8443/repo", KindDomain, "git.example.com"},
+		{"пример.рф", KindDomain, "xn--e1afmkfd.xn--p1ai"},
+		// Домены на "as" не должны превращаться в номер.
+		{"asana.com", KindDomain, "asana.com"},
+	}
+	for _, c := range cases {
+		got, err := ParseTarget(c.in)
+		if err != nil || got.Kind != c.kind || got.Value != c.val {
+			t.Errorf("%s: %+v %v", c.in, got, err)
 		}
 	}
-	// Домены на "as" не должны превращаться в номер.
-	if got, _ := ParseTarget("asana.com"); got.Kind != KindDomain {
-		t.Errorf("asana.com -> %+v", got)
+	for _, bad := range []string{"300.1.1.1", "10.0.0.0/40", "localhost", "a b.c", ""} {
+		if _, err := ParseTarget(bad); err == nil {
+			t.Errorf("%q should fail", bad)
+		}
 	}
 }

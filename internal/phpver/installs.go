@@ -19,6 +19,29 @@ import (
 type Install struct {
 	Version Version
 	Bin     string
+	php     string // Linux: настоящий /usr/bin/php8.3, на него смотрит php в папке-шиме Bin
+}
+
+// PathEnv: PATH, в котором эта версия первая. На Linux перед этим заводится папка-шим.
+func (i Install) PathEnv() string {
+	if i.php != "" {
+		i.shim()
+	}
+	return Path(i.Bin)
+}
+
+func (i Install) shim() {
+	link := filepath.Join(i.Bin, "php")
+	if _, err := os.Lstat(link); err == nil {
+		return
+	}
+	if runner.DryRun {
+		runner.Note("завёл бы " + link + " -> " + i.php)
+		return
+	}
+	if os.MkdirAll(i.Bin, 0o755) == nil {
+		_ = os.Symlink(i.php, link)
+	}
 }
 
 // Installs: версии PHP из brew; у формулы php версия спрашивается у самого бинарника.
@@ -46,15 +69,15 @@ func Installs() []Install {
 			v, ok = Parse(strings.TrimPrefix(f, "php@"))
 		}
 		if ok {
-			out = append(out, Install{v, bin})
+			out = append(out, Install{Version: v, Bin: bin})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[j].Version.Less(out[i].Version) })
 	return out
 }
 
-// linuxInstalls: версии из /usr/bin. Бинарник там называется php8.3, а не php, поэтому для каждой версии
-// заводится папка-шим с php внутри: её и ставим первой в PATH.
+// linuxInstalls: версии из /usr/bin. Бинарник там называется php8.3, а не php, поэтому для запуска
+// нужна папка-шим с php внутри: её ставим первой в PATH, а заводит её PathEnv.
 func linuxInstalls() []Install {
 	bins, _ := filepath.Glob("/usr/bin/php[0-9]*.[0-9]*")
 	var out []Install
@@ -63,14 +86,7 @@ func linuxInstalls() []Install {
 		if !ok {
 			continue
 		}
-		dir := paths.State("php", v.String())
-		link := filepath.Join(dir, "php")
-		if _, err := os.Lstat(link); err != nil {
-			if os.MkdirAll(dir, 0o755) != nil || os.Symlink(b, link) != nil {
-				continue
-			}
-		}
-		out = append(out, Install{v, dir})
+		out = append(out, Install{Version: v, Bin: paths.State("php", v.String()), php: b})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[j].Version.Less(out[i].Version) })
 	return out

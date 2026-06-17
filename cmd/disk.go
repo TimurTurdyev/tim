@@ -148,7 +148,7 @@ func diskSystem() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			// du без прав на часть подпапок пишет ошибки, но итог печатает - его и берём.
-			out, _ := runner.Output("du", append(args, full)...)
+			out, _ := runner.OutputWithin(0, "du", append(args, full)...)
 			got := diskuse.ParseDu(out, home)
 			if filepath.IsAbs(rel) {
 				got = diskuse.ParseDu(out, "/")
@@ -348,7 +348,7 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				out, _ := runner.Output("du", "-sk", d)
+				out, _ := runner.OutputWithin(0, "du", "-sk", d)
 				kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
 				items[i] = diskuse.Item{Path: d, Kind: filepath.Base(d), Size: kb * 1024}
 			})

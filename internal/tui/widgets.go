@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Общие детали экранов: полоса, лампочка, панель в рамке, список с курсором.
@@ -51,34 +53,6 @@ func Lamp(kind, text string) string {
 	return styleDim.Render(symOff + " " + text)
 }
 
-// Pad добивает строку с учётом цветовых кодов; длиннее - обрезает.
-func Pad(s string, w int) string {
-	n := lipgloss.Width(s)
-	if n > w {
-		return Clip(s, w)
-	}
-	return s + strings.Repeat(" ", w-n)
-}
-
-// Clip обрезает строку до ширины, последний символ - тильда.
-func Clip(s string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	if lipgloss.Width(s) <= w {
-		return s
-	}
-	// Строки с кодами цвета режем грубо по рунам, они короткие.
-	out := ""
-	for _, c := range s {
-		if lipgloss.Width(out+string(c)) >= w {
-			break
-		}
-		out += string(c)
-	}
-	return out + "~"
-}
-
 // Pane: панель в рамке; заголовок в верхней кромке, sub - серым рядом. Строки обрезаются по ширине.
 func Pane(title, sub string, rows []string, width int) []string {
 	inner := width - 4
@@ -95,7 +69,7 @@ func Pane(title, sub string, rows []string, width int) []string {
 			out = append(out, styleDim.Render("\u251c\u2500 "+lab+" "+strings.Repeat("\u2500", max(0, width-len([]rune(lab))-5))+"\u2524"))
 			continue
 		}
-		out = append(out, styleDim.Render("\u2502 ")+Pad(r, inner)+styleDim.Render(" \u2502"))
+		out = append(out, styleDim.Render("\u2502 ")+ui.Fit(r, inner)+styleDim.Render(" \u2502"))
 	}
 	out = append(out, styleDim.Render("\u2570"+strings.Repeat("\u2500", width-2)+"\u256f"))
 	return out
@@ -121,7 +95,7 @@ func Beside(left []string, leftW int, right []string, width int) []string {
 		if i < len(right) {
 			r = right[i]
 		}
-		out[i] = Pad(l, leftW) + " " + Pad(r, width-leftW-1)
+		out[i] = ui.Fit(l, leftW) + " " + ui.Fit(r, width-leftW-1)
 	}
 	return out
 }
@@ -205,7 +179,7 @@ func (l *List) View(width, h int) []string {
 // SelRow: типовая строка списка - полоса слева у выбранной и подсветка на всю ширину.
 func SelRow(selected bool, width int, body string) string {
 	if selected {
-		return styleSelBg.Render(Pad(styleAccent.Render(" "+symBar)+" "+body, width))
+		return styleSelBg.Render(ui.Fit(styleAccent.Render(" "+symBar)+" "+body, width))
 	}
-	return Pad("   "+body, width)
+	return ui.Fit("   "+body, width)
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/procs"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // State: фоновый dev-сервер, запущенный tim serve -d.
@@ -37,7 +38,7 @@ func (s State) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(StateDir(), s.Name+".json"), data, 0o600)
+	return runner.WriteAtomic(filepath.Join(StateDir(), s.Name+".json"), data, 0o600)
 }
 
 func (s State) Remove() { _ = os.Remove(filepath.Join(StateDir(), s.Name+".json")) }

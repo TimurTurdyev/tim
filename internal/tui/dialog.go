@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Наложения поверх экрана: подтверждение, справка, командная строка.
@@ -123,7 +124,7 @@ func HelpBox(screenKeys []Key, width int) []string {
 		line := ""
 		for j := i; j < i+cols && j < len(screenKeys); j++ {
 			k := screenKeys[j]
-			line += Pad(styleKeyCap.Render(" "+k.K+" ")+"  "+styleText.Render(k.D), col)
+			line += ui.Fit(styleKeyCap.Render(" "+k.K+" ")+"  "+styleText.Render(k.D), col)
 		}
 		rows = append(rows, line)
 	}
@@ -184,7 +185,7 @@ func (c *cmdline) refill(app *App) {
 	for _, h := range c.hits {
 		h := h
 		c.list.Rows = append(c.list.Rows, Row{Text: h.Line, Render: func(sel bool, w int) string {
-			return SelRow(sel, w, Pad(styleBold.Render(h.Line), 34)+styleDim.Render(h.Desc))
+			return SelRow(sel, w, ui.Fit(styleBold.Render(h.Line), 34)+styleDim.Render(h.Desc))
 		}})
 	}
 	c.list.Cursor = 0

@@ -124,7 +124,7 @@ func Evaluate(r Report, now time.Time) []health.Check {
 		add("nginx", health.Bad, "конфиг с ошибкой", "nginx -t: "+r.Nginx+" - следующий reload не пройдёт")
 	}
 	for _, c := range r.Certs {
-		if d := health.Deadline("сертификат "+c.Name, c.Expires, 21, 7); d.Level > health.OK {
+		if d := health.DeadlineAt("сертификат "+c.Name, c.Expires, now, health.CertWarnDays, health.CertBadDays); d.Level > health.OK {
 			d.Name = "сертификат"
 			out = append(out, d)
 		}

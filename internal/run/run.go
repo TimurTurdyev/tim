@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 )
 
 // Facts: всё, что нужно знать о папке, чтобы выбрать команду запуска.
@@ -193,14 +195,15 @@ func MatchNames(names []string, q string) []int {
 // AllocPorts раздаёт порты по порядку: занятый или уже выданный заменяется следующим свободным.
 func AllocPorts(wanted []string, busy func(string) bool) []string {
 	used := map[int]bool{}
+	taken := func(p int) bool { return used[p] || busy(strconv.Itoa(p)) }
 	out := make([]string, len(wanted))
 	for i, w := range wanted {
 		p, err := strconv.Atoi(w)
 		if err != nil || p < 1 {
-			p = 8000
+			p = netinfo.DefaultPort
 		}
-		for used[p] || busy(strconv.Itoa(p)) {
-			p++
+		if free, ok := netinfo.FirstFree(p, taken); ok {
+			p = free
 		}
 		used[p] = true
 		out[i] = strconv.Itoa(p)

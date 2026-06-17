@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // Repair: маршрут, который надо переставить, и почему.
@@ -88,18 +89,11 @@ func Path(dir string) string { return filepath.Join(dir, "routes-status.json") }
 
 // Save пишет состояние атомарно и с правом чтения для всех: страж под root, а читает пользователь.
 func (s Status) Save(dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := Path(dir) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, Path(dir))
+	return runner.WriteAtomic(Path(dir), data, 0o644)
 }
 
 // Load читает состояние; ok=false, если страж ни разу не работал.

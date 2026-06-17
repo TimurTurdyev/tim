@@ -35,7 +35,7 @@ var certNewCmd = &cobra.Command{
 		if err != nil {
 			return ui.Errorf("локальный CA: %v", err)
 		}
-		if fresh {
+		if fresh && !runner.DryRun {
 			ui.Println(ui.Label("создан CA") + "  " + ui.Dim(localca.CertPath()))
 			ui.Println(ui.Dim("чтобы браузеры ему доверяли: tim cert ca install"))
 		}
@@ -52,18 +52,11 @@ var certNewCmd = &cobra.Command{
 		stem := localca.FileStem(dns, ips)
 		certPath := filepath.Join(dir, stem+".pem")
 		keyPath := filepath.Join(dir, stem+"-key.pem")
+		if err := leaf.Save(certPath, keyPath); err != nil {
+			return err
+		}
 		if runner.DryRun {
-			ui.Println(ui.Dim("$ # записал бы " + certPath + " и " + keyPath))
 			return nil
-		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(certPath, leaf.Cert, 0o644); err != nil {
-			return err
-		}
-		if err := os.WriteFile(keyPath, leaf.Key, 0o600); err != nil {
-			return err
 		}
 		names := append(append([]string{}, dns...), ipStrings(leaf)...)
 		ui.Println(ui.Label("сертификат") + "  " + strings.Join(names, " "))
@@ -116,7 +109,7 @@ var certCaInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if fresh {
+		if fresh && !runner.DryRun {
 			ui.Println(ui.Label("создан CA") + "  " + ui.Dim(localca.CertPath()))
 		}
 		ui.Println(ui.Dim("после установки система будет доверять любому сертификату, выпущенному этим CA"))

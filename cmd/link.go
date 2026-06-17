@@ -50,7 +50,7 @@ var linkCmd = &cobra.Command{
 		if err != nil {
 			return ui.Errorf("локальный CA: %v", err)
 		}
-		if fresh {
+		if fresh && !runner.DryRun {
 			ui.Println(ui.Dim("создан локальный CA: " + localca.CertPath()))
 		}
 		dns, _ := localca.Names([]string{name}, false)
@@ -59,9 +59,7 @@ var linkCmd = &cobra.Command{
 			return err
 		}
 		certPath, keyPath := localca.LeafPaths(name)
-		if runner.DryRun {
-			ui.Println(ui.Dim("$ # записал бы " + certPath))
-		} else if err := leaf.Save(certPath, keyPath); err != nil {
+		if err := leaf.Save(certPath, keyPath); err != nil {
 			return err
 		}
 		p.URL = "https://" + name

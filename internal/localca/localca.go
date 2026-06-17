@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 // LeafDays: срок жизни выпускаемого сертификата. Apple ограничивает публично доверенные
@@ -97,7 +99,8 @@ func Name() string {
 	return "tim local CA " + who + "@" + strings.TrimSuffix(host, ".local")
 }
 
-// Create создаёт новый CA на 10 лет и кладёт его в Root().
+// Create создаёт новый CA на 10 лет и кладёт его в Root(). В dry-run CA живёт только в памяти:
+// видно, какие сертификаты он выпустил бы, а на диске ничего не появляется.
 func Create() (*CA, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -122,8 +125,14 @@ func Create() (*CA, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(Root(), 0o755); err != nil {
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
 		return nil, err
+	}
+	ca := &CA{Cert: cert, Key: key}
+	if runner.DryRun {
+		runner.Note("создал бы локальный CA в " + Root())
+		return ca, nil
 	}
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
@@ -135,11 +144,7 @@ func Create() (*CA, error) {
 	if err := writePEM(CertPath(), "CERTIFICATE", der, 0o644); err != nil {
 		return nil, err
 	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, err
-	}
-	return &CA{Cert: cert, Key: key}, nil
+	return ca, nil
 }
 
 // LoadOrCreate: CA с диска, а если его там нет - новый. Второй результат - был ли он создан сейчас.
@@ -156,8 +161,7 @@ func LoadOrCreate() (*CA, bool, error) {
 }
 
 func writePEM(path, kind string, der []byte, mode os.FileMode) error {
-	data := pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: der})
-	return os.WriteFile(path, data, mode)
+	return runner.WriteAtomic(path, pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: der}), mode)
 }
 
 // Names: что положить в SAN. DNS-имена и адреса различаются сами.
@@ -260,11 +264,8 @@ func LeafPaths(name string) (cert, key string) {
 
 // Save кладёт сертификат и ключ по путям, создавая папку. Ключ доступен только владельцу.
 func (l *Leaf) Save(certPath, keyPath string) error {
-	if err := os.MkdirAll(filepath.Dir(certPath), 0o755); err != nil {
+	if err := runner.WriteFile(certPath, l.Cert, 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(certPath, l.Cert, 0o644); err != nil {
-		return err
-	}
-	return os.WriteFile(keyPath, l.Key, 0o600)
+	return runner.WriteFile(keyPath, l.Key, 0o600)
 }

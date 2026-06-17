@@ -7,6 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Живой экран железа: полосы с историей за минуту, самые занятые приложения, вывод словами.
@@ -156,7 +158,7 @@ func (h *hw) View(width, height int) string {
 	barW := min(40, max(16, width-62))
 	sparkW := min(30, max(8, width-20-barW-20))
 	row := func(label string, pct int, hist []float64, tail string) string {
-		line := "  " + styleDim.Render(Pad(label, 11)) + Bar(float64(pct)/100, barW) + "  " + pctLevel(pct).Render(fmt.Sprintf("%3d%%", pct))
+		line := "  " + styleDim.Render(ui.Fit(label, 11)) + Bar(float64(pct)/100, barW) + "  " + pctLevel(pct).Render(fmt.Sprintf("%3d%%", pct))
 		if hist != nil {
 			line += "   " + spark(hist, sparkW, pct)
 		}
@@ -184,7 +186,7 @@ func (h *hw) View(width, height int) string {
 	if len(s.Top) > 0 {
 		var rows []string
 		for _, r := range s.Top {
-			rows = append(rows, Pad(Clip(r.Name, 30), 32)+pctLevel(int(r.CPU/2)).Render(fmt.Sprintf("%5.0f%%", r.CPU))+"  "+styleDim.Render(Pad(Human(r.RSS), 9)))
+			rows = append(rows, ui.Fit(ui.Clip(r.Name, 30), 32)+pctLevel(int(r.CPU/2)).Render(fmt.Sprintf("%5.0f%%", r.CPU))+"  "+styleDim.Render(ui.Fit(Human(r.RSS), 9)))
 		}
 		for _, p := range Pane("больше всех", "CPU "+symDot+" память", rows, width-4) {
 			out = append(out, "  "+p)

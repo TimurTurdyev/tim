@@ -153,6 +153,14 @@ func Close(a procs.App, force bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if runner.DryRun {
+		sig := "TERM"
+		if force {
+			sig = "KILL"
+		}
+		_ = SignalAll(sig, pids)
+		return a.Name + ": dry-run, сигналы не отправлены", nil
+	}
 	if force {
 		_ = SignalAll("KILL", pids)
 		if left := waitGone(pids, 3*time.Second); len(left) > 0 {

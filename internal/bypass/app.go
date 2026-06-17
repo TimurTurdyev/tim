@@ -114,14 +114,17 @@ func AppCheck() error {
 	}
 	direct := strings.TrimSpace(resp.Out)
 	ui.Println(ui.Dim("через VPN: ") + ui.Dash(viaVPN) + ui.Dim("   под группой "+GroupName+": ") + ui.Dash(direct))
-	switch direct {
-	case "":
+	switch {
+	case direct == "":
 		ui.Println(ui.Bad("под группой наружу не вышло: " + ui.Dash(resp.Err)))
 		ui.Println(ui.Dim("снять: tim direct --off; ниже - что видит система"))
 		err := AppStatus()
 		stop(true)
 		return err
-	case viaVPN:
+	case viaVPN == "":
+		stop(false)
+		ui.Println(ui.Warn("через VPN замер не удался - сравнить не с чем, но под группой наружу выходит"))
+	case direct == viaVPN:
 		stop(false)
 		ui.Println(ui.Warn("страна та же: правило не сработало или обе дороги ведут в одну страну"))
 	default:
@@ -240,8 +243,7 @@ func remember(name, value string) {
 	if runner.DryRun {
 		return
 	}
-	_ = os.MkdirAll(GuardDir(), 0o755)
-	_ = os.WriteFile(prevFile(name), []byte(value), 0o644)
+	_ = runner.WriteAtomic(prevFile(name), []byte(value), 0o644)
 }
 
 func recall(name string) (string, bool) {
@@ -252,4 +254,9 @@ func recall(name string) (string, bool) {
 	return strings.TrimSpace(string(data)), true
 }
 
-func forget(name string) { _ = os.Remove(prevFile(name)) }
+func forget(name string) {
+	if runner.DryRun {
+		return
+	}
+	_ = os.Remove(prevFile(name))
+}

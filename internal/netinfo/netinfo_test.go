@@ -29,35 +29,6 @@ func TestParseLsof(t *testing.T) {
 	}
 }
 
-func TestParseTarget(t *testing.T) {
-	cases := []struct {
-		in   string
-		kind TargetKind
-		val  string
-	}{
-		{"203.0.113.7", KindHost, "203.0.113.7"},
-		{"203.0.113.77/24", KindNet, "203.0.113.0/24"},
-		{"Example.COM.", KindDomain, "example.com"},
-		{"https://git.example.com:8443/repo", KindDomain, "git.example.com"},
-	}
-	for _, c := range cases {
-		got, err := ParseTarget(c.in)
-		if err != nil || got.Kind != c.kind || got.Value != c.val {
-			t.Errorf("%s: %+v %v", c.in, got, err)
-		}
-	}
-	for _, bad := range []string{"300.1.1.1", "10.0.0.0/40", "localhost", "a b.c"} {
-		if _, err := ParseTarget(bad); err == nil {
-			t.Errorf("%q should fail", bad)
-		}
-	}
-	priv, _ := ParseTarget("10.20.0.0/16")
-	pub, _ := ParseTarget("198.51.100.0/24")
-	if !PrivateTarget(priv) || PrivateTarget(pub) {
-		t.Error("private detection")
-	}
-}
-
 const tableSample = `Routing tables
 
 Internet:

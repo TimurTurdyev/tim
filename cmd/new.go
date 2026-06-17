@@ -92,7 +92,7 @@ port = true, если проекту нужен порт для serve. Свой 
 					used = append(used, q.Port)
 				}
 			}
-			p.Port = newproj.NextPort(used, 8000, func(s string) bool { _, b := netinfo.PortBusy(s); return b })
+			p.Port = newproj.NextPort(used, netinfo.DefaultPort, netinfo.BusyPorts().Busy)
 		}
 		if err := cfg.AddProject(p); err != nil {
 			return err

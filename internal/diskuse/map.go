@@ -81,8 +81,7 @@ func Map(roots []string, fresh bool, progress func(done, total int, root string)
 	}
 	pruned := t.Prune(50 << 20)
 	if data, err := json.Marshal(cache{At: time.Now(), Roots: roots, Tree: pruned}); err == nil {
-		_ = os.MkdirAll(filepath.Dir(CachePath()), 0o755)
-		_ = os.WriteFile(CachePath(), data, 0o600)
+		_ = runner.WriteAtomic(CachePath(), data, 0o600)
 	}
 	return pruned, time.Now()
 }

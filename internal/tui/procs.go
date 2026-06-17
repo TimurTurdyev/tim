@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Процессы, сложенные по приложениям: фильтр сверху, панель раскрывает выбранное, закрыть
@@ -158,9 +159,9 @@ func (p *procsScreen) refill() {
 	for _, g := range p.shown {
 		g := g
 		p.list.Rows = append(p.list.Rows, Row{Text: g.Name, Render: func(sel bool, w int) string {
-			name := styleText.Render(Pad(Clip(g.Name, 27), 28))
+			name := styleText.Render(ui.Fit(ui.Clip(g.Name, 27), 28))
 			if sel {
-				name = styleBold.Render(Pad(Clip(g.Name, 27), 28))
+				name = styleBold.Render(ui.Fit(ui.Clip(g.Name, 27), 28))
 			}
 			cpu := pctLevel(int(g.CPU / 2)).Render(fmt.Sprintf("%5.0f%%", g.CPU))
 			if g.CPU < 5 {
@@ -170,7 +171,7 @@ func (p *procsScreen) refill() {
 			if g.Protected {
 				tail = styleDim.Render("  системный")
 			}
-			return SelRow(sel, w, name+cpu+"  "+styleText.Render(Pad(Human(g.RSS), 8))+tail)
+			return SelRow(sel, w, name+cpu+"  "+styleText.Render(ui.Fit(Human(g.RSS), 8))+tail)
 		}})
 	}
 	if p.list.Cursor >= len(p.list.Rows) {
@@ -309,7 +310,7 @@ func (p *procsScreen) View(width, height int) string {
 	if !p.input.Focused() && p.input.Value() == "" {
 		filter = styleHint.Render(symPointer + " / - фильтр по имени")
 	}
-	out := []string{"  " + Pad(filter, 44) + "  " + styleHint.Render(order), ""}
+	out := []string{"  " + ui.Fit(filter, 44) + "  " + styleHint.Render(order), ""}
 	if p.loading && len(p.data.Groups) == 0 {
 		out = append(out, "  "+styleEmpty.Render("смотрю, кто что занял..."))
 		return strings.Join(out, "\n")
@@ -326,7 +327,7 @@ func (p *procsScreen) View(width, height int) string {
 				rows = append(rows, styleDim.Render(fmt.Sprintf("ещё %d  %s  enter - раскрыть", len(cur.Procs)-limit, symDot)))
 				break
 			}
-			line := styleDim.Render(fmt.Sprintf("%4.0f%%", r.CPU)) + "  " + Pad(Human(r.RSS), 8) + "  " + Pad(Clip(r.Name, 40), 42) + styleDim.Render("pid "+r.PID)
+			line := styleDim.Render(fmt.Sprintf("%4.0f%%", r.CPU)) + "  " + ui.Fit(Human(r.RSS), 8) + "  " + ui.Fit(ui.Clip(r.Name, 40), 42) + styleDim.Render("pid "+r.PID)
 			if r.Note != "" {
 				line += "  " + styleAmber.Render(r.Note)
 			}

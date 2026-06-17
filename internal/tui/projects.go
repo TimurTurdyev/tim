@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Экран проектов: список с поиском слева, карточка выбранного в рамке справа, действия буквами.
@@ -129,13 +130,13 @@ func (p *projects) refill() {
 		p.list.Rows = append(p.list.Rows, Row{Text: r.Name, Render: func(sel bool, w int) string {
 			lamp := styleDim.Render(symOff + "      ")
 			if r.Running {
-				lamp = styleGood.Render(symLamp + " :" + Pad(r.Port, 5))
+				lamp = styleGood.Render(symLamp + " :" + ui.Fit(r.Port, 5))
 			}
-			name := styleText.Render(Pad(r.Name, 18))
+			name := styleText.Render(ui.Fit(r.Name, 18))
 			if sel {
-				name = styleBold.Render(Pad(r.Name, 18))
+				name = styleBold.Render(ui.Fit(r.Name, 18))
 			}
-			return SelRow(sel, w, name+lamp+" "+styleDim.Render(Pad(r.Stack, 10)+r.Age))
+			return SelRow(sel, w, name+lamp+" "+styleDim.Render(ui.Fit(r.Stack, 10)+r.Age))
 		}})
 	}
 	if p.list.Cursor >= len(p.list.Rows) {
@@ -242,7 +243,7 @@ func (p *projects) View(width, height int) string {
 			body = append(body, Sep("действия"))
 			line := ""
 			for i, a := range p.opts.Actions {
-				line += Pad(styleKeyCap.Render(" "+a.Key+" ")+" "+styleText.Render(a.Label), 14)
+				line += ui.Fit(styleKeyCap.Render(" "+a.Key+" ")+" "+styleText.Render(a.Label), 14)
 				if (i+1)%3 == 0 || i == len(p.opts.Actions)-1 {
 					body = append(body, line)
 					line = ""

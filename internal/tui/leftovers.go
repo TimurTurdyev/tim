@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Хвосты удалённых программ: список с галочками, панель с подробностями, уборка с подтверждением.
@@ -95,7 +97,7 @@ func (l *leftovers) refill() {
 			if l.marked[g.ID] {
 				box = styleBad.Render("[" + symCheck + "]")
 			}
-			name := Pad(g.Name, 22)
+			name := ui.Fit(g.Name, 22)
 			switch {
 			case sel:
 				name = styleBold.Render(name)
@@ -108,7 +110,7 @@ func (l *leftovers) refill() {
 			if !g.Sure && !g.Hidden {
 				note = styleAmber.Render(g.Note)
 			}
-			return SelRow(sel, w, box+" "+styleText.Render(Pad(Human(g.Size), 9))+"  "+name+note)
+			return SelRow(sel, w, box+" "+styleText.Render(ui.Fit(Human(g.Size), 9))+"  "+name+note)
 		}})
 	}
 	if l.list.Cursor >= len(l.list.Rows) {
@@ -175,7 +177,7 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 	for _, g := range l.shown() {
 		if l.marked[g.ID] {
 			picked = append(picked, g)
-			lines = append(lines, Pad(Human(g.Size), 9)+"  "+g.Name+"  "+styleDim.Render(g.Owner))
+			lines = append(lines, ui.Fit(Human(g.Size), 9)+"  "+g.Name+"  "+styleDim.Render(g.Owner))
 			sum += g.Size
 		}
 	}
@@ -244,7 +246,7 @@ func (l *leftovers) View(width, height int) string {
 				rows = append(rows, styleDim.Render("ещё "+itoa(len(g.Items)-5)))
 				break
 			}
-			line := styleDim.Render(Pad(Human(it.Size), 9)) + "  " + it.Path
+			line := styleDim.Render(ui.Fit(Human(it.Size), 9)) + "  " + it.Path
 			if it.Note != "" {
 				line += "  " + styleAmber.Render(it.Note)
 			}

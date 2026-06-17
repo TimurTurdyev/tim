@@ -38,10 +38,8 @@ func planHTTPS(p *config.Project, taken map[string]bool) (httpsFront, error) {
 	if _, err := os.Stat(cert); err != nil {
 		return httpsFront{}, ui.Errorf("для %s нет сертификата %s: сначала tim link %s", p.Name, host, p.Name)
 	}
-	port := run.AllocPorts([]string{httpsPortBase}, func(s string) bool {
-		_, b := netinfo.PortBusy(s)
-		return b || taken[s]
-	})[0]
+	busy := netinfo.BusyPorts()
+	port := run.AllocPorts([]string{httpsPortBase}, func(s string) bool { return busy.Busy(s) || taken[s] })[0]
 	taken[port] = true
 	return httpsFront{host: host, cert: cert, key: key, port: port}, nil
 }

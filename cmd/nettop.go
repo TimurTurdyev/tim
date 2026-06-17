@@ -31,7 +31,7 @@ var netTopCmd = &cobra.Command{
 			return ui.Errorf("пока только macOS (nettop); на Linux - nethogs")
 		}
 		d := time.Duration(netTopSeconds) * time.Second
-		out, err := runner.Output("nettop", "-P", "-L", "2", "-d", "-s", strconv.Itoa(netTopSeconds), "-x", "-J", "bytes_in,bytes_out")
+		out, err := runner.OutputWithin(0, "nettop", "-P", "-L", "2", "-d", "-s", strconv.Itoa(netTopSeconds), "-x", "-J", "bytes_in,bytes_out")
 		if err != nil {
 			return ui.Errorf("nettop: %v", err)
 		}
