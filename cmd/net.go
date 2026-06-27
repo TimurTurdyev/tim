@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"runtime"
 	"strings"
 	"time"
@@ -106,27 +104,19 @@ var netCheckCmd = &cobra.Command{
 }
 
 func dialTimed(addr string) (string, error) {
-	start := time.Now()
-	c, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	took, err := netinfo.Dial(addr, 3*time.Second)
 	if err != nil {
 		return "", fmt.Errorf("%s недоступен: %w", addr, err)
 	}
-	_ = c.Close()
-	return fmt.Sprintf("%s за %d мс", addr, time.Since(start).Milliseconds()), nil
+	return fmt.Sprintf("%s за %d мс", addr, took.Milliseconds()), nil
 }
 
 func externalIP() (string, error) {
-	client := &http.Client{Timeout: 4 * time.Second}
-	resp, err := client.Get("https://api.ipify.org")
+	ip, err := netinfo.ExternalIP("")
 	if err != nil {
 		return "", fmt.Errorf("не узнать: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 64))
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(b)), nil
+	return ip, nil
 }
 
 func init() {

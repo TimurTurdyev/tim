@@ -159,24 +159,6 @@ func Sudo(args ...string) error {
 	return Run("sudo", args...)
 }
 
-// SudoQuiet: как Sudo, но вывод команды не печатается, а возвращается - для серий однотипных
-// команд, где сотня строк "not in table" только мешает. Пароль sudo спрашивает сам через
-// терминал, захват вывода ему не мешает.
-func SudoQuiet(args ...string) (string, error) {
-	name, rest := "sudo", args
-	if os.Geteuid() == 0 && len(args) > 0 {
-		name, rest = args[0], args[1:]
-	}
-	if DryRun {
-		ui.Println(ui.Dim("$ " + shellq.Join(append([]string{name}, rest...))))
-		return "", nil
-	}
-	cmd := exec.Command(name, rest...)
-	cmd.Stdin = os.Stdin
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
-}
-
 // Confirm спрашивает подтверждение, по умолчанию "нет"; в dry-run всегда да.
 func Confirm(question string) bool { return ConfirmDefault(question, false) }
 

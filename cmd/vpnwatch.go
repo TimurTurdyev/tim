@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -44,7 +44,7 @@ func vpnWatch(seconds int, label string, o addOpts) error {
 		if len(g.Names) > 0 {
 			hint += "  " + strings.Join(g.Names, " ")
 		}
-		cdn := domaudit.IsCDN(g.AS.Name) && !o.force
+		cdn := asn.IsCDN(g.AS.Name) && !o.force
 		line := ui.Label(ui.Pad("as:"+g.AS.ASN, 10)) + ui.Pad(ui.Clip(owner, 33), 34) + ui.Pad(strconv.Itoa(len(g.IPs)), 9) + ui.Dim(ui.Clip(hint, 60))
 		if cdn {
 			line += ui.Warn("  общая сеть, мимо VPN целиком не стоит")

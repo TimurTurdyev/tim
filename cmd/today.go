@@ -1,16 +1,14 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/gitx"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/worklog"
 )
@@ -25,18 +23,16 @@ var (
 // commitsOf: свои коммиты проекта с начала периода. Почта своя у каждого репозитория:
 // рабочие и личные проекты часто коммитятся с разных адресов.
 func commitsOf(dir string, since time.Time) []worklog.Commit {
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+	if !gitx.IsRepo(dir) {
 		return nil
 	}
-	args := []string{"-C", dir, "log", "--all", "--no-merges", "--since=" + since.Format(time.RFC3339), worklog.Format}
+	author := ""
 	if !todayAnyone {
-		email, err := runner.Output("git", "-C", dir, "config", "user.email")
-		if err != nil || strings.TrimSpace(email) == "" {
+		if author = gitx.Email(dir); author == "" {
 			return nil
 		}
-		args = append(args, "--author="+strings.TrimSpace(email))
 	}
-	out, err := runner.Output("git", args...)
+	out, err := gitx.Log(dir, since, author, worklog.Format)
 	if err != nil {
 		return nil
 	}
@@ -60,23 +56,15 @@ var todayCmd = &cobra.Command{
 				return ui.Errorf("дата в виде 2025-10-01: %s", todaySince)
 			}
 		}
+		lists := par.Map(projects, par.Limit, func(p *config.Project) []worklog.Commit {
+			return commitsOf(cfg.ProjectDir(p), since)
+		})
 		by := map[string][]worklog.Commit{}
 		order := make([]string, len(projects))
-		var mu sync.Mutex
-		sem := make(chan struct{}, 8)
-		var wg sync.WaitGroup
 		for i, p := range projects {
 			order[i] = p.Name
-			wg.Go(func() {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				list := commitsOf(cfg.ProjectDir(p), since)
-				mu.Lock()
-				by[p.Name] = list
-				mu.Unlock()
-			})
+			by[p.Name] = lists[i]
 		}
-		wg.Wait()
 		groups := worklog.Group(by, order)
 		if len(groups) == 0 {
 			ui.Println(ui.Dim("с " + since.Format("2006-01-02 15:04") + " своих коммитов нет"))

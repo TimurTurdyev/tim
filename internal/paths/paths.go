@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 )
 
 // State: TIM_STATE_DIR, иначе $XDG_STATE_HOME/tim, иначе ~/.local/state/tim; sub - путь внутри.
@@ -18,6 +19,22 @@ func State(sub ...string) string {
 		}
 	}
 	return filepath.Join(append([]string{base}, sub...)...)
+}
+
+// SystemState: состояние служб tim под root - их видят все пользователи, а домашней папки у них нет.
+func SystemState() string {
+	if runtime.GOOS == "darwin" {
+		return "/var/db/tim"
+	}
+	return "/var/lib/tim"
+}
+
+// OwnState: каталог состояния того, кто запущен: под root - системный, иначе пользователя.
+func OwnState() string {
+	if os.Geteuid() == 0 {
+		return SystemState()
+	}
+	return State()
 }
 
 // Home: домашняя папка. У служб systemd HOME не задан, и тогда она берётся из базы пользователей,

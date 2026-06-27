@@ -16,6 +16,7 @@ import (
 type DiskItem struct {
 	Name, Note string
 	Size       int64
+	Stale      bool // давно не нужно: подпись желтым
 }
 
 // DiskRow: одно место на диске. Path - настоящий путь для уборки, Show - как его печатать.
@@ -102,7 +103,7 @@ func (d *disk) Status() string {
 		defer d.mu.Unlock()
 		return d.progress
 	}
-	return "занято " + Human(d.data.Size-d.data.Avail) + " из " + Human(d.data.Size) + " " + symDot + " свободно " + Human(d.data.Avail)
+	return "занято " + ui.Bytes(d.data.Size-d.data.Avail) + " из " + ui.Bytes(d.data.Size) + " " + symDot + " свободно " + ui.Bytes(d.data.Avail)
 }
 
 func (d *disk) Command() string { return "tim disk" }
@@ -132,7 +133,7 @@ func (d *disk) refill() {
 			if _, ok := d.marked[r.Path]; ok && r.Path != "" {
 				mark = styleBad.Render(symCheck) + " "
 			}
-			size := styleText.Render(ui.Fit(Human(r.Size), 9))
+			size := styleText.Render(ui.Fit(ui.Bytes(r.Size), 9))
 			bar := styleAccent.Render(strings.Repeat(symBlock, max(1, int(r.Size*8/max(1, top))))) +
 				styleGhost.Render(strings.Repeat(symShade, 8-max(1, int(r.Size*8/max(1, top)))))
 			name := styleText.Render(ui.Fit(r.Name, 34))
@@ -232,7 +233,7 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 	var lines, paths []string
 	var sum int64
 	for _, r := range d.marked {
-		lines = append(lines, ui.Fit(Human(r.Size), 9)+"  "+r.Name+"  "+styleDim.Render(r.shown()))
+		lines = append(lines, ui.Fit(ui.Bytes(r.Size), 9)+"  "+r.Name+"  "+styleDim.Render(r.shown()))
 		paths = append(paths, r.Path)
 		sum += r.Size
 	}
@@ -241,7 +242,7 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 		Lines:   lines,
 		Command: "trash " + strings.Join(paths, " "),
 		Note:    "Из Корзины можно вернуть. Место освободится после её очистки.",
-		OK:      "Убрать " + Human(sum),
+		OK:      "Убрать " + ui.Bytes(sum),
 		Danger:  true,
 		Yes: func() tea.Cmd {
 			freed, errs := d.opts.Remove(paths)
@@ -250,7 +251,7 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 			if len(errs) > 0 {
 				cmds = append(cmds, app.Toast("bad", strings.Join(errs, "; ")))
 			} else {
-				cmds = append(cmds, app.Toast("ok", "в Корзине "+Human(freed)+", место освободится после её очистки"))
+				cmds = append(cmds, app.Toast("ok", "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
 			}
 			cmds = append(cmds, d.load(false))
 			return tea.Batch(cmds...)
@@ -268,11 +269,11 @@ func (d *disk) View(width, height int) string {
 	}
 	frac := float64(d.data.UsedPct) / 100
 	out = append(out, "  "+Bar(frac, min(60, width-40))+"  "+pctStyle(d.data.UsedPct)+
-		styleDim.Render("  замер "+ageText(d.data.MeasuredAt)+", r - заново"))
+		styleDim.Render("  замер "+ui.Ago(d.data.MeasuredAt)+", r - заново"))
 	out = append(out, "")
 	var tabs []string
 	for i, t := range d.data.Tabs {
-		label := " " + t.Title + " " + Human(t.Total) + " "
+		label := " " + t.Title + " " + ui.Bytes(t.Total) + " "
 		if i == d.tab {
 			tabs = append(tabs, styleTabOn.Render(label))
 		} else {
@@ -290,7 +291,11 @@ func (d *disk) View(width, height int) string {
 				rows = append(rows, styleDim.Render("ещё "+itoa(len(cur.Items)-6)))
 				break
 			}
-			rows = append(rows, styleDim.Render(ui.Fit(Human(it.Size), 9))+"  "+ui.Fit(it.Name, 32)+it.Note)
+			note := styleDim.Render(it.Note)
+			if it.Stale {
+				note = styleAmber.Render(it.Note)
+			}
+			rows = append(rows, styleDim.Render(ui.Fit(ui.Bytes(it.Size), 9))+"  "+ui.Fit(it.Name, 32)+note)
 		}
 		if cur.Warn != "" {
 			rows = append(rows, styleAmber.Render(symWarn+" "+cur.Warn))
@@ -315,7 +320,7 @@ func (d *disk) View(width, height int) string {
 		for _, r := range d.marked {
 			sum += r.Size
 		}
-		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(d.marked))+" "+symDot+" "+Human(sum)) + styleDim.Render("   x - убрать")
+		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(d.marked))+" "+symDot+" "+ui.Bytes(sum)) + styleDim.Render("   x - убрать")
 	}
 	for _, p := range pane {
 		out = append(out, "  "+p)
@@ -335,18 +340,4 @@ func pctStyle(pct int) string {
 		return styleAmber.Render(s)
 	}
 	return styleText.Render(s)
-}
-
-func ageText(t time.Time) string {
-	if t.IsZero() {
-		return "только что"
-	}
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "только что"
-	case d < time.Hour:
-		return itoa(int(d.Minutes())) + " мин назад"
-	}
-	return itoa(int(d.Hours())) + " ч назад"
 }

@@ -12,22 +12,3 @@ func TestParseLaunchctl(t *testing.T) {
 		t.Errorf("%+v", list)
 	}
 }
-
-func TestParseGitStatusSB(t *testing.T) {
-	cases := []struct {
-		in   string
-		want GitState
-	}{
-		{"## main...origin/main\n", GitState{Branch: "main"}},
-		{"## main...origin/main [ahead 2, behind 1]\n M a.go\n?? b.go\n", GitState{Branch: "main", Changes: 2, Ahead: 2, Behind: 1}},
-		{"## feature/x...origin/feature/x [behind 3]\n", GitState{Branch: "feature/x", Behind: 3}},
-		{"## local-only\n M a\n", GitState{Branch: "local-only", Changes: 1, NoUp: true}},
-		{"## No commits yet on main\n", GitState{Branch: "main", NoUp: true}},
-		{"## HEAD (no branch)\n", GitState{Branch: "HEAD", NoUp: true}},
-	}
-	for _, c := range cases {
-		if got := ParseGitStatusSB(c.in); got != c.want {
-			t.Errorf("%q: %+v", c.in, got)
-		}
-	}
-}

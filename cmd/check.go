@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -11,6 +10,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -140,17 +140,9 @@ var checkCmd = &cobra.Command{
 		if len(projects) == 0 {
 			return ui.Errorf("в реестре нет проектов: tim proj scan")
 		}
-		rows := make([]health.Row, len(projects))
-		sem := make(chan struct{}, 8)
-		var wg sync.WaitGroup
-		for i, p := range projects {
-			wg.Go(func() {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				rows[i] = sites.CheckRow(p, cfg.ProjectDir(p), checkLocal, checkNet)
-			})
-		}
-		wg.Wait()
+		rows := par.Map(projects, par.Limit, func(p *config.Project) health.Row {
+			return sites.CheckRow(p, cfg.ProjectDir(p), checkLocal, checkNet)
+		})
 		// Проекты, по которым проверить было нечего, в таблице только шумят.
 		kept := rows[:0]
 		for _, r := range rows {

@@ -76,7 +76,7 @@ func darwinGID() (int, error) {
 func Rules(tunnels []netinfo.Tunnel) string {
 	var b strings.Builder
 	b.WriteString("# tim: процессы группы " + GroupName + " идут мимо VPN через прокси tim\n")
-	b.WriteString("table <tim_local> { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 }\n")
+	b.WriteString("table <tim_local> { 127.0.0.0/8, " + strings.Join(netinfo.PrivateNets, ", ") + ", 169.254.0.0/16 }\n")
 	fmt.Fprintf(&b, "rdr on lo0 inet proto tcp from any to ! <tim_local> -> 127.0.0.1 port %d\n", ProxyPort)
 	// Ответ прокси идёт на адрес туннеля, а маршрут к нему у utun ведёт в сам туннель: reply-to
 	// возвращает ответ на lo0, где он доходит до приложения.
@@ -88,27 +88,12 @@ func Rules(tunnels []netinfo.Tunnel) string {
 	return b.String()
 }
 
-// IfaceIPv4: адрес интерфейса - источник для исходящих соединений прокси.
-func IfaceIPv4(dev string) string {
-	ifi, err := net.InterfaceByName(dev)
-	if err != nil {
-		return ""
-	}
-	addrs, _ := ifi.Addrs()
-	for _, a := range addrs {
-		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
-			return ipn.IP.To4().String()
-		}
-	}
-	return ""
-}
-
 // ProxyUp: прокси под root живёт отдельно от tim; если уже работает - ничего не делаем.
 func ProxyUp(phys netinfo.Service) error {
 	if ProxyPID() > 0 {
 		return nil
 	}
-	ip := IfaceIPv4(phys.Device)
+	ip := netinfo.IfaceIPv4(phys.Device)
 	if ip == "" {
 		return ui.Errorf("у %s нет IPv4-адреса", phys.Device)
 	}
@@ -157,7 +142,7 @@ func pfOn(phys netinfo.Service, gw string, tunnels []netinfo.Tunnel) error {
 	if out, err := privileged.Run("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
 		return ui.Errorf("pf не включился: %s", firstLine(out, err))
 	}
-	ui.Println(ui.Label("мимо VPN") + ui.Dim("  группа "+GroupName+", прокси 127.0.0.1:"+strconv.Itoa(ProxyPort)+" через "+phys.Device+" "+IfaceIPv4(phys.Device)))
+	ui.Println(ui.Label("мимо VPN") + ui.Dim("  группа "+GroupName+", прокси 127.0.0.1:"+strconv.Itoa(ProxyPort)+" через "+phys.Device+" "+netinfo.IfaceIPv4(phys.Device)))
 	return nil
 }
 

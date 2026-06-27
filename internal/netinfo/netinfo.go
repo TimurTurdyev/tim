@@ -10,6 +10,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
+// PrivateNets: частные сети IPv4 - 10/8, 172.16/12, 192.168/16.
+var PrivateNets = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+
 // ipv4Shape: похоже на IPv4 по виду, даже если числа неверные (300.1.1.1) - это ошибка, а не домен.
 var ipv4Shape = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
 
@@ -21,7 +24,7 @@ func IsIPv4(s string) bool {
 	return err == nil && a.Is4()
 }
 
-// IsPrivate: 10/8, 172.16/12, 192.168/16. Такие адреса достижимы только через
+// IsPrivate: адрес из PrivateNets. Такие адреса достижимы только через
 // VPN, и маршрут в обход им только навредит.
 func IsPrivate(ip string) bool {
 	a, err := netip.ParseAddr(ip)

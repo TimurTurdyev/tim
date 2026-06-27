@@ -40,3 +40,17 @@ func TestParseRIPEstat(t *testing.T) {
 		t.Fatalf("%v %v", got, err)
 	}
 }
+
+func TestParseCymru(t *testing.T) {
+	out := "Bulk mode; whois.cymru.com [2025-10-18 20:17:46 +0000]\n" +
+		"15169   | 8.8.8.8          | 8.8.8.0/24          | US | arin     | 2023-12-28 | GOOGLE - Google LLC, US\n" +
+		"NA      | 10.0.0.1         | NA                  | NA | other    | NA         | NA\n" +
+		"13335   | 1.1.1.1          | 1.1.1.0/24          | AU | apnic    | 2011-08-11 | CLOUDFLARENET - Cloudflare, Inc., US\n"
+	m := ParseCymru(out)
+	if len(m) != 2 || m["8.8.8.8"].ASN != "15169" || m["8.8.8.8"].Country != "US" {
+		t.Fatalf("%+v", m)
+	}
+	if !IsCDN(m["1.1.1.1"].Name) || IsCDN("TIMEWEB-AS, RU") {
+		t.Error("cdn detection")
+	}
+}

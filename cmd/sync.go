@@ -4,7 +4,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/newproj"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -28,21 +28,14 @@ const nginxDump = `cat /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf /usr/
 
 // remoteDomains: для каждого ssh-алиаса один заход на сервер за списком доменов nginx.
 func remoteDomains(aliases []string) map[string][]fill.Vhost {
-	out := make([][]fill.Vhost, len(aliases))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4)
-	for i, a := range aliases {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			conf, err := runner.Output("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", a, nginxDump)
-			if err != nil || strings.TrimSpace(conf) == "" {
-				return
-			}
-			out[i] = fill.ParseNginx(conf)
-		})
-	}
-	wg.Wait()
+	// Серверов немного, а ssh-рукопожатие тяжёлое: четыре разом.
+	out := par.Map(aliases, 4, func(a string) []fill.Vhost {
+		conf, err := runner.Output("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", a, nginxDump)
+		if err != nil || strings.TrimSpace(conf) == "" {
+			return nil
+		}
+		return fill.ParseNginx(conf)
+	})
 	m := map[string][]fill.Vhost{}
 	for i, a := range aliases {
 		if len(out[i]) > 0 {
@@ -59,17 +52,7 @@ type change struct {
 // aliasIPs: адрес каждого алиаса из ~/.ssh/config, чтобы сопоставить проект с сервером по IP.
 func aliasIPs() map[string]string {
 	aliases := sshx.Aliases()
-	out := make([]string, len(aliases))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 12)
-	for i, a := range aliases {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			out[i] = sshx.IP(a)
-		})
-	}
-	wg.Wait()
+	out := par.Map(aliases, 12, sshx.IP)
 	m := map[string]string{}
 	for i, a := range aliases {
 		if out[i] != "" {

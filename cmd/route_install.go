@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -25,7 +24,7 @@ func asRoot() error {
 	if os.Geteuid() == 0 {
 		return nil
 	}
-	self, err := selfPath()
+	self, err := schedule.SelfPath()
 	if err != nil {
 		return err
 	}
@@ -56,7 +55,7 @@ type errDoneT struct{}
 func (errDoneT) Error() string { return "" }
 
 func routesJob() (schedule.Job, error) {
-	self, err := selfPath()
+	self, err := schedule.SelfPath()
 	if err != nil {
 		return schedule.Job{}, err
 	}
@@ -85,28 +84,8 @@ systemd-служба tim-routes. Нужны права root; если забыл
 		if _, err := os.Stat(config.Path()); err != nil {
 			return ui.Errorf("конфиг %s не найден: страж не узнает целей", config.Path())
 		}
-		switch runtime.GOOS {
-		case "darwin":
-			_ = runner.Run("launchctl", "bootout", "system/"+bypass.GuardLabel)
-			if err := runner.WriteRoot(bypass.GuardPlist(), []byte(job.Plist())); err != nil {
-				return err
-			}
-			if err := runner.Run("launchctl", "bootstrap", "system", bypass.GuardPlist()); err != nil {
-				return err
-			}
-		case "linux":
-			svc, _ := job.Systemd()
-			if err := runner.WriteRoot(bypass.GuardService(), []byte(svc)); err != nil {
-				return err
-			}
-			if err := runner.Run("systemctl", "daemon-reload"); err != nil {
-				return err
-			}
-			if err := runner.Run("systemctl", "enable", "--now", bypass.GuardUnit); err != nil {
-				return err
-			}
-		default:
-			return ui.Errorf("служба на %s не поддержана", runtime.GOOS)
+		if err := schedule.Install(job, bypass.GuardUnit); err != nil {
+			return err
 		}
 		ui.Println(ui.Label("страж установлен") + ui.Dim("  конфиг "+config.Path()+", журнал "+bypass.GuardLog()))
 		if runner.DryRun {
@@ -136,18 +115,8 @@ var routeUninstallCmd = &cobra.Command{
 			}
 			return err
 		}
-		switch runtime.GOOS {
-		case "darwin":
-			_ = runner.Run("launchctl", "bootout", "system/"+bypass.GuardLabel)
-			if err := runner.RemoveRoot(bypass.GuardPlist()); err != nil {
-				return err
-			}
-		case "linux":
-			_ = runner.Run("systemctl", "disable", "--now", bypass.GuardUnit)
-			if err := runner.RemoveRoot(bypass.GuardService()); err != nil {
-				return err
-			}
-			_ = runner.Run("systemctl", "daemon-reload")
+		if err := schedule.Uninstall(bypass.GuardLabel, bypass.GuardUnit, true); err != nil {
+			return err
 		}
 		_ = os.Remove(filepath.Join(bypass.StateDir(), "routes-status.json"))
 		ui.Println(ui.Label("страж убран") + ui.Dim("  после смены сети маршруты придётся поднимать: tim vpn fix"))

@@ -64,7 +64,7 @@ func rootNote(root string) string {
 	}
 	note := strconv.Itoa(len(clones)) + " " + ui.Plural(len(clones), "репозиторий", "репозитория", "репозиториев")
 	if !last.IsZero() {
-		note += ", последний менялся " + agoShort(last)
+		note += ", последний менялся " + ui.Short(time.Since(last))
 	}
 	return note
 }
@@ -102,7 +102,7 @@ func onboardScan(root string) []tui.FoundProject {
 		touched := gitTouched(dir)
 		fp := tui.FoundProject{Name: p.Name, Stack: ui.Dash(run.Stack(dir)), Dir: paths.Show(dir), Checked: true}
 		if !touched.IsZero() {
-			fp.Age = agoShort(touched)
+			fp.Age = ui.Short(time.Since(touched))
 			// Год без изменений - скорее всего архив; галочку снимаем, вернуть можно пробелом.
 			fp.Checked = time.Since(touched) < 365*24*time.Hour
 		}

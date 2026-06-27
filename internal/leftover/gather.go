@@ -8,8 +8,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
+	"github.com/TimurTurdyev/tim/internal/diskuse"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -51,19 +52,10 @@ func Installed() []App {
 		nested, _ := filepath.Glob(filepath.Join(dir, "*", "*.app"))
 		bundles = append(append(bundles, found...), nested...)
 	}
-	apps := make([]App, len(bundles))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	for i, b := range bundles {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			id, _ := runner.Output("plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", filepath.Join(b, "Contents", "Info.plist"))
-			apps[i] = App{ID: strings.TrimSpace(id), Name: strings.TrimSuffix(filepath.Base(b), ".app")}
-		})
-	}
-	wg.Wait()
-	return apps
+	return par.Map(bundles, par.Limit, func(b string) App {
+		id, _ := runner.Output("plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", filepath.Join(b, "Contents", "Info.plist"))
+		return App{ID: strings.TrimSpace(id), Name: strings.TrimSuffix(filepath.Base(b), ".app")}
+	})
 }
 
 // Gather: всё, что осталось от удалённых программ, по убыванию размера; мелочь по имени отброшена.
@@ -161,24 +153,16 @@ func Gather(own func(name string) bool, running []procs.Full) ([]*Group, error) 
 		}
 	}
 	var all []*Group
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
+	sizes := par.NewGroup(par.Limit)
 	for _, g := range groups {
 		for i := range g.Items {
-			if g.Items[i].Path == "" {
-				continue
+			if g.Items[i].Path != "" {
+				sizes.Go(func() { g.Items[i].Size = diskuse.SizeOf(g.Items[i].Path) })
 			}
-			wg.Go(func() {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				out, _ := runner.OutputWithin(0, "du", "-sk", g.Items[i].Path)
-				kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
-				g.Items[i].Size = kb * 1024
-			})
 		}
 		all = append(all, g)
 	}
-	wg.Wait()
+	sizes.Wait()
 	var out []*Group
 	for _, g := range all {
 		for _, it := range g.Items {

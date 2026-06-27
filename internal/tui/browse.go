@@ -69,7 +69,7 @@ func (b *browse) Crumbs() []string {
 
 func (b *browse) Status() string {
 	l := b.cur()
-	s := Human(l.entry.Size)
+	s := ui.Bytes(l.entry.Size)
 	if b.opts.Total > 0 {
 		s += " " + symDot + " " + itoa(int(l.entry.Size*100/b.opts.Total)) + "% занятого"
 	}
@@ -120,7 +120,7 @@ func (b *browse) fill(l *level) {
 			} else {
 				name = styleDim.Render(name)
 			}
-			line := mark + styleText.Render(ui.Fit(Human(e.Size), 9)) + " " + bar + " " + styleDim.Render(ui.Fit(itoa(pct)+"%", 4)) + "  " + name
+			line := mark + styleText.Render(ui.Fit(ui.Bytes(e.Size), 9)) + " " + bar + " " + styleDim.Render(ui.Fit(itoa(pct)+"%", 4)) + "  " + name
 			if e.Hint != "" {
 				line += "  " + styleDim.Render(e.Hint)
 			}
@@ -206,7 +206,7 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 	var lines, paths []string
 	var sum int64
 	for _, e := range top {
-		lines = append(lines, ui.Fit(Human(e.Size), 9)+"  "+e.Path)
+		lines = append(lines, ui.Fit(ui.Bytes(e.Size), 9)+"  "+e.Path)
 		paths = append(paths, e.Path)
 		sum += e.Size
 	}
@@ -215,7 +215,7 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 		Lines:   lines,
 		Command: "trash " + strings.Join(paths, " "),
 		Note:    "Из Корзины можно вернуть. Место освободится после её очистки.",
-		OK:      "Убрать " + Human(sum),
+		OK:      "Убрать " + ui.Bytes(sum),
 		Danger:  true,
 		Yes: func() tea.Cmd {
 			freed, errs := b.opts.Remove(top)
@@ -224,7 +224,7 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 			if len(errs) > 0 {
 				cmds = append(cmds, app.Toast("bad", strings.Join(errs, "; ")))
 			} else {
-				cmds = append(cmds, app.Toast("ok", "в Корзине "+Human(freed)+", место освободится после её очистки"))
+				cmds = append(cmds, app.Toast("ok", "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
 			}
 			// Размеры изменились - перечитать все уровни стопки.
 			for _, l := range b.stack {
@@ -260,7 +260,7 @@ func (b *browse) View(width, height int) string {
 			sum += e.Size
 			names = append(names, e.Name)
 		}
-		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(top))+" "+symDot+" "+Human(sum)) + styleDim.Render("   "+ui.Clip(strings.Join(names, ", "), width-30))
+		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(top))+" "+symDot+" "+ui.Bytes(sum)) + styleDim.Render("   "+ui.Clip(strings.Join(names, ", "), width-30))
 	}
 	return strings.Join(out, "\n")
 }

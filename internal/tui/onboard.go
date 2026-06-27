@@ -287,7 +287,7 @@ func (o *onboard) View(width, height int) string {
 	case 1:
 		n := len(o.chosen())
 		head = []string{"",
-			"  " + stylePaneT.Render("Нашёл "+plural(len(o.found), "репозиторий", "репозитория", "репозиториев")+" в "+o.root) +
+			"  " + stylePaneT.Render("Нашёл "+ui.Count(len(o.found), "репозиторий", "репозитория", "репозиториев")+" в "+o.root) +
 				styleDim.Render("  сними галочку с того, что не нужно в реестре"),
 			"",
 			"  " + styleHead.Render("    "+ui.Fit("ИМЯ", 22)+ui.Fit("СТЕК", 11)+ui.Fit("МЕНЯЛСЯ", 10)+"ПАПКА") + styleDim.Render("   отмечено "+itoa(n)),

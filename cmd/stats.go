@@ -130,18 +130,18 @@ var statsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		switch {
 		case statsInstall:
-			self, err := selfPath()
+			self, err := schedule.SelfPath()
 			if err != nil {
 				return err
 			}
-			job := schedule.Job{Label: statsLabel, Args: []string{self, "stats", "--record"}, Every: 3600, Env: jobEnv(), Log: stats.Dir() + "/record.log"}
-			if err := installJob(job, "tim-stats"); err != nil {
+			job := schedule.Job{Label: statsLabel, Args: []string{self, "stats", "--record"}, Every: 3600, Env: schedule.JobEnv(), Log: stats.Dir() + "/record.log"}
+			if err := schedule.Install(job, "tim-stats"); err != nil {
 				return err
 			}
 			ui.Println(ui.Label("замер каждый час") + ui.Dim("  журнал в "+stats.Dir()))
 			return nil
 		case statsUninstall:
-			if err := uninstallJob(statsLabel, "tim-stats"); err != nil {
+			if err := schedule.Uninstall(statsLabel, "tim-stats", false); err != nil {
 				return err
 			}
 			ui.Println(ui.Label("ежечасный замер убран") + ui.Dim("  журналы остались в "+stats.Dir()))

@@ -12,9 +12,6 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-var cdnWords = []string{"cloudflare", "akamai", "fastly", "cloudfront", "amazon", "google", "microsoft", "azure",
-	"ddos-guard", "stormwall", "qrator", "incapsula", "imperva", "sucuri", "stackpath", "bunny", "cdnvideo", "ngenix", "gcore", "selectel-cdn"}
-
 var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
 var trackerRes = []struct {
@@ -56,44 +53,6 @@ func ParseCRT(data []byte, domain string) (subs, related []string, err error) {
 		names = append(names, r.Common)
 	}
 	return splitNames(names, domain)
-}
-
-// ASInfo: к какой сети принадлежит адрес.
-type ASInfo struct {
-	ASN     string `json:"asn,omitempty"`
-	Prefix  string `json:"prefix,omitempty"`
-	Country string `json:"country,omitempty"`
-	Name    string `json:"name,omitempty"`
-}
-
-// ParseCymru разбирает bulk-ответ whois.cymru.com: AS | IP | префикс | страна | реестр | дата | имя.
-func ParseCymru(out string) map[string]ASInfo {
-	m := map[string]ASInfo{}
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Split(line, "|")
-		if len(f) < 7 {
-			continue
-		}
-		for i := range f {
-			f[i] = strings.TrimSpace(f[i])
-		}
-		if f[0] == "AS" || f[0] == "NA" || f[1] == "" {
-			continue
-		}
-		m[f[1]] = ASInfo{ASN: f[0], Prefix: f[2], Country: f[3], Name: f[6]}
-	}
-	return m
-}
-
-// IsCDN: адрес принадлежит CDN или крупному облаку. На таком адресе соседние домены чужие и ни о чём не говорят.
-func IsCDN(asName string) bool {
-	l := strings.ToLower(asName)
-	for _, w := range cdnWords {
-		if strings.Contains(l, w) {
-			return true
-		}
-	}
-	return false
 }
 
 // Title достаёт заголовок страницы, схлопывая пробелы.

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/inspect"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -27,7 +27,7 @@ type EnvGit struct {
 
 // GitCheck: незакоммиченное - обычное состояние работы, а неотправленное живёт только на этой машине.
 // .env в репозитории - утечка секретов, хуже всего остального в колонке.
-func GitCheck(g sysinfo.GitState, env EnvGit) Check {
+func GitCheck(g gitx.State, env EnvGit) Check {
 	c := Check{Name: "git", Level: OK}
 	var parts []string
 	if g.Changes > 0 {

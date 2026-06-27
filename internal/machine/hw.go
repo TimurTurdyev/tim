@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/TimurTurdyev/tim/internal/hwinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -98,57 +98,53 @@ func gpuHolders(list []procs.Full) []string {
 // Collect: всё разом и параллельно; загрузка процессора - по ps, без секундного iostat.
 func Collect() Snapshot {
 	var s Snapshot
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
-	wg.Go(func() {
-		m, _ := runner.Output("sysctl", "-n", "machdep.cpu.brand_string")
-		c, pc, ec := sysctlInt("hw.ncpu"), sysctlInt("hw.perflevel0.physicalcpu"), sysctlInt("hw.perflevel1.physicalcpu")
-		set(func() { s.Model, s.Cores, s.PC, s.EC = strings.TrimSpace(m), c, pc, ec })
-	})
-	wg.Go(func() {
-		used, total := sysinfo.Memory()
-		set(func() { s.MemUsed, s.MemTotal = int64(used), int64(total) })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("memory_pressure")
-		n, _ := hwinfo.ParseFreePercent(out)
-		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
-		swap, _ := hwinfo.ParseSwap(sw)
-		set(func() { s.FreePct, s.Swap = n, swap })
-	})
-	wg.Go(func() {
-		l := sysinfo.Load()
-		set(func() { s.LoadAvg = l })
-	})
-	wg.Go(func() {
-		list, err := All()
-		if err != nil {
-			return
-		}
-		var sum float64
-		for _, p := range list {
-			sum += p.CPU
-		}
-		ncpu := runtime.NumCPU()
-		holders := gpuHolders(list)
-		set(func() { s.CPUPct, s.Holders = int(sum/float64(ncpu)+0.5), holders })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("system_profiler", "SPDisplaysDataType", "-json")
-		set(func() { s.GPUs = hwinfo.ParseDisplays([]byte(out)) })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
-		set(func() { s.GPU = hwinfo.ParseGPULoad(out) })
-	})
-	wg.Go(func() {
-		out, _ := runner.Output("diskutil", "info", "/")
-		d, _ := sysinfo.DataDisk()
-		th, _ := runner.Output("pmset", "-g", "therm")
-		set(func() { s.Disk, s.DiskPct, s.Therm = hwinfo.ParseDiskutil(out), d.Percent(), hwinfo.ParseTherm(th) })
-	})
-	wg.Wait()
+	// Каждый замер пишет свои поля, поэтому общий замок не нужен.
+	par.All(
+		func() {
+			m, _ := runner.Output("sysctl", "-n", "machdep.cpu.brand_string")
+			s.Model = strings.TrimSpace(m)
+			s.Cores, s.PC, s.EC = sysctlInt("hw.ncpu"), sysctlInt("hw.perflevel0.physicalcpu"), sysctlInt("hw.perflevel1.physicalcpu")
+		},
+		func() {
+			used, total := sysinfo.Memory()
+			s.MemUsed, s.MemTotal = int64(used), int64(total)
+		},
+		func() {
+			out, _ := runner.Output("memory_pressure")
+			s.FreePct, _ = hwinfo.ParseFreePercent(out)
+			sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
+			s.Swap, _ = hwinfo.ParseSwap(sw)
+		},
+		func() { s.LoadAvg = sysinfo.Load() },
+		func() {
+			list, err := All()
+			if err != nil {
+				return
+			}
+			var sum float64
+			for _, p := range list {
+				sum += p.CPU
+			}
+			s.CPUPct = int(sum/float64(runtime.NumCPU()) + 0.5)
+			s.Holders = gpuHolders(list)
+		},
+		func() {
+			out, _ := runner.Output("system_profiler", "SPDisplaysDataType", "-json")
+			s.GPUs = hwinfo.ParseDisplays([]byte(out))
+		},
+		func() {
+			out, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
+			s.GPU = hwinfo.ParseGPULoad(out)
+		},
+		func() {
+			out, _ := runner.Output("diskutil", "info", "/")
+			s.Disk = hwinfo.ParseDiskutil(out)
+			d, _ := sysinfo.DataDisk()
+			s.DiskPct = d.Percent()
+			th, _ := runner.Output("pmset", "-g", "therm")
+			s.Therm = hwinfo.ParseTherm(th)
+		},
+	)
 	return s
 }
 
@@ -167,41 +163,29 @@ func Funcs() (func() Snapshot, func(Snapshot) Live, error) {
 // и всё параллельно с секундным iostat - он и задаёт такт.
 func Sample(base Snapshot) Live {
 	out := Live{MemTotal: base.MemTotal, Title: Title(base)}
-	var (
-		wg   sync.WaitGroup
-		mu   sync.Mutex
-		used int64
-		list []procs.Full
+	var list []procs.Full
+	par.All(
+		func() {
+			o, _ := runner.Output("iostat", "-c", "2", "-w", "1")
+			out.CPU, _ = hwinfo.ParseIostatCPU(o)
+		},
+		func() {
+			o, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
+			g := hwinfo.ParseGPULoad(o)
+			out.GPU, out.GPUValid, out.VRAM = g.Device, g.Valid, g.InUse
+		},
+		func() {
+			used, _ := sysinfo.Memory()
+			out.MemUsed = int64(used)
+			sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
+			swap, _ := hwinfo.ParseSwap(sw)
+			out.SwapUsed, out.SwapTotal = swap.Used, swap.Total
+			out.Load = sysinfo.Load()
+		},
+		func() { list, _ = All() },
 	)
-	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
-	wg.Go(func() {
-		o, _ := runner.Output("iostat", "-c", "2", "-w", "1")
-		n, _ := hwinfo.ParseIostatCPU(o)
-		set(func() { out.CPU = n })
-	})
-	wg.Go(func() {
-		o, _ := runner.Output("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
-		g := hwinfo.ParseGPULoad(o)
-		set(func() { out.GPU, out.GPUValid, out.VRAM = g.Device, g.Valid, g.InUse })
-	})
-	wg.Go(func() {
-		u, _ := sysinfo.Memory()
-		sw, _ := runner.Output("sysctl", "-n", "vm.swapusage")
-		swap, _ := hwinfo.ParseSwap(sw)
-		la := sysinfo.Load()
-		set(func() {
-			used = int64(u)
-			out.SwapUsed, out.SwapTotal, out.Load = swap.Used, swap.Total, la
-		})
-	})
-	wg.Go(func() {
-		l, _ := All()
-		set(func() { list = l })
-	})
-	wg.Wait()
-	out.MemUsed = used
 	if base.MemTotal > 0 {
-		out.Mem = int(used * 100 / base.MemTotal)
+		out.Mem = int(out.MemUsed * 100 / base.MemTotal)
 	}
 	out.Top = TopRows(list)
 	return out

@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/envfile"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -223,7 +223,7 @@ func viaTunnel(c *dbConn, via string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	local, err := freePort()
+	local, err := netinfo.FreePort()
 	if err != nil {
 		return nil, err
 	}
@@ -237,16 +237,6 @@ func viaTunnel(c *dbConn, via string) (func(), error) {
 	ui.Println(ui.Dim("туннель " + t.Desc))
 	c.Host, c.Port = "127.0.0.1", local
 	return func() { t.Stop(); ui.Println(ui.Dim("туннель снят")) }, nil
-}
-
-func freePort() (string, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = l.Close() }()
-	_, port, _ := net.SplitHostPort(l.Addr().String())
-	return port, nil
 }
 
 func init() {

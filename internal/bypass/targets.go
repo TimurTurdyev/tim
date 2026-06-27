@@ -3,13 +3,10 @@
 package bypass
 
 import (
-	"os"
-	"runtime"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -31,15 +28,7 @@ func Expand(t netinfo.Target) []string {
 
 // StateDir: служебные файлы. Страж работает под root, и в домашней папке он наплодил бы файлов,
 // которые пользователь потом не перезапишет, поэтому у root своё место.
-func StateDir() string {
-	if os.Geteuid() == 0 {
-		if runtime.GOOS == "darwin" {
-			return "/var/db/tim"
-		}
-		return "/var/lib/tim"
-	}
-	return paths.State()
-}
+func StateDir() string { return paths.OwnState() }
 
 // OwnerTargets: домен -> автономные системы, из которых видны его адреса. Их часто несколько:
 // Яндекс анонсирует одни и те же сети и из основной AS, и из дочерней. Берём все - пересечения
@@ -57,7 +46,7 @@ func OwnerTargets(domain string, force bool) ([]netinfo.Target, []string, error)
 	var names []string
 	for _, a := range list {
 		name := asn.Holder(a)
-		if domaudit.IsCDN(name) && !force {
+		if asn.IsCDN(name) && !force {
 			return nil, nil, ui.Errorf("%s сидит на CDN (%s): в обход ушла бы чужая половина интернета; если точно надо: --force", domain, name)
 		}
 		targets = append(targets, netinfo.Target{Kind: netinfo.KindAS, Value: "as:" + a})

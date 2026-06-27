@@ -40,19 +40,6 @@ func Bar(frac float64, n int) string {
 	return st.Render(strings.Repeat(symBlock, f)) + styleGhost.Render(strings.Repeat(symBlock, n-f))
 }
 
-// Lamp: значок состояния со словом - читается и без цвета.
-func Lamp(kind, text string) string {
-	switch kind {
-	case "ok":
-		return styleGood.Render(symLamp + " " + text)
-	case "warn":
-		return styleAmber.Render(symWarn + " " + text)
-	case "bad":
-		return styleBad.Render(symCross + " " + text)
-	}
-	return styleDim.Render(symOff + " " + text)
-}
-
 // Pane: панель в рамке; заголовок в верхней кромке, sub - серым рядом. Строки обрезаются по ширине.
 func Pane(title, sub string, rows []string, width int) []string {
 	inner := width - 4
@@ -98,19 +85,6 @@ func Beside(left []string, leftW int, right []string, width int) []string {
 		out[i] = ui.Fit(l, leftW) + " " + ui.Fit(r, width-leftW-1)
 	}
 	return out
-}
-
-// Human: байты по-человечески.
-func Human(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%d B", n)
 }
 
 // Row: строка списка - уже сложенный текст и то, по чему искать.

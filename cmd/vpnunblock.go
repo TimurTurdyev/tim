@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -139,7 +139,7 @@ func vpnUnblock(site string) error {
 		for _, g := range bypass.GroupByAS(seen) {
 			switch {
 			case known["as:"+g.AS.ASN]:
-			case domaudit.IsCDN(g.AS.Name):
+			case asn.IsCDN(g.AS.Name):
 				cdn = append(cdn, g)
 			default:
 				fresh = append(fresh, g)

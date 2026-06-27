@@ -1,15 +1,14 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/visits"
@@ -32,7 +31,7 @@ func projectsScreen(focus string) tui.Screen {
 			row.Running, row.Port = true, st.Port
 		}
 		if info, err := os.Stat(dir); err == nil {
-			row.Age = agoShort(info.ModTime())
+			row.Age = ui.Short(time.Since(info.ModTime()))
 		}
 		rows = append(rows, row)
 	}
@@ -83,8 +82,7 @@ func projectCard(row tui.ProjectRow) tui.ProjectCard {
 		stack += ", php " + strings.TrimSpace(v)
 	}
 	lines = append(lines, label("стек")+stack)
-	if out, err := runner.Output("git", "-C", row.Dir, "status", "-sb"); err == nil {
-		g := sysinfo.ParseGitStatusSB(out)
+	if g, ok := gitx.Status(row.Dir); ok {
 		lines = append(lines, label("ветка")+gitLine(g))
 	}
 	if row.Running {
@@ -107,20 +105,6 @@ func projectCard(row tui.ProjectRow) tui.ProjectCard {
 		lines = append(lines, label("деплой")+p.Deploy)
 	}
 	return tui.ProjectCard{Lines: lines}
-}
-
-// agoShort: давность одним числом - для колонок списка.
-func agoShort(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Hour:
-		return fmt.Sprintf("%d мин", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%d ч", int(d.Hours()))
-	case d < 60*24*time.Hour:
-		return fmt.Sprintf("%d дн", int(d.Hours()/24))
-	}
-	return fmt.Sprintf("%d мес", int(d.Hours()/24/30))
 }
 
 // rel: путь от домашней папки для показа.

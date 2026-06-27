@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/watch"
 )
@@ -70,13 +71,13 @@ var watchCmd = &cobra.Command{
 					if ev.From == watch.Down {
 						line += ui.Dim("  лежал " + ui.Duration(ev.Was))
 						if !watchQuiet {
-							notify("tim watch: поднялся", url+" после "+ui.Duration(ev.Was))
+							schedule.Notify("tim watch: поднялся", url+" после "+ui.Duration(ev.Was))
 						}
 					}
 				case watch.Down:
 					line += ui.Bad("лежит") + "  " + detail
 					if !watchQuiet {
-						notify("tim watch: лежит", url+": "+detail)
+						schedule.Notify("tim watch: лежит", url+": "+detail)
 					}
 				}
 				ui.Println(line)

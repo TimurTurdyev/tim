@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/domaudit"
+	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 type Group struct {
-	AS    domaudit.ASInfo
+	AS    asn.ASInfo
 	IPs   []string
 	procs map[string]bool
 	Names []string // обратные имена - подсказка, что это за сеть
@@ -67,7 +67,7 @@ func GroupByAS(seen map[string]map[string]bool) []*Group {
 		ips = append(ips, ip)
 	}
 	sort.Strings(ips)
-	info := domaudit.Cymru(ips)
+	info := asn.Cymru(ips)
 	groups := map[string]*Group{}
 	for _, ip := range ips {
 		a, ok := info[ip]

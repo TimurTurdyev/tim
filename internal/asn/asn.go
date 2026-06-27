@@ -7,13 +7,12 @@ import (
 	"errors"
 	"net/http"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/cache"
 )
 
 // TTL: анонсы меняются, но не каждый час; сутки - разумный срок.
@@ -86,44 +85,20 @@ func Aggregate(list []string) []string {
 	return res
 }
 
-type cache struct {
-	Fetched  time.Time `json:"fetched"`
-	Prefixes []string  `json:"prefixes"`
-}
-
 // Prefixes: склеенные IPv4-сети AS из кэша в dir или из RIPEstat. Ошибка сети при живом кэше - не ошибка:
 // старый список полезнее пустого, иначе обход пропадёт из-за недоступности статистики.
 func Prefixes(dir, as string) ([]string, error) {
 	as = strings.TrimPrefix(strings.ToUpper(as), "AS")
-	path := filepath.Join(dir, "asn", as+".json")
-	var old *cache
-	if data, err := os.ReadFile(path); err == nil {
-		var c cache
-		if json.Unmarshal(data, &c) == nil && len(c.Prefixes) > 0 {
-			if time.Since(c.Fetched) < TTL {
-				return c.Prefixes, nil
-			}
-			old = &c
+	return cache.Get(cache.Path(filepath.Join(dir, "asn"), as), TTL, func() ([]string, error) {
+		list, err := fetch(as)
+		if err != nil {
+			return nil, err
 		}
-	}
-	list, err := fetch(as)
-	if err != nil {
-		if old != nil {
-			return old.Prefixes, nil
+		if list = Aggregate(list); len(list) == 0 {
+			return nil, errors.New("у AS" + as + " нет анонсированных IPv4-сетей")
 		}
-		return nil, err
-	}
-	list = Aggregate(list)
-	if len(list) == 0 {
-		if old != nil {
-			return old.Prefixes, nil
-		}
-		return nil, errors.New("у AS" + as + " нет анонсированных IPv4-сетей")
-	}
-	if data, err := json.Marshal(cache{Fetched: time.Now(), Prefixes: list}); err == nil {
-		_ = runner.WriteAtomic(path, data, 0o644)
-	}
-	return list, nil
+		return list, nil
+	})
 }
 
 func fetch(as string) ([]string, error) {

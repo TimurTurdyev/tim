@@ -5,7 +5,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -74,17 +76,9 @@ func checkAll() []health.Row {
 	if err != nil {
 		return nil
 	}
-	rows := make([]health.Row, len(projects))
-	sem := make(chan struct{}, 8)
-	var wg sync.WaitGroup
-	for i, p := range projects {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			rows[i] = sites.CheckRow(p, cfg.ProjectDir(p), checkLocal, checkNet)
-		})
-	}
-	wg.Wait()
+	rows := par.Map(projects, par.Limit, func(p *config.Project) health.Row {
+		return sites.CheckRow(p, cfg.ProjectDir(p), checkLocal, checkNet)
+	})
 	kept := rows[:0]
 	for _, r := range rows {
 		if r.Level() != health.Skip {

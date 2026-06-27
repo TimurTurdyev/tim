@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/run"
-	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/visits"
@@ -67,12 +67,10 @@ var projInfoCmd = &cobra.Command{
 			port = fmt.Sprint(p.Port)
 		}
 		ui.Println(ui.Label("порт     ") + port + "   " + ui.Label("база ") + ui.Dash(p.DB))
-		if branch, _ := runner.Output("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD"); branch != "" {
-			status, _ := runner.Output("git", "-C", dir, "status", "--porcelain")
-			changes := strings.Count(status, "\n")
-			line := ui.Label("git      ") + strings.TrimSpace(branch)
-			if changes > 0 {
-				line += "  " + ui.Warn(fmt.Sprintf("%d changes", changes))
+		if g, ok := gitx.Status(dir); ok {
+			line := ui.Label("git      ") + g.Branch
+			if g.Changes > 0 {
+				line += "  " + ui.Warn(fmt.Sprintf("%d changes", g.Changes))
 			}
 			ui.Println(line)
 		}

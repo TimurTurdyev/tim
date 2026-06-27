@@ -9,8 +9,10 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/routewatch"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -19,17 +21,12 @@ const (
 	GuardUnit  = "tim-routes"
 )
 
-func GuardPlist() string   { return "/Library/LaunchDaemons/" + GuardLabel + ".plist" }
+func GuardPlist() string   { return schedule.PlistPath(GuardLabel, true) }
 func GuardService() string { return "/etc/systemd/system/" + GuardUnit + ".service" }
 func GuardLog() string     { return "/var/log/tim-routes.log" }
 
 // GuardDir: где пишет состояние страж-служба. Она под root, поэтому не в домашней папке.
-func GuardDir() string {
-	if runtime.GOOS == "darwin" {
-		return "/var/db/tim"
-	}
-	return "/var/lib/tim"
-}
+func GuardDir() string { return paths.SystemState() }
 
 // GuardStatus: состояние службы, а если её нет - последнего ручного route watch --once.
 func GuardStatus() (routewatch.Status, bool) {
@@ -114,7 +111,7 @@ func Cycle(st *routewatch.Status, load func() (*config.Config, error)) (*config.
 	st.Error = ""
 	want := WantedDests(c)
 	repairs := routewatch.Decide(want, netinfo.Table(), gw, phys.Device)
-	st.Want = len(Uniq(want))
+	st.Want = len(uniq(want))
 	st.OK = st.Want - len(repairs)
 	var done []routewatch.Repair
 	for _, r := range repairs {
@@ -138,7 +135,7 @@ func Cycle(st *routewatch.Status, load func() (*config.Config, error)) (*config.
 	return c, done
 }
 
-func Uniq(list []string) []string {
+func uniq(list []string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, s := range list {

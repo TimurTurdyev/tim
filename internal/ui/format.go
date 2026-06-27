@@ -12,17 +12,52 @@ import (
 
 // Форматирование чисел и дат одинаково во всех командах.
 
-// Bytes: размер по-человечески, с одним знаком после запятой.
+// Bytes: размер по-человечески - знак после запятой только у чисел меньше десяти: "4.2 GB", "37 GB".
 func Bytes(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	units := []struct {
+		size int64
+		name string
+	}{{1 << 40, "TB"}, {1 << 30, "GB"}, {1 << 20, "MB"}, {1 << 10, "KB"}}
+	for _, u := range units {
+		if n < u.size {
+			continue
+		}
+		v := float64(n) / float64(u.size)
+		if v < 10 {
+			return fmt.Sprintf("%.1f %s", v, u.name)
+		}
+		return fmt.Sprintf("%.0f %s", v, u.name)
 	}
 	return fmt.Sprintf("%d B", n)
+}
+
+// Short: длительность одним числом для колонок - "40 с", "5 мин", "30 ч", "12 дн", "2 мес".
+func Short(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d с", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%d мин", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d ч", int(d.Hours()))
+	case d < 60*24*time.Hour:
+		return fmt.Sprintf("%d дн", int(d.Hours()/24))
+	}
+	return fmt.Sprintf("%d мес", int(d.Hours()/24/30))
+}
+
+// Ago: давность для подписи - "только что", "5 мин назад", "3 дн назад"; нулевое время - "только что".
+func Ago(t time.Time) string {
+	d := time.Since(t)
+	if t.IsZero() || d < time.Minute {
+		return "только что"
+	}
+	return Short(d) + " назад"
+}
+
+// Count: число со словом в нужной форме - "1 проект", "3 проекта", "11 проектов".
+func Count(n int, one, few, many string) string {
+	return strconv.Itoa(n) + " " + Plural(n, one, few, many)
 }
 
 // Duration: длительность словами - "3 дн", "2 ч 15 мин", "40 с".

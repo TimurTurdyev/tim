@@ -2,14 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -165,7 +161,7 @@ var tunnelCheckCmd = &cobra.Command{
 		}
 		ui.Println(ui.Label("напрямую  ") + direct)
 		proxy := "socks5://127.0.0.1:" + strconv.Itoa(socksPort())
-		via, err := ipVia(proxy)
+		via, err := netinfo.ExternalIP(proxy)
 		if err != nil {
 			ui.Println(ui.Dim("через SOCKS: туннеля нет или он не отвечает (" + proxy + ")"))
 			if _, ok := shuttlePID(); ok {
@@ -179,21 +175,6 @@ var tunnelCheckCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-func ipVia(proxy string) (string, error) {
-	u, err := url.Parse(proxy)
-	if err != nil {
-		return "", err
-	}
-	client := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(u)}}
-	resp, err := client.Get("https://api.ipify.org")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 64))
-	return strings.TrimSpace(string(b)), err
 }
 
 // systemProxy включает или выключает системный SOCKS у активной службы.
@@ -308,7 +289,7 @@ var tunnelDBCmd = &cobra.Command{
 		}
 		local := strconv.Itoa(tunnelPort)
 		if tunnelPort == 0 {
-			if local, err = freePort(); err != nil {
+			if local, err = netinfo.FreePort(); err != nil {
 				return err
 			}
 		}

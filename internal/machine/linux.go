@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/hwinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -56,45 +56,34 @@ func hotZone() int {
 
 func CollectLinux() Snapshot {
 	s := Snapshot{Cores: runtime.NumCPU()}
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
-	wg.Go(func() {
-		out, _ := runner.Output("lscpu")
-		set(func() { s.Model = hwinfo.ParseLscpuModel(out) })
-	})
-	wg.Go(func() {
-		used, total := sysinfo.Memory()
-		sw := linuxSwap()
-		load := sysinfo.Load()
-		set(func() { s.MemUsed, s.MemTotal, s.Swap, s.LoadAvg = int64(used), int64(total), sw, load })
-	})
-	wg.Go(func() {
-		n := cpuBusy(300 * time.Millisecond)
-		set(func() { s.CPUPct = n })
-	})
-	wg.Go(func() {
-		gs := nvidia()
-		set(func() {
+	par.All(
+		func() {
+			out, _ := runner.Output("lscpu")
+			s.Model = hwinfo.ParseLscpuModel(out)
+		},
+		func() {
+			used, total := sysinfo.Memory()
+			s.MemUsed, s.MemTotal = int64(used), int64(total)
+			s.Swap, s.LoadAvg = linuxSwap(), sysinfo.Load()
+		},
+		func() { s.CPUPct = cpuBusy(300 * time.Millisecond) },
+		func() {
+			gs := nvidia()
 			for _, g := range gs {
 				s.GPUs = append(s.GPUs, hwinfo.GPU{Model: g.Name})
 			}
 			if len(gs) > 0 {
 				s.GPU = hwinfo.GPULoad{Device: gs[0].Util, InUse: gs[0].MemUsed, Valid: true}
 			}
-		})
-	})
-	wg.Go(func() {
-		d, _ := sysinfo.DataDisk()
-		hot := hotZone()
-		set(func() {
+		},
+		func() {
+			d, _ := sysinfo.DataDisk()
 			s.DiskPct = d.Percent()
-			if hot >= 85 {
+			if hot := hotZone(); hot >= 85 {
 				s.Therm = "горячо: " + strconv.Itoa(hot) + "\u00b0C"
 			}
-		})
-	})
-	wg.Wait()
+		},
+	)
 	if s.Model == "" {
 		s.Model = "Linux"
 	}
@@ -104,19 +93,21 @@ func CollectLinux() Snapshot {
 // SampleLinux: такт живого экрана - секунда замера /proc/stat.
 func SampleLinux(base Snapshot) Live {
 	out := Live{MemTotal: base.MemTotal, Title: Title(base)}
-	var wg sync.WaitGroup
 	var list []procs.Full
-	wg.Go(func() { out.CPU = cpuBusy(time.Second) })
-	wg.Go(func() {
-		if gs := nvidia(); len(gs) > 0 {
-			out.GPU, out.GPUValid, out.VRAM = gs[0].Util, true, gs[0].MemUsed
-		}
-	})
-	wg.Go(func() { list, _ = All() })
-	used, _ := sysinfo.Memory()
-	sw := linuxSwap()
-	out.MemUsed, out.SwapUsed, out.SwapTotal, out.Load = int64(used), sw.Used, sw.Total, sysinfo.Load()
-	wg.Wait()
+	par.All(
+		func() { out.CPU = cpuBusy(time.Second) },
+		func() {
+			if gs := nvidia(); len(gs) > 0 {
+				out.GPU, out.GPUValid, out.VRAM = gs[0].Util, true, gs[0].MemUsed
+			}
+		},
+		func() { list, _ = All() },
+		func() {
+			used, _ := sysinfo.Memory()
+			sw := linuxSwap()
+			out.MemUsed, out.SwapUsed, out.SwapTotal, out.Load = int64(used), sw.Used, sw.Total, sysinfo.Load()
+		},
+	)
 	if base.MemTotal > 0 {
 		out.Mem = int(out.MemUsed * 100 / base.MemTotal)
 	}

@@ -199,7 +199,8 @@ func diskRow(r diskuse.Row, home string) tui.DiskRow {
 		}
 		item := tui.DiskItem{Name: diskuse.ItemName(it.Path), Size: it.Size}
 		if g, ok := games[filepath.Base(it.Path)]; ok {
-			item.Name, item.Note = g.Name, diskuse.PlayedAgo(g.LastPlayed)
+			item.Name = g.Name
+			item.Note, item.Stale = diskuse.PlayedAgo(g.LastPlayed)
 		}
 		row.Items = append(row.Items, item)
 	}

@@ -1,9 +1,10 @@
 package sshx
 
-import "path/filepath"
+import (
+	"path/filepath"
 
-// privateNets остаются вне туннеля: локальная сеть и ресурсы корпоративного VPN.
-var privateNets = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	"github.com/TimurTurdyev/tim/internal/netinfo"
+)
 
 func ShuttlePidfile() string { return filepath.Join(StateDir(), "sshuttle.pid") }
 
@@ -16,7 +17,8 @@ func ShuttleArgs(server, serverIP string, dns bool, extra []string, pidfile stri
 	if serverIP != "" {
 		args = append(args, "-x", serverIP+"/32")
 	}
-	for _, n := range append(append([]string{}, privateNets...), extra...) {
+	// Частные сети остаются вне туннеля: локальная сеть и ресурсы корпоративного VPN.
+	for _, n := range append(append([]string{}, netinfo.PrivateNets...), extra...) {
 		args = append(args, "-x", n)
 	}
 	return append(args, "-D", "--pidfile", pidfile)

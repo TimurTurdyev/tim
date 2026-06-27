@@ -1,7 +1,6 @@
 package sysinfo
 
 import (
-	"net"
 	"os"
 	"runtime"
 	"strconv"
@@ -114,21 +113,6 @@ func ParseOSRelease(out string) string {
 	return ""
 }
 
-// IPv4: первый IPv4-адрес интерфейса.
-func IPv4(iface string) string {
-	ifc, err := net.InterfaceByName(iface)
-	if err != nil {
-		return ""
-	}
-	addrs, _ := ifc.Addrs()
-	for _, a := range addrs {
-		if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
-			return n.IP.String()
-		}
-	}
-	return ""
-}
-
 // DockerUp: демон docker отвечает на сокете. Сам docker ps на выключенном движке висит
 // или ругается, поэтому сначала ищется сокет.
 func DockerUp() bool {
@@ -178,13 +162,4 @@ func ParseUnits(out string) []Unit {
 		list = append(list, Unit{Name: strings.TrimSuffix(f[0], ".service"), Active: f[2], Sub: f[3], Description: strings.Join(f[4:], " ")})
 	}
 	return list
-}
-
-// GitStatus: состояние клона по git status -sb.
-func GitStatus(dir string) (GitState, bool) {
-	out, err := runner.Output("git", "-C", dir, "status", "-sb", "--porcelain")
-	if err != nil {
-		return GitState{}, false
-	}
-	return ParseGitStatusSB(out), true
 }

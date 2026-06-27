@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -169,11 +168,11 @@ func (h *hw) View(width, height int) string {
 	}
 	out = append(out, row("процессор", s.CPU, h.cpuH, ""))
 	if s.GPUValid {
-		out = append(out, row("видеокарта", s.GPU, h.gpuH, "видеопамять "+Human(s.VRAM)))
+		out = append(out, row("видеокарта", s.GPU, h.gpuH, "видеопамять "+ui.Bytes(s.VRAM)))
 	}
-	mem := Human(s.MemUsed) + " из " + Human(s.MemTotal)
+	mem := ui.Bytes(s.MemUsed) + " из " + ui.Bytes(s.MemTotal)
 	if s.SwapTotal > 0 {
-		mem += ", swap " + Human(s.SwapUsed)
+		mem += ", swap " + ui.Bytes(s.SwapUsed)
 	}
 	out = append(out, row("память", s.Mem, h.memH, mem))
 	if s.Disk > 0 {
@@ -186,7 +185,7 @@ func (h *hw) View(width, height int) string {
 	if len(s.Top) > 0 {
 		var rows []string
 		for _, r := range s.Top {
-			rows = append(rows, ui.Fit(ui.Clip(r.Name, 30), 32)+pctLevel(int(r.CPU/2)).Render(fmt.Sprintf("%5.0f%%", r.CPU))+"  "+styleDim.Render(ui.Fit(Human(r.RSS), 9)))
+			rows = append(rows, ui.Fit(ui.Clip(r.Name, 30), 32)+pctLevel(int(r.CPU/2)).Render(fmt.Sprintf("%5.0f%%", r.CPU))+"  "+styleDim.Render(ui.Fit(ui.Bytes(r.RSS), 9)))
 		}
 		for _, p := range Pane("больше всех", "CPU "+symDot+" память", rows, width-4) {
 			out = append(out, "  "+p)
@@ -217,7 +216,7 @@ func (h *hw) advice() string {
 	}
 	switch {
 	case s.SwapTotal > 0 && s.SwapUsed*2 > s.SwapTotal:
-		w := "swap " + Human(s.SwapUsed) + ": памяти не хватает"
+		w := "swap " + ui.Bytes(s.SwapUsed) + ": памяти не хватает"
 		if byMem != "" {
 			w += "; больше всех держит " + byMem
 		}
@@ -231,22 +230,9 @@ func (h *hw) advice() string {
 	case s.Mem >= 90:
 		w := "память почти кончилась"
 		if byMem != "" {
-			w += "; больше всех держит " + byMem + ", " + Human(topRSS)
+			w += "; больше всех держит " + byMem + ", " + ui.Bytes(topRSS)
 		}
 		return w
 	}
 	return ""
-}
-
-// durShort: длительность словом - для возраста процесса или сервера.
-func durShort(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return itoa(int(d.Seconds())) + " с"
-	case d < time.Hour:
-		return itoa(int(d.Minutes())) + " мин"
-	case d < 48*time.Hour:
-		return itoa(int(d.Hours())) + " ч"
-	}
-	return itoa(int(d.Hours()/24)) + " дн"
 }

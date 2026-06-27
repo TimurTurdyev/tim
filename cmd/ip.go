@@ -21,7 +21,7 @@ func geoLine(g *inspect.Geo) string {
 
 // geoVia: IP и геолокация через SOCKS-прокси.
 func geoVia(proxy string) (*inspect.Geo, error) {
-	ip, err := ipVia(proxy)
+	ip, err := netinfo.ExternalIP(proxy)
 	if err != nil {
 		return nil, err
 	}

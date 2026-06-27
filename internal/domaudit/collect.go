@@ -5,13 +5,18 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/asn"
+	"github.com/TimurTurdyev/tim/internal/par"
 )
 
 var errCrtStale = errors.New("не ответил, показан прошлый список имён")
@@ -40,12 +45,12 @@ type Host struct {
 
 // Addr: адрес, его сеть и имена, которые на него смотрят.
 type Addr struct {
-	IP     string   `json:"ip"`
-	PTR    string   `json:"ptr,omitempty"`
-	AS     ASInfo   `json:"as,omitempty"`
-	Hosts  []string `json:"hosts"`
-	CDN    bool     `json:"cdn,omitempty"`
-	Shared []string `json:"shared,omitempty"`
+	IP     string     `json:"ip"`
+	PTR    string     `json:"ptr,omitempty"`
+	AS     asn.ASInfo `json:"as,omitempty"`
+	Hosts  []string   `json:"hosts"`
+	CDN    bool       `json:"cdn,omitempty"`
+	Shared []string   `json:"shared,omitempty"`
 }
 
 // Report: всё, что собрано по домену.
@@ -86,7 +91,7 @@ func Collect(domain string, opt Options) *Report {
 			return
 		}
 		if opt.Notify != nil {
-			if c, ok := readCache(domain); ok && !opt.FreshCRT && time.Since(c.Fetched) < CacheTTL {
+			if c, ok := readCache(domain); ok && !opt.FreshCRT && c.Fresh(CacheTTL) {
 				opt.Notify("логи сертификатов из кэша, обновить: --fresh")
 			} else {
 				opt.Notify("спрашиваю логи сертификатов")
@@ -126,25 +131,13 @@ func Collect(domain string, opt Options) *Report {
 		name string
 		ips  []string
 	}
-	found := make([]resolved, 0, len(names))
-	sem := make(chan struct{}, 16)
-	var rwg sync.WaitGroup
-	var rmu sync.Mutex
-	for n := range names {
-		rwg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			ips := lookup(n)
-			if len(ips) == 0 {
-				return
-			}
-			rmu.Lock()
-			found = append(found, resolved{n, ips})
-			rmu.Unlock()
-		})
+	all := slices.Sorted(maps.Keys(names))
+	var found []resolved
+	for i, ips := range par.Map(all, 16, lookup) {
+		if len(ips) > 0 {
+			found = append(found, resolved{all[i], ips})
+		}
 	}
-	rwg.Wait()
-	sort.Slice(found, func(i, j int) bool { return found[i].name < found[j].name })
 
 	byIP := map[string][]string{}
 	for _, f := range found {
@@ -159,30 +152,21 @@ func Collect(domain string, opt Options) *Report {
 		ips = append(ips, ip)
 	}
 	sort.Strings(ips)
-	asn := Cymru(ips)
+	owners := asn.Cymru(ips)
 	for _, ip := range ips {
-		a := Addr{IP: ip, AS: asn[ip], Hosts: byIP[ip]}
-		a.CDN = IsCDN(a.AS.Name)
+		a := Addr{IP: ip, AS: owners[ip], Hosts: byIP[ip]}
+		a.CDN = asn.IsCDN(a.AS.Name)
 		rep.Addrs = append(rep.Addrs, a)
 	}
 
-	var pwg sync.WaitGroup
-	psem := make(chan struct{}, 16)
+	probes := par.NewGroup(16)
 	for i := range rep.Addrs {
-		pwg.Go(func() {
-			psem <- struct{}{}
-			defer func() { <-psem }()
-			rep.Addrs[i].PTR = ptr(rep.Addrs[i].IP)
-		})
+		probes.Go(func() { rep.Addrs[i].PTR = ptr(rep.Addrs[i].IP) })
 	}
 	for i := range rep.Hosts {
-		pwg.Go(func() {
-			psem <- struct{}{}
-			defer func() { <-psem }()
-			probe(&rep.Hosts[i])
-		})
+		probes.Go(func() { probe(&rep.Hosts[i]) })
 	}
-	pwg.Wait()
+	probes.Wait()
 
 	// Счётчики берём с главной страницы домена.
 	for _, h := range rep.Hosts {
@@ -197,7 +181,7 @@ func Collect(domain string, opt Options) *Report {
 	if !opt.SkipNeighbors {
 		for i := range rep.Addrs {
 			a := &rep.Addrs[i]
-			if a.CDN || !contains(a.Hosts, domain) {
+			if a.CDN || !slices.Contains(a.Hosts, domain) {
 				continue
 			}
 			list, err := neighbors(a.IP, domain)
@@ -212,46 +196,27 @@ func Collect(domain string, opt Options) *Report {
 	return rep
 }
 
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 // certSources: откуда берутся имена. CertSpotter быстрый, crt.sh глубже по истории, hostsearch видит то,
 // чего нет в сертификатах. Опрашиваются параллельно, результат объединяется.
 func certSources(domain string, withQuota bool) (subs, related []string, used []string, err error) {
+	type source struct {
+		name string
+		fn   func(string) ([]string, []string, error)
+	}
 	type res struct {
 		name    string
 		subs    []string
 		related []string
 		err     error
 	}
-	jobs := []struct {
-		name string
-		fn   func(string) ([]string, []string, error)
-	}{
-		{"certspotter", fromCertSpotter},
-		{"crt.sh", crtOnce},
-	}
+	sources := []source{{"certspotter", fromCertSpotter}, {"crt.sh", crtOnce}}
 	if withQuota {
-		jobs = append(jobs, struct {
-			name string
-			fn   func(string) ([]string, []string, error)
-		}{"hostsearch", fromHostSearch})
+		sources = append(sources, source{"hostsearch", fromHostSearch})
 	}
-	out := make([]res, len(jobs))
-	var wg sync.WaitGroup
-	for i, j := range jobs {
-		wg.Go(func() {
-			s, r, e := j.fn(domain)
-			out[i] = res{name: j.name, subs: s, related: r, err: e}
-		})
-	}
-	wg.Wait()
+	out := par.Map(sources, len(sources), func(src source) res {
+		s, r, e := src.fn(domain)
+		return res{name: src.name, subs: s, related: r, err: e}
+	})
 	seenS, seenR := map[string]bool{}, map[string]bool{}
 	var fails []string
 	for _, r := range out {
@@ -284,8 +249,8 @@ func certSources(domain string, withQuota bool) (subs, related []string, used []
 // fromCRT: имена из источников с кэшем на сутки; при полном отказе берётся прошлый список.
 func fromCRT(domain string, fresh, withQuota bool) (subs, related []string, cached time.Time, err error) {
 	c, has := readCache(domain)
-	if has && !fresh && time.Since(c.Fetched) < CacheTTL {
-		return c.Subs, c.Related, c.Fetched, nil
+	if has && !fresh && c.Fresh(CacheTTL) {
+		return c.Value.Subs, c.Value.Related, c.Fetched, nil
 	}
 	subs, related, _, err = certSources(domain, withQuota)
 	if err == nil {
@@ -293,7 +258,7 @@ func fromCRT(domain string, fresh, withQuota bool) (subs, related []string, cach
 		return subs, related, time.Time{}, nil
 	}
 	if has {
-		return c.Subs, c.Related, c.Fetched, errCrtStale
+		return c.Value.Subs, c.Value.Related, c.Fetched, errCrtStale
 	}
 	return nil, nil, time.Time{}, err
 }
@@ -349,22 +314,11 @@ func crtOnce(domain string) ([]string, []string, error) {
 
 func bruteforce(domain string) []string {
 	var out []string
-	var mu sync.Mutex
-	sem := make(chan struct{}, 24)
-	var wg sync.WaitGroup
-	for _, p := range Common {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			n := p + "." + domain
-			if len(lookup(n)) > 0 {
-				mu.Lock()
-				out = append(out, n)
-				mu.Unlock()
-			}
-		})
+	for i, ips := range par.Map(Common, 24, func(p string) []string { return lookup(p + "." + domain) }) {
+		if len(ips) > 0 {
+			out = append(out, Common[i]+"."+domain)
+		}
 	}
-	wg.Wait()
 	return out
 }
 
@@ -391,25 +345,6 @@ func ptr(ip string) string {
 		return ""
 	}
 	return strings.TrimSuffix(names[0], ".")
-}
-
-// Cymru спрашивает сведения обо всех адресах одним соединением.
-func Cymru(ips []string) map[string]ASInfo {
-	if len(ips) == 0 {
-		return nil
-	}
-	conn, err := net.DialTimeout("tcp", "whois.cymru.com:43", httpTimeout)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
-	q := "begin\nverbose\n" + strings.Join(ips, "\n") + "\nend\n"
-	if _, err := io.WriteString(conn, q); err != nil {
-		return nil
-	}
-	data, _ := io.ReadAll(io.LimitReader(conn, 1<<20))
-	return ParseCymru(string(data))
 }
 
 // probe: отвечает ли имя по HTTPS, иначе по HTTP.

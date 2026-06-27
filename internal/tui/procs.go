@@ -113,7 +113,7 @@ func (p *procsScreen) Status() string {
 	case p.loading && len(p.data.Groups) == 0:
 		return "смотрю..."
 	}
-	return fmt.Sprintf("CPU %d%% %s память %s из %s", p.data.CPU, symDot, Human(p.data.MemUsed), Human(p.data.MemTotal))
+	return fmt.Sprintf("CPU %d%% %s память %s из %s", p.data.CPU, symDot, ui.Bytes(p.data.MemUsed), ui.Bytes(p.data.MemTotal))
 }
 
 func (p *procsScreen) Command() string {
@@ -167,11 +167,11 @@ func (p *procsScreen) refill() {
 			if g.CPU < 5 {
 				cpu = styleDim.Render(fmt.Sprintf("%5.0f%%", g.CPU))
 			}
-			tail := styleDim.Render(fmt.Sprintf("  %-13s %s", plural(len(g.Procs), "процесс", "процесса", "процессов"), durShort(g.Age)))
+			tail := styleDim.Render(fmt.Sprintf("  %-13s %s", ui.Count(len(g.Procs), "процесс", "процесса", "процессов"), ui.Short(g.Age)))
 			if g.Protected {
 				tail = styleDim.Render("  системный")
 			}
-			return SelRow(sel, w, name+cpu+"  "+styleText.Render(ui.Fit(Human(g.RSS), 8))+tail)
+			return SelRow(sel, w, name+cpu+"  "+styleText.Render(ui.Fit(ui.Bytes(g.RSS), 8))+tail)
 		}})
 	}
 	if p.list.Cursor >= len(p.list.Rows) {
@@ -283,13 +283,13 @@ func (p *procsScreen) confirmClose(app *App, force bool) tea.Cmd {
 	switch {
 	case force:
 		d.Title = "Убить " + g.Name + " принудительно?"
-		d.Lines = []string{"SIGKILL " + plural(len(g.Procs), "процессу", "процессам", "процессам") + ", несохранённое пропадёт."}
+		d.Lines = []string{"SIGKILL " + ui.Count(len(g.Procs), "процессу", "процессам", "процессам") + ", несохранённое пропадёт."}
 		d.OK, d.Danger = "Убить", true
 	case g.IsApp:
 		d.Lines = []string{"Как Cmd+Q: приложение само спросит про несохранённое и закроет окна.",
 			"Не закроется за 8 с - X закроет принудительно."}
 	default:
-		d.Lines = []string{"SIGTERM " + plural(len(g.Procs), "процессу", "процессам", "процессам") + ", потом ждём до 5 с."}
+		d.Lines = []string{"SIGTERM " + ui.Count(len(g.Procs), "процессу", "процессам", "процессам") + ", потом ждём до 5 с."}
 	}
 	d.Yes = func() tea.Cmd {
 		p.closing = g.Name
@@ -327,7 +327,7 @@ func (p *procsScreen) View(width, height int) string {
 				rows = append(rows, styleDim.Render(fmt.Sprintf("ещё %d  %s  enter - раскрыть", len(cur.Procs)-limit, symDot)))
 				break
 			}
-			line := styleDim.Render(fmt.Sprintf("%4.0f%%", r.CPU)) + "  " + ui.Fit(Human(r.RSS), 8) + "  " + ui.Fit(ui.Clip(r.Name, 40), 42) + styleDim.Render("pid "+r.PID)
+			line := styleDim.Render(fmt.Sprintf("%4.0f%%", r.CPU)) + "  " + ui.Fit(ui.Bytes(r.RSS), 8) + "  " + ui.Fit(ui.Clip(r.Name, 40), 42) + styleDim.Render("pid "+r.PID)
 			if r.Note != "" {
 				line += "  " + styleAmber.Render(r.Note)
 			}
@@ -336,7 +336,7 @@ func (p *procsScreen) View(width, height int) string {
 		if w := groupAdvice(*cur); w != "" {
 			rows = append(rows, styleAmber.Render(symWarn+" "+w))
 		}
-		sub := plural(len(cur.Procs), "процесс", "процесса", "процессов") + " " + symDot + " " + durShort(cur.Age)
+		sub := ui.Count(len(cur.Procs), "процесс", "процесса", "процессов") + " " + symDot + " " + ui.Short(cur.Age)
 		pane = Pane(cur.Name, sub, rows, width-4)
 	}
 	listH := max(3, height-len(out)-len(pane)-1)
@@ -357,11 +357,11 @@ func (p *procsScreen) View(width, height int) string {
 func groupAdvice(g ProcGroup) string {
 	switch {
 	case g.CPU >= 100 && g.IsApp:
-		return fmt.Sprintf("%s и %.0f%% CPU - обычно одна тяжёлая вкладка или задача: закрой её внутри, или приложение здесь", Human(g.RSS), g.CPU)
+		return fmt.Sprintf("%s и %.0f%% CPU - обычно одна тяжёлая вкладка или задача: закрой её внутри, или приложение здесь", ui.Bytes(g.RSS), g.CPU)
 	case g.CPU >= 100:
 		return fmt.Sprintf("%.0f%% CPU - занято больше ядра; если это не сборка или индексация, стоит закрыть", g.CPU)
 	case g.RSS >= 4<<30:
-		return Human(g.RSS) + " памяти - больше, чем обычно нужно; перезапуск вернёт память"
+		return ui.Bytes(g.RSS) + " памяти - больше, чем обычно нужно; перезапуск вернёт память"
 	}
 	for _, r := range g.Procs {
 		if r.Note != "" {

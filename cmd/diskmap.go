@@ -192,7 +192,13 @@ func printMapRow(r diskuse.Row, top int64) {
 			}
 			label := diskuse.ItemName(it.Path)
 			if g, ok := games[filepath.Base(it.Path)]; ok {
-				label = g.Name + " " + ui.Bytes(it.Size) + ", " + diskuse.PlayedAgo(g.LastPlayed)
+				played, stale := diskuse.PlayedAgo(g.LastPlayed)
+				if stale {
+					played = ui.Warn(played)
+				} else {
+					played = ui.Dim(played)
+				}
+				label = g.Name + " " + ui.Bytes(it.Size) + ", " + played
 				ui.Println(indent + label)
 				parts = append(parts, "")
 				continue

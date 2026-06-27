@@ -86,7 +86,7 @@ func (p *projects) Status() string {
 			running++
 		}
 	}
-	return plural(len(p.opts.Rows), "проект", "проекта", "проектов") + " " + symDot + " " + plural(running, "запущен", "запущено", "запущено")
+	return ui.Count(len(p.opts.Rows), "проект", "проекта", "проектов") + " " + symDot + " " + ui.Count(running, "запущен", "запущено", "запущено")
 }
 
 func (p *projects) Command() string {
@@ -263,18 +263,6 @@ func (p *projects) View(width, height int) string {
 		return strings.Join(Beside(left, 53, card, width), "\n")
 	}
 	return strings.Join(left, "\n")
-}
-
-func plural(n int, one, few, many string) string {
-	w := many
-	switch {
-	case n%100 >= 11 && n%100 <= 14:
-	case n%10 == 1:
-		w = one
-	case n%10 >= 2 && n%10 <= 4:
-		w = few
-	}
-	return itoa(n) + " " + w
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

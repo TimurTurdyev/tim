@@ -68,7 +68,7 @@ func (l *leftovers) Status() string {
 	for _, g := range l.shown() {
 		sum += g.Size
 	}
-	return "найдено " + Human(sum)
+	return "найдено " + ui.Bytes(sum)
 }
 
 func (l *leftovers) Command() string { return "tim disk --leftovers" }
@@ -110,7 +110,7 @@ func (l *leftovers) refill() {
 			if !g.Sure && !g.Hidden {
 				note = styleAmber.Render(g.Note)
 			}
-			return SelRow(sel, w, box+" "+styleText.Render(ui.Fit(Human(g.Size), 9))+"  "+name+note)
+			return SelRow(sel, w, box+" "+styleText.Render(ui.Fit(ui.Bytes(g.Size), 9))+"  "+name+note)
 		}})
 	}
 	if l.list.Cursor >= len(l.list.Rows) {
@@ -177,7 +177,7 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 	for _, g := range l.shown() {
 		if l.marked[g.ID] {
 			picked = append(picked, g)
-			lines = append(lines, ui.Fit(Human(g.Size), 9)+"  "+g.Name+"  "+styleDim.Render(g.Owner))
+			lines = append(lines, ui.Fit(ui.Bytes(g.Size), 9)+"  "+g.Name+"  "+styleDim.Render(g.Owner))
 			sum += g.Size
 		}
 	}
@@ -197,7 +197,7 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 		Lines:   lines,
 		Command: cmd,
 		Note:    "Файлы уходят в Корзину, агенты автозапуска выгружаются, процессы останавливаются.",
-		OK:      "Убрать " + Human(sum),
+		OK:      "Убрать " + ui.Bytes(sum),
 		Danger:  true,
 		Yes: func() tea.Cmd {
 			var errs []string
@@ -210,7 +210,7 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 				freed += g.Size
 			}
 			l.marked = map[string]bool{}
-			toast := app.Toast("ok", "в Корзине "+Human(freed)+", место освободится после её очистки")
+			toast := app.Toast("ok", "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки")
 			if len(errs) > 0 {
 				toast = app.Toast("bad", strings.Join(errs, "; "))
 			}
@@ -235,7 +235,7 @@ func (l *leftovers) View(width, height int) string {
 		for _, g := range l.groups {
 			sum += g.Size
 		}
-		out = append(out, "  "+styleDim.Render("крупных хвостов нет; h - показать "+itoa(len(l.groups))+" мелких на "+Human(sum)))
+		out = append(out, "  "+styleDim.Render("крупных хвостов нет; h - показать "+itoa(len(l.groups))+" мелких на "+ui.Bytes(sum)))
 		return strings.Join(out, "\n")
 	}
 	var pane []string
@@ -246,7 +246,7 @@ func (l *leftovers) View(width, height int) string {
 				rows = append(rows, styleDim.Render("ещё "+itoa(len(g.Items)-5)))
 				break
 			}
-			line := styleDim.Render(ui.Fit(Human(it.Size), 9)) + "  " + it.Path
+			line := styleDim.Render(ui.Fit(ui.Bytes(it.Size), 9)) + "  " + it.Path
 			if it.Note != "" {
 				line += "  " + styleAmber.Render(it.Note)
 			}
@@ -267,7 +267,7 @@ func (l *leftovers) View(width, height int) string {
 		}
 	}
 	if n > 0 {
-		out = append(out, "  "+styleBad.Render("отмечено "+itoa(n)+" "+symDot+" "+Human(sum))+styleDim.Render("   x - убрать"))
+		out = append(out, "  "+styleBad.Render("отмечено "+itoa(n)+" "+symDot+" "+ui.Bytes(sum))+styleDim.Render("   x - убрать"))
 	} else {
 		out = append(out, "")
 	}

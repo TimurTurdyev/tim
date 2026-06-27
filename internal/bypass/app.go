@@ -91,7 +91,7 @@ func runningUnder(gid int) []string {
 			mine = append(mine, procs.AppName(f[2]))
 		}
 	}
-	return Uniq(mine)
+	return uniq(mine)
 }
 
 // AppCheck: правила на месте и действительно работают - curl под группой видит другую страну.

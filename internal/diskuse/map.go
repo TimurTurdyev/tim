@@ -1,7 +1,6 @@
 package diskuse
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -18,10 +18,10 @@ import (
 
 // Обзор диска: замер с кэшем, строки по местам, тома, Steam и Chrome.
 
-type cache struct {
-	At    time.Time `json:"at"`
-	Roots []string  `json:"roots"`
-	Tree  Tree      `json:"tree"`
+// measured: дерево размеров и какие корни в нём измерены.
+type measured struct {
+	Roots []string `json:"roots"`
+	Tree  Tree     `json:"tree"`
 }
 
 // Row: строка обзора - место или группа мест (игры, виртуалки) с разбивкой.
@@ -60,13 +60,8 @@ func CachePath() string { return paths.State("disk-map.json") }
 // Map: дерево размеров. Свежий замер домашней папки идёт десятки секунд, поэтому
 // результат живёт 15 минут: сразу после краткого обзора --all не пересчитывает заново.
 func Map(roots []string, fresh bool, progress func(done, total int, root string)) (Tree, time.Time) {
-	if !fresh {
-		if data, err := os.ReadFile(CachePath()); err == nil {
-			var c cache
-			if json.Unmarshal(data, &c) == nil && coveredBy(c.Roots, roots) && time.Since(c.At) < 15*time.Minute {
-				return c.Tree, c.At
-			}
-		}
+	if c, ok := cache.Load[measured](CachePath()); ok && !fresh && c.Fresh(15*time.Minute) && coveredBy(c.Value.Roots, roots) {
+		return c.Value.Tree, c.Fetched
 	}
 	skip := map[string]bool{"/proc": true, "/sys": true, "/dev": true, "/run": true}
 	t := Tree{}
@@ -80,9 +75,7 @@ func Map(roots []string, fresh bool, progress func(done, total int, root string)
 		}
 	}
 	pruned := t.Prune(50 << 20)
-	if data, err := json.Marshal(cache{At: time.Now(), Roots: roots, Tree: pruned}); err == nil {
-		_ = runner.WriteAtomic(CachePath(), data, 0o600)
-	}
+	_ = cache.Store(CachePath(), measured{Roots: roots, Tree: pruned}, 0o600)
 	return pruned, time.Now()
 }
 
@@ -150,17 +143,12 @@ func repoRoot(path string) string {
 	return ""
 }
 
-// PlayedAgo: когда последний раз запускали игру; давно - предупреждением, это первые кандидаты.
-func PlayedAgo(t time.Time) string {
+// PlayedAgo: когда последний раз запускали игру; stale - давно или никогда, это первые кандидаты.
+func PlayedAgo(t time.Time) (text string, stale bool) {
 	if t.IsZero() {
-		return ui.Warn("не запускали")
+		return "не запускали", true
 	}
-	days := int(time.Since(t).Hours() / 24)
-	text := "играли " + t.Format("02.01.2006")
-	if days > 180 {
-		return ui.Warn(text)
-	}
-	return ui.Dim(text)
+	return "играли " + t.Format("02.01.2006"), time.Since(t) > 180*24*time.Hour
 }
 
 // VolumeRows: другие тома того же контейнера APFS. Их место вычитается из свободного,
@@ -225,24 +213,6 @@ func (tree Tree) MoveInTree(path, trash string) {
 			tree[d] += size
 		}
 	}
-}
-
-func LastCommit(dir string) time.Time {
-	out, err := runner.Output("git", "-C", dir, "log", "-1", "--format=%ct")
-	if err != nil {
-		return time.Time{}
-	}
-	sec, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-	if err != nil {
-		return time.Time{}
-	}
-	return time.Unix(sec, 0)
-}
-
-// Tracked: лежит ли в папке что-то под git - закоммиченный vendor или build пересоздать нельзя.
-func Tracked(path string) bool {
-	out, err := runner.Output("git", "-C", filepath.Dir(path), "ls-files", "--", filepath.Base(path))
-	return err == nil && strings.TrimSpace(out) != ""
 }
 
 // ParseSize: 50M, 1G, 500K или байты.

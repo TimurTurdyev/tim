@@ -16,6 +16,8 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/diskuse"
+	"github.com/TimurTurdyev/tim/internal/gitx"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/shellq"
@@ -134,8 +136,7 @@ func diskSystem() error {
 	roots := map[string]string{diskuse.Caches: "2", diskuse.DotCache: "1"}
 	sizes := map[string]int64{}
 	var mu sync.Mutex
-	sem := make(chan struct{}, 6)
-	var wg sync.WaitGroup
+	g := par.NewGroup(6)
 	measure := func(rel string, args ...string) {
 		full := rel
 		if !filepath.IsAbs(rel) {
@@ -144,9 +145,7 @@ func diskSystem() error {
 		if _, err := os.Stat(full); err != nil {
 			return
 		}
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
+		g.Go(func() {
 			// du без прав на часть подпапок пишет ошибки, но итог печатает - его и берём.
 			out, _ := runner.OutputWithin(0, "du", append(args, full)...)
 			got := diskuse.ParseDu(out, home)
@@ -167,7 +166,7 @@ func diskSystem() error {
 			measure(rel, "-sk")
 		}
 	}
-	wg.Wait()
+	g.Wait()
 	list := diskuse.SummarizeSystem(diskuse.SystemPlaces, sizes)
 	var total int64
 	for _, m := range list {
@@ -237,32 +236,23 @@ func lastTouched(path string, commits func(dir string) time.Time) time.Time {
 func cleanStale(items []diskuse.Item, min int64) error {
 	touched := map[string]time.Time{}
 	var mu sync.Mutex
-	var wg sync.WaitGroup
 	commits := map[string]func() time.Time{}
 	commitOf := func(dir string) time.Time {
 		mu.Lock()
 		f, ok := commits[dir]
 		if !ok {
-			f = sync.OnceValue(func() time.Time { return diskuse.LastCommit(dir) })
+			f = sync.OnceValue(func() time.Time { return gitx.LastCommit(dir) })
 			commits[dir] = f
 		}
 		mu.Unlock()
 		return f()
 	}
-	sem := make(chan struct{}, 8)
-	for _, it := range items {
-		wg.Go(func() {
-			sem <- struct{}{}
-			t := lastTouched(it.Path, commitOf)
-			<-sem
-			mu.Lock()
-			touched[it.Path] = t
-			mu.Unlock()
-		})
+	times := par.Map(items, par.Limit, func(it diskuse.Item) time.Time { return lastTouched(it.Path, commitOf) })
+	for i, it := range items {
+		touched[it.Path] = times[i]
 	}
-	wg.Wait()
 	stale := slices.DeleteFunc(diskuse.Stale(items, touched, time.Now(), diskDays, min), func(it diskuse.Item) bool {
-		if diskuse.Tracked(it.Path) {
+		if gitx.Tracked(it.Path) {
 			ui.Println(ui.Dim("пропускаю " + it.Path + ": лежит в git"))
 			return true
 		}
@@ -341,19 +331,9 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 			return err
 		}
 		dirs := diskuse.Find(root, 6)
-		items := make([]diskuse.Item, len(dirs))
-		sem := make(chan struct{}, 8)
-		var wg sync.WaitGroup
-		for i, d := range dirs {
-			wg.Go(func() {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				out, _ := runner.OutputWithin(0, "du", "-sk", d)
-				kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
-				items[i] = diskuse.Item{Path: d, Kind: filepath.Base(d), Size: kb * 1024}
-			})
-		}
-		wg.Wait()
+		items := par.Map(dirs, par.Limit, func(d string) diskuse.Item {
+			return diskuse.Item{Path: d, Kind: filepath.Base(d), Size: diskuse.SizeOf(d)}
+		})
 		if diskClean {
 			return cleanStale(items, min)
 		}

@@ -7,37 +7,33 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/fill"
+	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
-	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 )
 
 // EnvGit: два вопроса к git про .env; ответ "нет" при любой ошибке, чтобы не шуметь.
 func EnvGit(dir string) health.EnvGit {
-	var e health.EnvGit
-	if _, err := os.Stat(filepath.Join(dir, ".env")); err == nil {
-		e.Exists = true
-		_, err := runner.Output("git", "-C", dir, "check-ignore", "-q", ".env")
-		e.Ignored = err == nil
+	env := filepath.Join(dir, ".env")
+	e := health.EnvGit{Tracked: gitx.Tracked(env)}
+	if _, err := os.Stat(env); err == nil {
+		e.Exists, e.Ignored = true, gitx.Ignored(env)
 	}
-	_, err := runner.Output("git", "-C", dir, "ls-files", "--error-unmatch", ".env")
-	e.Tracked = err == nil
 	return e
 }
 
 // GitCheck: состояние клона. Сам запуск git остаётся здесь, решение об уровне - в health.
 func GitCheck(dir string) health.Check {
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+	if !gitx.IsRepo(dir) {
 		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
 	}
-	g, ok := sysinfo.GitStatus(dir)
+	g, ok := gitx.Status(dir)
 	if !ok {
 		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
 	}
@@ -47,27 +43,22 @@ func GitCheck(dir string) health.Check {
 // CheckRow: все проверки одного проекта. Сетевые идут параллельно; local и net оставляют только
 // локальные или только сетевые.
 func CheckRow(p *config.Project, dir string, local, net bool) health.Row {
-	r := health.Row{Name: p.Name}
-	var mu sync.Mutex
-	add := func(c health.Check) {
-		mu.Lock()
-		r.Checks = append(r.Checks, c)
-		mu.Unlock()
-	}
-	var wg sync.WaitGroup
+	var checks []func() health.Check
 	if !net {
-		add(GitCheck(dir))
+		checks = append(checks, func() health.Check { return GitCheck(dir) })
 	}
 	host, _ := netinfo.HostPort(p.URL, "")
 	if !local && p.URL != "" && host != "" && !fill.Local(host) {
-		wg.Go(func() { add(health.Site(p.URL)) })
-		wg.Go(func() { add(health.Cert(host)) })
 		base := inspect.Registrable(host)
-		wg.Go(func() { add(health.Mail(base)) })
-		wg.Go(func() { add(health.DomainReg(base)) })
+		checks = append(checks,
+			func() health.Check { return health.Site(p.URL) },
+			func() health.Check { return health.Cert(host) },
+			func() health.Check { return health.Mail(base) },
+			func() health.Check { return health.DomainReg(base) },
+		)
 	}
-	wg.Wait()
-	return r
+	run := func(check func() health.Check) health.Check { return check() }
+	return health.Row{Name: p.Name, Checks: par.Map(checks, len(checks), run)}
 }
 
 // Report: что за сайт - адреса, регистрация, сертификат, ответ HTTP.
@@ -90,49 +81,27 @@ type TLS struct {
 // Collect: всё о сайте разом и параллельно.
 func Collect(host, target string) *Report {
 	r := &Report{Host: host, Errors: map[string]string{}}
-	var mu sync.Mutex
-	fail := func(k string, err error) {
-		mu.Lock()
-		r.Errors[k] = err.Error()
-		mu.Unlock()
+	var dnsErr, geoErr, domainErr, tlsErr, httpErr error
+	par.All(
+		func() {
+			if r.IPs, dnsErr = net.LookupHost(host); dnsErr == nil {
+				r.Geo, geoErr = inspect.IPGeo(r.IPs[0])
+			}
+		},
+		func() { r.Domain, domainErr = inspect.Registration(inspect.Registrable(host)) },
+		func() {
+			info, err := inspect.Cert(host, "443")
+			if tlsErr = err; err == nil {
+				r.TLS = &TLS{Issuer: info.Leaf().Issuer.CommonName, Expires: info.Leaf().NotAfter, Verified: info.VerifyErr == nil}
+			}
+		},
+		func() { r.HTTP, httpErr = inspect.HTTP(target) },
+	)
+	for k, err := range map[string]error{"dns": dnsErr, "geo": geoErr, "domain": domainErr, "tls": tlsErr, "http": httpErr} {
+		if err != nil {
+			r.Errors[k] = err.Error()
+		}
 	}
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		ips, err := net.LookupHost(host)
-		if err != nil {
-			fail("dns", err)
-			return
-		}
-		r.IPs = ips
-		if g, err := inspect.IPGeo(ips[0]); err == nil {
-			r.Geo = g
-		} else {
-			fail("geo", err)
-		}
-	})
-	wg.Go(func() {
-		if d, err := inspect.Registration(inspect.Registrable(host)); err == nil {
-			r.Domain = d
-		} else {
-			fail("domain", err)
-		}
-	})
-	wg.Go(func() {
-		info, err := inspect.Cert(host, "443")
-		if err != nil {
-			fail("tls", err)
-			return
-		}
-		r.TLS = &TLS{Issuer: info.Leaf().Issuer.CommonName, Expires: info.Leaf().NotAfter, Verified: info.VerifyErr == nil}
-	})
-	wg.Go(func() {
-		if p, err := inspect.HTTP(target); err == nil {
-			r.HTTP = p
-		} else {
-			fail("http", err)
-		}
-	})
-	wg.Wait()
 	return r
 }
 
@@ -146,24 +115,14 @@ type Expiry struct {
 
 // Expiries: сертификаты списком, параллельно; проблемные и ближайшие по сроку первыми.
 func Expiries(hosts []string) []Expiry {
-	rows := make([]Expiry, len(hosts))
-	var wg sync.WaitGroup
-	for i, h := range hosts {
-		wg.Go(func() {
-			host, port := netinfo.HostPort(h, "443")
-			rows[i].Host = host
-			info, err := inspect.Cert(host, port)
-			if err != nil {
-				rows[i].Err = err
-				return
-			}
-			rows[i].Expires, rows[i].Issuer = info.Leaf().NotAfter, info.Leaf().Issuer.CommonName
-			if info.VerifyErr != nil {
-				rows[i].Err = info.VerifyErr
-			}
-		})
-	}
-	wg.Wait()
+	rows := par.Map(hosts, par.Limit, func(h string) Expiry {
+		host, port := netinfo.HostPort(h, "443")
+		info, err := inspect.Cert(host, port)
+		if err != nil {
+			return Expiry{Host: host, Err: err}
+		}
+		return Expiry{Host: host, Expires: info.Leaf().NotAfter, Issuer: info.Leaf().Issuer.CommonName, Err: info.VerifyErr}
+	})
 	sort.SliceStable(rows, func(a, b int) bool {
 		if (rows[a].Err != nil) != (rows[b].Err != nil) {
 			return rows[a].Err != nil
@@ -181,20 +140,10 @@ type MailVerdict struct {
 
 // MailVerdicts: почта по доменам, параллельно, в том же порядке.
 func MailVerdicts(domains []string) []MailVerdict {
-	rows := make([]MailVerdict, len(domains))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	for i, d := range domains {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			m := inspect.MailCheck(d, inspect.DKIMSelectors)
-			level, missing := m.Verdict()
-			rows[i] = MailVerdict{d, level, missing}
-		})
-	}
-	wg.Wait()
-	return rows
+	return par.Map(domains, par.Limit, func(d string) MailVerdict {
+		level, missing := inspect.MailCheck(d, inspect.DKIMSelectors).Verdict()
+		return MailVerdict{d, level, missing}
+	})
 }
 
 // dkimRevoked: тег p= пустой - ключ отозван.

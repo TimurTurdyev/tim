@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
@@ -54,13 +55,10 @@ func Measure(root string, depth int, skip map[string]bool, progress func(done, t
 		}
 	}
 	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
+	g := par.NewGroup(par.Limit)
 	done := 0
 	for _, p := range tasks {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
+		g.Go(func() {
 			// du без прав на часть подпапок пишет ошибки, но итоги печатает - их и берём.
 			out, _ := runner.OutputWithin(0, "du", "-xk", "-d", strconv.Itoa(max(depth-2, 0)), p)
 			got := ParseDuAbs(out)
@@ -75,7 +73,7 @@ func Measure(root string, depth int, skip map[string]bool, progress func(done, t
 			mu.Unlock()
 		})
 	}
-	wg.Wait()
+	g.Wait()
 	for _, p1 := range parents[root] {
 		t[p1] = loose[p1]
 		for _, p2 := range parents[p1] {
@@ -107,6 +105,14 @@ func device(p string) (uint64, bool) {
 		return 0, false
 	}
 	return uint64(st.Dev), true
+}
+
+// SizeOf: место, которое папка занимает на диске, по du -sk; без прав на часть подпапок - сколько видно.
+func SizeOf(path string) int64 {
+	out, _ := runner.OutputWithin(0, "du", "-sk", path)
+	kb, _, _ := strings.Cut(out, "\t")
+	n, _ := strconv.ParseInt(strings.TrimSpace(kb), 10, 64)
+	return n * 1024
 }
 
 // ParseDuAbs: вывод du -k -> размер в байтах по пути как есть.

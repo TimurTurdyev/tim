@@ -15,8 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/bypass"
+	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -148,7 +151,7 @@ func motdSystem() []string {
 	run(func() { batt, _ = runner.Output("pmset", "-g", "batt") })
 	run(func() {
 		if phys, ok := netinfo.PhysIface(); ok {
-			ip = sysinfo.IPv4(phys.Device)
+			ip = netinfo.IfaceIPv4(phys.Device)
 		}
 	})
 	run(func() {
@@ -208,7 +211,7 @@ func motdSystem() []string {
 	return append([]string{line1, line2}, machine.HogLines("")...)
 }
 
-func gitLine(g sysinfo.GitState) string {
+func gitLine(g gitx.State) string {
 	parts := []string{g.Branch}
 	if g.Changes > 0 {
 		parts = append(parts, ui.Warn(strconv.Itoa(g.Changes)+" изм."))
@@ -230,7 +233,7 @@ func motdProject() []string {
 	}
 	dir := cfg.ProjectDir(p)
 	line := ui.Label("проект   ") + p.Name + ui.Dim("  "+run.Stack(dir))
-	if g, ok := sysinfo.GitStatus(dir); ok {
+	if g, ok := gitx.Status(dir); ok {
 		line += "  " + gitLine(g)
 	}
 	port := run.ProjectPort(p, dir)
@@ -342,29 +345,24 @@ func motdServices() []string {
 func motdRepos() []string {
 	type row struct {
 		name string
-		g    sysinfo.GitState
+		g    gitx.State
 	}
-	var mu sync.Mutex
-	var rows []row
-	sem := make(chan struct{}, 8)
-	var wg sync.WaitGroup
+	var repos []*config.Project
 	for i := range cfg.Projects {
-		p := &cfg.Projects[i]
-		dir := cfg.ProjectDir(p)
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-			continue
+		if _, err := os.Stat(filepath.Join(cfg.ProjectDir(&cfg.Projects[i]), ".git")); err == nil {
+			repos = append(repos, &cfg.Projects[i])
 		}
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			if g, ok := sysinfo.GitStatus(dir); ok && (g.Changes > 0 || g.Ahead > 0) {
-				mu.Lock()
-				rows = append(rows, row{p.Name, g})
-				mu.Unlock()
-			}
-		})
 	}
-	wg.Wait()
+	states := par.Map(repos, par.Limit, func(p *config.Project) row {
+		g, _ := gitx.Status(cfg.ProjectDir(p))
+		return row{p.Name, g}
+	})
+	var rows []row
+	for _, r := range states {
+		if r.g.Changes > 0 || r.g.Ahead > 0 {
+			rows = append(rows, r)
+		}
+	}
 	if len(rows) == 0 {
 		return []string{ui.Label("репо     ") + ui.Dim("всё закоммичено и отправлено")}
 	}
