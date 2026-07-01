@@ -16,15 +16,19 @@ import (
 const module = "github.com/TimurTurdyev/tim/internal/"
 
 // Ядро ничего не знает о предметной области; разделы - то, что видит человек; остальное - библиотеки.
+// app - связка корня и разделов: окружение, выбор проекта, запуск экранов; ей можно в библиотеки.
 var (
-	core = []string{"app", "brand", "cache", "config", "fuzzy", "gitx", "par", "paths", "privileged",
+	core = []string{"brand", "cache", "config", "fuzzy", "gitx", "par", "paths", "privileged",
 		"runner", "schedule", "shellq", "tui", "ui"}
 	sections = []string{"bypass", "disk", "home", "local", "machine", "motd", "projects", "serve",
 		"servers", "shell", "sites", "tools"}
 	// Разрешённые зависимости раздела от раздела: строго в одну сторону.
 	sectionDeps = map[string][]string{
-		"home": sections,
-		"motd": {"bypass", "machine", "projects", "serve"},
+		"home":    sections,
+		"motd":    {"bypass", "machine", "projects", "serve"},
+		"bypass":  {"machine"}, // приложение мимо VPN: открытый экземпляр сначала закрывается
+		"servers": {"bypass"},  // ssh и туннели заводят маршрут мимо VPN до сервера
+		"sites":   {"machine"}, // обход заодно говорит о забытых dev-серверах и прожорливых процессах
 	}
 	execAllowed = []string{"runner", "privileged"}
 )
@@ -53,9 +57,6 @@ func TestFileSize(t *testing.T) {
 // Исключения: значения перечисления сразу под своим типом и проверки интерфейса var _ = ...
 func TestLayout(t *testing.T) {
 	for _, f := range sources(t) {
-		if f.pkg == "cmd" {
-			continue
-		}
 		seenCode := false
 		for i, d := range f.ast.Decls {
 			g, ok := d.(*ast.GenDecl)
@@ -95,14 +96,16 @@ func forbidden(f goFile, imp string) string {
 	}
 	dep, _, _ = strings.Cut(dep, "/")
 	switch {
-	case dep == "tui" && f.pkg != "tui" && level(f.pkg) != "section":
+	case dep == "tui" && f.pkg != "tui" && level(f.pkg) != "app" && level(f.pkg) != "section":
 		return "экраны только в разделах"
 	case dep == "tui" && f.pkg != "home" && level(f.pkg) == "section" && !strings.HasPrefix(name, "screen"):
 		return "экран раздела живёт в screen*.go"
 	case level(f.pkg) == "core" && level(dep) != "core":
 		return "ядро не знает о библиотеках и разделах"
-	case level(f.pkg) == "lib" && level(dep) == "section":
+	case level(f.pkg) == "lib" && (level(dep) == "section" || level(dep) == "app"):
 		return "библиотека не зависит от разделов"
+	case level(f.pkg) == "app" && level(dep) == "section":
+		return "связка не зависит от разделов"
 	case level(f.pkg) == "section" && level(dep) == "section" && dep != f.pkg && !slices.Contains(sectionDeps[f.pkg], dep):
 		return "раздел не зависит от другого раздела"
 	}
@@ -111,6 +114,8 @@ func forbidden(f goFile, imp string) string {
 
 func level(pkg string) string {
 	switch {
+	case pkg == "app":
+		return "app"
 	case slices.Contains(core, pkg):
 		return "core"
 	case slices.Contains(sections, pkg):

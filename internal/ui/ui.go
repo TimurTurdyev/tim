@@ -7,22 +7,33 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
 
+// Вывод и цвет меняются на ходу (Capture из экрана, UseStderr у шима), а читаются из разных
+// горутин - поэтому под замком и атомарно.
 var (
-	enabled           = isTerminal(os.Stdout)
+	outMu   sync.Mutex
 	out     io.Writer = os.Stdout
-	depth             = brand.DetectDepth(os.Getenv("COLORTERM"), os.Getenv("TERM"))
+	enabled atomic.Bool
+	depth   = brand.DetectDepth(os.Getenv("COLORTERM"), os.Getenv("TERM"))
+	// captureMu: один захват вывода за раз.
+	captureMu sync.Mutex
 )
+
+func init() { enabled.Store(isTerminal(os.Stdout)) }
 
 // UseStderr: весь вывод в stderr, цвета по нему; для хуков, у которых stdout перехвачен оболочкой.
 func UseStderr() {
+	outMu.Lock()
+	defer outMu.Unlock()
 	out = os.Stderr
-	enabled = isTerminal(os.Stderr)
+	enabled.Store(isTerminal(os.Stderr))
 }
 
 func isTerminal(f *os.File) bool {
@@ -40,20 +51,49 @@ func isTerminal(f *os.File) bool {
 }
 
 func wrap(code, s string) string {
-	if !enabled {
+	if !enabled.Load() {
 		return s
 	}
 	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
 
 // Capture выполняет f и возвращает всё, что ушло в ui, с цветами: вывод покажется на экране.
+// Захваты не вкладываются: второй ждёт, пока закончится первый.
 func Capture(f func()) string {
-	var b bytes.Buffer
-	prevOut, prevEnabled := out, enabled
-	out, enabled = &b, true
-	defer func() { out, enabled = prevOut, prevEnabled }()
+	captureMu.Lock()
+	defer captureMu.Unlock()
+	var b lockedBuffer
+	outMu.Lock()
+	prevOut, prevEnabled := out, enabled.Load()
+	out = &b
+	outMu.Unlock()
+	enabled.Store(true)
+	defer func() {
+		outMu.Lock()
+		out = prevOut
+		outMu.Unlock()
+		enabled.Store(prevEnabled)
+	}()
 	f()
 	return b.String()
+}
+
+// lockedBuffer: буфер, в который пишут из нескольких горутин команды.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 // Роли текста в фирменных цветах; в терминале на 16 цветов - ближайшие стандартные.
@@ -68,10 +108,16 @@ func Info(s string) string  { return wrap(brand.Blue.FG(depth, "34"), s) }
 func Title(s string) string { return wrap("1;"+brand.Teal.FG(depth, "36"), s) }
 
 // Colors: цвета включены и сколько их; для картинок вроде маскота.
-func Colors() (bool, brand.Depth) { return enabled, depth }
+func Colors() (bool, brand.Depth) { return enabled.Load(), depth }
 
-func Printf(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
-func Println(a ...any)               { _, _ = fmt.Fprintln(out, a...) }
+func Printf(format string, a ...any) { _, _ = fmt.Fprintf(writer(), format, a...) }
+func Println(a ...any)               { _, _ = fmt.Fprintln(writer(), a...) }
+
+func writer() io.Writer {
+	outMu.Lock()
+	defer outMu.Unlock()
+	return out
+}
 
 func Errorf(format string, a ...any) error {
 	return fmt.Errorf(format, a...)

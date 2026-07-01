@@ -1,0 +1,176 @@
+// Package home: экранный режим - главный экран, строка ":" с любой командой tim и экран результата.
+package home
+
+import (
+	"errors"
+	"os"
+	"sort"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/projects"
+	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/shellq"
+	"github.com/TimurTurdyev/tim/internal/tui"
+	"github.com/TimurTurdyev/tim/internal/ui"
+)
+
+// Home: главный экран и строка ":". Команды выполняются тем же деревом cobra, что и из терминала.
+type Home struct {
+	env       *app.Env
+	root      *cobra.Command
+	examples  map[string]string
+	overview  func()
+	translate func(string) string
+}
+
+// Options: что экранному режиму нужно от корня.
+type Options struct {
+	Examples  map[string]string   // примеры из справки - тоже подсказки для ":"
+	Overview  func()              // заставка, когда экрана открыть негде
+	Translate func(string) string // ошибки cobra по-русски
+}
+
+// New связывает экраны с командами: окружение получает запуск команд из экрана и главный экран.
+func New(env *app.Env, root *cobra.Command, o Options) *Home {
+	h := &Home{env: env, root: root, examples: o.Examples, overview: o.Overview, translate: o.Translate}
+	env.Result, env.After, env.Open, env.Home = h.result, h.after, h.open, h.screen
+	return h
+}
+
+// Command: tim ui. Без аргументов в терминале tim открывает то же самое.
+func (h *Home) Command() *cobra.Command {
+	return &cobra.Command{
+		Use:   "ui",
+		Short: "Главный экран: поиск по проектам и командам, состояние машины",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return h.Run() },
+	}
+}
+
+// Run открывает главный экран, а без конфига - мастер первого запуска; без терминала - заставка.
+func (h *Home) Run() error {
+	if !tui.Available() {
+		h.overview()
+		return nil
+	}
+	first := h.screen()
+	if _, err := os.Stat(config.Path()); err != nil {
+		first = projects.OnboardScreen(h.env, h.screen)
+	}
+	dir, err := tui.Run(first, h.options())
+	if errors.Is(err, tui.ErrNoTTY) {
+		h.overview()
+		return nil
+	}
+	if err != nil || dir == "" {
+		return err
+	}
+	// Шим читает папку из файла и делает cd; без шима подсказываем команду.
+	if f := os.Getenv("TIM_CD_FILE"); f != "" {
+		return os.WriteFile(f, []byte(dir), 0o600)
+	}
+	ui.Println(ui.Dim("перейти: cd ") + shellq.Quote(dir) + ui.Dim("  (tim init zsh - и tim сам сделает cd)"))
+	return nil
+}
+
+func (h *Home) options() tui.Options {
+	return tui.Options{Commands: h.commands, RunCommand: h.runLine}
+}
+
+// open: один экран на весь терминал; выбранную папку для cd отдаёт шиму.
+func (h *Home) open(s tui.Screen) error {
+	dir, err := tui.Run(s, h.options())
+	if err != nil || dir == "" {
+		return err
+	}
+	if f := os.Getenv("TIM_CD_FILE"); f != "" {
+		return os.WriteFile(f, []byte(dir), 0o600)
+	}
+	return nil
+}
+
+// result: команда выполняется, не выходя из экрана, её вывод - на экране результата.
+func (h *Home) result(args []string) tui.Action {
+	title := strings.Join(args, " ")
+	return tui.Action{Push: tui.NewResult(title, func() (string, error) { return h.inside(args) },
+		tui.ResultOpts{Copy: runner.ToClipboard, Next: nextAfter(args)})}
+}
+
+// inside выполняет команду tim внутри экрана: вывод собирается, вопросы не задаются.
+func (h *Home) inside(args []string) (string, error) {
+	prevIn, prevDis := runner.NoInput, tui.Disabled
+	runner.NoInput, tui.Disabled = true, true
+	defer func() { runner.NoInput, tui.Disabled = prevIn, prevDis }()
+	h.resetFlags(args)
+	var err error
+	out := ui.Capture(func() {
+		h.root.SetArgs(args)
+		err = h.root.Execute()
+	})
+	h.root.SetArgs(nil)
+	return out, err
+}
+
+// after выполняет команду уже в терминале, после закрытия экрана.
+func (h *Home) after(args []string) {
+	h.resetFlags(args)
+	h.root.SetArgs(args)
+	if err := h.root.Execute(); err != nil {
+		ui.Println(ui.Bad(h.translate(err.Error())))
+	}
+}
+
+// resetFlags: cobra помнит значения флагов между запусками в одном процессе; перед каждым - по умолчанию.
+func (h *Home) resetFlags(args []string) {
+	c, _, err := h.root.Find(args)
+	if err != nil || c == nil {
+		return
+	}
+	c.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			_ = f.Value.Set(f.DefValue)
+			f.Changed = false
+		}
+	})
+}
+
+// commands: подсказки для строки ":" - команды с описанием и примеры из справки.
+func (h *Home) commands(string) []tui.CommandEntry {
+	var out []tui.CommandEntry
+	seen := map[string]bool{}
+	var walk func(c *cobra.Command, path string)
+	walk = func(c *cobra.Command, path string) {
+		for _, sub := range c.Commands() {
+			if sub.Hidden || sub.Name() == "help" || sub.Name() == "completion" || sub.Name() == "ui" {
+				continue
+			}
+			line := strings.TrimSpace(path + " " + sub.Name())
+			if !seen[line] {
+				seen[line] = true
+				out = append(out, tui.CommandEntry{Line: line, Desc: sub.Short})
+			}
+			walk(sub, line)
+		}
+	}
+	walk(h.root, "")
+	for _, ex := range h.examples {
+		for _, l := range strings.Split(ex, "\n") {
+			l = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "tim "))
+			desc := ""
+			if i := strings.Index(l, "#"); i >= 0 {
+				l, desc = strings.TrimSpace(l[:i]), strings.TrimSpace(l[i+1:])
+			}
+			if l != "" && !seen[l] {
+				seen[l] = true
+				out = append(out, tui.CommandEntry{Line: l, Desc: desc})
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
+	return out
+}

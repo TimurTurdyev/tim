@@ -75,3 +75,9 @@ func NewPlan(p *config.Project, dir, port string) (Plan, error) {
 	}
 	return Plan{Project: p, Dir: dir, Port: port, Cmd: c, Note: note}, nil
 }
+
+// Servable: проект можно поднять через serve - только таким нужен свой порт.
+func Servable(dir string) bool {
+	_, err := Serve(Detect(dir), netinfo.Port(netinfo.DefaultPort))
+	return err == nil
+}

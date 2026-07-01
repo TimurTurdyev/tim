@@ -79,3 +79,14 @@ func TestParseUnits(t *testing.T) {
 		t.Errorf("%+v", u)
 	}
 }
+
+func TestParseNmcliWifi(t *testing.T) {
+	out := "no:Neighbors:6:270 Mbit/s:40:WPA2\nyes:Office\\:5G:36:540 Mbit/s:82:WPA2 WPA3\n"
+	w, ok := ParseNmcliWifi(out)
+	if !ok || w.SSID != "Office:5G" || w.Channel != "36" || w.Rate != 540 || w.Signal != 82 || w.Security != "WPA2 WPA3" {
+		t.Errorf("%+v %v", w, ok)
+	}
+	if _, ok := ParseNmcliWifi("no:Neighbors:6:270 Mbit/s:40:WPA2\n"); ok {
+		t.Error("без активной сети ok=false")
+	}
+}

@@ -125,7 +125,7 @@ func linuxOff() error {
 	if err != nil {
 		return err
 	}
-	phys, _ := Physical()
+	phys, _ := netinfo.Physical()
 	if gid, ok := linuxGroup(); ok {
 		for _, rule := range linuxRules(gid, phys.Device) {
 			// Снимаем, пока снимается: правило могло попасть в цепочку не один раз.
@@ -189,7 +189,7 @@ func linuxStatus() {
 	hasRule := strings.Contains(rules, "fwmark "+linuxMark)
 	table, _ := runner.Output("ip", "route", "show", "table", linuxTable)
 	ui.Println(ui.Label("маршрут по метке ") + map[bool]string{true: "есть", false: "нет"}[hasRule] + ui.Dim("  таблица "+linuxTable+": "+ui.Dash(strings.TrimSpace(table))))
-	phys, _ := Physical()
+	phys, _ := netinfo.Physical()
 	ui.Println(ui.Label("rp_filter ") + ui.Dash(sysctlGet("net.ipv4.conf."+phys.Device+".rp_filter")) + ui.Dim(" ("+phys.Device+"), all "+ui.Dash(sysctlGet("net.ipv4.conf.all.rp_filter"))))
 	if marked && masq && hasRule && strings.TrimSpace(table) != "" {
 		ui.Println(ui.OK("правила на месте: процессы группы идут через " + phys.Device))

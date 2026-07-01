@@ -101,7 +101,7 @@ func SampleLinux(base Snapshot) Live {
 				out.GPU, out.GPUValid, out.VRAM = gs[0].Util, true, gs[0].MemUsed
 			}
 		},
-		func() { list, _ = All() },
+		func() { list, _ = procs.All() },
 		func() {
 			used, _ := sysinfo.Memory()
 			sw := linuxSwap()

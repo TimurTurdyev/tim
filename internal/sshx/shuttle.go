@@ -1,9 +1,12 @@
 package sshx
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 func ShuttlePidfile() string { return filepath.Join(StateDir(), "sshuttle.pid") }
@@ -22,4 +25,17 @@ func ShuttleArgs(server, serverIP string, dns bool, extra []string, pidfile stri
 		args = append(args, "-x", n)
 	}
 	return append(args, "-D", "--pidfile", pidfile)
+}
+
+// ShuttlePID: pid sshuttle из tim tunnel all и жив ли он.
+func ShuttlePID() (string, bool) {
+	data, err := os.ReadFile(ShuttlePidfile())
+	if err != nil {
+		return "", false
+	}
+	pid := strings.TrimSpace(string(data))
+	if _, err := runner.Output("ps", "-p", pid); err != nil {
+		return pid, false
+	}
+	return pid, true
 }

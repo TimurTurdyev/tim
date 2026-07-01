@@ -24,15 +24,6 @@ var (
 // fewDests: до стольких целей печатается строка на каждую, дальше - ход и итог.
 const fewDests = 5
 
-// Physical: активный интерфейс и его шлюз, пусто если сети нет.
-func Physical() (netinfo.Service, string) {
-	svc, ok := netinfo.PhysIface()
-	if !ok {
-		return svc, ""
-	}
-	return svc, netinfo.IfaceGateway(svc.Device)
-}
-
 // table: таблица маршрутов, прочитанная один раз на команду, а не на каждую подсеть;
 // TableChanged сбрасывает её после правки маршрутов.
 func table() []netinfo.TableRoute {
@@ -100,7 +91,7 @@ func setRoute(dest, gw, iface string) error {
 
 // Up заводит маршрут через физический шлюз для каждого адреса или подсети.
 func Up(cfg *config.Config, dests []string) error {
-	phys, gw := Physical()
+	phys, gw := netinfo.Physical()
 	if phys.Device == "" || gw == "" {
 		return ui.Errorf("активный физический интерфейс или его шлюз не найден")
 	}
@@ -220,7 +211,7 @@ func routeMissing(msg string) bool {
 
 // Clean снимает маршруты на прежний шлюз; all - по всей таблице, иначе только цели конфига.
 func Clean(cfg *config.Config, all bool) error {
-	_, gw := Physical()
+	_, gw := netinfo.Physical()
 	if gw == "" {
 		return ui.Errorf("шлюз физического интерфейса не найден: не с чем сравнивать")
 	}

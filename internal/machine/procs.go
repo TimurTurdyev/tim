@@ -17,22 +17,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// withArgs дописывает процессам командные строки: без них эмулятор Android не отличить от любого qemu.
-func withArgs(list []procs.Full) []procs.Full {
-	out, err := runner.Output("ps", procs.PsAll("pid=,args=")...)
-	if err != nil {
-		return list
-	}
-	args := procs.ParseArgs(out)
-	for i := range list {
-		list[i].Args = args[list[i].PID]
-	}
-	return list
-}
-
 // HogLines: процессы, которые больше часа едят хотя бы целое ядро, строками для check и motd.
 func HogLines(indent string) []string {
-	list, err := All()
+	list, err := procs.All()
 	if err != nil {
 		return nil
 	}
@@ -46,20 +33,6 @@ func HogLines(indent string) []string {
 		out = append(out, line+ui.Dim("  "+detail+", pid "+h.PID+"  (tim kill "+h.PID+")"))
 	}
 	return out
-}
-
-func All() ([]procs.Full, error) {
-	out, err := runner.Output("ps", procs.PsAll("pid=,ppid=,uid=,rss=,pcpu=,etime=,state=,comm=")...)
-	if err != nil {
-		return nil, err
-	}
-	list := withArgs(procs.ParseFull(out))
-	if recent := procs.RecentCPU(500 * time.Millisecond); recent != nil {
-		for i := range list {
-			list[i].CPU = recent[list[i].PID]
-		}
-	}
-	return list, nil
 }
 
 // RowName: имя строки процесса - описание, если процесс известный, иначе имя файла.

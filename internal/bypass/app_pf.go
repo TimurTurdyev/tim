@@ -264,7 +264,7 @@ func pfStatus() {
 	for _, t := range netinfo.Tunnels() {
 		tunIPs = append(tunIPs, t.IPv4...)
 	}
-	phys, _ := Physical()
+	phys, _ := netinfo.Physical()
 	if states, err := privileged.Run("pfctl", "-s", "states"); err == nil {
 		redir, tun := 0, 0
 		var sample []string

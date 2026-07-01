@@ -1,6 +1,7 @@
 package netinfo
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -230,4 +231,20 @@ func ParseSocksProxy(out string) Proxy {
 func SocksProxy(service string) Proxy {
 	out, _ := runner.Output("networksetup", "-getsocksfirewallproxy", service)
 	return ParseSocksProxy(out)
+}
+
+// SetSocksProxy включает системный SOCKS у службы macOS на 127.0.0.1:port.
+func SetSocksProxy(service, port string) error {
+	if err := runner.Run("networksetup", "-setsocksfirewallproxy", service, "127.0.0.1", port); err != nil {
+		return fmt.Errorf("не вышло: %w", err)
+	}
+	if err := runner.Run("networksetup", "-setsocksfirewallproxystate", service, "on"); err != nil {
+		return fmt.Errorf("прокси прописан, но не включился: %w", err)
+	}
+	return nil
+}
+
+// DisableSocksProxy выключает системный SOCKS у службы.
+func DisableSocksProxy(service string) error {
+	return runner.Run("networksetup", "-setsocksfirewallproxystate", service, "off")
 }

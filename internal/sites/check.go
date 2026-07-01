@@ -1,0 +1,229 @@
+package sites
+
+import (
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/run"
+	"github.com/TimurTurdyev/tim/internal/schedule"
+	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/ui"
+)
+
+const checkLabel = "dev.tim.check"
+
+// checkCols: колонки таблицы проверки и их ширина.
+var checkCols = []struct {
+	name  string
+	width int
+}{
+	{"git", 26},
+	{"сайт", 12},
+	{"сертификат", 14},
+	{"почта", 8},
+	{"домен", 10},
+}
+
+// check: обход проектов. В терминале без аргументов - экран, иначе таблица и замечания о машине.
+func check(env *app.Env, args []string, o checkOptions) error {
+	switch {
+	case o.install:
+		return installCheck(o.at)
+	case o.uninstall:
+		if err := schedule.Uninstall(checkLabel, "tim-check", false); err != nil {
+			return err
+		}
+		ui.Println(ui.Label("ежедневный обход убран"))
+		return nil
+	case len(args) == 0 && !o.notify && app.Interactive():
+		return env.Open(checkScreen(env, o))
+	}
+	projects, err := projectsOrDomains(env.Cfg, args)
+	if err != nil {
+		return err
+	}
+	if len(projects) == 0 {
+		return ui.Errorf("в реестре нет проектов: tim proj scan")
+	}
+	rows := checkRows(env.Cfg, projects, o)
+	if len(rows) == 0 {
+		return ui.Errorf("проверять нечего: ни у одного проекта нет git и адреса сайта (tim sync --remote)")
+	}
+	printCheck(rows)
+	if o.notify {
+		notifyProblems(rows)
+	}
+	ok, warn, bad := health.Counts(rows)
+	ui.Println(ui.Dim(fmt.Sprintf("всего %d: ок %d, внимание %d", len(rows), ok, warn)))
+	if lines := machineNotes(env.Cfg, o.hours); len(lines) > 0 {
+		ui.Println("")
+		for _, l := range lines {
+			ui.Println(l)
+		}
+	}
+	if bad > 0 {
+		return ui.Errorf("требуют внимания: %d из %d", bad, len(rows))
+	}
+	return nil
+}
+
+// checkRows: проверки проектов параллельно; кому проверять нечего, в таблице только шумят.
+func checkRows(cfg *config.Config, projects []*config.Project, o checkOptions) []health.Row {
+	rows := par.Map(projects, par.Limit, func(p *config.Project) health.Row {
+		return CheckRow(p, cfg.ProjectDir(p), o.local, o.net)
+	})
+	kept := rows[:0]
+	for _, r := range rows {
+		if r.Level() != health.Skip {
+			kept = append(kept, r)
+		}
+	}
+	health.Sort(kept)
+	return kept
+}
+
+// projectsOrDomains: проекты для обхода; без аргументов - весь реестр. Домен, которого нет в реестре,
+// проверяется как есть: сайт, сертификат, почта, регистрация.
+func projectsOrDomains(cfg *config.Config, args []string) ([]*config.Project, error) {
+	if len(args) == 0 {
+		out := make([]*config.Project, 0, len(cfg.Projects))
+		for i := range cfg.Projects {
+			out = append(out, &cfg.Projects[i])
+		}
+		return out, nil
+	}
+	var out []*config.Project
+	for _, name := range args {
+		p, err := cfg.Pick(name)
+		if err == nil {
+			out = append(out, p)
+			continue
+		}
+		if !strings.Contains(name, ".") || strings.Contains(name, "/") {
+			return nil, err
+		}
+		host := strings.TrimPrefix(strings.TrimPrefix(name, "https://"), "http://")
+		out = append(out, &config.Project{Name: name, URL: "https://" + host})
+	}
+	return out, nil
+}
+
+func printCheck(rows []health.Row) {
+	cols := usedCols(rows)
+	head := ui.Pad("проект", 22)
+	for _, col := range cols {
+		head += ui.Pad(col.name, col.width)
+	}
+	ui.Println(ui.Dim(head))
+	for _, r := range rows {
+		line := ui.Pad(r.Name, 22)
+		for _, col := range cols {
+			c := r.Get(col.name)
+			line += ui.Pad(paint(c.Level, ui.Clip(c.Text, col.width-1)), col.width)
+		}
+		ui.Println(strings.TrimRight(line, " "))
+		for _, c := range r.Problems() {
+			ui.Println("  " + ui.Dim(c.Detail))
+		}
+	}
+}
+
+// usedCols: колонки, в которых есть что показать хоть одному проекту.
+func usedCols(rows []health.Row) []struct {
+	name  string
+	width int
+} {
+	cols := checkCols[:0:0]
+	for _, col := range checkCols {
+		for _, r := range rows {
+			if r.Get(col.name).Level != health.Skip {
+				cols = append(cols, col)
+				break
+			}
+		}
+	}
+	return cols
+}
+
+func paint(level health.Level, text string) string {
+	switch level {
+	case health.Bad:
+		return ui.Bad(text)
+	case health.Warn:
+		return ui.Warn(text)
+	case health.Skip:
+		return ui.Dim(text)
+	}
+	return text
+}
+
+// machineNotes: замечания не о проектах, а о самой машине.
+func machineNotes(cfg *config.Config, hours float64) []string {
+	out := machine.HogLines("")
+	var forgotten []string
+	for _, r := range machine.Forgotten(machine.Ports(cfg), time.Duration(hours*float64(time.Hour))) {
+		forgotten = append(forgotten, r.Project+":"+r.Port)
+	}
+	if len(forgotten) > 0 {
+		out = append(out, ui.Warn(fmt.Sprintf("dev-серверы старше %g ч: ", hours))+strings.Join(forgotten, " ")+ui.Dim("  (tim ports --old --kill)"))
+	}
+	if d, ok := sysinfo.DataDisk(); ok && d.Percent() >= 85 {
+		out = append(out, ui.Warn(fmt.Sprintf("диск занят на %d%%", d.Percent()))+ui.Dim("  (tim disk)"))
+	}
+	return out
+}
+
+// notifyProblems: уведомление системы о плохих строках. Тихо, если всё хорошо:
+// уведомление каждое утро "всё в порядке" быстро приучает его не читать.
+func notifyProblems(rows []health.Row) {
+	var lines []string
+	bad := 0
+	for _, r := range rows {
+		if r.Level() != health.Bad {
+			continue
+		}
+		bad++
+		if len(lines) < 3 {
+			lines = append(lines, firstBad(r))
+		}
+	}
+	if bad > 0 {
+		schedule.Notify("tim check: плохо в "+strconv.Itoa(bad), strings.Join(lines, "\n"))
+	}
+}
+
+func firstBad(r health.Row) string {
+	for _, c := range r.Problems() {
+		if c.Level == health.Bad {
+			return r.Name + ": " + c.Detail
+		}
+	}
+	return r.Name
+}
+
+func installCheck(at string) error {
+	self, err := schedule.SelfPath()
+	if err != nil {
+		return err
+	}
+	h, m, err := schedule.ParseAt(at)
+	if err != nil {
+		return ui.Errorf("%v", err)
+	}
+	job := schedule.Job{Label: checkLabel, Args: []string{self, "check", "--notify"}, Hour: h, Minute: m,
+		Log: filepath.Join(filepath.Dir(run.StateDir()), "check.log"), Env: schedule.JobEnv()}
+	if err := schedule.Install(job, "tim-check"); err != nil {
+		return err
+	}
+	ui.Println(ui.Label("обход каждый день в " + at))
+	ui.Println(ui.Dim("уведомление придёт, только если что-то плохо; журнал: " + job.Log))
+	return nil
+}

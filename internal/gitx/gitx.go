@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // State: ветка и расхождения из git status -sb --porcelain.
@@ -52,6 +53,21 @@ func ParseStatus(out string) State {
 		}
 	}
 	return g
+}
+
+// Line: ветка и расхождения одной строкой для терминала.
+func (g State) Line() string {
+	parts := []string{g.Branch}
+	if g.Changes > 0 {
+		parts = append(parts, ui.Warn(strconv.Itoa(g.Changes)+" изм."))
+	}
+	if g.Ahead > 0 {
+		parts = append(parts, ui.Info("+"+strconv.Itoa(g.Ahead)+" не отправлено"))
+	}
+	if g.Behind > 0 {
+		parts = append(parts, ui.Warn("-"+strconv.Itoa(g.Behind)+" отстаёт"))
+	}
+	return strings.Join(parts, "  ")
 }
 
 // IsRepo: в папке свой клон.

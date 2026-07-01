@@ -248,6 +248,9 @@ func collapseHome(p string) string {
 }
 
 func ExpandHome(p string) string {
+	if p == "~" {
+		return paths.Home()
+	}
 	if strings.HasPrefix(p, "~/") {
 		home := paths.Home()
 		return filepath.Join(home, p[2:])
@@ -321,6 +324,17 @@ func (c *Config) Relative(dir string) string {
 		return rel
 	}
 	return abs
+}
+
+// Ports: порты, уже закреплённые за проектами реестра.
+func (c *Config) Ports() []int {
+	var used []int
+	for _, p := range c.Projects {
+		if p.Port > 0 {
+			used = append(used, p.Port)
+		}
+	}
+	return used
 }
 
 func (c *Config) AddProject(p Project) error {

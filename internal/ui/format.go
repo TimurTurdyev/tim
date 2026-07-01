@@ -90,6 +90,15 @@ func Fit(s string, width int) string { return Pad(Clip(s, width), width) }
 // Width: ширина строки в колонках терминала - без кодов цвета, широкие символы за два.
 func Width(s string) int { return ansi.StringWidth(s) }
 
+// Tail: последние n строк текста.
+func Tail(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // Dash: прочерк вместо пустого значения.
 func Dash(s string) string {
 	if s == "" {
@@ -133,6 +142,18 @@ func Expired(days int) string {
 func Terminal() bool {
 	st, err := os.Stderr.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// Percent: проценты загрузки цветом по тем же порогам, что и Bar: от 60 - внимание, от 85 - плохо.
+func Percent(pct int) string {
+	s := strconv.Itoa(pct) + "%"
+	switch {
+	case pct >= 85:
+		return Bad(s)
+	case pct >= 60:
+		return Warn(s)
+	}
+	return s
 }
 
 // Bar: полоска загрузки в фирменных цветах: спокойно, внимание, плохо.

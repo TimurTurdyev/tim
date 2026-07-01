@@ -66,6 +66,15 @@ func ParseServiceOrder(out string) []Service {
 	return list
 }
 
+// Physical: активный физический интерфейс и его шлюз, пусто если сети нет.
+func Physical() (Service, string) {
+	svc, ok := PhysIface()
+	if !ok {
+		return svc, ""
+	}
+	return svc, IfaceGateway(svc.Device)
+}
+
 // PhysIface: первый активный физический интерфейс из порядка служб.
 func PhysIface() (Service, bool) {
 	if runtime.GOOS == "linux" {

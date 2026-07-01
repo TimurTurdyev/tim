@@ -117,7 +117,7 @@ func Collect() Snapshot {
 		},
 		func() { s.LoadAvg = sysinfo.Load() },
 		func() {
-			list, err := All()
+			list, err := procs.All()
 			if err != nil {
 				return
 			}
@@ -182,7 +182,7 @@ func Sample(base Snapshot) Live {
 			out.SwapUsed, out.SwapTotal = swap.Used, swap.Total
 			out.Load = sysinfo.Load()
 		},
-		func() { list, _ = All() },
+		func() { list, _ = procs.All() },
 	)
 	if base.MemTotal > 0 {
 		out.Mem = int(out.MemUsed * 100 / base.MemTotal)

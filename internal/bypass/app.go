@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/privileged"
@@ -34,7 +36,7 @@ func GID() (int, error) {
 
 // AppOn готовит группу и правила; возвращает gid, под которым запускать программы.
 func AppOn() (int, error) {
-	phys, gw := Physical()
+	phys, gw := netinfo.Physical()
 	if phys.Device == "" || gw == "" {
 		return 0, ui.Errorf("физический интерфейс или шлюз не найден: сети нет?")
 	}
@@ -196,9 +198,9 @@ func AppExists(name string) bool {
 	return err == nil
 }
 
-// AppLaunch запускает программу под группой novpn. closeRunning закрывает уже открытый экземпляр:
+// AppLaunch запускает программу под группой novpn. Уже открытый экземпляр закрывается:
 // иначе новое окно откроется в старом процессе, под VPN.
-func AppLaunch(name string, closeRunning func(bundle, appName string) error) error {
+func AppLaunch(name string) error {
 	bundle, exe, err := AppBundle(name)
 	if err != nil {
 		return err
@@ -221,6 +223,27 @@ func AppLaunch(name string, closeRunning func(bundle, appName string) error) err
 	}
 	ui.Println(ui.Label(appName+" запущен мимо VPN") + ui.Dim("  pid "+strconv.Itoa(resp.PID)+"; проверить: открой в нём ifconfig.co"))
 	ui.Println(ui.Dim("вернуть под VPN: закрой программу и открой как обычно; снять правила: tim direct --off"))
+	return nil
+}
+
+// closeRunning бережно закрывает открытый экземпляр приложения перед запуском мимо VPN.
+func closeRunning(bundle, appName string) error {
+	list, err := procs.All()
+	if err != nil {
+		return nil
+	}
+	for _, a := range procs.Find(list, appName) {
+		if a.Main.Comm != bundle && !strings.HasPrefix(a.Main.Comm, bundle+"/") {
+			continue
+		}
+		ui.Println(ui.Dim("закрываю " + a.Name + ": открытый экземпляр остался бы под VPN"))
+		text, err := machine.Close(a, false)
+		if err != nil {
+			return ui.Errorf("%v; закрой %s сам и повтори", err, a.Name)
+		}
+		ui.Println(ui.Dim(text))
+		time.Sleep(time.Second)
+	}
 	return nil
 }
 

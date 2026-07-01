@@ -94,19 +94,14 @@ func LogLine(format string, a ...any) {
 	ui.Println(time.Now().Format("2006-01-02 15:04:05") + " " + fmt.Sprintf(format, a...))
 }
 
-// Cycle: одна проверка и починка. Возвращает починенное.
-func Cycle(st *routewatch.Status, load func() (*config.Config, error)) (*config.Config, []routewatch.Repair) {
+// Cycle: одна проверка и починка по целям конфига. Возвращает починенное.
+func Cycle(st *routewatch.Status, c *config.Config) []routewatch.Repair {
 	st.LastCheck = time.Now()
-	c, err := load()
-	if err != nil {
-		st.Error = "конфиг: " + err.Error()
-		return nil, nil
-	}
-	phys, gw := Physical()
+	phys, gw := netinfo.Physical()
 	st.Gateway, st.Iface = gw, phys.Device
 	if phys.Device == "" || gw == "" {
 		st.Error = "физический интерфейс или шлюз не найден: сети нет?"
-		return c, nil
+		return nil
 	}
 	st.Error = ""
 	want := WantedDests(c)
@@ -132,7 +127,7 @@ func Cycle(st *routewatch.Status, load func() (*config.Config, error)) (*config.
 		LogLine("починено %d через %s %s (%s)", len(done), phys.Device, gw, strings.Join(parts, ", "))
 	}
 	st.AddRepairs(done)
-	return c, done
+	return done
 }
 
 func uniq(list []string) []string {

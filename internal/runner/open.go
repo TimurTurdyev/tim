@@ -19,3 +19,13 @@ func OpenBrowser(target string) error {
 	}
 	return Run("xdg-open", target)
 }
+
+// ToClipboard кладёт текст в буфер обмена: pbcopy на macOS, xclip на Linux; без них - ничего.
+func ToClipboard(s string) {
+	switch {
+	case Has("pbcopy"):
+		_, _ = OutputStdin(s, "pbcopy")
+	case Has("xclip"):
+		_, _ = OutputStdin(s, "xclip", "-selection", "clipboard")
+	}
+}

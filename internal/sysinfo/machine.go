@@ -116,6 +116,42 @@ type Wifi struct {
 	Signal, Noise                       int
 }
 
+// ParseNmcliWifi: активная сеть из nmcli -t -f ACTIVE,SSID,CHAN,RATE,SIGNAL,SECURITY dev wifi.
+// Сигнал у NetworkManager в процентах, а не в dBm; двоеточие внутри поля экранировано "\:".
+func ParseNmcliWifi(out string) (Wifi, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		f := splitTerse(line)
+		if len(f) < 6 || f[0] != "yes" {
+			continue
+		}
+		w := Wifi{SSID: f[1], Channel: f[2], Security: f[5]}
+		rate, _, _ := strings.Cut(f[3], " ")
+		w.Rate, _ = strconv.Atoi(rate)
+		w.Signal, _ = strconv.Atoi(f[4])
+		return w, true
+	}
+	return Wifi{}, false
+}
+
+// splitTerse делит строку nmcli -t по двоеточиям, кроме экранированных.
+func splitTerse(line string) []string {
+	var fields []string
+	var cur strings.Builder
+	for i := 0; i < len(line); i++ {
+		switch {
+		case line[i] == '\\' && i+1 < len(line):
+			i++
+			cur.WriteByte(line[i])
+		case line[i] == ':':
+			fields = append(fields, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteByte(line[i])
+		}
+	}
+	return append(fields, cur.String())
+}
+
 func ParseWifi(data []byte) (Wifi, bool) {
 	var root struct {
 		Data []struct {

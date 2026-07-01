@@ -3,8 +3,11 @@
 package hostsfile
 
 import (
+	"os"
 	"sort"
 	"strings"
+
+	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
 const (
@@ -188,4 +191,33 @@ func Profiles(entries []Entry) ([]string, map[string][2]int) {
 	}
 	sort.Strings(names)
 	return names, counts
+}
+
+// LocalName: локальное имя проекта по умолчанию - shop.test.
+func LocalName(project string) string { return strings.ToLower(project) + ".test" }
+
+// Path: обычно /etc/hosts, но TIM_HOSTS позволяет работать с другим файлом -
+// в контейнере, в тесте или когда правами на системный файл не распоряжаешься.
+func Path() string {
+	if p := os.Getenv("TIM_HOSTS"); p != "" {
+		return p
+	}
+	return "/etc/hosts"
+}
+
+// Load читает файл hosts: текст целиком и записи блока tim.
+func Load() (string, []Entry, error) {
+	data, err := os.ReadFile(Path())
+	if err != nil {
+		return "", nil, err
+	}
+	return string(data), Parse(string(data)), nil
+}
+
+// Save переписывает файл hosts с новым блоком tim, оставляя рядом копию прежнего (.tim-backup).
+func Save(text string, entries []Entry) error {
+	if err := runner.WriteRoot(Path()+".tim-backup", []byte(text)); err != nil {
+		return err
+	}
+	return runner.WriteRoot(Path(), []byte(Render(text, entries)))
 }

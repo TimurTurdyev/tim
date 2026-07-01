@@ -100,14 +100,3 @@ func DNS(host, server string) []Record {
 	sort.SliceStable(out, func(i, j int) bool { return order[out[i].Type] < order[out[j].Type] })
 	return out
 }
-
-// Dial проверяет TCP-порт и меряет время соединения.
-func Dial(addr string) (time.Duration, error) {
-	start := time.Now()
-	c, err := net.DialTimeout("tcp", addr, Timeout)
-	if err != nil {
-		return 0, err
-	}
-	_ = c.Close()
-	return time.Since(start), nil
-}

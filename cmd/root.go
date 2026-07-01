@@ -13,17 +13,29 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/disk"
+	"github.com/TimurTurdyev/tim/internal/home"
+	"github.com/TimurTurdyev/tim/internal/local"
+	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/motd"
+	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/serve"
+	"github.com/TimurTurdyev/tim/internal/servers"
+	"github.com/TimurTurdyev/tim/internal/shell"
+	"github.com/TimurTurdyev/tim/internal/sites"
+	"github.com/TimurTurdyev/tim/internal/tools"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// env - окружение команд разделов; cfg - его конфиг для команд, которые ещё живут в cmd.
-var (
-	env = &app.Env{}
-	cfg *config.Config
-)
+// env: окружение команд разделов, конфиг в нём появляется перед запуском команды.
+var env = &app.Env{}
+
+// screens: экранный режим - главный экран и строка ":" поверх тех же команд.
+var screens *home.Home
 
 var root = &cobra.Command{
 	Use:   "tim",
@@ -36,30 +48,13 @@ TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		tui.Disabled = tui.Disabled || runner.NoInput
-		var err error
-		cfg, err = config.Load()
+		c, err := config.Load()
 		if err != nil {
 			return ui.Errorf("конфиг %s: %v", config.Path(), err)
 		}
-		env.Cfg = cfg
+		env.Cfg = c
 		return nil
 	},
-}
-
-func init() {
-	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
-	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
-	root.CompletionOptions.HiddenDefaultCmd = true
-	runner.ConfirmFunc = func(q string, def bool) (bool, bool) {
-		if !tui.Available() {
-			return false, false
-		}
-		yes, err := tui.Confirm(q, def)
-		if err != nil && !errors.Is(err, tui.ErrCanceled) {
-			return false, false
-		}
-		return yes, true
-	}
 }
 
 var groups = []struct {
@@ -75,6 +70,65 @@ var groups = []struct {
 
 // utilCmds: мелкие утилиты. В общей справке они одной строкой - полный список: tim help utils.
 var utilCmds = []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json", "url", "pass", "qr", "cron"}
+
+func init() {
+	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
+	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
+	root.CompletionOptions.HiddenDefaultCmd = true
+	env.Version = resolveVersion()
+	screens = home.New(env, root, home.Options{Examples: examples, Overview: overview, Translate: translateError})
+	// В терминале tim без аргументов - главный экран; в трубе и скриптах - заставка.
+	root.RunE = func(cmd *cobra.Command, args []string) error { return screens.Run() }
+	runner.ConfirmFunc = func(q string, def bool) (bool, bool) {
+		if !tui.Available() {
+			return false, false
+		}
+		yes, err := tui.Confirm(q, def)
+		if err != nil && !errors.Is(err, tui.ErrCanceled) {
+			return false, false
+		}
+		return yes, true
+	}
+}
+
+// sections: команды разделов. Корень только собирает их; подкоманды с пометкой app.Parent
+// встают под команду другого раздела.
+func sectionCommands() [][]*cobra.Command {
+	return [][]*cobra.Command{
+		tools.Commands(),
+		local.Commands(env),
+		shell.Commands(env),
+		machine.Commands(env),
+		disk.Commands(env),
+		bypass.Commands(env),
+		serve.Commands(env),
+		servers.Commands(env),
+		sites.Commands(env),
+		projects.Commands(env),
+		motd.Commands(env),
+		{screens.Command()},
+	}
+}
+
+func mount() {
+	var children []*cobra.Command
+	for _, list := range sectionCommands() {
+		for _, c := range list {
+			if c.Annotations[app.Parent] != "" {
+				children = append(children, c)
+				continue
+			}
+			root.AddCommand(c)
+		}
+	}
+	for _, c := range children {
+		parent, _, err := root.Find([]string{c.Annotations[app.Parent]})
+		if err != nil {
+			parent = root
+		}
+		parent.AddCommand(c)
+	}
+}
 
 // assignGroups раскладывает команды по разделам справки; вызывается после всех init().
 func assignGroups() {
@@ -141,6 +195,7 @@ func editDistance(a, b string) int {
 
 // Root: корневая команда с группами и справкой, для генератора man.
 func Root() *cobra.Command {
+	mount()
 	assignGroups()
 	applyHelp()
 	root.DisableAutoGenTag = true
@@ -171,13 +226,14 @@ func flagSuggestion(c *cobra.Command, err error) error {
 }
 
 func Execute() error {
+	mount()
 	assignGroups()
 	root.SetFlagErrorFunc(flagSuggestion)
 	if needsHelp(os.Args[1:]) {
 		applyHelp()
 	}
 	if err := root.Execute(); err != nil {
-		if errors.Is(err, errPickCanceled) {
+		if errors.Is(err, app.ErrCanceled) {
 			return nil
 		}
 		msg := err.Error()
@@ -192,16 +248,4 @@ func Execute() error {
 		return err
 	}
 	return nil
-}
-
-func projectNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	c, err := config.Load()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
-	}
-	var names []string
-	for _, p := range c.Projects {
-		names = append(names, p.Name)
-	}
-	return names, cobra.ShellCompDirectiveNoFileComp
 }

@@ -40,32 +40,6 @@ const usageTemplate = `{{h "Использование:"}}{{if .Runnable}}
 {{dim (print "Подробнее о команде: " .CommandPath " <команда> --help")}}{{end}}
 `
 
-// colorFlags подсвечивает сами флаги в строках FlagUsages, описания оставляет как есть.
-func colorFlags(s string, color func(string) string) string {
-	flagLine := regexp.MustCompile(`^(\s*)(-\S.*?)(\s{2,})(.*)$`)
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		if m := flagLine.FindStringSubmatch(l); m != nil {
-			lines[i] = m[1] + color(m[2]) + m[3] + m[4]
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-// colorExamples: строки примеров, начинающиеся с команды, зелёные, комментарии после # серые.
-func colorExamples(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		cmd, comment, hasComment := strings.Cut(l, "#")
-		out := ui.Label(strings.TrimRight(cmd, " "))
-		if hasComment {
-			out += strings.Repeat(" ", len(cmd)-len(strings.TrimRight(cmd, " "))) + ui.Dim("#"+comment)
-		}
-		lines[i] = out
-	}
-	return strings.Join(lines, "\n")
-}
-
 var examples = map[string]string{
 	"tim go":          "  tim go                     # выбор проекта из реестра и переход\n  tim go shop .              # в папку над клоном",
 	"tim proj":        "  tim proj list clients\n  tim proj scan --add\n  tim proj add . --name shop --url https://shop.example.com",
@@ -99,6 +73,81 @@ var examples = map[string]string{
 	"tim cron":        "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",
 	"tim jwt":         "  tim jwt eyJhbGciOi...\n  pbpaste | tim jwt",
 	"tim config init": "  tim config init\n  tim config init --root ~/code --all -y",
+}
+
+// overviewSections: самое ходовое по разделам - то, что видно на tim без аргументов.
+var overviewSections = []struct {
+	title string
+	cmds  [][2]string
+}{
+	{"Проекты", [][2]string{
+		{"tim go", "перейти в проект, недавние сверху"},
+		{"tim serve -d", "поднять dev-сервер в фоне"},
+		{"tim setup <проект>", "от клона до работающего локально"},
+		{"tim check", "обход всех проектов одной таблицей"},
+		{"tim today --week", "что сделано за неделю"},
+	}},
+	{"Сеть и серверы", [][2]string{
+		{"tim ssh", "ssh мимо VPN, выбор алиаса"},
+		{"tim vpn exclude <сайт> --owner", "пустить сервис мимо VPN целиком"},
+		{"tim tunnel all <сервер>", "весь трафик через ssh"},
+		{"tim server <алиас>", "что с сервером: место, порты, sshd"},
+	}},
+	{"Сайты", [][2]string{
+		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},
+		{"tim mail <домен>", "почта: SPF, DKIM, DMARC"},
+		{"tim og <url>", "превью ссылки в мессенджерах"},
+	}},
+	{"Машина", [][2]string{
+		{"tim motd", "сводка: машина, проект, сеть"},
+		{"tim top", "кто съел память и CPU"},
+		{"tim disk", "куда ушло место и что можно убрать"},
+		{"tim hw", "железо и загрузка: процессор, видеокарта, память"},
+		{"tim kill <имя>", "закрыть зависшее приложение"},
+		{"tim doctor", "что не так в окружении"},
+	}},
+}
+
+// cobraErrors компилируются только при ошибке, чтобы не тратить на это старт.
+var cobraErrors = sync.OnceValue(func() []cobraError {
+	return []cobraError{
+		{regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`), "нет команды $1 у $2: $2 --help"},
+		{regexp.MustCompile(`^unknown flag: (\S+)`), "нет флага $1, посмотри --help"},
+		{regexp.MustCompile(`^unknown shorthand flag: '(.)' in (\S+)`), "нет флага -$1, посмотри --help"},
+		{regexp.MustCompile(`^flag needs an argument: (\S+)`), "флагу $1 нужно значение"},
+		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)" flag`), "неверное значение $1 для $2"},
+		{regexp.MustCompile(`^requires at least (\d+) arg\(s\), only received (\d+)`), "нужно аргументов не меньше $1, передано $2"},
+		{regexp.MustCompile(`^accepts at most (\d+) arg\(s\), received (\d+)`), "аргументов не больше $1, передано $2"},
+		{regexp.MustCompile(`^accepts (\d+) arg\(s\), received (\d+)`), "нужно аргументов: $1, передано $2"},
+		{regexp.MustCompile(`^accepts between (\d+) and (\d+) arg\(s\), received (\d+)`), "нужно аргументов от $1 до $2, передано $3"},
+		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)"`), "неверный аргумент $1 для $2"},
+	}
+})
+
+// colorFlags подсвечивает сами флаги в строках FlagUsages, описания оставляет как есть.
+func colorFlags(s string, color func(string) string) string {
+	flagLine := regexp.MustCompile(`^(\s*)(-\S.*?)(\s{2,})(.*)$`)
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if m := flagLine.FindStringSubmatch(l); m != nil {
+			lines[i] = m[1] + color(m[2]) + m[3] + m[4]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// colorExamples: строки примеров, начинающиеся с команды, зелёные, комментарии после # серые.
+func colorExamples(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		cmd, comment, hasComment := strings.Cut(l, "#")
+		out := ui.Label(strings.TrimRight(cmd, " "))
+		if hasComment {
+			out += strings.Repeat(" ", len(cmd)-len(strings.TrimRight(cmd, " "))) + ui.Dim("#"+comment)
+		}
+		lines[i] = out
+	}
+	return strings.Join(lines, "\n")
 }
 
 // applyHelp: шаблон, русские подписи справочных флагов и примеры; вызывается после всех init().
@@ -147,39 +196,6 @@ func applyHelp() {
 		}
 	}
 	walk(root)
-}
-
-// overviewSections: самое ходовое по разделам - то, что видно на tim без аргументов.
-var overviewSections = []struct {
-	title string
-	cmds  [][2]string
-}{
-	{"Проекты", [][2]string{
-		{"tim go", "перейти в проект, недавние сверху"},
-		{"tim serve -d", "поднять dev-сервер в фоне"},
-		{"tim setup <проект>", "от клона до работающего локально"},
-		{"tim check", "обход всех проектов одной таблицей"},
-		{"tim today --week", "что сделано за неделю"},
-	}},
-	{"Сеть и серверы", [][2]string{
-		{"tim ssh", "ssh мимо VPN, выбор алиаса"},
-		{"tim vpn exclude <сайт> --owner", "пустить сервис мимо VPN целиком"},
-		{"tim tunnel all <сервер>", "весь трафик через ssh"},
-		{"tim server <алиас>", "что с сервером: место, порты, sshd"},
-	}},
-	{"Сайты", [][2]string{
-		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},
-		{"tim mail <домен>", "почта: SPF, DKIM, DMARC"},
-		{"tim og <url>", "превью ссылки в мессенджерах"},
-	}},
-	{"Машина", [][2]string{
-		{"tim motd", "сводка: машина, проект, сеть"},
-		{"tim top", "кто съел память и CPU"},
-		{"tim disk", "куда ушло место и что можно убрать"},
-		{"tim hw", "железо и загрузка: процессор, видеокарта, память"},
-		{"tim kill <имя>", "закрыть зависшее приложение"},
-		{"tim doctor", "что не так в окружении"},
-	}},
 }
 
 // splash: маскот и логотип рядом; без цветов - просто имя.
@@ -243,22 +259,6 @@ type cobraError struct {
 	re   *regexp.Regexp
 	tmpl string
 }
-
-// cobraErrors компилируются только при ошибке, чтобы не тратить на это старт.
-var cobraErrors = sync.OnceValue(func() []cobraError {
-	return []cobraError{
-		{regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`), "нет команды $1 у $2: $2 --help"},
-		{regexp.MustCompile(`^unknown flag: (\S+)`), "нет флага $1, посмотри --help"},
-		{regexp.MustCompile(`^unknown shorthand flag: '(.)' in (\S+)`), "нет флага -$1, посмотри --help"},
-		{regexp.MustCompile(`^flag needs an argument: (\S+)`), "флагу $1 нужно значение"},
-		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)" flag`), "неверное значение $1 для $2"},
-		{regexp.MustCompile(`^requires at least (\d+) arg\(s\), only received (\d+)`), "нужно аргументов не меньше $1, передано $2"},
-		{regexp.MustCompile(`^accepts at most (\d+) arg\(s\), received (\d+)`), "аргументов не больше $1, передано $2"},
-		{regexp.MustCompile(`^accepts (\d+) arg\(s\), received (\d+)`), "нужно аргументов: $1, передано $2"},
-		{regexp.MustCompile(`^accepts between (\d+) and (\d+) arg\(s\), received (\d+)`), "нужно аргументов от $1 до $2, передано $3"},
-		{regexp.MustCompile(`^invalid argument "([^"]*)" for "([^"]*)"`), "неверный аргумент $1 для $2"},
-	}
-})
 
 // translateError переводит типовые ошибки cobra; подсказку "Did you mean" сохраняет по-русски.
 func translateError(msg string) string {

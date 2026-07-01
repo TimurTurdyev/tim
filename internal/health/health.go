@@ -91,6 +91,19 @@ func Sort(rows []Row) {
 	})
 }
 
+// Lamp: строка со значком уровня - читается и без цвета.
+func Lamp(level Level, text string) string {
+	switch level {
+	case Bad:
+		return ui.Bad("\u2715 " + text)
+	case Warn:
+		return ui.Warn("\u25b2 " + text)
+	case Skip:
+		return ui.Dim("- " + text)
+	}
+	return ui.OK("\u25cf " + text)
+}
+
 // Deadline: проверка на срок - сертификат, регистрация домена. warn и bad в днях.
 func Deadline(name string, t time.Time, warn, bad int) Check {
 	return DeadlineAt(name, t, time.Now(), warn, bad)

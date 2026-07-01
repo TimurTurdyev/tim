@@ -1,7 +1,12 @@
 // Package watch: состояние "работает или лежит" по последовательным опросам, без дребезга.
 package watch
 
-import "time"
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
 
 // DownAfter: сколько неудач подряд считать падением. Одна - это ещё сеть моргнула.
 const DownAfter = 2
@@ -50,4 +55,18 @@ func (t *Tracker) Observe(ok bool, at time.Time) (Event, bool) {
 	}
 	t.State, t.Since = next, at
 	return ev, true
+}
+
+// Probe: работает - ответил кодом ниже 500 за отведённое клиенту время; detail - код и время или ошибка.
+func Probe(client *http.Client, url string) (ok bool, detail string, err error) {
+	start := time.Now()
+	resp, err := client.Get(url)
+	took := time.Since(start).Round(time.Millisecond)
+	if err != nil {
+		return false, "", err
+	}
+	// Дочитать тело, чтобы соединение вернулось в пул: иначе каждый опрос - новый TLS.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	_ = resp.Body.Close()
+	return resp.StatusCode < 500, fmt.Sprintf("%d за %v", resp.StatusCode, took), nil
 }

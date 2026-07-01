@@ -59,7 +59,8 @@ func Installed() []App {
 }
 
 // Gather: всё, что осталось от удалённых программ, по убыванию размера; мелочь по имени отброшена.
-func Gather(own func(name string) bool, running []procs.Full) ([]*Group, error) {
+// own - свои имена в нижнем регистре (проекты, папки разработки): папка с таким именем не хвост.
+func Gather(own map[string]bool, running []procs.Full) ([]*Group, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, ui.Errorf("хвосты удалённых программ tim пока ищет только на macOS")
 	}
@@ -85,7 +86,7 @@ func Gather(own func(name string) bool, running []procs.Full) ([]*Group, error) 
 			}
 			v := ix.Judge(e.Name())
 			// Папка с именем проекта из реестра - его же данные: свои программы в разработке не хвост.
-			if !v.Sure && own(e.Name()) {
+			if !v.Sure && own[strings.ToLower(e.Name())] {
 				continue
 			}
 			// По одному имени, без ID, верим только папкам программ: в Caches и Group Containers
