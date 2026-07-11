@@ -6,40 +6,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
-
-// Level: насколько всё плохо. Порядок важен: худший уровень - наибольший.
-type Level int
-
-const (
-	Skip Level = iota // проверить нечем, например у проекта нет url
-	OK
-	Warn
-	Bad
-)
-
-func (l Level) String() string {
-	switch l {
-	case Bad:
-		return "плохо"
-	case Warn:
-		return "внимание"
-	case OK:
-		return "ок"
-	}
-	return "-"
-}
-
-// MarshalText: в --json уровень словом, а не числом.
-func (l Level) MarshalText() ([]byte, error) {
-	return []byte([...]string{"skip", "ok", "warn", "bad"}[l]), nil
-}
 
 // Check: одна проверка. Text идёт в колонку таблицы, Detail - в разбор проблем под ней.
 type Check struct {
 	Name   string
-	Level  Level
+	Level  level.Level
 	Text   string
 	Detail string
 }
@@ -50,12 +24,10 @@ type Row struct {
 	Checks []Check
 }
 
-func (r Row) Level() Level {
-	worst := Skip
+func (r Row) Level() level.Level {
+	worst := level.Skip
 	for _, c := range r.Checks {
-		if c.Level > worst {
-			worst = c.Level
-		}
+		worst = max(worst, c.Level)
 	}
 	return worst
 }
@@ -66,14 +38,14 @@ func (r Row) Get(name string) Check {
 			return c
 		}
 	}
-	return Check{Name: name, Level: Skip, Text: "-"}
+	return Check{Name: name, Level: level.Skip, Text: "-"}
 }
 
 // Problems: проверки, о которых есть что сказать подробнее.
 func (r Row) Problems() []Check {
 	var out []Check
 	for _, c := range r.Checks {
-		if c.Level >= Warn && c.Detail != "" {
+		if c.Level >= level.Warn && c.Detail != "" {
 			out = append(out, c)
 		}
 	}
@@ -91,19 +63,6 @@ func Sort(rows []Row) {
 	})
 }
 
-// Lamp: строка со значком уровня - читается и без цвета.
-func Lamp(level Level, text string) string {
-	switch level {
-	case Bad:
-		return ui.Bad("\u2715 " + text)
-	case Warn:
-		return ui.Warn("\u25b2 " + text)
-	case Skip:
-		return ui.Dim("- " + text)
-	}
-	return ui.OK("\u25cf " + text)
-}
-
 // Deadline: проверка на срок - сертификат, регистрация домена. warn и bad в днях.
 func Deadline(name string, t time.Time, warn, bad int) Check {
 	return DeadlineAt(name, t, time.Now(), warn, bad)
@@ -113,16 +72,16 @@ func Deadline(name string, t time.Time, warn, bad int) Check {
 // истёкшим срок становится, только когда прошёл.
 func DeadlineAt(name string, t, now time.Time, warn, bad int) Check {
 	days := ui.DaysUntil(t, now)
-	c := Check{Name: name, Level: OK, Text: fmt.Sprintf("%d дн", days)}
+	c := Check{Name: name, Level: level.OK, Text: fmt.Sprintf("%d дн", days)}
 	switch {
 	case days <= 0:
-		c.Level, c.Text = Bad, ui.Expired(days)
+		c.Level, c.Text = level.Bad, ui.Expired(days)
 		c.Detail = fmt.Sprintf("%s истёк %s", name, t.Format("2006-01-02"))
 	case days <= bad:
-		c.Level = Bad
+		c.Level = level.Bad
 		c.Detail = fmt.Sprintf("%s истекает %s, осталось %d дн", name, t.Format("2006-01-02"), days)
 	case days <= warn:
-		c.Level = Warn
+		c.Level = level.Warn
 		c.Detail = fmt.Sprintf("%s истекает %s, осталось %d дн", name, t.Format("2006-01-02"), days)
 	}
 	return c
@@ -132,11 +91,11 @@ func DeadlineAt(name string, t, now time.Time, warn, bad int) Check {
 func Counts(rows []Row) (ok, warn, bad int) {
 	for _, r := range rows {
 		switch r.Level() {
-		case Bad:
+		case level.Bad:
 			bad++
-		case Warn:
+		case level.Warn:
 			warn++
-		case OK:
+		case level.OK:
 			ok++
 		}
 	}

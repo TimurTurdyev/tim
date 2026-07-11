@@ -52,9 +52,9 @@ func Parse(expr string) (Schedule, error) {
 		{&s.min, 0, 59, nil, "минута"}, {&s.hour, 0, 23, nil, "час"}, {&s.dom, 1, 31, nil, "день"},
 		{&s.mon, 1, 12, monNames, "месяц"}, {&s.dow, 0, 7, dowNames, "день недели"},
 	}
-	for i, sp := range specs {
-		if *sp.dst, err = parseField(f[i], sp.min, sp.max, sp.names); err != nil {
-			return Schedule{}, errors.New(sp.label + ": " + err.Error())
+	for i, field := range specs {
+		if *field.dst, err = parseField(f[i], field.min, field.max, field.names); err != nil {
+			return Schedule{}, errors.New(field.label + ": " + err.Error())
 		}
 	}
 	if s.dow.vals[7] {

@@ -40,16 +40,16 @@ func printOverview(cfg *config.Config, args []string, all, fresh bool) error {
 	if err != nil {
 		return err
 	}
-	min := int64(1 << 30)
+	minSize := int64(1 << 30)
 	if all {
-		min = 100 << 20
+		minSize = 100 << 20
 	}
 	tree, at := diskuse.Map(roots, fresh, cliProgress())
 	home := paths.Home()
 	var spots []diskuse.Spot
 	var measured int64
 	for _, r := range roots {
-		spots = append(spots, diskuse.Spots(tree, r, min, stopAt(home))...)
+		spots = append(spots, diskuse.Spots(tree, r, minSize, stopAt(home))...)
 		measured += tree[r]
 	}
 	rows := diskuse.Rows(spots, home, ownerOf(cfg))

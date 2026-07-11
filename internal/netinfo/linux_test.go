@@ -21,7 +21,7 @@ default via 192.168.1.1 dev wlp3s0 proto dhcp src 192.168.1.40 metric 600
 	table := ParseIPRoute(out)
 	m := map[string]TableRoute{}
 	for _, r := range table {
-		m[r.Dest] = r
+		m[r.Target()] = r
 	}
 	if r := m["77.88.0.0/18"]; r.Gateway != "192.168.1.1" || r.Iface != "wlp3s0" || r.Flags != "UGS" {
 		t.Fatalf("%+v", r)

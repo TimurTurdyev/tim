@@ -12,6 +12,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -122,11 +123,11 @@ func printMailLine(domain string) {
 	default:
 		ui.Println(ui.Label("mx          ") + strings.Join(m.MX, ", "))
 	}
-	level, reasons := m.Verdict()
-	switch level {
-	case "ok":
+	verdict, reasons := m.Verdict()
+	switch verdict {
+	case level.OK:
 		ui.Println(ui.Label("почта       ") + "настроена верно")
-	case "warn":
+	case level.Warn:
 		ui.Println(ui.Label("почта       ") + ui.Warn(strings.Join(reasons, ", ")) + ui.Dim("  подробно: tim mail "+domain))
 	default:
 		ui.Println(ui.Label("почта       ") + ui.Bad("проблемы: "+strings.Join(reasons, ", ")) + ui.Dim("  подробно: tim mail "+domain))

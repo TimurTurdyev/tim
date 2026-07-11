@@ -7,6 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/TimurTurdyev/tim/internal/level"
 )
 
 // Экранный режим tim: один каркас у всех экранов - верхняя строка с крошками, тело, строка клавиш.
@@ -70,7 +72,7 @@ type CommandEntry struct {
 	Line, Desc string
 }
 
-// Options: что каркасу нужно от cmd.
+// Options: что каркасу нужно от главного экрана.
 type Options struct {
 	Commands   func(prefix string) []CommandEntry // подсказки для ":"
 	RunCommand func(line string) Action           // что делать с набранной командой
@@ -197,13 +199,13 @@ func (a *App) Do(act Action) tea.Cmd {
 }
 
 // Toast показывает строку внизу на несколько секунд.
-func (a *App) Toast(kind, text string) tea.Cmd {
+func (a *App) Toast(l level.Level, text string) tea.Cmd {
 	st := styleToastOK
 	mark := symCheck
-	switch kind {
-	case "warn":
+	switch l {
+	case level.Warn:
 		st, mark = styleToastWn, symWarn
-	case "bad":
+	case level.Bad:
 		st, mark = styleToastBd, symCross
 	}
 	a.toast = toastState{text: mark + " " + text, cls: st, id: a.toast.id + 1}

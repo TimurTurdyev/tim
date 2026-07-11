@@ -5,10 +5,12 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/TimurTurdyev/tim/internal/level"
 )
 
 // Доска: список строк, панель выбранной и действия буквами. На ней живут экраны без своей
-// логики: VPN и обход, dev-серверы, проверка проектов. Данные и действия приходят из cmd.
+// логики: VPN и обход, dev-серверы, проверка проектов. Данные и действия приходят из разделов.
 
 // BoardRow: строка доски. Cells уже с цветом, полосу выбора доска добавит сама.
 type BoardRow struct {
@@ -152,9 +154,9 @@ func (b *board) Update(msg tea.Msg, app *App) tea.Cmd {
 	case boardRunMsg:
 		b.busy = ""
 		if msg.err != nil {
-			return tea.Batch(app.Toast("bad", msg.err.Error()), b.load(false))
+			return tea.Batch(app.Toast(level.Bad, msg.err.Error()), b.load(false))
 		}
-		return tea.Batch(app.Toast("ok", msg.text), b.load(false))
+		return tea.Batch(app.Toast(level.OK, msg.text), b.load(false))
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if b.list.Key(k, 10) {
@@ -168,7 +170,7 @@ func (b *board) Update(msg tea.Msg, app *App) tea.Cmd {
 				continue
 			}
 			if b.busy != "" {
-				return app.Toast("warn", "подожди: "+b.busy)
+				return app.Toast(level.Warn, "подожди: "+b.busy)
 			}
 			row := b.current()
 			switch {

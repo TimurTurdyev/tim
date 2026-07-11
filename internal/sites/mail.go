@@ -6,6 +6,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -32,12 +33,12 @@ func printMail(arg string, selectors []string) error {
 	ui.Println(ui.Info("DMARC") + ui.Dim("  "+m.DMARC))
 	bad += printFindings(m.DMRF)
 	printFixes(domain, m)
-	level, reasons := m.Verdict()
+	verdict, reasons := m.Verdict()
 	ui.Println()
-	switch level {
-	case "ok":
+	switch verdict {
+	case level.OK:
 		ui.Println(ui.Label("итог ") + "почта настроена верно")
-	case "warn":
+	case level.Warn:
 		ui.Println(ui.Warn("итог ") + "работает, но: " + strings.Join(reasons, ", "))
 	default:
 		ui.Println(ui.Bad("итог ") + "есть проблемы: " + strings.Join(reasons, ", "))
@@ -75,11 +76,11 @@ func printFindings(fs []inspect.Finding) int {
 	bad := 0
 	for _, f := range fs {
 		switch f.Level {
-		case "ok":
+		case level.OK:
 			ui.Println("  " + ui.Label("ок ") + f.Text)
-		case "warn":
+		case level.Warn:
 			ui.Println("  " + ui.Warn("!  ") + f.Text)
-		case "bad":
+		case level.Bad:
 			bad++
 			ui.Println("  " + ui.Bad("x  ") + f.Text)
 		default:
@@ -124,9 +125,9 @@ func printMailSummary(cfg *config.Config) error {
 	ui.Println(ui.Dim(ui.Pad("ДОМЕН", 30) + " ИТОГ"))
 	for _, r := range rows {
 		switch r.Level {
-		case "ok":
+		case level.OK:
 			ui.Println(ui.Label(ui.Pad(r.Domain, 30)) + " настроена верно")
-		case "warn":
+		case level.Warn:
 			bad++
 			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Warn(strings.Join(r.Missing, ", ")))
 		default:

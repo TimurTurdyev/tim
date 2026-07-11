@@ -31,7 +31,7 @@ func deps(env *app.Env, o options, args []string) error {
 	if st, err := os.Stat(root); err != nil || !st.IsDir() {
 		return ui.Errorf("папки нет: %s", root)
 	}
-	min, err := diskuse.ParseSize(o.min)
+	minSize, err := diskuse.ParseSize(o.minSize)
 	if err != nil {
 		return err
 	}
@@ -39,9 +39,9 @@ func deps(env *app.Env, o options, args []string) error {
 		return diskuse.Item{Path: d, Kind: filepath.Base(d), Size: diskuse.SizeOf(d)}
 	})
 	if o.clean {
-		return cleanStale(env.Cfg, items, min, o)
+		return cleanStale(env.Cfg, items, minSize, o)
 	}
-	s := diskuse.Summarize(items, 20, min)
+	s := diskuse.Summarize(items, 20, minSize)
 	for _, it := range s.Top {
 		owner := ""
 		if p, ok := env.Cfg.ProjectHere(it.Path); ok {
@@ -64,9 +64,9 @@ func deps(env *app.Env, o options, args []string) error {
 }
 
 // cleanStale предлагает убрать в Корзину зависимости проектов, которые давно не трогали.
-func cleanStale(cfg *config.Config, items []diskuse.Item, min int64, o options) error {
+func cleanStale(cfg *config.Config, items []diskuse.Item, minSize int64, o options) error {
 	touched := touchTimes(cfg, items)
-	stale := slices.DeleteFunc(diskuse.Stale(items, touched, time.Now(), o.days, min), func(it diskuse.Item) bool {
+	stale := slices.DeleteFunc(diskuse.Stale(items, touched, time.Now(), o.days, minSize), func(it diskuse.Item) bool {
 		if gitx.Tracked(it.Path) {
 			ui.Println(ui.Dim("пропускаю " + it.Path + ": лежит в git"))
 			return true
@@ -74,7 +74,7 @@ func cleanStale(cfg *config.Config, items []diskuse.Item, min int64, o options) 
 		return false
 	})
 	if len(stale) == 0 {
-		ui.Println(ui.Dim("заброшенных дольше " + strconv.Itoa(o.days) + " дн папок крупнее " + o.min + " нет"))
+		ui.Println(ui.Dim("заброшенных дольше " + strconv.Itoa(o.days) + " дн папок крупнее " + o.minSize + " нет"))
 		return nil
 	}
 	var freed int64

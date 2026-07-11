@@ -8,6 +8,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -38,17 +39,29 @@ func serverData(target string) tui.BoardData {
 		if strings.Contains(why, "255") {
 			why = "ssh не подключился: имя не резолвится, порт закрыт или ключ не подходит"
 		}
-		d.Head = []string{ui.Bad("\u2715 " + target + ": " + why), ui.Dim("маршрут и вход проверит tim ssh " + target + "; s - зайти по ssh")}
+		d.Head = []string{level.Lamp(level.Bad, target+": "+why), ui.Dim("маршрут и вход проверит tim ssh " + target + "; s - зайти по ssh")}
 		d.Empty = "отчёта нет"
 		return d
 	}
 	d.Status = summaryLine(r)
-	barLine := func(label string, pct int, tail string) string {
+	d.Head = append(serverBars(r), "")
+	d.Head = append(d.Head, ui.Pairs(serverLamps(r), 46)...)
+	for _, c := range srvinfo.Evaluate(r, time.Now()) {
+		d.Rows = append(d.Rows, findingRow(c, r))
+	}
+	d.Empty = "замечаний нет"
+	return d
+}
+
+// serverBars: диск, память и нагрузка полосами.
+func serverBars(r srvinfo.Report) []string {
+	bar := func(label string, pct int, tail string) string {
 		return ui.Pad(label, 10) + tui.Bar(float64(pct)/100, 30) + "  " + ui.Percent(pct) + ui.Dim("  "+tail)
 	}
+	var out []string
 	for _, disk := range r.Disks {
 		if disk.Mount == "/" {
-			d.Head = append(d.Head, barLine("диск", disk.Pct, ui.Bytes(disk.Used)+" из "+ui.Bytes(disk.Size)))
+			out = append(out, bar("диск", disk.Pct, ui.Bytes(disk.Used)+" из "+ui.Bytes(disk.Size)))
 		}
 	}
 	if r.MemTotal > 0 {
@@ -57,34 +70,38 @@ func serverData(target string) tui.BoardData {
 		if r.SwapTotal > 0 {
 			tail += ", swap " + ui.Bytes(r.SwapTotal-r.SwapFree)
 		}
-		d.Head = append(d.Head, barLine("память", int(used*100/r.MemTotal), tail))
+		out = append(out, bar("память", int(used*100/r.MemTotal), tail))
 	}
 	if r.Cores > 0 {
 		pct := int(r.Load[1] * 100 / float64(r.Cores))
-		d.Head = append(d.Head, barLine("нагрузка", pct, fmt.Sprintf("%.2f за 5 мин, %d %s", r.Load[1], r.Cores, ui.Plural(r.Cores, "ядро", "ядра", "ядер"))))
+		out = append(out, bar("нагрузка", pct, fmt.Sprintf("%.2f за 5 мин, %d %s", r.Load[1], r.Cores, ui.Plural(r.Cores, "ядро", "ядра", "ядер"))))
 	}
-	d.Head = append(d.Head, "")
+	return out
+}
+
+// serverLamps: службы, обновления, ssh, открытые порты и защита от перебора - по лампе.
+func serverLamps(r srvinfo.Report) []string {
 	var lamps []string
 	if len(r.Failed) == 0 {
-		lamps = append(lamps, ui.OK("\u25cf службы в порядке"))
+		lamps = append(lamps, level.Lamp(level.OK, "службы в порядке"))
 	} else {
-		lamps = append(lamps, ui.Bad("\u2715 упали: "+strings.Join(r.Failed, ", ")))
+		lamps = append(lamps, level.Lamp(level.Bad, "упали: "+strings.Join(r.Failed, ", ")))
 	}
 	switch n := len(r.SecurityUpdates); {
 	case n == 0 && !r.Reboot:
-		lamps = append(lamps, ui.OK("\u25cf обновления безопасности стоят"))
+		lamps = append(lamps, level.Lamp(level.OK, "обновления безопасности стоят"))
 	case n == 0:
-		lamps = append(lamps, ui.Warn("\u25b2 нужна перезагрузка"))
+		lamps = append(lamps, level.Lamp(level.Warn, "нужна перезагрузка"))
 	default:
-		lamps = append(lamps, ui.Warn(fmt.Sprintf("\u25b2 %d %s безопасности ждут", n, ui.Plural(n, "обновление", "обновления", "обновлений"))))
+		lamps = append(lamps, level.Lamp(level.Warn, fmt.Sprintf("%d %s безопасности ждут", n, ui.Plural(n, "обновление", "обновления", "обновлений"))))
 	}
 	switch {
 	case r.NoSudoSSHD:
-		lamps = append(lamps, ui.Dim("- sshd не проверен: нужен sudo без пароля"))
+		lamps = append(lamps, level.Lamp(level.Skip, "sshd не проверен: нужен sudo без пароля"))
 	case r.SSHD["permitrootlogin"] == "yes" || r.SSHD["passwordauthentication"] == "yes":
-		lamps = append(lamps, ui.Warn("\u25b2 ssh: вход по паролю разрешён"))
+		lamps = append(lamps, level.Lamp(level.Warn, "ssh: вход по паролю разрешён"))
 	default:
-		lamps = append(lamps, ui.OK("\u25cf ssh только по ключу"))
+		lamps = append(lamps, level.Lamp(level.OK, "ssh только по ключу"))
 	}
 	var open []string
 	for _, l := range r.Listening {
@@ -92,34 +109,27 @@ func serverData(target string) tui.BoardData {
 			open = append(open, strconv.Itoa(l.Port))
 		}
 	}
-	lamps = append(lamps, ui.OK("\u25cf наружу ")+ui.Dim(strings.Join(open, ", ")))
+	lamps = append(lamps, level.Lamp(level.OK, "наружу ")+ui.Dim(strings.Join(open, ", ")))
 	switch {
 	case r.Fail2ban == "active":
-		lamps = append(lamps, ui.OK("\u25cf fail2ban работает"))
+		lamps = append(lamps, level.Lamp(level.OK, "fail2ban работает"))
 	case r.UFW == "active":
-		lamps = append(lamps, ui.OK("\u25cf ufw включён"))
+		lamps = append(lamps, level.Lamp(level.OK, "ufw включён"))
 	default:
-		lamps = append(lamps, ui.Warn("\u25b2 защиты от перебора не видно"))
+		lamps = append(lamps, level.Lamp(level.Warn, "защиты от перебора не видно"))
 	}
-	for i := 0; i < len(lamps); i += 2 {
-		line := ui.Pad(lamps[i], 46)
-		if i+1 < len(lamps) {
-			line += lamps[i+1]
-		}
-		d.Head = append(d.Head, line)
+	return lamps
+}
+
+// findingRow: находка строкой доски; в панели подробность и с чего начать.
+func findingRow(c health.Check, r srvinfo.Report) tui.BoardRow {
+	row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text, Sub: c.Level.String()}
+	row.Cells = ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + ui.Clip(c.Detail, 90)
+	row.Pane = []string{c.Detail}
+	if fix := serverFix(c, r); fix != "" {
+		row.Pane = append(row.Pane, ui.Dim("\u2192 "+fix))
 	}
-	findings := srvinfo.Evaluate(r, time.Now())
-	for _, c := range findings {
-		row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text, Sub: c.Level.String()}
-		row.Cells = ui.Pad(health.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + ui.Clip(c.Detail, 90)
-		row.Pane = []string{c.Detail}
-		if fix := serverFix(c, r); fix != "" {
-			row.Pane = append(row.Pane, ui.Dim("\u2192 "+fix))
-		}
-		d.Rows = append(d.Rows, row)
-	}
-	d.Empty = "замечаний нет"
-	return d
+	return row
 }
 
 // serverFix: с чего начать по каждой находке - команда или место, где смотреть.

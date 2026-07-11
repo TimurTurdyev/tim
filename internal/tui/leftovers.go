@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -182,7 +183,7 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 		}
 	}
 	if len(picked) == 0 {
-		return app.Toast("warn", "сначала отметь пробелом, что убрать")
+		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var cmds []string
 	for _, g := range picked {
@@ -210,9 +211,9 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 				freed += g.Size
 			}
 			l.marked = map[string]bool{}
-			toast := app.Toast("ok", "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки")
+			toast := app.Toast(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки")
 			if len(errs) > 0 {
-				toast = app.Toast("bad", strings.Join(errs, "; "))
+				toast = app.Toast(level.Bad, strings.Join(errs, "; "))
 			}
 			return tea.Batch(toast, l.Init())
 		},

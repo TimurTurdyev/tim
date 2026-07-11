@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -42,7 +43,7 @@ type DiskTab struct {
 	Total int64
 }
 
-// DiskData: всё для экрана; собирается в cmd.
+// DiskData: всё для экрана; собирается в разделе disk.
 type DiskData struct {
 	UsedPct     int
 	Avail, Size int64
@@ -193,7 +194,7 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "space", " ":
 			if cur := d.current(); cur != nil {
 				if !cur.Removable || cur.Path == "" {
-					return app.Toast("warn", "это место так не убрать: смотри подсказку справа")
+					return app.Toast(level.Warn, "это место так не убрать: смотри подсказку справа")
 				}
 				if _, ok := d.marked[cur.Path]; ok {
 					delete(d.marked, cur.Path)
@@ -206,7 +207,7 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 			return d.confirmRemove(app)
 		case "b", "и":
 			if d.loading {
-				return app.Toast("warn", "подожди, замер ещё идёт")
+				return app.Toast(level.Warn, "подожди, замер ещё идёт")
 			}
 			if d.opts.Browse != nil {
 				return app.Push(d.opts.Browse())
@@ -228,7 +229,7 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 
 func (d *disk) confirmRemove(app *App) tea.Cmd {
 	if len(d.marked) == 0 {
-		return app.Toast("warn", "сначала отметь пробелом, что убрать")
+		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var lines, paths []string
 	var sum int64
@@ -249,9 +250,9 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 			d.marked = map[string]DiskRow{}
 			var cmds []tea.Cmd
 			if len(errs) > 0 {
-				cmds = append(cmds, app.Toast("bad", strings.Join(errs, "; ")))
+				cmds = append(cmds, app.Toast(level.Bad, strings.Join(errs, "; ")))
 			} else {
-				cmds = append(cmds, app.Toast("ok", "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
+				cmds = append(cmds, app.Toast(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
 			}
 			cmds = append(cmds, d.load(false))
 			return tea.Batch(cmds...)

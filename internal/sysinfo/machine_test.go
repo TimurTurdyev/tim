@@ -73,7 +73,7 @@ func TestParseWifi(t *testing.T) {
 }
 
 func TestParseUnits(t *testing.T) {
-	out := "nginx.service loaded active running A high performance web server\n● php8.3-fpm.service loaded failed failed The PHP 8.3 FastCGI Process Manager\n"
+	out := "nginx.service loaded active running A high performance web server\n\u25cf php8.3-fpm.service loaded failed failed The PHP 8.3 FastCGI Process Manager\n"
 	u := ParseUnits(out)
 	if len(u) != 2 || u[0].Name != "nginx" || u[0].Sub != "running" || u[1].Name != "php8.3-fpm" || u[1].Active != "failed" || u[1].Description != "The PHP 8.3 FastCGI Process Manager" {
 		t.Errorf("%+v", u)

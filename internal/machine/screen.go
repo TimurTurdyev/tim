@@ -12,16 +12,14 @@ import (
 // HWScreen: живое железо. Паспорт собирается при первом замере, уже в фоне - открытие экрана
 // не ждёт system_profiler.
 func HWScreen() tui.Screen {
-	collect, sample, err := Funcs()
+	src, err := SourceFor()
 	if err != nil {
 		return tui.NewResult("hw", func() (string, error) { return "", err }, tui.ResultOpts{})
 	}
-	var once sync.Once
-	var base Snapshot
+	base := sync.OnceValue(src.Collect)
 	return tui.NewHW(tui.HWOpts{
 		Sample: func() tui.HWSample {
-			once.Do(func() { base = collect() })
-			s := toHWSample(sample(base))
+			s := toHWSample(src.Sample(base()))
 			if d, ok := sysinfo.DataDisk(); ok {
 				s.Disk = d.Percent()
 			}

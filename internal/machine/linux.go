@@ -14,7 +14,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 )
 
-// Источники Linux: /proc, /sys и nvidia-smi. Без build-тега: на macOS эти функции просто не вызываются.
+// linux: /proc, /sys и nvidia-smi. Без build-тега: на macOS эти методы просто не вызываются.
+type linux struct{}
 
 func procStat() hwinfo.CPUTimes {
 	data, _ := os.ReadFile("/proc/stat")
@@ -54,7 +55,8 @@ func hotZone() int {
 	return hwinfo.HotZone(temps)
 }
 
-func CollectLinux() Snapshot {
+// Collect: паспорт и загрузка из /proc и /sys.
+func (linux) Collect() Snapshot {
 	s := Snapshot{Cores: runtime.NumCPU()}
 	par.All(
 		func() {
@@ -90,8 +92,8 @@ func CollectLinux() Snapshot {
 	return s
 }
 
-// SampleLinux: такт живого экрана - секунда замера /proc/stat.
-func SampleLinux(base Snapshot) Live {
+// Sample: такт живого экрана - секунда замера /proc/stat.
+func (linux) Sample(base Snapshot) Live {
 	out := Live{MemTotal: base.MemTotal, Title: Title(base)}
 	var list []procs.Full
 	par.All(

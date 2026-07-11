@@ -1,4 +1,4 @@
-// Package sysinfo: быстрые сведения о машине для сводки: сервисы launchd, git, процессы.
+// Package sysinfo: быстрые сведения о машине - память, диск, загрузка, батарея, Wi-Fi, службы.
 package sysinfo
 
 import (

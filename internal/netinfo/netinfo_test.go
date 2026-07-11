@@ -1,6 +1,9 @@
 package netinfo
 
-import "testing"
+import (
+	"net/netip"
+	"testing"
+)
 
 func TestParseServiceOrder(t *testing.T) {
 	out := "An asterisk (*) denotes that a network service is disabled.\n(1) AX88179A\n(Hardware Port: AX88179A, Device: en9)\n\n(2) Thunderbolt Bridge\n(Hardware Port: Thunderbolt Bridge, Device: bridge0)\n\n(3) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n"
@@ -50,7 +53,7 @@ func TestParseRoutesExpandsNets(t *testing.T) {
 	want := map[string]bool{"0.0.0.0/1": true, "10.8.0.0/16": true, "128.0.0.0/1": true, "198.51.100.0/24": true}
 	found := 0
 	for _, r := range list {
-		if want[r.Dest] {
+		if want[r.Target()] {
 			found++
 		}
 	}
@@ -62,11 +65,11 @@ func TestParseRoutesExpandsNets(t *testing.T) {
 func TestStale(t *testing.T) {
 	list := ParseRoutes(tableSample)
 	all := Stale(list, "192.0.2.1", nil)
-	if len(all) != 2 || all[0].Dest != "198.51.100.9" || all[1].Dest != "203.0.113.6" {
+	if len(all) != 2 || all[0].Target() != "198.51.100.9" || all[1].Target() != "203.0.113.6" {
 		t.Errorf("stale all: %+v", all)
 	}
-	only := Stale(list, "192.0.2.1", map[string]bool{"203.0.113.6": true, "203.0.113.5": true})
-	if len(only) != 1 || only[0].Dest != "203.0.113.6" {
+	only := Stale(list, "192.0.2.1", map[netip.Prefix]bool{netip.MustParsePrefix("203.0.113.6/32"): true, netip.MustParsePrefix("203.0.113.5/32"): true})
+	if len(only) != 1 || only[0].Target() != "203.0.113.6" {
 		t.Errorf("stale only: %+v", only)
 	}
 }

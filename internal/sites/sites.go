@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 )
@@ -31,11 +32,11 @@ func EnvGit(dir string) health.EnvGit {
 // GitCheck: состояние клона. Сам запуск git остаётся здесь, решение об уровне - в health.
 func GitCheck(dir string) health.Check {
 	if !gitx.IsRepo(dir) {
-		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
+		return health.Check{Name: "git", Level: level.Skip, Text: "-"}
 	}
 	g, ok := gitx.Status(dir)
 	if !ok {
-		return health.Check{Name: "git", Level: health.Skip, Text: "-"}
+		return health.Check{Name: "git", Level: level.Skip, Text: "-"}
 	}
 	return health.GitCheck(g, EnvGit(dir))
 }
@@ -134,19 +135,19 @@ func Expiries(hosts []string) []Expiry {
 
 // MailVerdict: итог проверки почты домена.
 type MailVerdict struct {
-	Domain, Level string
-	Missing       []string
+	Domain  string
+	Level   level.Level
+	Missing []string
 }
 
 // MailVerdicts: почта по доменам, параллельно, в том же порядке.
 func MailVerdicts(domains []string) []MailVerdict {
 	return par.Map(domains, par.Limit, func(d string) MailVerdict {
-		level, missing := inspect.MailCheck(d, inspect.DKIMSelectors).Verdict()
-		return MailVerdict{d, level, missing}
+		verdict, missing := inspect.MailCheck(d, inspect.DKIMSelectors).Verdict()
+		return MailVerdict{d, verdict, missing}
 	})
 }
 
-// dkimRevoked: тег p= пустой - ключ отозван.
 // DKIMRevoked: запись есть, но ключ пустой - селектор отозван.
 func DKIMRevoked(rec string) bool {
 	for _, part := range strings.Split(rec, ";") {

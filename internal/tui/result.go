@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/TimurTurdyev/tim/internal/level"
 )
 
 // result: вывод обычной команды внутри экрана. Сверху сама команда, чтобы запомнить.
@@ -14,7 +16,7 @@ type result struct {
 	err    error
 	top    int
 	done   bool
-	copied func(string) // скопировать команду в буфер, даёт cmd
+	copied func(string) // скопировать команду в буфер
 	next   []CommandEntry
 }
 
@@ -100,7 +102,7 @@ func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "c", "с":
 			if r.copied != nil {
 				r.copied("tim " + r.title)
-				return app.Toast("ok", "скопировано: tim "+r.title)
+				return app.Toast(level.OK, "скопировано: tim "+r.title)
 			}
 		case "1", "2", "3":
 			i := int(msg.String()[0] - '1')

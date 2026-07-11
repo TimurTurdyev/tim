@@ -44,11 +44,11 @@ func serveForeground(env *app.Env, p *config.Project, port string, o options) er
 	if l, busy := netinfo.PortBusy(port); busy {
 		return ui.Errorf("порт %s занят: %s (pid %s); освободить: tim port %s kill", port, l.Command, l.PID, port)
 	}
-	sp, err := run.NewPlan(p, dir, port)
+	plan, err := run.NewPlan(p, dir, port)
 	if err != nil {
 		return err
 	}
-	ui.Println(ui.Label(p.Name) + "  " + ui.Dim(sp.Note+", порт "+port+", "+sp.Dir))
+	ui.Println(ui.Label(p.Name) + "  " + ui.Dim(plan.Note+", порт "+port+", "+plan.Dir))
 	if o.https {
 		f, err := planHTTPS(p, map[string]bool{port: true})
 		if err != nil {
@@ -58,7 +58,7 @@ func serveForeground(env *app.Env, p *config.Project, port string, o options) er
 			return err
 		}
 		line := "  " + f.url()
-		if hint := httpsHint(run.Stack(sp.Dir)); hint != "" {
+		if hint := httpsHint(run.Stack(plan.Dir)); hint != "" {
 			line += ui.Dim("  " + hint)
 		}
 		ui.Println(line)
@@ -68,7 +68,7 @@ func serveForeground(env *app.Env, p *config.Project, port string, o options) er
 	} else if o.open {
 		go openWhenReady(port, "http://localhost:"+port)
 	}
-	return runner.ExecIn(sp.Dir, sp.Cmd.Env, sp.Cmd.Name, sp.Cmd.Args...)
+	return runner.ExecIn(plan.Dir, plan.Cmd.Env, plan.Cmd.Name, plan.Cmd.Args...)
 }
 
 // background запускает проекты в фоне; port - для одного проекта, занятые порты заменяются свободными.
@@ -111,16 +111,16 @@ func background(env *app.Env, list []*config.Project, port string, o options) er
 
 // startOne: один проект в фоне, рядом его https-прокси; состояние - чтобы потом найти и остановить.
 func startOne(env *app.Env, p *config.Project, port, wanted string, taken map[string]bool, o options) error {
-	sp, err := run.NewPlan(p, env.Cfg.ProjectDir(p), port)
+	plan, err := run.NewPlan(p, env.Cfg.ProjectDir(p), port)
 	if err != nil {
 		return err
 	}
 	logPath := run.LogPath(p.Name)
-	pid, err := runner.Start(sp.Dir, sp.Cmd.Env, logPath, sp.Cmd.Name, sp.Cmd.Args...)
+	pid, err := runner.Start(plan.Dir, plan.Cmd.Env, logPath, plan.Cmd.Name, plan.Cmd.Args...)
 	if err != nil {
 		return ui.Errorf("%s: не запустился: %v", p.Name, err)
 	}
-	line := ui.Label(ui.Pad(p.Name, 22)) + " порт " + port + ui.Dim("  "+sp.Note)
+	line := ui.Label(ui.Pad(p.Name, 22)) + " порт " + port + ui.Dim("  "+plan.Note)
 	if port != wanted {
 		line += "  " + ui.Warn("вместо "+wanted+" (занят); APP_URL мог остаться на "+wanted)
 	}
@@ -133,7 +133,7 @@ func startOne(env *app.Env, p *config.Project, port, wanted string, taken map[st
 	if runner.DryRun {
 		return nil
 	}
-	st := run.State{Name: p.Name, PID: pid, Port: port, Dir: sp.Dir, Command: sp.Cmd.String(), Log: logPath, Started: time.Now()}
+	st := run.State{Name: p.Name, PID: pid, Port: port, Dir: plan.Dir, Command: plan.Cmd.String(), Log: logPath, Started: time.Now()}
 	return st.Save()
 }
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/level"
 )
 
 func TestParseUbuntu(t *testing.T) {
@@ -41,18 +41,18 @@ func TestParseUbuntu(t *testing.T) {
 func TestEvaluateUbuntu(t *testing.T) {
 	data, _ := os.ReadFile("testdata/ubuntu.txt")
 	got := Evaluate(Parse(string(data)), time.Now())
-	text := map[string]health.Level{}
+	text := map[string]level.Level{}
 	for _, c := range got {
 		text[c.Name+":"+c.Text] = c.Level
 	}
-	want := map[string]health.Level{
-		"перезагрузка:нужна":      health.Warn,
-		"порт:21 FTP":             health.Warn,
-		"порт:7777 8888":          health.Warn,
-		"юнит:networking.service": health.Warn,
-		"sshd:не проверено":       health.Skip,
-		"nginx:не проверено":      health.Skip,
-		"защита:fail2ban не запущен, ufw не проверен": health.Warn,
+	want := map[string]level.Level{
+		"перезагрузка:нужна":      level.Warn,
+		"порт:21 FTP":             level.Warn,
+		"порт:7777 8888":          level.Warn,
+		"юнит:networking.service": level.Warn,
+		"sshd:не проверено":       level.Skip,
+		"nginx:не проверено":      level.Skip,
+		"защита:fail2ban не запущен, ufw не проверен": level.Warn,
 	}
 	for k, l := range want {
 		if got, ok := text[k]; !ok || got != l {
@@ -78,7 +78,7 @@ func TestEvaluateBad(t *testing.T) {
 	got := Evaluate(r, time.Now())
 	bad := 0
 	for _, c := range got {
-		if c.Level == health.Bad {
+		if c.Level == level.Bad {
 			bad++
 		}
 		if strings.Contains(c.Text, "5432") {
@@ -86,7 +86,7 @@ func TestEvaluateBad(t *testing.T) {
 		}
 	}
 	// диск 97%, нагрузка 2.5 на ядро, Redis наружу, root по паролю, nginx с ошибкой
-	if bad != 5 || got[0].Level != health.Bad {
+	if bad != 5 || got[0].Level != level.Bad {
 		t.Fatalf("плохих %d: %+v", bad, got)
 	}
 }

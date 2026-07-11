@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -223,9 +224,9 @@ func (p *procsScreen) Update(msg tea.Msg, app *App) tea.Cmd {
 		p.closing = ""
 		p.loading = true
 		if msg.err != nil {
-			return tea.Batch(app.Toast("bad", msg.err.Error()), p.load())
+			return tea.Batch(app.Toast(level.Bad, msg.err.Error()), p.load())
 		}
-		return tea.Batch(app.Toast("ok", msg.text), p.load())
+		return tea.Batch(app.Toast(level.OK, msg.text), p.load())
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if p.input.Focused() {
@@ -274,9 +275,9 @@ func (p *procsScreen) confirmClose(app *App, force bool) tea.Cmd {
 	case cur == nil:
 		return nil
 	case cur.Protected:
-		return app.Toast("warn", cur.Name+" - системный процесс, без него машина или сеанс упадут")
+		return app.Toast(level.Warn, cur.Name+" - системный процесс, без него машина или сеанс упадут")
 	case p.closing != "":
-		return app.Toast("warn", "подожди, закрываю "+p.closing)
+		return app.Toast(level.Warn, "подожди, закрываю "+p.closing)
 	}
 	g := *cur
 	d := Dialog{Title: "Закрыть " + g.Name + "?", OK: "Закрыть"}

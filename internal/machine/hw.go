@@ -33,7 +33,7 @@ type Snapshot struct {
 	Therm         string
 }
 
-// Live: один замер для живого экрана; экран в cmd переводит его в свой тип.
+// Live: один замер для живого экрана; экран переводит его в свой тип.
 type Live struct {
 	Title               string
 	CPU, GPU, Mem       int
@@ -96,7 +96,7 @@ func gpuHolders(list []procs.Full) []string {
 }
 
 // Collect: всё разом и параллельно; загрузка процессора - по ps, без секундного iostat.
-func Collect() Snapshot {
+func (darwin) Collect() Snapshot {
 	var s Snapshot
 	// Каждый замер пишет свои поля, поэтому общий замок не нужен.
 	par.All(
@@ -148,20 +148,29 @@ func Collect() Snapshot {
 	return s
 }
 
-// Funcs: сбор паспорта и замер для этой системы.
-func Funcs() (func() Snapshot, func(Snapshot) Live, error) {
+// Source: паспорт машины и замеры для живого экрана - у каждой системы свои утилиты.
+type Source interface {
+	Collect() Snapshot
+	Sample(base Snapshot) Live
+}
+
+// darwin: macOS через sysctl, ioreg, system_profiler и iostat.
+type darwin struct{}
+
+// SourceFor: источник для этой системы.
+func SourceFor() (Source, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		return Collect, Sample, nil
+		return darwin{}, nil
 	case "linux":
-		return CollectLinux, SampleLinux, nil
+		return linux{}, nil
 	}
-	return nil, nil, ui.Errorf("на %s пока не умею", runtime.GOOS)
+	return nil, ui.Errorf("на %s пока не умею", runtime.GOOS)
 }
 
 // Sample: замер для живого экрана. Паспорт машины уже собран, здесь только то, что меняется,
 // и всё параллельно с секундным iostat - он и задаёт такт.
-func Sample(base Snapshot) Live {
+func (darwin) Sample(base Snapshot) Live {
 	out := Live{MemTotal: base.MemTotal, Title: Title(base)}
 	var list []procs.Full
 	par.All(

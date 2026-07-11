@@ -18,7 +18,7 @@ const module = "github.com/TimurTurdyev/tim/internal/"
 // Ядро ничего не знает о предметной области; разделы - то, что видит человек; остальное - библиотеки.
 // app - связка корня и разделов: окружение, выбор проекта, запуск экранов; ей можно в библиотеки.
 var (
-	core = []string{"brand", "cache", "config", "fuzzy", "gitx", "par", "paths", "privileged",
+	core = []string{"brand", "cache", "config", "fuzzy", "gitx", "level", "par", "paths", "privileged",
 		"runner", "schedule", "shellq", "tui", "ui"}
 	sections = []string{"bypass", "disk", "home", "local", "machine", "motd", "projects", "serve",
 		"servers", "shell", "sites", "tools"}

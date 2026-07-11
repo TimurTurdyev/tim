@@ -71,41 +71,9 @@ func Sections(out string) map[string][]string {
 // Parse собирает Report из вывода Script.
 func Parse(out string) Report {
 	s := Sections(out)
-	r := Report{SSHD: map[string]string{}}
-	for _, l := range s["os"] {
-		if v, ok := strings.CutPrefix(l, "PRETTY_NAME="); ok {
-			r.OS = strings.Trim(v, `"`)
-		}
-	}
-	if u := s["uptime"]; len(u) >= 3 {
-		if f := strings.Fields(u[0]); len(f) > 0 {
-			sec, _ := strconv.ParseFloat(f[0], 64)
-			r.Uptime = time.Duration(sec) * time.Second
-		}
-		r.Cores, _ = strconv.Atoi(strings.TrimSpace(u[1]))
-		for i, f := range strings.Fields(u[2]) {
-			if i < 3 {
-				r.Load[i], _ = strconv.ParseFloat(f, 64)
-			}
-		}
-	}
-	for _, l := range s["mem"] {
-		f := strings.Fields(l)
-		if len(f) < 2 {
-			continue
-		}
-		kb, _ := strconv.ParseInt(f[1], 10, 64)
-		switch strings.TrimSuffix(f[0], ":") {
-		case "MemTotal":
-			r.MemTotal = kb * 1024
-		case "MemAvailable":
-			r.MemAvail = kb * 1024
-		case "SwapTotal":
-			r.SwapTotal = kb * 1024
-		case "SwapFree":
-			r.SwapFree = kb * 1024
-		}
-	}
+	r := Report{OS: prettyName(s["os"])}
+	r.Uptime, r.Cores, r.Load = parseUptime(s["uptime"])
+	r.MemTotal, r.MemAvail, r.SwapTotal, r.SwapFree = parseMem(s["mem"])
 	r.Disks = parseDf(s["df"], 1024)
 	r.Inodes = parseDf(s["inodes"], 1)
 	for _, l := range s["failed"] {
@@ -124,35 +92,102 @@ func Parse(out string) Report {
 		}
 	}
 	r.Listening = uniqListen(r.Listening)
-	for _, l := range s["sshd"] {
+	r.SSHD, r.NoSudoSSHD = parseSSHD(s["sshd"])
+	for _, l := range s["firewall"] {
+		if v, ok := strings.CutPrefix(l, "Status:"); ok {
+			r.UFW = strings.TrimSpace(v)
+		} else if v, ok := strings.CutPrefix(l, "fail2ban"); ok {
+			r.Fail2ban = strings.TrimSpace(v)
+		}
+	}
+	r.Nginx = nginxState(s["nginx"])
+	r.Certs = parseCerts(s["certs"])
+	return r
+}
+
+func prettyName(lines []string) string {
+	for _, l := range lines {
+		if v, ok := strings.CutPrefix(l, "PRETTY_NAME="); ok {
+			return strings.Trim(v, `"`)
+		}
+	}
+	return ""
+}
+
+// parseUptime: секунды работы, число ядер и строка loadavg - три строки раздела.
+func parseUptime(u []string) (up time.Duration, cores int, load [3]float64) {
+	if len(u) < 3 {
+		return 0, 0, load
+	}
+	if f := strings.Fields(u[0]); len(f) > 0 {
+		sec, _ := strconv.ParseFloat(f[0], 64)
+		up = time.Duration(sec) * time.Second
+	}
+	cores, _ = strconv.Atoi(strings.TrimSpace(u[1]))
+	for i, f := range strings.Fields(u[2]) {
+		if i < 3 {
+			load[i], _ = strconv.ParseFloat(f, 64)
+		}
+	}
+	return up, cores, load
+}
+
+// parseMem: /proc/meminfo в байтах.
+func parseMem(lines []string) (total, avail, swapTotal, swapFree int64) {
+	for _, l := range lines {
+		f := strings.Fields(l)
+		if len(f) < 2 {
+			continue
+		}
+		kb, _ := strconv.ParseInt(f[1], 10, 64)
+		switch strings.TrimSuffix(f[0], ":") {
+		case "MemTotal":
+			total = kb * 1024
+		case "MemAvailable":
+			avail = kb * 1024
+		case "SwapTotal":
+			swapTotal = kb * 1024
+		case "SwapFree":
+			swapFree = kb * 1024
+		}
+	}
+	return total, avail, swapTotal, swapFree
+}
+
+// parseSSHD: sshd -T ключ-значение в нижнем регистре; nosudo - прочитать не дали.
+func parseSSHD(lines []string) (conf map[string]string, nosudo bool) {
+	conf = map[string]string{}
+	for _, l := range lines {
 		if l == "nosudo" {
-			r.NoSudoSSHD = true
+			nosudo = true
 			continue
 		}
 		if f := strings.Fields(l); len(f) == 2 {
-			r.SSHD[strings.ToLower(f[0])] = strings.ToLower(f[1])
+			conf[strings.ToLower(f[0])] = strings.ToLower(f[1])
 		}
 	}
-	for _, l := range s["firewall"] {
-		switch {
-		case strings.HasPrefix(l, "Status:"):
-			r.UFW = strings.TrimSpace(strings.TrimPrefix(l, "Status:"))
-		case strings.HasPrefix(l, "fail2ban"):
-			r.Fail2ban = strings.TrimSpace(strings.TrimPrefix(l, "fail2ban"))
-		}
+	return conf, nosudo
+}
+
+// nginxState: итог nginx -t по последней строке: ok, nosudo или сам текст ошибки.
+func nginxState(lines []string) string {
+	if len(lines) == 0 {
+		return ""
 	}
-	if n := s["nginx"]; len(n) > 0 {
-		last := n[len(n)-1]
-		switch {
-		case strings.Contains(last, "password is required") || last == "nosudo":
-			r.Nginx = "nosudo"
-		case strings.Contains(last, "test is successful") || strings.Contains(last, "syntax is ok"):
-			r.Nginx = "ok"
-		default:
-			r.Nginx = last
-		}
+	last := lines[len(lines)-1]
+	switch {
+	case strings.Contains(last, "password is required") || last == "nosudo":
+		return "nosudo"
+	case strings.Contains(last, "test is successful") || strings.Contains(last, "syntax is ok"):
+		return "ok"
 	}
-	for _, l := range s["certs"] {
+	return last
+}
+
+// parseCerts: "путь notAfter=дата"; имя сертификата - папка над файлом, как у certbot.
+func parseCerts(lines []string) []Cert {
+	var out []Cert
+	for _, l := range lines {
 		path, rest, ok := strings.Cut(l, " notAfter=")
 		if !ok {
 			continue
@@ -166,9 +201,9 @@ func Parse(out string) Report {
 		if len(parts) >= 2 {
 			name = parts[len(parts)-2]
 		}
-		r.Certs = append(r.Certs, Cert{Name: name, Expires: t})
+		out = append(out, Cert{Name: name, Expires: t})
 	}
-	return r
+	return out
 }
 
 func parseDf(lines []string, unit int64) []Disk {

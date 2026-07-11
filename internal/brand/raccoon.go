@@ -30,7 +30,7 @@ var raccoonBase = []string{
 }
 
 // Четвертинки по битам: левый верх, правый верх, левый низ, правый низ.
-const quads = " ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█"
+const quads = " \u2597\u2596\u2584\u259d\u2590\u259e\u259f\u2598\u259a\u258c\u2599\u2580\u259c\u259b\u2588"
 
 // Raccoon: картинка енота для терминала; как Mascot, без 256 цветов - пусто.
 func Raccoon(m Mood, d Depth) []string {

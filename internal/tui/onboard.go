@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -23,7 +24,7 @@ type FoundProject struct {
 	Checked               bool
 }
 
-// OnboardOpts: что мастеру нужно от cmd. Scan и Save могут быть долгими - зовутся в фоне.
+// OnboardOpts: что мастеру нужно от раздела. Scan и Save могут быть долгими - зовутся в фоне.
 type OnboardOpts struct {
 	Roots func() []RootChoice
 	Scan  func(root string) []FoundProject
@@ -180,7 +181,7 @@ func (o *onboard) Update(msg tea.Msg, app *App) tea.Cmd {
 	case onbDoneMsg:
 		o.busy = ""
 		if msg.err != nil {
-			return app.Toast("bad", msg.err.Error())
+			return app.Toast(level.Bad, msg.err.Error())
 		}
 		switch o.step {
 		case 1:
@@ -191,73 +192,91 @@ func (o *onboard) Update(msg tea.Msg, app *App) tea.Cmd {
 			return o.finish(app)
 		}
 	case tea.KeyPressMsg:
-		k := msg.String()
 		if o.busy != "" {
 			return nil
 		}
 		if o.input.Focused() {
-			if k == "enter" {
-				path := strings.TrimSpace(o.input.Value())
-				if path == "" {
-					return app.Toast("warn", "введи путь к папке с проектами")
-				}
-				o.input.Blur()
-				return o.scan(path)
-			}
-			var cmd tea.Cmd
-			o.input, cmd = o.input.Update(msg)
-			return cmd
+			return o.typePath(msg, app)
 		}
-		switch o.step {
+		switch k := msg.String(); o.step {
 		case 0:
-			if o.list.Key(k, 10) {
-				return nil
-			}
-			if k == "enter" {
-				if o.list.Cursor >= len(o.roots) {
-					return o.input.Focus()
-				}
-				return o.scan(o.roots[o.list.Cursor].Path)
-			}
+			return o.pickRoot(k)
 		case 1:
-			if o.list.Key(k, 10) {
-				return nil
-			}
-			switch k {
-			case "space", " ":
-				if o.list.Cursor < len(o.found) {
-					o.found[o.list.Cursor].Checked = !o.found[o.list.Cursor].Checked
-					o.list.Down()
-				}
-			case "a", "ф":
-				all := len(o.chosen()) == len(o.found)
-				for i := range o.found {
-					o.found[i].Checked = !all
-				}
-			case "enter":
-				chosen := o.chosen()
-				o.busy = "записываю конфиг"
-				root := o.root
-				return func() tea.Msg {
-					text, err := o.opts.Save(root, chosen)
-					return onbDoneMsg{text, err}
-				}
-			}
+			return o.pickProjects(k)
 		case 2:
-			switch k {
-			case "y", "н", "enter":
-				if o.opts.Shell == nil {
-					return o.finish(app)
-				}
-				o.busy = "подключаю к оболочке"
-				return func() tea.Msg {
-					text, err := o.opts.Shell()
-					return onbDoneMsg{text, err}
-				}
-			case "n", "т":
-				return o.finish(app)
-			}
+			return o.askShell(k, app)
 		}
+	}
+	return nil
+}
+
+// typePath: свой путь к папке с проектами вместо найденных.
+func (o *onboard) typePath(msg tea.KeyPressMsg, app *App) tea.Cmd {
+	if msg.String() == "enter" {
+		path := strings.TrimSpace(o.input.Value())
+		if path == "" {
+			return app.Toast(level.Warn, "введи путь к папке с проектами")
+		}
+		o.input.Blur()
+		return o.scan(path)
+	}
+	var cmd tea.Cmd
+	o.input, cmd = o.input.Update(msg)
+	return cmd
+}
+
+// pickRoot: шаг 1 - где лежат проекты; последняя строка - ввести путь самому.
+func (o *onboard) pickRoot(k string) tea.Cmd {
+	if o.list.Key(k, 10) || k != "enter" {
+		return nil
+	}
+	if o.list.Cursor >= len(o.roots) {
+		return o.input.Focus()
+	}
+	return o.scan(o.roots[o.list.Cursor].Path)
+}
+
+// pickProjects: шаг 2 - какие из найденных проектов записать в конфиг.
+func (o *onboard) pickProjects(k string) tea.Cmd {
+	if o.list.Key(k, 10) {
+		return nil
+	}
+	switch k {
+	case "space", " ":
+		if o.list.Cursor < len(o.found) {
+			o.found[o.list.Cursor].Checked = !o.found[o.list.Cursor].Checked
+			o.list.Down()
+		}
+	case "a", "ф":
+		all := len(o.chosen()) == len(o.found)
+		for i := range o.found {
+			o.found[i].Checked = !all
+		}
+	case "enter":
+		chosen, root := o.chosen(), o.root
+		o.busy = "записываю конфиг"
+		return func() tea.Msg {
+			text, err := o.opts.Save(root, chosen)
+			return onbDoneMsg{text, err}
+		}
+	}
+	return nil
+}
+
+// askShell: шаг 3 - подключить ли tim к оболочке.
+func (o *onboard) askShell(k string, app *App) tea.Cmd {
+	switch k {
+	case "y", "н", "enter":
+		if o.opts.Shell == nil {
+			return o.finish(app)
+		}
+		o.busy = "подключаю к оболочке"
+		return func() tea.Msg {
+			text, err := o.opts.Shell()
+			return onbDoneMsg{text, err}
+		}
+	case "n", "т":
+		return o.finish(app)
 	}
 	return nil
 }
@@ -268,7 +287,7 @@ func (o *onboard) finish(app *App) tea.Cmd {
 		text += "; " + o.shellOK
 	}
 	if o.opts.Home != nil {
-		return tea.Batch(app.Replace(o.opts.Home()), app.Toast("ok", text))
+		return tea.Batch(app.Replace(o.opts.Home()), app.Toast(level.OK, text))
 	}
 	return app.Pop()
 }

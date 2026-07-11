@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/TimurTurdyev/tim/internal/level"
 )
 
 // DKIMSelectors: частые селекторы почтовых провайдеров и рассыльщиков. Селектор может быть любым,
@@ -23,9 +25,9 @@ var DKIMSelectors = []string{
 	"pm", "postmark", "hs1", "hs2", "cm", "everlytickey1", "titan",
 }
 
-// Finding: вывод проверки, Level: ok, warn, bad, info.
+// Finding: вывод проверки.
 type Finding struct {
-	Level string
+	Level level.Level
 	Text  string
 	// Why: короткая причина для итоговой строки, без подробностей.
 	Why string
@@ -41,10 +43,10 @@ func AnalyzeSPF(txt []string) (string, []Finding) {
 	}
 	switch len(spf) {
 	case 0:
-		return "", []Finding{{"bad", "SPF нет: почту от имени домена может слать кто угодно", "нет SPF"}}
+		return "", []Finding{{level.Bad, "SPF нет: почту от имени домена может слать кто угодно", "нет SPF"}}
 	case 1:
 	default:
-		return spf[0], []Finding{{"bad", "SPF-записей " + strconv.Itoa(len(spf)) + ": по RFC это ошибка, проверка провалится", "несколько SPF"}}
+		return spf[0], []Finding{{level.Bad, "SPF-записей " + strconv.Itoa(len(spf)) + ": по RFC это ошибка, проверка провалится", "несколько SPF"}}
 	}
 	var out []Finding
 	lookups, all := 0, ""
@@ -61,20 +63,20 @@ func AnalyzeSPF(txt []string) (string, []Finding) {
 	}
 	switch all {
 	case "-all":
-		out = append(out, Finding{"ok", "-all: чужие серверы отклоняются", ""})
+		out = append(out, Finding{level.OK, "-all: чужие серверы отклоняются", ""})
 	case "~all":
-		out = append(out, Finding{"ok", "~all: чужие серверы помечаются как подозрительные", ""})
+		out = append(out, Finding{level.OK, "~all: чужие серверы помечаются как подозрительные", ""})
 	case "+all", "all":
-		out = append(out, Finding{"bad", "+all: разрешено слать любому серверу, SPF бесполезен", "SPF разрешает всем"})
+		out = append(out, Finding{level.Bad, "+all: разрешено слать любому серверу, SPF бесполезен", "SPF разрешает всем"})
 	case "?all":
-		out = append(out, Finding{"warn", "?all: нейтрально, чужие серверы не отсекаются", "SPF нейтрален"})
+		out = append(out, Finding{level.Warn, "?all: нейтрально, чужие серверы не отсекаются", "SPF нейтрален"})
 	default:
 		if !strings.Contains(strings.ToLower(spf[0]), "redirect=") {
-			out = append(out, Finding{"warn", "нет механизма all: что делать с чужими серверами, не сказано", "SPF без all"})
+			out = append(out, Finding{level.Warn, "нет механизма all: что делать с чужими серверами, не сказано", "SPF без all"})
 		}
 	}
 	if lookups > 10 {
-		out = append(out, Finding{"warn", "DNS-механизмов " + strconv.Itoa(lookups) + " (больше 10): часть получателей отбросит SPF", "SPF больше 10 запросов"})
+		out = append(out, Finding{level.Warn, "DNS-механизмов " + strconv.Itoa(lookups) + " (больше 10): часть получателей отбросит SPF", "SPF больше 10 запросов"})
 	}
 	return spf[0], out
 }
@@ -88,7 +90,7 @@ func AnalyzeDMARC(txt []string) (string, []Finding) {
 		}
 	}
 	if rec == "" {
-		return "", []Finding{{"bad", "DMARC нет: получатели не знают, что делать с подделкой", "нет DMARC"}}
+		return "", []Finding{{level.Bad, "DMARC нет: получатели не знают, что делать с подделкой", "нет DMARC"}}
 	}
 	tags := map[string]string{}
 	for _, part := range strings.Split(rec, ";") {
@@ -100,19 +102,19 @@ func AnalyzeDMARC(txt []string) (string, []Finding) {
 	var out []Finding
 	switch strings.ToLower(tags["p"]) {
 	case "reject":
-		out = append(out, Finding{"ok", "p=reject: подделки отклоняются", ""})
+		out = append(out, Finding{level.OK, "p=reject: подделки отклоняются", ""})
 	case "quarantine":
-		out = append(out, Finding{"ok", "p=quarantine: подделки уходят в спам", ""})
+		out = append(out, Finding{level.OK, "p=quarantine: подделки уходят в спам", ""})
 	case "none":
-		out = append(out, Finding{"warn", "p=none: только наблюдение, подделки доходят", "DMARC только наблюдает"})
+		out = append(out, Finding{level.Warn, "p=none: только наблюдение, подделки доходят", "DMARC только наблюдает"})
 	default:
-		out = append(out, Finding{"bad", "нет политики p=", "DMARC без политики"})
+		out = append(out, Finding{level.Bad, "нет политики p=", "DMARC без политики"})
 	}
 	if pct := tags["pct"]; pct != "" && pct != "100" {
-		out = append(out, Finding{"warn", "pct=" + pct + ": политика применяется не ко всем письмам", "DMARC не для всех писем"})
+		out = append(out, Finding{level.Warn, "pct=" + pct + ": политика применяется не ко всем письмам", "DMARC не для всех писем"})
 	}
 	if tags["rua"] == "" {
-		out = append(out, Finding{"info", "нет rua: отчёты о подделках никуда не приходят", ""})
+		out = append(out, Finding{level.Info, "нет rua: отчёты о подделках никуда не приходят", ""})
 	}
 	return rec, out
 }
@@ -170,13 +172,9 @@ func MailCheck(domain string, selectors []string) *Mail {
 
 // Verdict: общая оценка почты домена и короткие причины. ok - принимает и защищена от подделок;
 // warn - работает, но есть чего не хватает; bad - есть серьёзная дыра или почты нет.
-func (m *Mail) Verdict() (level string, reasons []string) {
-	level = "ok"
-	drop := func(l string) {
-		if l == "bad" || level == "ok" && l == "warn" {
-			level = l
-		}
-	}
+func (m *Mail) Verdict() (verdict level.Level, reasons []string) {
+	verdict = level.OK
+	drop := func(l level.Level) { verdict = max(verdict, l) }
 	seen := map[string]bool{}
 	add := func(why string) {
 		if why != "" && !seen[why] {
@@ -185,7 +183,7 @@ func (m *Mail) Verdict() (level string, reasons []string) {
 		}
 	}
 	for _, f := range append(append([]Finding{}, m.SPFF...), m.DMRF...) {
-		if f.Level == "bad" || f.Level == "warn" {
+		if f.Level >= level.Warn {
 			drop(f.Level)
 			add(f.Why)
 		}
@@ -193,18 +191,18 @@ func (m *Mail) Verdict() (level string, reasons []string) {
 	if len(m.DKIM) == 0 {
 		// Селектор DKIM может быть любым: отсутствие на частых не доказывает, что подписи нет.
 		add("DKIM на частых селекторах не найден")
-		drop("warn")
+		drop(level.Warn)
 	}
 	switch {
 	case m.NullMX:
 		// Домен явно сказал, что почту не принимает: это осознанная настройка, а не дыра.
 		if m.SPF != "" && m.DMARC != "" {
-			return "ok", nil
+			return level.OK, nil
 		}
-		drop("warn")
+		drop(level.Warn)
 	case len(m.MX) == 0:
 		add("нет MX")
-		drop("bad")
+		drop(level.Bad)
 	}
-	return level, reasons
+	return verdict, reasons
 }

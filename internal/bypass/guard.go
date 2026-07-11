@@ -2,8 +2,10 @@ package bypass
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -119,10 +121,10 @@ func Cycle(st *routewatch.Status, c *config.Config) []routewatch.Repair {
 		st.OK++
 	}
 	if len(done) > 0 {
-		reasons := routewatch.Summary(done)
+		sum := routewatch.Summary(done)
 		var parts []string
-		for k, n := range reasons {
-			parts = append(parts, fmt.Sprintf("%s: %d", k, n))
+		for _, k := range slices.Sorted(maps.Keys(sum)) {
+			parts = append(parts, fmt.Sprintf("%s: %d", k, sum[k]))
 		}
 		LogLine("починено %d через %s %s (%s)", len(done), phys.Device, gw, strings.Join(parts, ", "))
 	}

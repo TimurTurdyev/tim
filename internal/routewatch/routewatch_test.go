@@ -16,21 +16,21 @@ default            10.168.20.1        UGScg                 en0
 `)
 	want := []string{"77.88.0.0/18", "185.73.192.0/22", "5.255.192.0/18", "157.22.175.251", "141.8.128.0/18", "185.73.192.0/22"}
 	got := Decide(want, table, "10.168.20.1", "en0")
-	reasons := map[string]string{}
+	kinds := map[string]Kind{}
 	for _, r := range got {
-		reasons[r.Dest] = r.Reason
+		kinds[r.Dest] = r.Kind
 	}
-	// Тот самый случай 2025-10-21: интерфейс en0 правильный, а шлюз от прошлой сети.
-	if reasons["77.88.0.0/18"] != "шлюз 192.168.3.1 вместо 10.168.20.1" {
-		t.Errorf("старый шлюз: %q", reasons["77.88.0.0/18"])
+	// Интерфейс en0 правильный, а шлюз от прошлой сети: по интерфейсу поломку не видно.
+	if kinds["77.88.0.0/18"] != Gateway {
+		t.Errorf("старый шлюз: %v", kinds)
 	}
-	if reasons["5.255.192.0/18"] != "ушёл в туннель utun4" || reasons["141.8.128.0/18"] != "нет маршрута" {
-		t.Errorf("%v", reasons)
+	if kinds["5.255.192.0/18"] != Tunnel || kinds["141.8.128.0/18"] != Missing {
+		t.Errorf("%v", kinds)
 	}
-	if _, bad := reasons["185.73.192.0/22"]; bad || len(got) != 3 {
+	if _, bad := kinds["185.73.192.0/22"]; bad || len(got) != 3 {
 		t.Errorf("живые маршруты трогать нельзя, повторы считать один раз: %v", got)
 	}
-	if _, bad := reasons["157.22.175.251"]; bad {
+	if _, bad := kinds["157.22.175.251"]; bad {
 		t.Error("host-маршрут через текущий шлюз исправен")
 	}
 }

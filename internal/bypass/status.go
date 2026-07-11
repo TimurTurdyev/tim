@@ -1,8 +1,10 @@
 package bypass
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -104,18 +106,12 @@ func printRepairs(repairs []routewatch.Repair, now time.Time) {
 		}
 	}
 	sum := routewatch.Summary(recent)
-	kinds := make([]string, 0, len(sum))
-	for k := range sum {
-		kinds = append(kinds, k)
-	}
-	sort.Slice(kinds, func(i, j int) bool {
-		if sum[kinds[i]] != sum[kinds[j]] {
-			return sum[kinds[i]] > sum[kinds[j]]
-		}
-		return kinds[i] < kinds[j]
+	kinds := slices.Collect(maps.Keys(sum))
+	slices.SortFunc(kinds, func(a, b routewatch.Kind) int {
+		return cmp.Or(cmp.Compare(sum[b], sum[a]), cmp.Compare(a, b))
 	})
 	for _, k := range kinds {
-		ui.Println(ui.Dim("  " + ui.Pad(strconv.Itoa(sum[k]), 5) + k))
+		ui.Println(ui.Dim("  " + ui.Pad(strconv.Itoa(sum[k]), 5) + k.String()))
 	}
 	ui.Println(ui.Dim("последние:"))
 	for _, r := range repairs[max(0, len(repairs)-5):] {

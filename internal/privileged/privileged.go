@@ -166,6 +166,8 @@ func start() (*conn, error) {
 	return link, nil
 }
 
+// Call выполняет запрос с правами root: сам, если tim уже под root, иначе через помощника под sudo,
+// который запускается один раз на команду.
 func Call(req Request) (Response, error) {
 	// Сначала dry-run: под root помощник не нужен, но и делать ничего нельзя.
 	if runner.DryRun {

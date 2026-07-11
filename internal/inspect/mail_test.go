@@ -8,7 +8,8 @@ import (
 func levels(fs []Finding) string {
 	var out []string
 	for _, f := range fs {
-		out = append(out, f.Level)
+		word, _ := f.Level.MarshalText()
+		out = append(out, string(word))
 	}
 	return strings.Join(out, ",")
 }

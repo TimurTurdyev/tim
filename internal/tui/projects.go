@@ -239,30 +239,37 @@ func (p *projects) View(width, height int) string {
 		} else {
 			body = append(body, styleEmpty.Render("смотрю..."))
 		}
+		var actions []PaneSection
 		if len(p.opts.Actions) > 0 {
-			body = append(body, Sep("действия"))
-			line := ""
-			for i, a := range p.opts.Actions {
-				line += ui.Fit(styleKeyCap.Render(" "+a.Key+" ")+" "+styleText.Render(a.Label), 14)
-				if (i+1)%3 == 0 || i == len(p.opts.Actions)-1 {
-					body = append(body, line)
-					line = ""
-				}
-			}
+			actions = []PaneSection{{Label: "действия", Rows: p.actionRows()}}
 		}
 		paneW := width - 54
 		if width >= 100 {
-			card = Pane(cur.Name, "", body, paneW)
+			card = Pane(cur.Name, "", body, paneW, actions...)
 		} else {
 			// Узко: карточка под списком.
 			left = append(left, "")
-			left = append(left, Pane(cur.Name, "", body, width-4)...)
+			left = append(left, Pane(cur.Name, "", body, width-4, actions...)...)
 		}
 	}
 	if len(card) > 0 {
 		return strings.Join(Beside(left, 53, card, width), "\n")
 	}
 	return strings.Join(left, "\n")
+}
+
+// actionRows: клавиши действий по три в строку.
+func (p *projects) actionRows() []string {
+	var rows []string
+	line := ""
+	for i, a := range p.opts.Actions {
+		line += ui.Fit(styleKeyCap.Render(" "+a.Key+" ")+" "+styleText.Render(a.Label), 14)
+		if (i+1)%3 == 0 || i == len(p.opts.Actions)-1 {
+			rows = append(rows, line)
+			line = ""
+		}
+	}
+	return rows
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

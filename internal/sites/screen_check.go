@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -85,7 +86,7 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 	d.Head = []string{ui.Dim(head)}
 	hidden := 0
 	for _, r := range rows {
-		if only && r.Level() < health.Warn {
+		if only && r.Level() < level.Warn {
 			hidden++
 			continue
 		}
@@ -96,14 +97,14 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 		row.Cells = ui.Pad(r.Name, 20)
 		for _, col := range cols {
 			c := r.Get(col.name)
-			row.Cells += ui.Pad(health.Lamp(c.Level, ui.Clip(c.Text, col.width-3)), col.width)
+			row.Cells += ui.Pad(level.Lamp(c.Level, ui.Clip(c.Text, col.width-3)), col.width)
 		}
 		for _, c := range r.Problems() {
 			text := c.Detail
 			if text == "" {
 				text = c.Text
 			}
-			row.Pane = append(row.Pane, health.Lamp(c.Level, c.Name+": "+text))
+			row.Pane = append(row.Pane, level.Lamp(c.Level, c.Name+": "+text))
 		}
 		if len(row.Pane) == 0 {
 			row.Pane = []string{ui.OK("\u25cf всё в порядке")}

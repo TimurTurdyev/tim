@@ -130,11 +130,11 @@ func ParseDuAbs(out string) Tree {
 	return t
 }
 
-// Prune: только папки не меньше min - для кэша обзора хватает их.
-func (t Tree) Prune(min int64) Tree {
+// Prune: только папки не меньше minSize - для кэша обзора хватает их.
+func (t Tree) Prune(minSize int64) Tree {
 	out := Tree{}
 	for k, v := range t {
-		if v >= min {
+		if v >= minSize {
 			out[k] = v
 		}
 	}
@@ -150,9 +150,9 @@ type Spot struct {
 }
 
 // Spots спускается от root туда, где место действительно лежит: пока у папки есть подпапки
-// не меньше min, показываются они, а не она. Так "Library 271 GB" превращается в конкретную игру.
+// не меньше minSize, показываются они, а не она. Так "Library 271 GB" превращается в конкретную игру.
 // stop - папки, внутрь которых спускаться незачем (игра, виртуалка, node_modules).
-func Spots(t Tree, root string, min int64, stop func(string) bool) []Spot {
+func Spots(t Tree, root string, minSize int64, stop func(string) bool) []Spot {
 	kids := map[string][]string{}
 	for p := range t {
 		if p != root {
@@ -163,7 +163,7 @@ func Spots(t Tree, root string, min int64, stop func(string) bool) []Spot {
 	walk = func(p string) []Spot {
 		var big []string
 		for _, k := range kids[p] {
-			if t[k] >= min {
+			if t[k] >= minSize {
 				big = append(big, k)
 			}
 		}
@@ -176,7 +176,7 @@ func Spots(t Tree, root string, min int64, stop func(string) bool) []Spot {
 			out = append(out, walk(k)...)
 			sum += t[k]
 		}
-		if rest := t[p] - sum; rest >= min {
+		if rest := t[p] - sum; rest >= minSize {
 			out = append(out, Spot{Path: p, Size: rest, Rest: true})
 		}
 		return out

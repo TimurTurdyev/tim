@@ -12,6 +12,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
+// Expand: адреса цели - домен резолвится, автономная система разворачивается в свои сети.
 func Expand(t netinfo.Target) []string {
 	switch t.Kind {
 	case netinfo.KindDomain:

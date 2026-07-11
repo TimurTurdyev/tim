@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -26,7 +27,7 @@ type BrowseOpts struct {
 	Total  int64 // занято на диске: от него проценты в заголовке
 }
 
-type level struct {
+type folder struct {
 	entry   Entry
 	kids    []Entry
 	list    List
@@ -40,14 +41,14 @@ type kidsMsg struct {
 
 type browse struct {
 	opts   BrowseOpts
-	stack  []*level
+	stack  []*folder
 	marked map[string]Entry
 }
 
 // NewBrowse создаёт экран обозревателя.
 func NewBrowse(o BrowseOpts) Screen {
 	b := &browse{opts: o, marked: map[string]Entry{}}
-	b.stack = []*level{{entry: o.Root, loading: true}}
+	b.stack = []*folder{{entry: o.Root, loading: true}}
 	return b
 }
 
@@ -57,7 +58,7 @@ func (b *browse) load(path string) tea.Cmd {
 	return func() tea.Msg { return kidsMsg{path, b.opts.Kids(path)} }
 }
 
-func (b *browse) cur() *level { return b.stack[len(b.stack)-1] }
+func (b *browse) cur() *folder { return b.stack[len(b.stack)-1] }
 
 func (b *browse) Crumbs() []string {
 	var c []string
@@ -97,7 +98,7 @@ func (b *browse) under(path string) bool {
 	return false
 }
 
-func (b *browse) fill(l *level) {
+func (b *browse) fill(l *folder) {
 	l.list.Rows = nil
 	for _, e := range l.kids {
 		e := e
@@ -155,9 +156,9 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 			}
 			e := l.kids[l.list.Cursor]
 			if !e.Dir {
-				return app.Toast("warn", "внутрь не зайти: это файлы или место без папок")
+				return app.Toast(level.Warn, "внутрь не зайти: это файлы или место без папок")
 			}
-			b.stack = append(b.stack, &level{entry: e, loading: true})
+			b.stack = append(b.stack, &folder{entry: e, loading: true})
 			return b.load(e.Path)
 		case "left", "backspace", "р":
 			if len(b.stack) > 1 {
@@ -172,9 +173,9 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 			e := l.kids[l.list.Cursor]
 			switch {
 			case e.Path == "":
-				return app.Toast("warn", "это не папка - отметить нельзя")
+				return app.Toast(level.Warn, "это не папка - отметить нельзя")
 			case b.under(e.Path):
-				return app.Toast("warn", "уже внутри отмеченной папки - уйдёт вместе с ней")
+				return app.Toast(level.Warn, "уже внутри отмеченной папки - уйдёт вместе с ней")
 			}
 			if _, ok := b.marked[e.Path]; ok {
 				delete(b.marked, e.Path)
@@ -185,7 +186,7 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "o", "щ":
 			if !l.loading && len(l.kids) > 0 && l.kids[l.list.Cursor].Path != "" && b.opts.Open != nil {
 				b.opts.Open(l.kids[l.list.Cursor].Path)
-				return app.Toast("ok", "открыто в Finder")
+				return app.Toast(level.OK, "открыто в Finder")
 			}
 		case "x", "ч":
 			return b.confirmRemove(app)
@@ -201,7 +202,7 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 	}
 	top := Outermost(all)
 	if len(top) == 0 {
-		return app.Toast("warn", "сначала отметь пробелом, что убрать")
+		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var lines, paths []string
 	var sum int64
@@ -222,9 +223,9 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 			b.marked = map[string]Entry{}
 			cmds := []tea.Cmd{}
 			if len(errs) > 0 {
-				cmds = append(cmds, app.Toast("bad", strings.Join(errs, "; ")))
+				cmds = append(cmds, app.Toast(level.Bad, strings.Join(errs, "; ")))
 			} else {
-				cmds = append(cmds, app.Toast("ok", "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
+				cmds = append(cmds, app.Toast(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
 			}
 			// Размеры изменились - перечитать все уровни стопки.
 			for _, l := range b.stack {

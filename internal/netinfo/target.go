@@ -1,22 +1,14 @@
 package netinfo
 
 import (
-	"context"
 	"errors"
 	"net"
 	"net/netip"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"golang.org/x/net/idna"
 )
-
-// lastGood: последний удачный ответ по домену. Пока VPN переключается, резолвер может молчать,
-// а страж маршрутов в это время работать должен.
-var lastGood sync.Map
 
 type TargetKind int
 
@@ -84,95 +76,6 @@ func PrivateTarget(t Target) bool {
 		return ip != nil && IsPrivate(ip.String())
 	}
 	return false
-}
-
-// LookupIPv4 раскрывает домен во все A-записи, отсортированные; ждёт не дольше 3 секунд.
-func LookupIPv4(host string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
-	if err != nil {
-		if old, ok := lastGood.Load(host); ok {
-			return old.([]string)
-		}
-		return nil
-	}
-	var out []string
-	seen := map[string]bool{}
-	for _, ip := range ips {
-		if v4 := ip.To4(); v4 != nil && !seen[v4.String()] {
-			seen[v4.String()] = true
-			out = append(out, v4.String())
-		}
-	}
-	sort.Strings(out)
-	lastGood.Store(host, out)
-	return out
-}
-
-// TableRoute: строка таблицы netstat -rn -f inet; Dest - адрес или CIDR.
-type TableRoute struct {
-	Dest, Gateway, Flags, Iface string
-}
-
-// ParseRoutes разбирает таблицу; сокращённые сети вида 10.8/16 разворачиваются в 10.8.0.0/16.
-func ParseRoutes(out string) []TableRoute {
-	var list []TableRoute
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 4 {
-			continue
-		}
-		dest, ok := normalizeDest(f[0])
-		if !ok {
-			continue
-		}
-		list = append(list, TableRoute{Dest: dest, Gateway: f[1], Flags: f[2], Iface: f[3]})
-	}
-	return list
-}
-
-func normalizeDest(s string) (string, bool) {
-	addr, bits, hasBits := strings.Cut(s, "/")
-	parts := strings.Split(addr, ".")
-	if len(parts) == 0 || len(parts) > 4 {
-		return "", false
-	}
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 || n > 255 {
-			return "", false
-		}
-	}
-	if !hasBits {
-		if len(parts) != 4 {
-			return "", false
-		}
-		return addr, true
-	}
-	for len(parts) < 4 {
-		parts = append(parts, "0")
-	}
-	return strings.Join(parts, ".") + "/" + bits, true
-}
-
-// Stale: статические маршруты через шлюз, который уже не шлюз физического интерфейса.
-// only ограничивает проверку набором адресов и подсетей; nil - вся таблица.
-func Stale(routes []TableRoute, gw string, only map[string]bool) []TableRoute {
-	var out []TableRoute
-	for _, r := range routes {
-		if !strings.Contains(r.Flags, "S") || !strings.Contains(r.Flags, "G") {
-			continue
-		}
-		if !IsIPv4(r.Gateway) || r.Gateway == gw || IsTunnelIface(r.Iface) {
-			continue
-		}
-		if only != nil && !only[r.Dest] {
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
 }
 
 // asNumber: as:13238, as13238 или AS13238.

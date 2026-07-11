@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -36,9 +37,9 @@ func printServer(target string, asJSON bool) error {
 	for _, c := range findings {
 		text := ui.Pad(c.Name, 14) + c.Detail
 		switch c.Level {
-		case health.Bad:
+		case level.Bad:
 			ui.Println("  " + ui.Bad(text))
-		case health.Warn:
+		case level.Warn:
 			ui.Println("  " + ui.Warn(text))
 		default:
 			ui.Println("  " + ui.Dim(text))

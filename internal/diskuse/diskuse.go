@@ -59,29 +59,30 @@ type Summary struct {
 	Total  int64
 }
 
-func Summarize(items []Item, top int, min int64) Summary {
+// Summarize: top самых больших папок от minSize и итоги по видам по всем.
+func Summarize(items []Item, top int, minSize int64) Summary {
 	s := Summary{ByKind: map[string]int64{}}
 	sorted := append([]Item(nil), items...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Size > sorted[j].Size })
 	for _, it := range sorted {
 		s.ByKind[it.Kind] += it.Size
 		s.Total += it.Size
-		if len(s.Top) < top && it.Size >= min {
+		if len(s.Top) < top && it.Size >= minSize {
 			s.Top = append(s.Top, it)
 		}
 	}
 	return s
 }
 
-// Stale: папки, которых не касались дольше days дней, не меньше min, крупные первыми.
+// Stale: папки, которых не касались дольше days дней, не меньше minSize, крупные первыми.
 // touched - когда последний раз трогали проект, которому принадлежит папка; без отметки папку
 // не предлагаем: лучше промолчать, чем удалить зависимости живого проекта.
-func Stale(items []Item, touched map[string]time.Time, now time.Time, days int, min int64) []Item {
+func Stale(items []Item, touched map[string]time.Time, now time.Time, days int, minSize int64) []Item {
 	limit := now.AddDate(0, 0, -days)
 	var out []Item
 	for _, it := range items {
 		t, ok := touched[it.Path]
-		if !ok || t.IsZero() || t.After(limit) || it.Size < min {
+		if !ok || t.IsZero() || t.After(limit) || it.Size < minSize {
 			continue
 		}
 		out = append(out, it)

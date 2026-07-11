@@ -172,3 +172,16 @@ func Bar(pct, width int) string {
 	}
 	return b + " " + Pad(strconv.Itoa(pct)+"%", 5)
 }
+
+// Pairs: строки по две в ряд, левая колонка шириной left.
+func Pairs(items []string, left int) []string {
+	var out []string
+	for i := 0; i < len(items); i += 2 {
+		line := items[i]
+		if i+1 < len(items) {
+			line = Pad(line, left) + items[i+1]
+		}
+		out = append(out, line)
+	}
+	return out
+}

@@ -27,14 +27,14 @@ type Section struct {
 	Open             func() Action
 }
 
-// TileData: плитка состояния; строки уже с цветом, как их отдал cmd.
+// TileData: плитка состояния; строки уже с цветом.
 type TileData struct {
 	Title string
 	Rows  []string
 	Width int
 }
 
-// HomeData: что показывает главный экран; всё считается в cmd и обновляется по r.
+// HomeData: что показывает главный экран; всё считается в разделе home и обновляется по r.
 type HomeData struct {
 	Status   string
 	Recent   []Hit

@@ -183,15 +183,25 @@ func linuxStatus() {
 	nat, _ := privileged.Run(ipt, "-t", "nat", "-S", "POSTROUTING")
 	marked := strings.Contains(mangle, "--gid-owner") && strings.Contains(mangle, linuxMark)
 	masq := strings.Contains(nat, linuxMark) && strings.Contains(nat, "MASQUERADE")
-	ui.Println(ui.Label("netfilter ") + ui.Dash(map[bool]string{true: "метка по группе стоит", false: "метки по группе нет"}[marked]) +
-		ui.Dim(", маскарад: "+map[bool]string{true: "есть", false: "нет"}[masq]))
+	mark := "метки по группе нет"
+	if marked {
+		mark = "метка по группе стоит"
+	}
+	ui.Println(ui.Label("netfilter ") + mark + ui.Dim(", маскарад: "+present(masq)))
 	rules, _ := runner.Output("ip", "rule", "show")
 	hasRule := strings.Contains(rules, "fwmark "+linuxMark)
 	table, _ := runner.Output("ip", "route", "show", "table", linuxTable)
-	ui.Println(ui.Label("маршрут по метке ") + map[bool]string{true: "есть", false: "нет"}[hasRule] + ui.Dim("  таблица "+linuxTable+": "+ui.Dash(strings.TrimSpace(table))))
+	ui.Println(ui.Label("маршрут по метке ") + present(hasRule) + ui.Dim("  таблица "+linuxTable+": "+ui.Dash(strings.TrimSpace(table))))
 	phys, _ := netinfo.Physical()
 	ui.Println(ui.Label("rp_filter ") + ui.Dash(sysctlGet("net.ipv4.conf."+phys.Device+".rp_filter")) + ui.Dim(" ("+phys.Device+"), all "+ui.Dash(sysctlGet("net.ipv4.conf.all.rp_filter"))))
 	if marked && masq && hasRule && strings.TrimSpace(table) != "" {
 		ui.Println(ui.OK("правила на месте: процессы группы идут через " + phys.Device))
 	}
+}
+
+func present(ok bool) string {
+	if ok {
+		return "есть"
+	}
+	return "нет"
 }

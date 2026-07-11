@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -55,108 +57,11 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 }
 
 func domainData(rep *domaudit.Report) tui.BoardData {
-	var d tui.BoardData
-	d.Status = fmt.Sprintf("имён %d \u00b7 адресов %d", len(rep.Hosts), len(rep.Addrs))
-	var lamps []string
-	site := health.Site("https://" + rep.Domain)
-	lamps = append(lamps, health.Lamp(site.Level, "сайт "+site.Text))
-	cert := health.Cert(rep.Domain)
-	lamps = append(lamps, health.Lamp(cert.Level, "сертификат "+cert.Text))
-	if reg, err := inspect.Registration(rep.Domain); err == nil && !reg.Expires.IsZero() {
-		c := health.Deadline("домен", reg.Expires, health.DomainWarnDays, health.DomainBadDays)
-		lamps = append(lamps, health.Lamp(c.Level, "домен "+c.Text)+ui.Dim("  "+reg.Registrar))
-	}
-	m := inspect.MailCheck(rep.Domain, inspect.DKIMSelectors)
-	level, reasons := m.Verdict()
-	switch {
-	case m.NullMX:
-		lamps = append(lamps, ui.Dim("- почта: домен её не принимает"))
-	case level == "ok":
-		lamps = append(lamps, ui.OK("\u25cf почта настроена"))
-	case level == "warn":
-		lamps = append(lamps, ui.Warn("\u25b2 почта: "+strings.Join(reasons, ", ")))
-	default:
-		lamps = append(lamps, ui.Bad("\u2715 почта: "+strings.Join(reasons, ", "))+ui.Dim("  письма могут уходить в спам"))
-	}
-	for i := 0; i+1 < len(lamps); i += 2 {
-		d.Head = append(d.Head, ui.Pad(lamps[i], 52)+lamps[i+1])
-	}
-	if len(lamps)%2 == 1 {
-		d.Head = append(d.Head, lamps[len(lamps)-1])
-	}
-	// Адреса апекса: по ним понятно, "тот же сервер" ли у поддомена.
-	apex := map[string]bool{}
-	for _, h := range rep.Hosts {
-		if h.Name == rep.Domain {
-			for _, ip := range h.IPs {
-				apex[ip] = true
-			}
-		}
-	}
-	as := map[string]domaudit.Addr{}
-	for _, a := range rep.Addrs {
-		as[a.IP] = a
-	}
-	d.Head = append(d.Head, "", ui.Dim(ui.Pad("ИМЯ", 30)+ui.Pad("АДРЕС", 18)+ui.Pad("ОТВЕТ", 12)+"ЗАМЕТКА"))
-	hosts := sortHosts(rep)
-	for _, h := range hosts {
-		row := tui.BoardRow{ID: h.Name, Title: h.Name, Sub: h.Source}
-		ip := "-"
-		if len(h.IPs) > 0 {
-			ip = h.IPs[0]
-		}
-		var status, note string
-		switch {
-		case h.Status == 0:
-			status = ui.Bad("\u2715 молчит")
-			note = "не отвечает по HTTP"
-		case h.Status >= 500:
-			status = ui.Bad(fmt.Sprintf("\u2715 %d", h.Status))
-			note = "сервер отвечает ошибкой"
-		case h.Status >= 400:
-			status = ui.Warn(fmt.Sprintf("\u25b2 %d", h.Status))
-		default:
-			status = ui.OK(fmt.Sprintf("\u25cf %d", h.Status))
-		}
-		if a, ok := as[ip]; ok && note == "" {
-			switch {
-			case h.Name == rep.Domain:
-				note = strings.TrimSpace(a.AS.Name + " " + a.AS.Country)
-			case apex[ip]:
-				note = "тот же сервер"
-			case a.CDN:
-				note = "за CDN " + a.AS.Name
-			default:
-				note = "другой сервер: " + strings.TrimSpace(a.AS.Name+" "+a.AS.Country)
-			}
-		}
-		row.Cells = ui.Pad(h.Name, 30) + ui.Pad(ip, 18) + ui.Pad(status, 12) + ui.Dim(note)
-		for _, ip := range h.IPs {
-			line := ui.Pad(ip, 18)
-			if a, ok := as[ip]; ok {
-				line += ui.Dim(strings.TrimSpace(a.AS.Name + " " + a.AS.Country + " AS" + a.AS.ASN))
-				if a.PTR != "" {
-					line += ui.Dim("  " + a.PTR)
-				}
-			}
-			row.Pane = append(row.Pane, line)
-		}
-		var about []string
-		for _, t := range []string{h.Server, h.Title} {
-			if t != "" {
-				about = append(about, t)
-			}
-		}
-		if h.Final != "" {
-			about = append(about, "-> "+h.Final)
-		}
-		if len(about) > 0 {
-			row.Pane = append(row.Pane, ui.Dim(strings.Join(about, "  ")))
-		}
-		if h.Status == 0 {
-			row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"))
-		}
-		d.Rows = append(d.Rows, row)
+	d := tui.BoardData{Status: fmt.Sprintf("имён %d \u00b7 адресов %d", len(rep.Hosts), len(rep.Addrs))}
+	d.Head = append(ui.Pairs(domainLamps(rep.Domain), 52), "", ui.Dim(ui.Pad("ИМЯ", 30)+ui.Pad("АДРЕС", 18)+ui.Pad("ОТВЕТ", 12)+"ЗАМЕТКА"))
+	v := newDomainView(rep)
+	for _, h := range sortHosts(rep) {
+		d.Rows = append(d.Rows, v.row(h))
 	}
 	if len(rep.Related) > 0 {
 		d.Foot = append(d.Foot, ui.Dim("в тех же сертификатах: "+strings.Join(cut(rep.Related, 8), " ")))
@@ -166,6 +71,121 @@ func domainData(rep *domaudit.Report) tui.BoardData {
 	}
 	d.Empty = "ни одно имя не резолвится: домена нет, он не делегирован или DNS недоступен"
 	return d
+}
+
+// domainLamps: сайт, сертификат, регистрация и почта домена - по лампе на каждое.
+func domainLamps(domain string) []string {
+	site := health.Site("https://" + domain)
+	cert := health.Cert(domain)
+	lamps := []string{level.Lamp(site.Level, "сайт "+site.Text), level.Lamp(cert.Level, "сертификат "+cert.Text)}
+	if reg, err := inspect.Registration(domain); err == nil && !reg.Expires.IsZero() {
+		c := health.Deadline("домен", reg.Expires, health.DomainWarnDays, health.DomainBadDays)
+		lamps = append(lamps, level.Lamp(c.Level, "домен "+c.Text)+ui.Dim("  "+reg.Registrar))
+	}
+	m := inspect.MailCheck(domain, inspect.DKIMSelectors)
+	verdict, reasons := m.Verdict()
+	switch {
+	case m.NullMX:
+		lamps = append(lamps, level.Lamp(level.Skip, "почта: домен её не принимает"))
+	case verdict == level.OK:
+		lamps = append(lamps, level.Lamp(level.OK, "почта настроена"))
+	case verdict == level.Warn:
+		lamps = append(lamps, level.Lamp(level.Warn, "почта: "+strings.Join(reasons, ", ")))
+	default:
+		lamps = append(lamps, level.Lamp(level.Bad, "почта: "+strings.Join(reasons, ", "))+ui.Dim("  письма могут уходить в спам"))
+	}
+	return lamps
+}
+
+// domainView: отчёт с указателями по адресам для строк имён.
+type domainView struct {
+	rep   *domaudit.Report
+	apex  map[string]bool // адреса апекса: по ним понятно, "тот же сервер" ли у поддомена
+	addrs map[string]domaudit.Addr
+}
+
+func newDomainView(rep *domaudit.Report) domainView {
+	v := domainView{rep: rep, apex: map[string]bool{}, addrs: map[string]domaudit.Addr{}}
+	for _, h := range rep.Hosts {
+		if h.Name == rep.Domain {
+			for _, ip := range h.IPs {
+				v.apex[ip] = true
+			}
+		}
+	}
+	for _, a := range rep.Addrs {
+		v.addrs[a.IP] = a
+	}
+	return v
+}
+
+// row: имя, первый адрес, ответ сайта и заметка; в панели все адреса и что отвечает сервер.
+func (v domainView) row(h domaudit.Host) tui.BoardRow {
+	row := tui.BoardRow{ID: h.Name, Title: h.Name, Sub: h.Source}
+	ip := "-"
+	if len(h.IPs) > 0 {
+		ip = h.IPs[0]
+	}
+	status, note := hostStatus(h)
+	if note == "" {
+		note = v.note(h, ip)
+	}
+	row.Cells = ui.Pad(h.Name, 30) + ui.Pad(ip, 18) + ui.Pad(status, 12) + ui.Dim(note)
+	for _, ip := range h.IPs {
+		line := ui.Pad(ip, 18)
+		if a, ok := v.addrs[ip]; ok {
+			line += ui.Dim(strings.TrimSpace(a.AS.Name + " " + a.AS.Country + " AS" + a.AS.ASN))
+			if a.PTR != "" {
+				line += ui.Dim("  " + a.PTR)
+			}
+		}
+		row.Pane = append(row.Pane, line)
+	}
+	var about []string
+	for _, t := range []string{h.Server, h.Title} {
+		if t != "" {
+			about = append(about, t)
+		}
+	}
+	if h.Final != "" {
+		about = append(about, "-> "+h.Final)
+	}
+	if len(about) > 0 {
+		row.Pane = append(row.Pane, ui.Dim(strings.Join(about, "  ")))
+	}
+	if h.Status == 0 {
+		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"))
+	}
+	return row
+}
+
+// note: чей адрес у имени - тот же сервер, что у апекса, CDN или чужой.
+func (v domainView) note(h domaudit.Host, ip string) string {
+	a, ok := v.addrs[ip]
+	switch {
+	case !ok:
+		return ""
+	case h.Name == v.rep.Domain:
+		return strings.TrimSpace(a.AS.Name + " " + a.AS.Country)
+	case v.apex[ip]:
+		return "тот же сервер"
+	case a.CDN:
+		return "за CDN " + a.AS.Name
+	}
+	return "другой сервер: " + strings.TrimSpace(a.AS.Name+" "+a.AS.Country)
+}
+
+// hostStatus: ответ сайта лампой; у молчащих и сломанных сразу и заметка.
+func hostStatus(h domaudit.Host) (status, note string) {
+	switch {
+	case h.Status == 0:
+		return level.Lamp(level.Bad, "молчит"), "не отвечает по HTTP"
+	case h.Status >= 500:
+		return level.Lamp(level.Bad, strconv.Itoa(h.Status)), "сервер отвечает ошибкой"
+	case h.Status >= 400:
+		return level.Lamp(level.Warn, strconv.Itoa(h.Status)), ""
+	}
+	return level.Lamp(level.OK, strconv.Itoa(h.Status)), ""
 }
 
 // sortHosts: сам домен первым, за ним имена с проблемами - молчащие и с 5xx, потом с 4xx.

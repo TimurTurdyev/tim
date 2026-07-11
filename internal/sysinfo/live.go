@@ -142,7 +142,7 @@ func ParseFailedUnits(out string) []string {
 	var list []string
 	for _, line := range strings.Split(out, "\n") {
 		if f := strings.Fields(line); len(f) > 0 {
-			list = append(list, strings.TrimPrefix(f[0], "●"))
+			list = append(list, strings.TrimPrefix(f[0], "\u25cf"))
 		}
 	}
 	return list
@@ -155,7 +155,7 @@ type Unit struct{ Name, Active, Sub, Description string }
 func ParseUnits(out string) []Unit {
 	var list []Unit
 	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "●"))
+		f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "\u25cf"))
 		if len(f) < 4 {
 			continue
 		}

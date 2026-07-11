@@ -9,7 +9,7 @@ import (
 )
 
 type options struct {
-	min                                           string
+	minSize                                       string
 	days                                          int
 	all, fresh, clean, system, deps, browse, left bool
 }
@@ -33,7 +33,7 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 		RunE: func(cmd *cobra.Command, args []string) error { return run(env, o, args) },
 	}
 	f := c.Flags()
-	f.StringVar(&o.min, "min", "50M", "не показывать папки меньше")
+	f.StringVar(&o.minSize, "min", "50M", "не показывать папки меньше")
 	f.BoolVar(&o.clean, "clean", false, "предложить убрать в Корзину папки заброшенных проектов")
 	f.IntVar(&o.days, "days", 60, "сколько дней без изменений считать заброшенным")
 	f.BoolVar(&o.system, "system", false, "кеши программ по именам: npm, go, docker, IDE, модели")

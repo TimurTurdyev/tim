@@ -62,18 +62,3 @@ func ExternalIP(proxy string) (string, error) {
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 64))
 	return strings.TrimSpace(string(b)), err
 }
-
-// IfaceIPv4: первый IPv4-адрес интерфейса, пусто - адреса нет.
-func IfaceIPv4(dev string) string {
-	ifi, err := net.InterfaceByName(dev)
-	if err != nil {
-		return ""
-	}
-	addrs, _ := ifi.Addrs()
-	for _, a := range addrs {
-		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
-			return ipn.IP.To4().String()
-		}
-	}
-	return ""
-}

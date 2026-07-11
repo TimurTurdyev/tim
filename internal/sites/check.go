@@ -10,6 +10,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -82,7 +83,7 @@ func checkRows(cfg *config.Config, projects []*config.Project, o checkOptions) [
 	})
 	kept := rows[:0]
 	for _, r := range rows {
-		if r.Level() != health.Skip {
+		if r.Level() != level.Skip {
 			kept = append(kept, r)
 		}
 	}
@@ -144,7 +145,7 @@ func usedCols(rows []health.Row) []struct {
 	cols := checkCols[:0:0]
 	for _, col := range checkCols {
 		for _, r := range rows {
-			if r.Get(col.name).Level != health.Skip {
+			if r.Get(col.name).Level != level.Skip {
 				cols = append(cols, col)
 				break
 			}
@@ -153,13 +154,13 @@ func usedCols(rows []health.Row) []struct {
 	return cols
 }
 
-func paint(level health.Level, text string) string {
-	switch level {
-	case health.Bad:
+func paint(l level.Level, text string) string {
+	switch l {
+	case level.Bad:
 		return ui.Bad(text)
-	case health.Warn:
+	case level.Warn:
 		return ui.Warn(text)
-	case health.Skip:
+	case level.Skip:
 		return ui.Dim(text)
 	}
 	return text
@@ -187,7 +188,7 @@ func notifyProblems(rows []health.Row) {
 	var lines []string
 	bad := 0
 	for _, r := range rows {
-		if r.Level() != health.Bad {
+		if r.Level() != level.Bad {
 			continue
 		}
 		bad++
@@ -202,7 +203,7 @@ func notifyProblems(rows []health.Row) {
 
 func firstBad(r health.Row) string {
 	for _, c := range r.Problems() {
-		if c.Level == health.Bad {
+		if c.Level == level.Bad {
 			return r.Name + ": " + c.Detail
 		}
 	}

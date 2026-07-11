@@ -3,6 +3,7 @@ package bypass
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"runtime"
 	"strings"
@@ -45,8 +46,9 @@ func TableChanged() {
 func RouteState(dest string, phys netinfo.Service, gw string) (text string, bad bool) {
 	var r netinfo.Route
 	if strings.Contains(dest, "/") {
+		p, _ := netinfo.ParseDest(dest)
 		for _, t := range table() {
-			if t.Dest == dest {
+			if t.Dest == p {
 				r = netinfo.Route{Gateway: t.Gateway, Iface: t.Iface}
 			}
 		}
@@ -159,8 +161,9 @@ func Bypassed(dest string, phys netinfo.Service, gw string) bool {
 		r := netinfo.RouteOf(dest)
 		return r.Gateway == gw && r.Iface == phys.Device
 	}
+	p, _ := netinfo.ParseDest(dest)
 	for _, t := range table() {
-		if t.Dest == dest && t.Gateway == gw {
+		if t.Dest == p && t.Gateway == gw {
 			return true
 		}
 	}
@@ -215,12 +218,14 @@ func Clean(cfg *config.Config, all bool) error {
 	if gw == "" {
 		return ui.Errorf("шлюз физического интерфейса не найден: не с чем сравнивать")
 	}
-	var only map[string]bool
+	var only map[netip.Prefix]bool
 	if !all {
-		only = map[string]bool{}
+		only = map[netip.Prefix]bool{}
 		for _, h := range cfg.Hosts {
 			for _, d := range ExpandAddr(h.Addr) {
-				only[d] = true
+				if p, ok := netinfo.ParseDest(d); ok {
+					only[p] = true
+				}
 			}
 		}
 	}
@@ -230,7 +235,7 @@ func Clean(cfg *config.Config, all bool) error {
 		return nil
 	}
 	for _, r := range stale {
-		ui.Println(ui.Warn(ui.Pad(r.Dest, 20)) + " через " + r.Gateway + " " + ui.Dim(r.Iface+", сейчас шлюз "+gw))
+		ui.Println(ui.Warn(ui.Pad(r.Target(), 20)) + " через " + r.Gateway + " " + ui.Dim(r.Iface+", сейчас шлюз "+gw))
 	}
 	if !runner.Confirm("снять эти маршруты?") {
 		return nil
@@ -238,8 +243,8 @@ func Clean(cfg *config.Config, all bool) error {
 	gone := 0
 	for _, r := range stale {
 		TableChanged()
-		if _, err := privileged.Run(netinfo.DelRouteCmd(r.Dest)...); err != nil {
-			ui.Println(ui.Bad(r.Dest + ": снять не удалось: " + err.Error()))
+		if _, err := privileged.Run(netinfo.DelRouteCmd(r.Target())...); err != nil {
+			ui.Println(ui.Bad(r.Target() + ": снять не удалось: " + err.Error()))
 			continue
 		}
 		gone++

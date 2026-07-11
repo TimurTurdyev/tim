@@ -127,6 +127,6 @@ func printTable(cfg *config.Config) {
 		if !strings.Contains(r.Flags, "S") || !strings.Contains(r.Flags, "G") {
 			continue
 		}
-		ui.Println(ui.Pad(r.Dest, 20) + " " + ui.Pad(r.Gateway, 16) + " " + ui.Pad(r.Iface, 7) + " " + ui.Dim(cfg.HostLabel(r.Dest)))
+		ui.Println(ui.Pad(r.Target(), 20) + " " + ui.Pad(r.Gateway, 16) + " " + ui.Pad(r.Iface, 7) + " " + ui.Dim(cfg.HostLabel(r.Target())))
 	}
 }

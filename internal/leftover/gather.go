@@ -1,10 +1,12 @@
 package leftover
 
 import (
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,26 +67,40 @@ func Gather(own map[string]bool, running []procs.Full) ([]*Group, error) {
 		return nil, ui.Errorf("хвосты удалённых программ tim пока ищет только на macOS")
 	}
 	home := paths.Home()
-	lib := filepath.Join(home, "Library")
-	ix := NewIndex(Installed())
-	groups := map[string]*Group{}
-	add := func(v Verdict, it Item) *Group {
-		g := groups[v.Owner]
-		if g == nil {
-			g = &Group{Owner: v.Owner}
-			groups[v.Owner] = g
-		}
-		g.Sure = g.Sure || v.Sure
-		g.Items = append(g.Items, it)
-		return g
+	g := &gathering{lib: filepath.Join(home, "Library"), index: NewIndex(Installed()), groups: map[string]*Group{}}
+	g.libraryDirs(own)
+	g.orphanAgents()
+	g.deadProcesses(running, home)
+	return g.measured(), nil
+}
+
+// gathering: хвосты, сложенные по владельцу, пока идёт поиск.
+type gathering struct {
+	lib    string
+	index  Index
+	groups map[string]*Group
+}
+
+func (g *gathering) add(v Verdict, it Item) *Group {
+	grp := g.groups[v.Owner]
+	if grp == nil {
+		grp = &Group{Owner: v.Owner}
+		g.groups[v.Owner] = grp
 	}
+	grp.Sure = grp.Sure || v.Sure
+	grp.Items = append(grp.Items, it)
+	return grp
+}
+
+// libraryDirs: папки в ~/Library, чья программа не установлена.
+func (g *gathering) libraryDirs(own map[string]bool) {
 	for _, place := range libraryPlaces {
-		entries, _ := os.ReadDir(filepath.Join(lib, place))
+		entries, _ := os.ReadDir(filepath.Join(g.lib, place))
 		for _, e := range entries {
 			if strings.HasPrefix(e.Name(), ".") {
 				continue
 			}
-			v := ix.Judge(e.Name())
+			v := g.index.Judge(e.Name())
 			// Папка с именем проекта из реестра - его же данные: свои программы в разработке не хвост.
 			if !v.Sure && own[strings.ToLower(e.Name())] {
 				continue
@@ -94,92 +110,106 @@ func Gather(own map[string]bool, running []procs.Full) ([]*Group, error) {
 			if !v.Orphan || (!v.Sure && place != "Application Support") {
 				continue
 			}
-			g := add(v, Item{Path: filepath.Join(lib, place, e.Name())})
+			grp := g.add(v, Item{Path: filepath.Join(g.lib, place, e.Name())})
 			if v.Similar != "" {
-				g.Similar = v.Similar
+				grp.Similar = v.Similar
 			}
 		}
 	}
-	// Агенты автозапуска, чья программа удалена, - хвост наверняка: они срабатывают при каждом входе.
-	for _, dir := range []string{filepath.Join(lib, "LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"} {
+}
+
+// orphanAgents: агенты автозапуска, чья программа удалена, - хвост наверняка: они срабатывают
+// при каждом входе.
+func (g *gathering) orphanAgents() {
+	userAgents := filepath.Join(g.lib, "LaunchAgents")
+	for _, dir := range []string{userAgents, "/Library/LaunchAgents", "/Library/LaunchDaemons"} {
 		files, _ := filepath.Glob(filepath.Join(dir, "*.plist"))
 		for _, f := range files {
-			out, err := runner.Output("plutil", "-convert", "json", "-o", "-", f)
-			if err != nil {
-				continue
-			}
-			var a struct {
-				Label            string   `json:"Label"`
-				Program          string   `json:"Program"`
-				ProgramArguments []string `json:"ProgramArguments"`
-			}
-			if json.Unmarshal([]byte(out), &a) != nil {
-				continue
-			}
-			target := AgentTarget(a.Program, a.ProgramArguments)
-			if !filepath.IsAbs(target) {
+			label, target, ok := readAgent(f)
+			if !ok || !filepath.IsAbs(target) {
 				continue
 			}
 			if _, err := os.Stat(target); err == nil {
 				continue
 			}
-			v := ix.Judge(a.Label)
+			v := g.index.Judge(label)
 			v.Orphan, v.Sure = true, true
-			g := add(v, Item{Path: f, Note: "автозапуск без программы"})
-			g.App = appOf(target)
-			switch dir {
-			case filepath.Join(lib, "LaunchAgents"), "/Library/LaunchAgents":
-				g.Agents = append(g.Agents, "gui/"+strconv.Itoa(os.Getuid())+"/"+a.Label)
-			default:
-				g.Agents = append(g.Agents, "system/"+a.Label)
+			grp := g.add(v, Item{Path: f, Note: "автозапуск без программы"})
+			grp.App = appOf(target)
+			if dir == userAgents || dir == "/Library/LaunchAgents" {
+				grp.Agents = append(grp.Agents, "gui/"+strconv.Itoa(os.Getuid())+"/"+label)
+			} else {
+				grp.Agents = append(grp.Agents, "system/"+label)
 			}
 		}
 	}
-	// Процессы, чей файл уже удалён, - работают с прошлого запуска удалённой программы.
-	{
-		for _, p := range running {
-			if !filepath.IsAbs(p.Comm) || !strings.HasPrefix(p.Comm, home) {
-				continue
-			}
-			if _, err := os.Stat(p.Comm); err == nil {
-				continue
-			}
-			// Чей процесс - по папке программы, из которой он запущен: Application Support/Steam/... - Steam.
-			owner := filepath.Base(p.Comm)
-			if r, err := filepath.Rel(filepath.Join(lib, "Application Support"), p.Comm); err == nil && !strings.HasPrefix(r, "..") {
-				owner = strings.Split(r, "/")[0]
-			}
-			g := add(Verdict{Owner: owner, Orphan: true, Sure: true}, Item{Note: "процесс " + p.PID + " ещё работает, хотя программа удалена"})
-			g.PIDs = append(g.PIDs, p.PID)
-		}
+}
+
+// readAgent: метка агента и программа, которую он запускает.
+func readAgent(plist string) (label, target string, ok bool) {
+	out, err := runner.Output("plutil", "-convert", "json", "-o", "-", plist)
+	if err != nil {
+		return "", "", false
 	}
-	var all []*Group
+	var a struct {
+		Label            string   `json:"Label"`
+		Program          string   `json:"Program"`
+		ProgramArguments []string `json:"ProgramArguments"`
+	}
+	if json.Unmarshal([]byte(out), &a) != nil {
+		return "", "", false
+	}
+	return a.Label, AgentTarget(a.Program, a.ProgramArguments), true
+}
+
+// deadProcesses: процессы, чей файл уже удалён, - работают с прошлого запуска удалённой программы.
+func (g *gathering) deadProcesses(running []procs.Full, home string) {
+	support := filepath.Join(g.lib, "Application Support")
+	for _, p := range running {
+		if !filepath.IsAbs(p.Comm) || !strings.HasPrefix(p.Comm, home) {
+			continue
+		}
+		if _, err := os.Stat(p.Comm); err == nil {
+			continue
+		}
+		// Чей процесс - по папке программы, из которой он запущен: Application Support/Steam/... - Steam.
+		owner := filepath.Base(p.Comm)
+		if r, err := filepath.Rel(support, p.Comm); err == nil && !strings.HasPrefix(r, "..") {
+			owner = strings.Split(r, "/")[0]
+		}
+		grp := g.add(Verdict{Owner: owner, Orphan: true, Sure: true}, Item{Note: "процесс " + p.PID + " ещё работает, хотя программа удалена"})
+		grp.PIDs = append(grp.PIDs, p.PID)
+	}
+}
+
+// measured: размеры хвостов параллельно; найденное только по имени остаётся, если оно крупное.
+func (g *gathering) measured() []*Group {
 	sizes := par.NewGroup(par.Limit)
-	for _, g := range groups {
-		for i := range g.Items {
-			if g.Items[i].Path != "" {
-				sizes.Go(func() { g.Items[i].Size = diskuse.SizeOf(g.Items[i].Path) })
+	for _, grp := range g.groups {
+		for i := range grp.Items {
+			if grp.Items[i].Path != "" {
+				sizes.Go(func() { grp.Items[i].Size = diskuse.SizeOf(grp.Items[i].Path) })
 			}
 		}
-		all = append(all, g)
 	}
 	sizes.Wait()
 	var out []*Group
-	for _, g := range all {
-		for _, it := range g.Items {
-			g.Size += it.Size
+	for _, grp := range g.groups {
+		for _, it := range grp.Items {
+			grp.Size += it.Size
 		}
 		// По одному имени без ID - только крупное: мелких папок от утилит без .app слишком много.
-		if !g.Sure && g.Size < 1<<30 {
+		if !grp.Sure && grp.Size < 1<<30 {
 			continue
 		}
-		out = append(out, g)
+		out = append(out, grp)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
-	return out, nil
+	slices.SortFunc(out, func(a, b *Group) int {
+		return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Owner, b.Owner))
+	})
+	return out
 }
 
-// title: имя программы по ID её файлов (Whisky, а не com.isaacmarovitz) и поставщик рядом.
 // Title: имя программы по ID её файлов (Whisky, а не com.isaacmarovitz) и поставщик рядом.
 func (g *Group) Title() string {
 	if g.App != "" {

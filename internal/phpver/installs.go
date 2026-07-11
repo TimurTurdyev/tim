@@ -94,6 +94,7 @@ func linuxInstalls() []Install {
 
 func Hint(v string) string { return runner.InstallHint("php@"+v, "php"+v+"-cli") }
 
+// Find: установленный php нужной версии, сравнение по major.minor.
 func Find(want string) (Install, error) {
 	w, ok := Parse(want)
 	if !ok {

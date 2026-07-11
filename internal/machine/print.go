@@ -15,11 +15,11 @@ import (
 
 // printSnapshot: паспорт и загрузка машины одним снимком.
 func printSnapshot() error {
-	collect, _, err := Funcs()
+	src, err := SourceFor()
 	if err != nil {
 		return err
 	}
-	PrintHW(collect(), true)
+	PrintHW(src.Collect(), true)
 	return nil
 }
 

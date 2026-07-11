@@ -360,29 +360,29 @@ func LeftoversScreen(cfg *config.Config) tui.Screen {
 }
 
 func leftGroup(g *leftover.Group) tui.LeftGroup {
-	lg := tui.LeftGroup{ID: g.Owner, Name: g.Name(), Owner: g.Owner, Size: g.Size, Sure: g.Sure, Hidden: minor(g)}
+	row := tui.LeftGroup{ID: g.Owner, Name: g.Name(), Owner: g.Owner, Size: g.Size, Sure: g.Sure, Hidden: minor(g)}
 	switch {
 	case g.Similar != "":
-		lg.Note = "установлен другой " + g.Similar + ": данные другой версии"
+		row.Note = "установлен другой " + g.Similar + ": данные другой версии"
 	case !g.Sure:
-		lg.Note = "похоже, проверь"
+		row.Note = "похоже, проверь"
 	case len(g.Agents) > 0:
-		lg.Note = "автозапуск без программы"
+		row.Note = "автозапуск без программы"
 	case len(g.PIDs) > 0:
-		lg.Note = "процесс ещё работает, хотя программа удалена"
+		row.Note = "процесс ещё работает, хотя программа удалена"
 	default:
-		lg.Note = "программа удалена"
+		row.Note = "программа удалена"
 	}
 	for _, it := range g.Items {
 		li := tui.LeftItem{Path: leftover.LibPath(it.Path), Size: it.Size, Note: it.Note}
 		if it.Path == "" {
 			li.Path, li.Note = it.Note, ""
 		}
-		lg.Items = append(lg.Items, li)
+		row.Items = append(row.Items, li)
 	}
-	sort.SliceStable(lg.Items, func(i, j int) bool { return lg.Items[i].Size > lg.Items[j].Size })
-	lg.Commands = leftCommands(g)
-	return lg
+	sort.SliceStable(row.Items, func(i, j int) bool { return row.Items[i].Size > row.Items[j].Size })
+	row.Commands = leftCommands(g)
+	return row
 }
 
 // leftCommands: что выполнит уборка группы - для окна подтверждения.

@@ -7,6 +7,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -28,28 +29,28 @@ type EnvGit struct {
 // GitCheck: незакоммиченное - обычное состояние работы, а неотправленное живёт только на этой машине.
 // .env в репозитории - утечка секретов, хуже всего остального в колонке.
 func GitCheck(g gitx.State, env EnvGit) Check {
-	c := Check{Name: "git", Level: OK}
+	c := Check{Name: "git", Level: level.OK}
 	var parts []string
 	if g.Changes > 0 {
 		parts = append(parts, strconv.Itoa(g.Changes)+" изм")
 	}
 	if g.Ahead > 0 {
 		parts = append(parts, strconv.Itoa(g.Ahead)+" не отпр")
-		c.Level = Warn
+		c.Level = level.Warn
 	}
 	if g.Behind > 0 {
 		parts = append(parts, strconv.Itoa(g.Behind)+" позади")
-		c.Level = Warn
+		c.Level = level.Warn
 	}
 	switch {
 	case env.Tracked:
 		parts = append([]string{".env в git"}, parts...)
-		c.Level = Bad
+		c.Level = level.Bad
 		c.Detail = ".env лежит в репозитории: секреты уже в истории, их надо сменить, а файл убрать (git rm --cached .env)"
 	case env.Exists && !env.Ignored:
 		parts = append([]string{".env не в ignore"}, parts...)
-		if c.Level < Warn {
-			c.Level = Warn
+		if c.Level < level.Warn {
+			c.Level = level.Warn
 		}
 		c.Detail = ".env не в .gitignore: один git add . - и секреты в репозитории"
 	}
@@ -63,33 +64,33 @@ func GitCheck(g gitx.State, env EnvGit) Check {
 
 // SiteCheck переводит ответ сайта в уровень. Ошибка запроса хуже любого кода.
 func SiteCheck(status int, err error) Check {
-	c := Check{Name: "сайт", Level: OK}
+	c := Check{Name: "сайт", Level: level.OK}
 	if err != nil {
-		c.Level, c.Text, c.Detail = Bad, "нет ответа", "сайт не отвечает: "+ui.ShortErr(err)
+		c.Level, c.Text, c.Detail = level.Bad, "нет ответа", "сайт не отвечает: "+ui.ShortErr(err)
 		return c
 	}
 	c.Text = strconv.Itoa(status)
 	switch {
 	case status >= 500:
-		c.Level, c.Detail = Bad, fmt.Sprintf("сайт отвечает %d", status)
+		c.Level, c.Detail = level.Bad, fmt.Sprintf("сайт отвечает %d", status)
 	case status >= 400:
-		c.Level, c.Detail = Warn, fmt.Sprintf("сайт отвечает %d", status)
+		c.Level, c.Detail = level.Warn, fmt.Sprintf("сайт отвечает %d", status)
 	}
 	return c
 }
 
 // MailCheck переводит оценку почты домена в уровень.
-func MailCheck(level string, reasons []string) Check {
-	c := Check{Name: "почта"}
-	switch level {
-	case "bad":
-		c.Level, c.Text = Bad, "плохо"
-	case "warn":
-		c.Level, c.Text = Warn, "неполно"
+func MailCheck(verdict level.Level, reasons []string) Check {
+	c := Check{Name: "почта", Level: verdict}
+	switch verdict {
+	case level.Bad:
+		c.Text = "плохо"
+	case level.Warn:
+		c.Text = "неполно"
 	default:
-		c.Level, c.Text = OK, "ок"
+		c.Level, c.Text = level.OK, "ок"
 	}
-	if c.Level >= Warn && len(reasons) > 0 {
+	if c.Level >= level.Warn && len(reasons) > 0 {
 		c.Detail = "почта: " + strings.Join(reasons, "; ")
 	}
 	return c
@@ -108,11 +109,11 @@ func Site(url string) Check {
 func Cert(host string) Check {
 	info, err := inspect.Cert(host, "443")
 	if err != nil {
-		return Check{Name: "сертификат", Level: Bad, Text: "нет", Detail: "сертификат не получен: " + ui.ShortErr(err)}
+		return Check{Name: "сертификат", Level: level.Bad, Text: "нет", Detail: "сертификат не получен: " + ui.ShortErr(err)}
 	}
 	c := Deadline("сертификат", info.Leaf().NotAfter, CertWarnDays, CertBadDays)
 	if info.VerifyErr != nil {
-		c.Level = Bad
+		c.Level = level.Bad
 		c.Detail = "сертификат не проходит проверку: " + ui.ShortErr(info.VerifyErr)
 	}
 	return c
@@ -127,7 +128,7 @@ func Mail(domain string) Check {
 func DomainReg(domain string) Check {
 	d, err := Registration(domain)
 	if err != nil || d.Expires.IsZero() {
-		return Check{Name: "домен", Level: Skip, Text: "-"}
+		return Check{Name: "домен", Level: level.Skip, Text: "-"}
 	}
 	c := Deadline("регистрация домена", d.Expires, DomainWarnDays, DomainBadDays)
 	c.Name = "домен"

@@ -73,127 +73,122 @@ type Options struct {
 	Notify        func(string)
 }
 
-func (r *Report) addErr(mu *sync.Mutex, what string, err error) {
-	mu.Lock()
-	r.Errors = append(r.Errors, what+": "+err.Error())
-	mu.Unlock()
-}
-
-// Collect собирает отчёт по домену из публичных источников.
+// Collect собирает отчёт по домену из публичных источников: имена, их адреса и сети, ответы
+// сайтов, счётчики главной страницы и соседей по адресу.
 func Collect(domain string, opt Options) *Report {
 	rep := &Report{Domain: domain}
-	var mu sync.Mutex
-	names := map[string]string{domain: "апекс"}
+	names := rep.discover(opt)
+	rep.resolve(names)
+	rep.probe()
+	rep.Trackers = homeTrackers(domain, rep.Hosts)
+	if !opt.SkipNeighbors {
+		rep.findNeighbors()
+	}
+	return rep
+}
 
+// discover: имена домена из логов сертификатов и перебора; значение - откуда имя взялось.
+func (r *Report) discover(opt Options) map[string]string {
+	var mu sync.Mutex
+	names := map[string]string{r.Domain: "апекс"}
+	addNames := func(list []string, source string) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, n := range list {
+			if names[n] == "" {
+				names[n] = source
+			}
+		}
+	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		if opt.SkipCRT {
 			return
 		}
 		if opt.Notify != nil {
-			if c, ok := readCache(domain); ok && !opt.FreshCRT && c.Fresh(CacheTTL) {
+			if c, ok := readCache(r.Domain); ok && !opt.FreshCRT && c.Fresh(CacheTTL) {
 				opt.Notify("логи сертификатов из кэша, обновить: --fresh")
 			} else {
 				opt.Notify("спрашиваю логи сертификатов")
 			}
 		}
-		subs, related, cached, err := fromCRT(domain, opt.FreshCRT, !opt.SkipNeighbors)
+		subs, related, cached, err := fromCRT(r.Domain, opt.FreshCRT, !opt.SkipNeighbors)
 		mu.Lock()
-		defer mu.Unlock()
-		if err != nil && subs == nil {
-			rep.Errors = append(rep.Errors, "crt.sh: "+err.Error())
-			return
-		}
 		if err != nil {
-			rep.Errors = append(rep.Errors, "crt.sh: "+err.Error())
+			r.Errors = append(r.Errors, "crt.sh: "+err.Error())
 		}
-		rep.CRTCached = cached
-		for _, s := range subs {
-			if names[s] == "" {
-				names[s] = "сертификат"
-			}
+		if err == nil || subs != nil {
+			r.CRTCached, r.Related = cached, related
 		}
-		rep.Related = related
+		mu.Unlock()
+		addNames(subs, "сертификат")
 	})
-	wg.Go(func() {
-		for _, n := range bruteforce(domain) {
-			mu.Lock()
-			if names[n] == "" {
-				names[n] = "перебор"
-			}
-			mu.Unlock()
-		}
-	})
+	wg.Go(func() { addNames(bruteforce(r.Domain), "перебор") })
 	wg.Wait()
+	return names
+}
 
-	// Резолв всех имён, по 16 одновременно.
-	type resolved struct {
-		name string
-		ips  []string
-	}
+// resolve: адреса имён, по 16 одновременно, и чьи это сети.
+func (r *Report) resolve(names map[string]string) {
 	all := slices.Sorted(maps.Keys(names))
-	var found []resolved
-	for i, ips := range par.Map(all, 16, lookup) {
-		if len(ips) > 0 {
-			found = append(found, resolved{all[i], ips})
-		}
-	}
-
 	byIP := map[string][]string{}
-	for _, f := range found {
-		rep.Hosts = append(rep.Hosts, Host{Name: f.name, IPs: f.ips, Source: names[f.name]})
-		for _, ip := range f.ips {
-			byIP[ip] = append(byIP[ip], f.name)
+	for i, ips := range par.Map(all, 16, lookup) {
+		if len(ips) == 0 {
+			continue
+		}
+		r.Hosts = append(r.Hosts, Host{Name: all[i], IPs: ips, Source: names[all[i]]})
+		for _, ip := range ips {
+			byIP[ip] = append(byIP[ip], all[i])
 		}
 	}
-
-	ips := make([]string, 0, len(byIP))
-	for ip := range byIP {
-		ips = append(ips, ip)
-	}
-	sort.Strings(ips)
+	ips := slices.Sorted(maps.Keys(byIP))
 	owners := asn.Cymru(ips)
 	for _, ip := range ips {
 		a := Addr{IP: ip, AS: owners[ip], Hosts: byIP[ip]}
 		a.CDN = asn.IsCDN(a.AS.Name)
-		rep.Addrs = append(rep.Addrs, a)
+		r.Addrs = append(r.Addrs, a)
 	}
+}
 
+// probe: обратные имена адресов и ответы сайтов, по 16 одновременно.
+func (r *Report) probe() {
 	probes := par.NewGroup(16)
-	for i := range rep.Addrs {
-		probes.Go(func() { rep.Addrs[i].PTR = ptr(rep.Addrs[i].IP) })
+	for i := range r.Addrs {
+		probes.Go(func() { r.Addrs[i].PTR = ptr(r.Addrs[i].IP) })
 	}
-	for i := range rep.Hosts {
-		probes.Go(func() { probe(&rep.Hosts[i]) })
+	for i := range r.Hosts {
+		probes.Go(func() { probe(&r.Hosts[i]) })
 	}
 	probes.Wait()
+}
 
-	// Счётчики берём с главной страницы домена.
-	for _, h := range rep.Hosts {
+// homeTrackers: счётчики с главной страницы домена.
+func homeTrackers(domain string, hosts []Host) []Tracker {
+	for _, h := range hosts {
 		if (h.Name == domain || h.Name == "www."+domain) && h.Status > 0 {
 			if tr := trackersOf(h.Scheme + "://" + h.Name); len(tr) > 0 {
-				rep.Trackers = tr
-				break
+				return tr
 			}
 		}
 	}
+	return nil
+}
 
-	if !opt.SkipNeighbors {
-		for i := range rep.Addrs {
-			a := &rep.Addrs[i]
-			if a.CDN || !slices.Contains(a.Hosts, domain) {
-				continue
-			}
-			list, err := neighbors(a.IP, domain)
-			if err != nil {
-				rep.addErr(&mu, "соседи по IP", err)
-				break
-			}
-			a.Shared = list
-			break
+// findNeighbors: чужие сайты на первом своём, не CDN-адресе апекса.
+func (r *Report) findNeighbors() {
+	for i := range r.Addrs {
+		a := &r.Addrs[i]
+		if a.CDN || !slices.Contains(a.Hosts, r.Domain) {
+			continue
 		}
+		list, err := neighbors(a.IP, r.Domain)
+		if err != nil {
+			r.Errors = append(r.Errors, "соседи по IP: "+err.Error())
+			return
+		}
+		a.Shared = list
+		return
 	}
-	return rep
 }
 
 // certSources: откуда берутся имена. CertSpotter быстрый, crt.sh глубже по истории, hostsearch видит то,

@@ -46,6 +46,7 @@ func RowName(p procs.Full) string {
 	return filepath.Base(p.Comm)
 }
 
+// StateHint: что значит буква состояния из ps.
 func StateHint(s string) string {
 	switch {
 	case strings.HasPrefix(s, "Z"):
@@ -58,6 +59,7 @@ func StateHint(s string) string {
 	return ""
 }
 
+// Alive: процесс есть. EPERM тоже ответ "жив": процесс чужой, но существует.
 func Alive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
