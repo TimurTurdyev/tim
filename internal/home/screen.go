@@ -1,9 +1,12 @@
 package home
 
 import (
+	"cmp"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
@@ -32,7 +35,8 @@ var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": 
 	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true}
 
 func (h *Home) screen() tui.Screen {
-	return tui.NewHome(tui.HomeOpts{Load: h.load, Search: h.search})
+	index := sync.OnceValue(h.newIndex)
+	return tui.NewHome(tui.HomeOpts{Load: h.load, Search: func(q string) []tui.Hit { return h.search(index(), q) }})
 }
 
 // runLine: набранная в ":" команда. Экраны открываются экранами, остальное - результатом или после выхода.
@@ -231,43 +235,80 @@ func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
 	}}
 }
 
-// search: проекты, команды, серверы и домены по запросу.
-func (h *Home) search(q string) []tui.Hit {
+// searchIndex: то, по чему ищет главный экран; собирается раз на экран, а не на каждую букву.
+type searchIndex struct {
+	cmds    []tui.CommandEntry
+	lines   []string // команда и её описание
+	names   []string
+	aliases []string
+	domains []string
+}
+
+func (h *Home) newIndex() *searchIndex {
 	cfg := h.env.Cfg
-	var out []tui.Hit
-	// Команды с примерами, самые похожие первыми.
-	cmds := h.commands("")
-	lines := make([]string, len(cmds))
-	for i, c := range cmds {
-		lines[i] = c.Line + " " + c.Desc
+	ix := &searchIndex{cmds: h.commands(""), aliases: sshx.Aliases(), domains: sites.Domains(cfg)}
+	for _, c := range ix.cmds {
+		ix.lines = append(ix.lines, c.Line+" "+c.Desc)
 	}
-	for _, m := range top(fuzzy.Filter(q, lines), 4) {
-		c := cmds[m.Index]
-		out = append(out, tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }})
+	for _, p := range cfg.Projects {
+		ix.names = append(ix.names, p.Name)
 	}
-	names := make([]string, len(cfg.Projects))
-	for i, p := range cfg.Projects {
-		names[i] = p.Name
+	return ix
+}
+
+// hitGroup: находки одного вида; группа с более точным совпадением идёт выше. Очки fuzzy между
+// группами не сравнить: у команд ищется по строке с описанием.
+type hitGroup struct {
+	hits  []tui.Hit
+	exact int // 3 - имя целиком, 2 - с начала, 1 - подстрокой, 0 - по буквам
+}
+
+func (g *hitGroup) add(hit tui.Hit, q string) {
+	g.hits = append(g.hits, hit)
+	g.exact = max(g.exact, exactness(q, hit.Title))
+}
+
+func exactness(q, title string) int {
+	q, title = strings.ToLower(strings.TrimSpace(q)), strings.ToLower(title)
+	switch {
+	case title == q:
+		return 3
+	case strings.HasPrefix(title, q):
+		return 2
+	case strings.Contains(title, q):
+		return 1
 	}
-	for _, m := range top(fuzzy.Filter(q, names), 5) {
+	return 0
+}
+
+// search: команды, проекты, серверы и домены по запросу; внутри группы - самые похожие первыми.
+func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
+	cfg := h.env.Cfg
+	groups := make([]hitGroup, 4)
+	for _, m := range fuzzy.FilterTop(q, ix.lines, 4) {
+		c := ix.cmds[m.Index]
+		groups[0].add(tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }}, q)
+	}
+	for _, m := range fuzzy.FilterTop(q, ix.names, 5) {
 		p := &cfg.Projects[m.Index]
-		out = append(out, h.projectHit(p, paths.Show(cfg.ProjectDir(p))))
+		groups[1].add(h.projectHit(p, paths.Show(cfg.ProjectDir(p))), q)
 	}
-	aliases := sshx.Aliases()
-	for _, m := range top(fuzzy.Filter(q, aliases), 3) {
-		a := aliases[m.Index]
-		out = append(out, tui.Hit{Kind: "серверы", Title: a, Hint: "ssh мимо VPN", Open: func() tui.Action {
+	for _, m := range fuzzy.FilterTop(q, ix.aliases, 3) {
+		a := ix.aliases[m.Index]
+		groups[2].add(tui.Hit{Kind: "серверы", Title: a, Hint: "ssh мимо VPN", Open: func() tui.Action {
 			return tui.Action{Exit: func() { h.after([]string{"ssh", a}) }}
-		}})
+		}}, q)
 	}
-	domains := sites.Domains(cfg)
-	for _, m := range top(fuzzy.Filter(q, domains), 3) {
-		d := domains[m.Index]
-		out = append(out, tui.Hit{Kind: "сайты", Title: d, Hint: "что за сайт: адреса, сертификат, почта", Open: func() tui.Action {
+	for _, m := range fuzzy.FilterTop(q, ix.domains, 3) {
+		d := ix.domains[m.Index]
+		groups[3].add(tui.Hit{Kind: "сайты", Title: d, Hint: "что за сайт: адреса, сертификат, почта", Open: func() tui.Action {
 			return h.result([]string{"site", d})
-		}})
+		}}, q)
+	}
+	slices.SortStableFunc(groups, func(a, b hitGroup) int { return cmp.Compare(b.exact, a.exact) })
+	var out []tui.Hit
+	for _, g := range groups {
+		out = append(out, g.hits...)
 	}
 	return out
 }
-
-func top(list []fuzzy.Match, n int) []fuzzy.Match { return list[:min(n, len(list))] }

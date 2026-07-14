@@ -18,7 +18,8 @@ var trackerRes = []struct {
 	kind string
 	re   *regexp.Regexp
 }{
-	{"Яндекс.Метрика", regexp.MustCompile(`(?:ym\(|mc\.yandex\.ru/watch/|id:\s*)(\d{6,9})`)},
+	// id: только внутри Ya.Metrika({id: ...}): голое "id: 123456" есть в любом JSON на странице.
+	{"Яндекс.Метрика", regexp.MustCompile(`(?:\bym\(|mc\.yandex\.ru/watch/|Ya\.Metrika2?\(\{\s*id:\s*)(\d{6,9})`)},
 	{"Google Analytics", regexp.MustCompile(`\b(G-[A-Z0-9]{6,12}|UA-\d{4,10}-\d{1,4})\b`)},
 	{"Google Tag Manager", regexp.MustCompile(`\b(GTM-[A-Z0-9]{4,8})\b`)},
 	{"AdSense", regexp.MustCompile(`\b(ca-pub-\d{10,20})\b`)},
@@ -47,10 +48,16 @@ func ParseCRT(data []byte, domain string) (subs, related []string, err error) {
 	if err := json.Unmarshal(data, &rows); err != nil {
 		return nil, nil, err
 	}
+	// crt.sh отдаёт тысячи строк с одними и теми же именами: повторы отсеиваются сразу.
+	seen := map[string]bool{}
 	var names []string
 	for _, r := range rows {
-		names = append(names, strings.Split(r.NameValue, "\n")...)
-		names = append(names, r.Common)
+		for _, n := range append(strings.Split(r.NameValue, "\n"), r.Common) {
+			if !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
 	}
 	return splitNames(names, domain)
 }

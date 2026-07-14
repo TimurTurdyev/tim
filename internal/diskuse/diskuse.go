@@ -2,8 +2,10 @@
 package diskuse
 
 import (
+	"cmp"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -62,8 +64,8 @@ type Summary struct {
 // Summarize: top самых больших папок от minSize и итоги по видам по всем.
 func Summarize(items []Item, top int, minSize int64) Summary {
 	s := Summary{ByKind: map[string]int64{}}
-	sorted := append([]Item(nil), items...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Size > sorted[j].Size })
+	sorted := slices.Clone(items)
+	bySize(sorted)
 	for _, it := range sorted {
 		s.ByKind[it.Kind] += it.Size
 		s.Total += it.Size
@@ -87,6 +89,11 @@ func Stale(items []Item, touched map[string]time.Time, now time.Time, days int, 
 		}
 		out = append(out, it)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	bySize(out)
 	return out
+}
+
+// bySize: крупные первыми, при равном размере по пути - чтобы список не прыгал между запусками.
+func bySize(items []Item) {
+	slices.SortStableFunc(items, func(a, b Item) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Path, b.Path)) })
 }

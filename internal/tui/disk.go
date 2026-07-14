@@ -65,7 +65,7 @@ type disk struct {
 	data     DiskData
 	tab      int
 	list     List
-	marked   map[string]DiskRow
+	marked   marks[DiskRow]
 	loading  bool
 	progress string
 	mu       sync.Mutex
@@ -76,7 +76,7 @@ type diskTickMsg struct{}
 
 // NewDisk создаёт экран обзора диска.
 func NewDisk(opts DiskOpts) Screen {
-	return &disk{opts: opts, marked: map[string]DiskRow{}}
+	return &disk{opts: opts}
 }
 
 func (d *disk) Init() tea.Cmd { return d.load(false) }
@@ -131,7 +131,7 @@ func (d *disk) refill() {
 		r := r
 		d.list.Rows = append(d.list.Rows, Row{Text: r.Name, Render: func(sel bool, w int) string {
 			mark := "  "
-			if _, ok := d.marked[r.Path]; ok && r.Path != "" {
+			if r.Path != "" && d.marked.has(r.Path) {
 				mark = styleBad.Render(symCheck) + " "
 			}
 			size := styleText.Render(ui.Fit(ui.Bytes(r.Size), 9))
@@ -196,11 +196,7 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 				if !cur.Removable || cur.Path == "" {
 					return app.Toast(level.Warn, "это место так не убрать: смотри подсказку справа")
 				}
-				if _, ok := d.marked[cur.Path]; ok {
-					delete(d.marked, cur.Path)
-				} else {
-					d.marked[cur.Path] = *cur
-				}
+				d.marked.toggle(cur.Path, *cur)
 				d.list.Down()
 			}
 		case "x", "ч":
@@ -228,12 +224,12 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 }
 
 func (d *disk) confirmRemove(app *App) tea.Cmd {
-	if len(d.marked) == 0 {
+	if d.marked.len() == 0 {
 		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var lines, paths []string
 	var sum int64
-	for _, r := range d.marked {
+	for _, r := range d.marked.list() {
 		lines = append(lines, ui.Fit(ui.Bytes(r.Size), 9)+"  "+r.Name+"  "+styleDim.Render(r.shown()))
 		paths = append(paths, r.Path)
 		sum += r.Size
@@ -247,7 +243,7 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 		Danger:  true,
 		Yes: func() tea.Cmd {
 			freed, errs := d.opts.Remove(paths)
-			d.marked = map[string]DiskRow{}
+			d.marked.clear()
 			var cmds []tea.Cmd
 			if len(errs) > 0 {
 				cmds = append(cmds, app.Toast(level.Bad, strings.Join(errs, "; ")))
@@ -316,12 +312,12 @@ func (d *disk) View(width, height int) string {
 	for len(out) < height-paneH-notes-1 {
 		out = append(out, "")
 	}
-	if len(d.marked) > 0 {
+	if d.marked.len() > 0 {
 		var sum int64
-		for _, r := range d.marked {
+		for _, r := range d.marked.list() {
 			sum += r.Size
 		}
-		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(d.marked))+" "+symDot+" "+ui.Bytes(sum)) + styleDim.Render("   x - убрать")
+		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(d.marked.len())+" "+symDot+" "+ui.Bytes(sum)) + styleDim.Render("   x - убрать")
 	}
 	for _, p := range pane {
 		out = append(out, "  "+p)

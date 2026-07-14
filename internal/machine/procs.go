@@ -68,6 +68,8 @@ func Alive(pid int) bool {
 // waitGone ждёт, пока все процессы завершатся; возвращает тех, кто остался.
 func waitGone(pids []int, limit time.Duration) []int {
 	deadline := time.Now().Add(limit)
+	var zombies map[int]bool
+	var checked time.Time
 	for {
 		var left []int
 		for _, p := range pids {
@@ -75,11 +77,12 @@ func waitGone(pids []int, limit time.Duration) []int {
 				left = append(left, p)
 			}
 		}
-		// Зомби на сигнал 0 отвечает, но он уже завершён: ждать его нечего.
-		if len(left) > 0 {
-			z := procs.Zombies(left)
-			left = slices.DeleteFunc(left, func(p int) bool { return z[p] })
+		// Зомби на сигнал 0 отвечает, но он уже завершён: ждать его нечего. Это спрашивается у ps,
+		// поэтому не чаще раза в секунду, а не на каждом шаге ожидания.
+		if len(left) > 0 && time.Since(checked) >= time.Second {
+			zombies, checked = procs.Zombies(left), time.Now()
 		}
+		left = slices.DeleteFunc(left, func(p int) bool { return zombies[p] })
 		if len(left) == 0 || time.Now().After(deadline) || runner.DryRun {
 			return left
 		}

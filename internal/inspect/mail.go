@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -121,13 +122,15 @@ func AnalyzeDMARC(txt []string) (string, []Finding) {
 
 // Mail: записи почты домена.
 type Mail struct {
-	NullMX bool
-	MX     []string
-	SPF    string
-	DMARC  string
-	DKIM   map[string]string
-	SPFF   []Finding
-	DMRF   []Finding
+	// NoAnswer: DNS не ответил вовремя - про почту ничего не известно, это не "нет MX".
+	NoAnswer bool
+	NullMX   bool
+	MX       []string
+	SPF      string
+	DMARC    string
+	DKIM     map[string]string
+	SPFF     []Finding
+	DMRF     []Finding
 }
 
 func lookupTXT(ctx context.Context, name string) []string {
@@ -142,7 +145,10 @@ func MailCheck(domain string, selectors []string) *Mail {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	wg.Go(func() {
-		mx, _ := net.DefaultResolver.LookupMX(ctx, domain)
+		mx, err := net.DefaultResolver.LookupMX(ctx, domain)
+		if dnsErr, ok := errors.AsType[*net.DNSError](err); err != nil && (!ok || !dnsErr.IsNotFound) {
+			m.NoAnswer = true
+		}
 		for _, r := range mx {
 			h := strings.TrimSuffix(r.Host, ".")
 			if h == "" {
@@ -171,8 +177,11 @@ func MailCheck(domain string, selectors []string) *Mail {
 }
 
 // Verdict: общая оценка почты домена и короткие причины. ok - принимает и защищена от подделок;
-// warn - работает, но есть чего не хватает; bad - есть серьёзная дыра или почты нет.
+// warn - работает, но есть чего не хватает; bad - есть серьёзная дыра или почты нет; skip - DNS не ответил.
 func (m *Mail) Verdict() (verdict level.Level, reasons []string) {
+	if m.NoAnswer {
+		return level.Skip, []string{"DNS не ответил"}
+	}
 	verdict = level.OK
 	drop := func(l level.Level) { verdict = max(verdict, l) }
 	seen := map[string]bool{}

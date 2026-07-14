@@ -33,11 +33,14 @@ type Repair struct {
 
 // Decide сравнивает нужные маршруты с таблицей. Сломан тот, которого нет, который ушёл в туннель
 // или который смотрит на шлюз прошлой сети: интерфейс при этом правильный, и по одному
-// интерфейсу поломку не видно.
+// интерфейсу поломку не видно. Строк на одну сеть бывает несколько: маршрут в порядке, если хоть
+// одна ведёт куда надо; привязанные к интерфейсу (флаг I) общий трафик не ведут и не считаются.
 func Decide(want []string, table []netinfo.TableRoute, gw, iface string) []Repair {
-	have := map[netip.Prefix]netinfo.TableRoute{}
+	have := map[netip.Prefix][]netinfo.TableRoute{}
 	for _, r := range table {
-		have[r.Dest] = r
+		if !r.Scoped() {
+			have[r.Dest] = append(have[r.Dest], r)
+		}
 	}
 	var out []Repair
 	seen := map[string]bool{}
@@ -47,19 +50,39 @@ func Decide(want []string, table []netinfo.TableRoute, gw, iface string) []Repai
 		}
 		seen[d] = true
 		p, _ := netinfo.ParseDest(d)
-		r, ok := have[p]
-		switch {
-		case !ok:
-			out = append(out, Repair{Dest: d, Kind: Missing, Reason: "нет маршрута"})
-		case netinfo.IsTunnelIface(r.Iface):
-			out = append(out, Repair{Dest: d, Kind: Tunnel, Reason: "ушёл в туннель " + r.Iface})
-		case r.Gateway != gw:
-			out = append(out, Repair{Dest: d, Kind: Gateway, Reason: "шлюз " + r.Gateway + " вместо " + gw})
-		case iface != "" && r.Iface != iface:
-			out = append(out, Repair{Dest: d, Kind: Iface, Reason: "интерфейс " + r.Iface + " вместо " + iface})
+		if r, broken := judge(have[p], gw, iface); broken {
+			r.Dest = d
+			out = append(out, r)
 		}
 	}
 	return out
+}
+
+// judge: исправна ли сеть по её строкам таблицы, а если нет - чем сломана.
+func judge(rows []netinfo.TableRoute, gw, iface string) (Repair, bool) {
+	if len(rows) == 0 {
+		return Repair{Kind: Missing, Reason: "нет маршрута"}, true
+	}
+	var tunnel, otherGW, otherIface *netinfo.TableRoute
+	for i, r := range rows {
+		switch {
+		case netinfo.IsTunnelIface(r.Iface):
+			tunnel = &rows[i]
+		case r.Gateway != gw:
+			otherGW = &rows[i]
+		case iface != "" && r.Iface != iface:
+			otherIface = &rows[i]
+		default:
+			return Repair{}, false
+		}
+	}
+	switch {
+	case tunnel != nil:
+		return Repair{Kind: Tunnel, Reason: "ушёл в туннель " + tunnel.Iface}, true
+	case otherGW != nil:
+		return Repair{Kind: Gateway, Reason: "шлюз " + otherGW.Gateway + " вместо " + gw}, true
+	}
+	return Repair{Kind: Iface, Reason: "интерфейс " + otherIface.Iface + " вместо " + iface}, true
 }
 
 // Status: что страж знает о себе; пишется каждый цикл, читается командой tim route status.

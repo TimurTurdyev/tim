@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -144,18 +146,14 @@ func (p *procsScreen) refill() {
 			names[i] = g.Name
 		}
 		for _, m := range fuzzy.Filter(q, names) {
-			if m.Score < len([]rune(q))*2 {
+			if m.Score < fuzzy.MinScore(q) {
 				continue
 			}
 			p.shown = append(p.shown, p.data.Groups[m.Index])
 		}
 	}
 	// Стабильная сортировка: при обновлении раз в 3 с строки не должны прыгать от шума.
-	for i := 1; i < len(p.shown); i++ {
-		for j := i; j > 0 && p.less(p.shown[j], p.shown[j-1]); j-- {
-			p.shown[j], p.shown[j-1] = p.shown[j-1], p.shown[j]
-		}
-	}
+	slices.SortStableFunc(p.shown, p.compare)
 	p.list.Rows = nil
 	for _, g := range p.shown {
 		g := g
@@ -180,14 +178,12 @@ func (p *procsScreen) refill() {
 	}
 }
 
-func (p *procsScreen) less(a, b ProcGroup) bool {
+// compare: тяжёлые первыми - по памяти или по процессору, а при равном процессоре по памяти.
+func (p *procsScreen) compare(a, b ProcGroup) int {
 	if p.byMem {
-		return a.RSS > b.RSS
+		return cmp.Compare(b.RSS, a.RSS)
 	}
-	if a.CPU != b.CPU {
-		return a.CPU > b.CPU
-	}
-	return a.RSS > b.RSS
+	return cmp.Or(cmp.Compare(b.CPU, a.CPU), cmp.Compare(b.RSS, a.RSS))
 }
 
 func (p *procsScreen) current() *ProcGroup {

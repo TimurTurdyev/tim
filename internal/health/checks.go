@@ -83,6 +83,8 @@ func SiteCheck(status int, err error) Check {
 func MailCheck(verdict level.Level, reasons []string) Check {
 	c := Check{Name: "почта", Level: verdict}
 	switch verdict {
+	case level.Skip:
+		c.Text = "-"
 	case level.Bad:
 		c.Text = "плохо"
 	case level.Warn:

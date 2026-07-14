@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var rules = []rule{
@@ -36,6 +37,11 @@ var deps = map[string]bool{"node_modules": true, "vendor": true, ".venv": true, 
 
 var plistName = regexp.MustCompile(`<key>name</key>\s*<string>([^<]+)</string>`)
 
+var (
+	indexMu sync.Mutex
+	indexes = map[string]*labelIndex{}
+)
+
 // Label: что это за место и как его освободить. Group - папка, все места внутри которой
 // показываются одной строкой с разбивкой (игры Steam, виртуалки).
 type Label struct {
@@ -63,28 +69,16 @@ type rule struct {
 
 // LabelOf: подпись места. ok=false - ничего про место не известно, показывается как есть.
 func LabelOf(path, home string) (Label, string, bool) {
-	for _, r := range rules {
-		base := r.path
-		switch {
-		case strings.HasPrefix(base, "*/"):
-			needle := base[1:]
-			i := strings.Index(path, needle)
-			if i < 0 {
-				continue
-			}
-			base = path[:i+len(needle)]
-		case !filepath.IsAbs(base):
-			base = filepath.Join(home, base)
+	ix := indexFor(home)
+	if i, base, ok := ix.rule(path); ok {
+		r := rules[i]
+		if !r.group {
+			return r.label, "", true
 		}
-		if path == base || strings.HasPrefix(path, base+"/") {
-			if !r.group {
-				return r.label, "", true
-			}
-			// Внутрь группы спускаемся до её строк: игра, виртуалка, бутылка - одно целое.
-			l := r.label
-			l.Stop = path != base
-			return l, base, true
-		}
+		// Внутрь группы спускаемся до её строк: игра, виртуалка, бутылка - одно целое.
+		l := r.label
+		l.Stop = path != base
+		return l, base, true
 	}
 	name := filepath.Base(path)
 	switch {
@@ -99,18 +93,83 @@ func LabelOf(path, home string) (Label, string, bool) {
 	case name == ".git":
 		return Label{Name: "история git", Hint: "git gc --prune=now; большие файлы в истории - git filter-repo", Stop: true, Kind: Data}, "", true
 	}
-	for _, p := range SystemPlaces {
+	if i, _, ok := lookup(ix.places, path); ok {
+		p := SystemPlaces[i]
+		return Label{Name: p.Name, Hint: p.Clean, Stop: true, Whole: p.Whole}, "", true
+	}
+	return Label{}, "", false
+}
+
+// labelIndex: пути правил, развёрнутые от домашней папки один раз, - LabelOf зовётся на каждую
+// строку обзора и обозревателя.
+type labelIndex struct {
+	rules  map[string]int // абсолютный путь -> номер в rules
+	wild   []int          // номера правил вида */путь, по возрастанию
+	places map[string]int // абсолютный путь -> номер в SystemPlaces
+}
+
+func indexFor(home string) *labelIndex {
+	indexMu.Lock()
+	defer indexMu.Unlock()
+	if ix, ok := indexes[home]; ok {
+		return ix
+	}
+	ix := &labelIndex{rules: map[string]int{}, places: map[string]int{}}
+	abs := func(p string) string {
+		if filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(home, p)
+	}
+	for i, r := range rules {
+		if strings.HasPrefix(r.path, "*/") {
+			ix.wild = append(ix.wild, i)
+		} else if _, dup := ix.rules[abs(r.path)]; !dup {
+			ix.rules[abs(r.path)] = i
+		}
+	}
+	for i, p := range SystemPlaces {
 		for _, rel := range p.Paths {
-			full := rel
-			if !filepath.IsAbs(rel) {
-				full = filepath.Join(home, rel)
-			}
-			if path == full || strings.HasPrefix(path, full+"/") {
-				return Label{Name: p.Name, Hint: p.Clean, Stop: true, Whole: p.Whole}, "", true
+			if _, dup := ix.places[abs(rel)]; !dup {
+				ix.places[abs(rel)] = i
 			}
 		}
 	}
-	return Label{}, "", false
+	indexes[home] = ix
+	return ix
+}
+
+// rule: первое по списку правило, под которое попадает path, и папка, от которой оно действует.
+func (ix *labelIndex) rule(path string) (int, string, bool) {
+	i, base, ok := lookup(ix.rules, path)
+	for _, w := range ix.wild {
+		if ok && w > i {
+			break
+		}
+		needle := rules[w].path[1:]
+		j := strings.Index(path, needle)
+		if j < 0 {
+			continue
+		}
+		if b := path[:j+len(needle)]; path == b || strings.HasPrefix(path, b+"/") {
+			return w, b, true
+		}
+	}
+	return i, base, ok
+}
+
+// lookup: среди path и его предков - путь с наименьшим номером, как при проходе списка по порядку.
+func lookup(m map[string]int, path string) (int, string, bool) {
+	best, base := -1, ""
+	for d := path; ; d = filepath.Dir(d) {
+		if i, ok := m[d]; ok && (best < 0 || i < best) {
+			best, base = i, d
+		}
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	return best, base, best >= 0
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }

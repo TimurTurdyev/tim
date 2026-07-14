@@ -36,6 +36,19 @@ func table() []netinfo.TableRoute {
 	return tableCache
 }
 
+// routeTo: куда уйдёт адрес - по уже прочитанной таблице, а если в ней подходящего нет (только
+// маршрут по умолчанию), спросить систему. Так проверка десятков адресов не запускает route на каждый.
+func routeTo(addr string) netinfo.Route {
+	if r, ok := netinfo.Lookup(table(), addr); ok {
+		gw := r.Gateway
+		if !netinfo.IsIPv4(gw) {
+			gw = "" // utun4 или link#14 вместо адреса: маршрут прямо в интерфейс, как у route get
+		}
+		return netinfo.Route{Gateway: gw, Iface: r.Iface}
+	}
+	return netinfo.RouteOf(addr)
+}
+
 func TableChanged() {
 	tableMu.Lock()
 	tableCache = nil
@@ -48,7 +61,7 @@ func RouteState(dest string, phys netinfo.Service, gw string) (text string, bad 
 	if strings.Contains(dest, "/") {
 		p, _ := netinfo.ParseDest(dest)
 		for _, t := range table() {
-			if t.Dest == p {
+			if t.Dest == p && !t.Scoped() {
 				r = netinfo.Route{Gateway: t.Gateway, Iface: t.Iface}
 			}
 		}
@@ -57,7 +70,7 @@ func RouteState(dest string, phys netinfo.Service, gw string) (text string, bad 
 			r = netinfo.RouteOf(ip.String())
 		}
 	} else {
-		r = netinfo.RouteOf(dest)
+		r = routeTo(dest)
 	}
 	switch {
 	case netinfo.IsTunnelIface(r.Iface):
@@ -80,13 +93,13 @@ func PortOpen(addr, port string) bool {
 }
 
 // setRoute ставит маршрут через шлюз. macOS не меняет существующий маршрут командой add,
-// поэтому старый снимается первым; ip route replace на Linux делает это сам.
+// поэтому старый снимается первым; ip route replace на Linux делает это сам. Прочитанную таблицу
+// сбрасывает вызывающий, один раз после всех правок: на каждый маршрут перечитывать её незачем.
 func setRoute(dest, gw, iface string) error {
 	if runtime.GOOS != "linux" {
 		// Старого маршрута обычно нет, и route ругается "not in table" - это не ошибка.
 		_, _ = privileged.Run(netinfo.DelRouteCmd(dest)...)
 	}
-	defer TableChanged()
 	_, err := privileged.Run(netinfo.AddRouteCmd(dest, gw, iface)...)
 	return err
 }
@@ -101,6 +114,7 @@ func Up(cfg *config.Config, dests []string) error {
 	verbose := len(dests) <= fewDests || runner.DryRun
 	done, had := 0, 0
 	var failed []string
+	defer TableChanged()
 	for i, d := range dests {
 		if Bypassed(d, phys, gw) {
 			had++
@@ -158,7 +172,7 @@ func upError(failed []string, total int) error {
 // Bypassed: у адреса или подсети уже есть свой маршрут через нужный шлюз.
 func Bypassed(dest string, phys netinfo.Service, gw string) bool {
 	if !strings.Contains(dest, "/") {
-		r := netinfo.RouteOf(dest)
+		r := routeTo(dest)
 		return r.Gateway == gw && r.Iface == phys.Device
 	}
 	p, _ := netinfo.ParseDest(dest)
@@ -175,8 +189,8 @@ func Down(dests []string) error {
 	verbose := len(dests) <= fewDests || runner.DryRun
 	gone := 0
 	var failed []string
+	defer TableChanged()
 	for _, d := range dests {
-		TableChanged()
 		out, err := privileged.Run(netinfo.DelRouteCmd(d)...)
 		switch {
 		case err == nil:
@@ -241,8 +255,8 @@ func Clean(cfg *config.Config, all bool) error {
 		return nil
 	}
 	gone := 0
+	defer TableChanged()
 	for _, r := range stale {
-		TableChanged()
 		if _, err := privileged.Run(netinfo.DelRouteCmd(r.Target())...); err != nil {
 			ui.Println(ui.Bad(r.Target() + ": снять не удалось: " + err.Error()))
 			continue

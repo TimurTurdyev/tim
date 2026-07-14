@@ -87,6 +87,8 @@ func domainLamps(domain string) []string {
 	switch {
 	case m.NullMX:
 		lamps = append(lamps, level.Lamp(level.Skip, "почта: домен её не принимает"))
+	case verdict == level.Skip:
+		lamps = append(lamps, level.Lamp(level.Skip, "почта: "+strings.Join(reasons, ", ")))
 	case verdict == level.OK:
 		lamps = append(lamps, level.Lamp(level.OK, "почта настроена"))
 	case verdict == level.Warn:

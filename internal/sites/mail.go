@@ -36,6 +36,8 @@ func printMail(arg string, selectors []string) error {
 	verdict, reasons := m.Verdict()
 	ui.Println()
 	switch verdict {
+	case level.Skip:
+		ui.Println(ui.Dim("итог не проверено: " + strings.Join(reasons, ", ")))
 	case level.OK:
 		ui.Println(ui.Label("итог ") + "почта настроена верно")
 	case level.Warn:
@@ -125,6 +127,8 @@ func printMailSummary(cfg *config.Config) error {
 	ui.Println(ui.Dim(ui.Pad("ДОМЕН", 30) + " ИТОГ"))
 	for _, r := range rows {
 		switch r.Level {
+		case level.Skip:
+			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Dim("не проверено: "+strings.Join(r.Missing, ", ")))
 		case level.OK:
 			ui.Println(ui.Label(ui.Pad(r.Domain, 30)) + " настроена верно")
 		case level.Warn:

@@ -3,22 +3,37 @@
 package asn
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/netip"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/cache"
+	"github.com/TimurTurdyev/tim/internal/par"
 )
 
 // TTL: анонсы меняются, но не каждый час; сутки - разумный срок.
 const TTL = 24 * time.Hour
 
+// retryAfter: пауза после отказа RIPEstat, maxBody: больше ответ не бывает, а память не резиновая.
+const (
+	retryAfter = 10 * time.Minute
+	maxBody    = 4 << 20
+)
+
 var client = &http.Client{Timeout: 20 * time.Second}
+
+var (
+	failMu   sync.Mutex
+	failedAt = map[string]time.Time{}
+)
 
 // ParseRIPEstat разбирает ответ announced-prefixes и оставляет только IPv4.
 func ParseRIPEstat(data []byte) ([]string, error) {
@@ -46,6 +61,7 @@ func ParseRIPEstat(data []byte) ([]string, error) {
 }
 
 // Aggregate убирает вложенные сети и склеивает соседние половины в одну: меньше маршрутов в таблице.
+// Одна сортировка и стек: вложенная сеть идёт сразу за своей, а склейка проверяется только с вершиной.
 func Aggregate(list []string) []string {
 	var ps []netip.Prefix
 	for _, s := range list {
@@ -53,36 +69,37 @@ func Aggregate(list []string) []string {
 			ps = append(ps, p.Masked())
 		}
 	}
-	for changed := true; changed; {
-		changed = false
-		sort.Slice(ps, func(i, j int) bool {
-			if c := ps[i].Addr().Compare(ps[j].Addr()); c != 0 {
-				return c < 0
-			}
-			return ps[i].Bits() < ps[j].Bits()
-		})
-		var out []netip.Prefix
-		for _, p := range ps {
-			if n := len(out); n > 0 && out[n-1].Contains(p.Addr()) && out[n-1].Bits() <= p.Bits() {
+	slices.SortFunc(ps, func(a, b netip.Prefix) int {
+		return cmp.Or(a.Addr().Compare(b.Addr()), cmp.Compare(a.Bits(), b.Bits()))
+	})
+	var stack []netip.Prefix
+	for _, p := range ps {
+		if n := len(stack); n > 0 && stack[n-1].Bits() <= p.Bits() && stack[n-1].Contains(p.Addr()) {
+			continue
+		}
+		stack = append(stack, p)
+		for n := len(stack); n >= 2; n = len(stack) {
+			if merged, ok := siblings(stack[n-2], stack[n-1]); ok {
+				stack = append(stack[:n-2], merged)
 				continue
 			}
-			if n := len(out); n > 0 && out[n-1].Bits() == p.Bits() && p.Bits() > 0 {
-				parent, _ := out[n-1].Addr().Prefix(p.Bits() - 1)
-				if parent.Contains(p.Addr()) && parent.Addr() == out[n-1].Addr() {
-					out[n-1] = parent
-					changed = true
-					continue
-				}
-			}
-			out = append(out, p)
+			break
 		}
-		ps = out
 	}
-	res := make([]string, len(ps))
-	for i, p := range ps {
-		res[i] = p.String()
+	out := make([]string, len(stack))
+	for i, p := range stack {
+		out[i] = p.String()
 	}
-	return res
+	return out
+}
+
+// siblings: две половины одной сети - тогда она сама.
+func siblings(a, b netip.Prefix) (netip.Prefix, bool) {
+	if a.Bits() != b.Bits() || a.Bits() == 0 {
+		return netip.Prefix{}, false
+	}
+	parent, _ := a.Addr().Prefix(a.Bits() - 1)
+	return parent, parent.Addr() == a.Addr() && parent.Contains(b.Addr())
 }
 
 // Prefixes: склеенные IPv4-сети AS из кэша в dir или из RIPEstat. Ошибка сети при живом кэше - не ошибка:
@@ -90,8 +107,12 @@ func Aggregate(list []string) []string {
 func Prefixes(dir, as string) ([]string, error) {
 	as = strings.TrimPrefix(strings.ToUpper(as), "AS")
 	return cache.Get(cache.Path(filepath.Join(dir, "asn"), as), TTL, func() ([]string, error) {
+		if wait := retryIn(as); wait > 0 {
+			return nil, errors.New("RIPEstat не отвечал, повтор через " + wait.Round(time.Minute).String())
+		}
 		list, err := fetch(as)
 		if err != nil {
+			failed(as)
 			return nil, err
 		}
 		if list = Aggregate(list); len(list) == 0 {
@@ -99,6 +120,20 @@ func Prefixes(dir, as string) ([]string, error) {
 		}
 		return list, nil
 	})
+}
+
+// retryIn: сколько ждать до новой попытки после отказа RIPEstat. Страж зовёт Prefixes каждый
+// цикл, и без паузы каждый цикл висел бы на таймауте, пока источник лежит.
+func retryIn(as string) time.Duration {
+	failMu.Lock()
+	defer failMu.Unlock()
+	return time.Until(failedAt[as].Add(retryAfter))
+}
+
+func failed(as string) {
+	failMu.Lock()
+	failedAt[as] = time.Now()
+	failMu.Unlock()
 }
 
 func fetch(as string) ([]string, error) {
@@ -143,38 +178,41 @@ func getJSON(url string) ([]byte, error) {
 	if resp.StatusCode != 200 {
 		return nil, errors.New("RIPEstat ответил " + resp.Status)
 	}
-	var b strings.Builder
-	buf := make([]byte, 32<<10)
-	for {
-		n, err := resp.Body.Read(buf)
-		b.Write(buf[:n])
-		if err != nil || b.Len() > 4<<20 {
-			break
-		}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil {
+		return nil, err
 	}
-	return []byte(b.String()), nil
+	if len(data) > maxBody {
+		return nil, errors.New("ответ RIPEstat больше 4 MB")
+	}
+	return data, nil
 }
 
-// Origins: все AS, из которых виден каждый из адресов, без повторов.
+// Origins: все AS, из которых виден каждый из адресов, без повторов; адреса спрашиваются параллельно.
 func Origins(ips []string) ([]string, error) {
+	type answer struct {
+		asns []string
+		err  error
+	}
+	answers := par.Map(ips, 8, func(ip string) answer {
+		data, err := getJSON("https://stat.ripe.net/data/network-info/data.json?resource=" + ip)
+		if err != nil {
+			return answer{err: err}
+		}
+		list, err := ParseNetworkInfo(data)
+		return answer{list, err}
+	})
 	seen := map[string]bool{}
 	var out []string
 	var last error
-	for _, ip := range ips {
-		data, err := getJSON("https://stat.ripe.net/data/network-info/data.json?resource=" + ip)
-		if err != nil {
-			last = err
-			continue
+	for _, a := range answers {
+		if a.err != nil {
+			last = a.err
 		}
-		list, err := ParseNetworkInfo(data)
-		if err != nil {
-			last = err
-			continue
-		}
-		for _, a := range list {
-			if !seen[a] {
-				seen[a] = true
-				out = append(out, a)
+		for _, as := range a.asns {
+			if !seen[as] {
+				seen[as] = true
+				out = append(out, as)
 			}
 		}
 	}

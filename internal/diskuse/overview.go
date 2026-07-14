@@ -1,10 +1,11 @@
 package diskuse
 
 import (
+	"cmp"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,12 +47,17 @@ func Measure(root string, depth int, skip map[string]bool, progress func(done, t
 		}
 		for _, e2 := range level2 {
 			p2 := filepath.Join(p1, e2.Name())
-			if e2.IsDir() && e2.Type()&fs.ModeSymlink == 0 && !skip[p2] {
-				tasks = append(tasks, p2)
-				parents[p1] = append(parents[p1], p2)
+			if !e2.IsDir() || e2.Type()&fs.ModeSymlink != 0 {
+				loose[p1] += blocks(e2)
 				continue
 			}
-			loose[p1] += blocks(e2)
+			// du -x остаётся на диске той папки, с которой начал: точку монтирования второго
+			// уровня (/mnt/data, /Volumes/USB) надо отсеять здесь, иначе чужой диск попадёт в замер.
+			if dev, ok := device(p2); skip[p2] || ok && dev != rootDev {
+				continue
+			}
+			tasks = append(tasks, p2)
+			parents[p1] = append(parents[p1], p2)
 		}
 	}
 	var mu sync.Mutex
@@ -182,6 +188,6 @@ func Spots(t Tree, root string, minSize int64, stop func(string) bool) []Spot {
 		return out
 	}
 	out := walk(root)
-	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	slices.SortStableFunc(out, func(a, b Spot) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Path, b.Path)) })
 	return out
 }

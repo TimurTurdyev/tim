@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -216,7 +215,7 @@ func (g *Group) Title() string {
 		return g.App + ui.Dim("  "+g.Owner)
 	}
 	// Имя - по самому большому файлу: у Docker это com.docker.docker, а не служебный com.docker.install.
-	sort.Slice(g.Items, func(i, j int) bool { return g.Items[i].Size > g.Items[j].Size })
+	sortItems(g.Items)
 	for _, it := range g.Items {
 		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(it.Path), ".plist"), ".savedState")
 		if BundleID(name) != "" {
@@ -263,7 +262,7 @@ func (g *Group) Name() string { return strings.Split(g.Title(), "  ")[0] }
 
 // Remove: агенты выгрузить, процессы остановить, файлы в Корзину; системные - через sudo.
 func Remove(g *Group) bool {
-	sort.Slice(g.Items, func(i, j int) bool { return g.Items[i].Size > g.Items[j].Size })
+	sortItems(g.Items)
 	for _, a := range g.Agents {
 		if strings.HasPrefix(a, "system/") {
 			_ = runner.Sudo("launchctl", "bootout", a)
@@ -289,4 +288,9 @@ func Remove(g *Group) bool {
 		}
 	}
 	return ok
+}
+
+// sortItems: крупные первыми, при равном размере по пути.
+func sortItems(items []Item) {
+	slices.SortStableFunc(items, func(a, b Item) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Path, b.Path)) })
 }

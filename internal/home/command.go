@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -26,6 +27,7 @@ type Home struct {
 	examples  map[string]string
 	overview  func()
 	translate func(string) string
+	entries   func() []tui.CommandEntry
 }
 
 // Options: что экранному режиму нужно от корня.
@@ -38,6 +40,8 @@ type Options struct {
 // New связывает экраны с командами: окружение получает запуск команд из экрана и главный экран.
 func New(env *app.Env, root *cobra.Command, o Options) *Home {
 	h := &Home{env: env, root: root, examples: o.Examples, overview: o.Overview, translate: o.Translate}
+	// Дерево команд не меняется после запуска: подсказки собираются один раз, а не на каждую букву.
+	h.entries = sync.OnceValue(h.collectCommands)
 	env.Result, env.After, env.Open, env.Home = h.result, h.after, h.open, h.screen
 	return h
 }
@@ -140,7 +144,9 @@ func (h *Home) resetFlags(args []string) {
 }
 
 // commands: подсказки для строки ":" - команды с описанием и примеры из справки.
-func (h *Home) commands(string) []tui.CommandEntry {
+func (h *Home) commands(string) []tui.CommandEntry { return h.entries() }
+
+func (h *Home) collectCommands() []tui.CommandEntry {
 	var out []tui.CommandEntry
 	seen := map[string]bool{}
 	var walk func(c *cobra.Command, path string)

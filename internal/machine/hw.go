@@ -2,8 +2,9 @@
 package machine
 
 import (
+	"cmp"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -87,7 +88,7 @@ func gpuHolders(list []procs.Full) []string {
 		idx[name] = len(hs)
 		hs = append(hs, h{name, p.RSS})
 	}
-	sort.Slice(hs, func(i, j int) bool { return hs[i].rss > hs[j].rss })
+	slices.SortStableFunc(hs, func(a, b h) int { return cmp.Or(cmp.Compare(b.rss, a.rss), cmp.Compare(a.name, b.name)) })
 	var names []string
 	for _, x := range hs {
 		names = append(names, x.name+" "+ui.Bytes(x.rss))

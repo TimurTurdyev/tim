@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,8 @@ type Host struct {
 	Title  string   `json:"title,omitempty"`
 	Final  string   `json:"final,omitempty"`
 	Source string   `json:"source"`
+
+	trackers []Tracker // только у главной страницы
 }
 
 // Addr: адрес, его сеть и имена, которые на него смотрят.
@@ -77,8 +80,8 @@ type Options struct {
 // сайтов, счётчики главной страницы и соседей по адресу.
 func Collect(domain string, opt Options) *Report {
 	rep := &Report{Domain: domain}
-	names := rep.discover(opt)
-	rep.resolve(names)
+	names, known := rep.discover(opt)
+	rep.resolve(names, known)
 	rep.probe()
 	rep.Trackers = homeTrackers(domain, rep.Hosts)
 	if !opt.SkipNeighbors {
@@ -87,10 +90,11 @@ func Collect(domain string, opt Options) *Report {
 	return rep
 }
 
-// discover: имена домена из логов сертификатов и перебора; значение - откуда имя взялось.
-func (r *Report) discover(opt Options) map[string]string {
+// discover: имена домена из логов сертификатов и перебора - откуда каждое взялось, и адреса тех,
+// что уже резолвились при переборе.
+func (r *Report) discover(opt Options) (names map[string]string, known map[string][]string) {
 	var mu sync.Mutex
-	names := map[string]string{r.Domain: "апекс"}
+	names = map[string]string{r.Domain: "апекс"}
 	addNames := func(list []string, source string) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -123,16 +127,25 @@ func (r *Report) discover(opt Options) map[string]string {
 		mu.Unlock()
 		addNames(subs, "сертификат")
 	})
-	wg.Go(func() { addNames(bruteforce(r.Domain), "перебор") })
+	wg.Go(func() {
+		known = bruteforce(r.Domain)
+		addNames(slices.Sorted(maps.Keys(known)), "перебор")
+	})
 	wg.Wait()
-	return names
+	return names, known
 }
 
-// resolve: адреса имён, по 16 одновременно, и чьи это сети.
-func (r *Report) resolve(names map[string]string) {
+// resolve: адреса имён, по 16 одновременно, и чьи это сети. Найденные перебором уже резолвились.
+func (r *Report) resolve(names map[string]string, known map[string][]string) {
 	all := slices.Sorted(maps.Keys(names))
 	byIP := map[string][]string{}
-	for i, ips := range par.Map(all, 16, lookup) {
+	resolved := par.Map(all, 16, func(name string) []string {
+		if ips, ok := known[name]; ok {
+			return ips
+		}
+		return lookup(name)
+	})
+	for i, ips := range resolved {
 		if len(ips) == 0 {
 			continue
 		}
@@ -150,14 +163,16 @@ func (r *Report) resolve(names map[string]string) {
 	}
 }
 
-// probe: обратные имена адресов и ответы сайтов, по 16 одновременно.
+// probe: обратные имена адресов и ответы сайтов, по 16 одновременно. Главная страница домена
+// читается тут же и целиком: счётчики берутся из неё, второй раз её не качаем.
 func (r *Report) probe() {
 	probes := par.NewGroup(16)
 	for i := range r.Addrs {
 		probes.Go(func() { r.Addrs[i].PTR = ptr(r.Addrs[i].IP) })
 	}
 	for i := range r.Hosts {
-		probes.Go(func() { probe(&r.Hosts[i]) })
+		home := r.Hosts[i].Name == r.Domain || r.Hosts[i].Name == "www."+r.Domain
+		probes.Go(func() { probe(&r.Hosts[i], home) })
 	}
 	probes.Wait()
 }
@@ -165,10 +180,8 @@ func (r *Report) probe() {
 // homeTrackers: счётчики с главной страницы домена.
 func homeTrackers(domain string, hosts []Host) []Tracker {
 	for _, h := range hosts {
-		if (h.Name == domain || h.Name == "www."+domain) && h.Status > 0 {
-			if tr := trackersOf(h.Scheme + "://" + h.Name); len(tr) > 0 {
-				return tr
-			}
+		if (h.Name == domain || h.Name == "www."+domain) && len(h.trackers) > 0 {
+			return h.trackers
 		}
 	}
 	return nil
@@ -307,11 +320,14 @@ func crtOnce(domain string) ([]string, []string, error) {
 	return ParseCRT(data, domain)
 }
 
-func bruteforce(domain string) []string {
-	var out []string
+// bruteforce: частые имена, которые резолвятся, с их адресами. При wildcard-записи резолвится любое
+// имя: такие ответы совпадают с ответом на заведомо несуществующее имя и отбрасываются.
+func bruteforce(domain string) map[string][]string {
+	wildcard := strings.Join(lookup("tim-nx-"+strconv.FormatInt(time.Now().UnixNano(), 36)+"."+domain), " ")
+	out := map[string][]string{}
 	for i, ips := range par.Map(Common, 24, func(p string) []string { return lookup(p + "." + domain) }) {
-		if len(ips) > 0 {
-			out = append(out, Common[i]+"."+domain)
+		if len(ips) > 0 && (wildcard == "" || strings.Join(ips, " ") != wildcard) {
+			out[Common[i]+"."+domain] = ips
 		}
 	}
 	return out
@@ -342,8 +358,8 @@ func ptr(ip string) string {
 	return strings.TrimSuffix(names[0], ".")
 }
 
-// probe: отвечает ли имя по HTTPS, иначе по HTTP.
-func probe(h *Host) {
+// probe: отвечает ли имя по HTTPS, иначе по HTTP; у главной страницы - ещё и счётчики.
+func probe(h *Host, home bool) {
 	client := &http.Client{
 		Timeout:   httpTimeout,
 		Transport: &http.Transport{DisableKeepAlives: true, TLSHandshakeTimeout: httpTimeout},
@@ -358,10 +374,17 @@ func probe(h *Host) {
 		if err != nil {
 			continue
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+		limit := int64(256 << 10)
+		if home {
+			limit = 512 << 10
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
 		_ = resp.Body.Close()
 		h.Scheme, h.Status, h.Server = scheme, resp.StatusCode, resp.Header.Get("Server")
 		h.Title = Title(string(body))
+		if home {
+			h.trackers = Trackers(string(body))
+		}
 		// Редирект отмечаем, только если ушли на другой адрес, а не просто на "/" того же имени.
 		u := resp.Request.URL
 		if u.Host != h.Name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
@@ -369,22 +392,6 @@ func probe(h *Host) {
 		}
 		return
 	}
-}
-
-func trackersOf(target string) []Tracker {
-	client := &http.Client{Timeout: httpTimeout}
-	req, err := http.NewRequest(http.MethodGet, target, nil)
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh) tim")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<10))
-	return Trackers(string(body))
 }
 
 func neighbors(ip, self string) ([]string, error) {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -42,12 +43,12 @@ type kidsMsg struct {
 type browse struct {
 	opts   BrowseOpts
 	stack  []*folder
-	marked map[string]Entry
+	marked marks[Entry]
 }
 
 // NewBrowse создаёт экран обозревателя.
 func NewBrowse(o BrowseOpts) Screen {
-	b := &browse{opts: o, marked: map[string]Entry{}}
+	b := &browse{opts: o}
 	b.stack = []*folder{{entry: o.Root, loading: true}}
 	return b
 }
@@ -90,7 +91,7 @@ func (b *browse) Keys() []Key {
 
 // under: путь внутри уже отмеченной папки.
 func (b *browse) under(path string) bool {
-	for p := range b.marked {
+	for _, p := range b.marked.keys() {
 		if strings.HasPrefix(path, strings.TrimSuffix(p, "/")+"/") {
 			return true
 		}
@@ -110,7 +111,7 @@ func (b *browse) fill(l *folder) {
 			filled := max(0, min(16, int(e.Size*16/max(1, l.entry.Size))))
 			bar := styleAccent.Render(strings.Repeat(symBlock, filled)) + styleGhost.Render(strings.Repeat(symShade, 16-filled))
 			mark := "  "
-			if _, ok := b.marked[e.Path]; ok && e.Path != "" {
+			if e.Path != "" && b.marked.has(e.Path) {
 				mark = styleBad.Render(symCheck) + " "
 			} else if e.Path != "" && b.under(e.Path) {
 				mark = styleDim.Render(symCheck) + " "
@@ -177,11 +178,7 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 			case b.under(e.Path):
 				return app.Toast(level.Warn, "уже внутри отмеченной папки - уйдёт вместе с ней")
 			}
-			if _, ok := b.marked[e.Path]; ok {
-				delete(b.marked, e.Path)
-			} else {
-				b.marked[e.Path] = e
-			}
+			b.marked.toggle(e.Path, e)
 			l.list.Down()
 		case "o", "щ":
 			if !l.loading && len(l.kids) > 0 && l.kids[l.list.Cursor].Path != "" && b.opts.Open != nil {
@@ -196,11 +193,7 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 }
 
 func (b *browse) confirmRemove(app *App) tea.Cmd {
-	var all []Entry
-	for _, e := range b.marked {
-		all = append(all, e)
-	}
-	top := Outermost(all)
+	top := Outermost(b.marked.list())
 	if len(top) == 0 {
 		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
 	}
@@ -220,7 +213,7 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 		Danger:  true,
 		Yes: func() tea.Cmd {
 			freed, errs := b.opts.Remove(top)
-			b.marked = map[string]Entry{}
+			b.marked.clear()
 			cmds := []tea.Cmd{}
 			if len(errs) > 0 {
 				cmds = append(cmds, app.Toast(level.Bad, strings.Join(errs, "; ")))
@@ -249,12 +242,8 @@ func (b *browse) View(width, height int) string {
 	for len(out) < height-1 {
 		out = append(out, "")
 	}
-	if len(b.marked) > 0 {
-		var all []Entry
-		for _, e := range b.marked {
-			all = append(all, e)
-		}
-		top := Outermost(all)
+	if b.marked.len() > 0 {
+		top := Outermost(b.marked.list())
 		var sum int64
 		var names []string
 		for _, e := range top {
@@ -269,16 +258,23 @@ func (b *browse) View(width, height int) string {
 // Outermost: отмеченное без того, что лежит внутри другого отмеченного - иначе оно посчиталось бы
 // дважды, а убрать его второй раз нельзя: оно уже уехало вместе с родителем.
 func Outermost(list []Entry) []Entry {
+	// "/" считается меньше любого символа: тогда вложенные идут сразу за своей папкой,
+	// а не после соседей вроде "backups-old".
+	key := func(e Entry) string { return strings.ReplaceAll(e.Path, "/", "\x00") }
+	sorted := slices.Clone(list)
+	slices.SortFunc(sorted, func(a, b Entry) int { return strings.Compare(key(a), key(b)) })
+	inside := map[string]bool{}
+	last := ""
+	for _, e := range sorted {
+		if last != "" && e.Path != last && strings.HasPrefix(e.Path, strings.TrimSuffix(last, "/")+"/") {
+			inside[e.Path] = true
+			continue
+		}
+		last = e.Path
+	}
 	var out []Entry
 	for _, e := range list {
-		inside := false
-		for _, p := range list {
-			if p.Path != e.Path && strings.HasPrefix(e.Path, strings.TrimSuffix(p.Path, "/")+"/") {
-				inside = true
-				break
-			}
-		}
-		if !inside {
+		if !inside[e.Path] {
 			out = append(out, e)
 		}
 	}

@@ -111,6 +111,7 @@ func Cycle(st *routewatch.Status, c *config.Config) []routewatch.Repair {
 	st.Want = len(uniq(want))
 	st.OK = st.Want - len(repairs)
 	var done []routewatch.Repair
+	defer TableChanged()
 	for _, r := range repairs {
 		if err := setRoute(r.Dest, gw, phys.Device); err != nil {
 			LogLine("%s: не удалось (%s): %v", r.Dest, r.Reason, err)

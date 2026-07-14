@@ -34,3 +34,16 @@ default            10.168.20.1        UGScg                 en0
 		t.Error("host-маршрут через текущий шлюз исправен")
 	}
 }
+
+func TestDecideSeveralRows(t *testing.T) {
+	table := netinfo.ParseRoutes(`Destination        Gateway            Flags               Netif Expire
+77.88/18           10.8.1.1           UGSc                  utun4
+77.88/18           192.0.2.1          UGSc                  en0
+5.255.192/18       192.0.2.1          UGScI                 en0
+`)
+	got := Decide([]string{"77.88.0.0/18", "5.255.192.0/18"}, table, "192.0.2.1", "en0")
+	// Хоть одна строка через нужный шлюз - сеть в порядке; привязанная к интерфейсу (I) трафик не ведёт.
+	if len(got) != 1 || got[0].Dest != "5.255.192.0/18" || got[0].Kind != Missing {
+		t.Errorf("%+v", got)
+	}
+}

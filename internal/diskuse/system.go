@@ -1,9 +1,10 @@
 package diskuse
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -86,7 +87,7 @@ func SummarizeSystem(places []Place, sizes map[string]int64) []Measured {
 			out = append(out, Measured{Place: Place{Name: parent.Name, Paths: []string{parent.Path}, Clean: parent.Clean}, Size: rest})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	slices.SortStableFunc(out, func(a, b Measured) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Name, b.Name)) })
 	return out
 }
 
@@ -167,7 +168,7 @@ func Children(sizes map[string]int64, dir string) []Item {
 			out = append(out, Item{Path: filepath.Base(p), Size: s})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	bySize(out)
 	return out
 }
 

@@ -1,10 +1,12 @@
 package diskuse
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -37,10 +39,12 @@ func HFModels(hub string) []Model {
 	return out
 }
 
-// LastUsed: когда к модели обращались последний раз - самое позднее время доступа к её файлам.
-// Время скачивания тут не годится: модель могли скачать год назад и запускать каждый день.
-func LastUsed(dir string) time.Time {
-	var last time.Time
+// Stats: размер модели по настоящим файлам и когда к ней обращались последний раз - одним обходом.
+// Hugging Face хранит данные по цепочке ссылок (snapshots -> blobs модели -> общий hub/blobs), и du
+// по папке модели видит одни ссылки в килобайтах; каждый файл считается один раз по (устройство,
+// inode). Время скачивания тут не годится: модель могли скачать год назад и запускать каждый день.
+func Stats(dir string) (size int64, lastUsed time.Time) {
+	seen := map[[2]uint64]bool{}
 	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -49,38 +53,25 @@ func LastUsed(dir string) time.Time {
 		if err != nil {
 			return nil
 		}
-		if t := accessTime(st); t.After(last) {
-			last = t
+		if t := accessTime(st); t.After(lastUsed) {
+			lastUsed = t
 		}
+		if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+			id := [2]uint64{uint64(sys.Dev), uint64(sys.Ino)}
+			if seen[id] {
+				return nil
+			}
+			seen[id] = true
+		}
+		size += st.Size()
 		return nil
 	})
-	return last
+	return size, lastUsed
 }
 
-// SortModels: тяжёлые и давно не тронутые первыми - их выгоднее всего удалить.
+// SortModels: тяжёлые первыми, при равном размере - давно не тронутые: их выгоднее всего удалить.
 func SortModels(list []Model) {
-	sort.Slice(list, func(i, j int) bool { return list[i].Size > list[j].Size })
-}
-
-// ModelSize: размер модели по настоящим файлам. Hugging Face хранит данные по цепочке ссылок
-// (snapshots -> blobs модели -> общий hub/blobs), и du по папке модели видит одни ссылки в килобайтах.
-// Каждый файл считается один раз: на него ведут и snapshots, и blobs.
-func ModelSize(dir string) int64 {
-	seen := map[string]bool{}
-	var total int64
-	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		real, err := filepath.EvalSymlinks(p)
-		if err != nil || seen[real] {
-			return nil
-		}
-		seen[real] = true
-		if st, err := os.Stat(real); err == nil {
-			total += st.Size()
-		}
-		return nil
+	slices.SortStableFunc(list, func(a, b Model) int {
+		return cmp.Or(cmp.Compare(b.Size, a.Size), a.LastUsed.Compare(b.LastUsed))
 	})
-	return total
 }

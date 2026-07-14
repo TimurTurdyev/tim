@@ -1,0 +1,41 @@
+tim go <проект>
+tim proj list
+tim proj add <папка>
+tim proj rm <имя>
+tim serve <проект> -d
+tim serve stop <проект>
+tim logs <проект>
+tim db <проект> --via <сервер>
+tim ssh <сервер>
+tim route add <адрес>
+tim route status
+tim route up
+tim route install
+tim direct <сайт>
+tim disk
+tim disk --leftovers
+tim disk --browse
+tim hw
+tim procs <имя>
+tim kill <имя>
+tim site <домен>
+tim domain <домен>
+tim mail <домен>
+tim check
+tim cert new <домен>
+tim uuid
+tim jwt <токен>
+tim b64 <строка>
+tim cron <выражение>
+tim motd
+acme-site
+acme-admin
+shop-api
+shop-frontend-v2
+lk-telecom-old
+telecom
+blog
+time-tracker
+telegram-bot
+mail-service
+ProjectHere

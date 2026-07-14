@@ -125,6 +125,8 @@ func printMailLine(domain string) {
 	}
 	verdict, reasons := m.Verdict()
 	switch verdict {
+	case level.Skip:
+		ui.Println(ui.Label("почта       ") + ui.Dim("не проверено: "+strings.Join(reasons, ", ")))
 	case level.OK:
 		ui.Println(ui.Label("почта       ") + "настроена верно")
 	case level.Warn:

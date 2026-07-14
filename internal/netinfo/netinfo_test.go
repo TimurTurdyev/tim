@@ -85,3 +85,20 @@ LISTEN 0      128   [::ffff:127.0.0.1]:8000         *:*    users:(("php",pid=99,
 		t.Errorf("ss: %+v", list)
 	}
 }
+
+func TestLookupNarrowest(t *testing.T) {
+	table := ParseRoutes(`Destination        Gateway            Flags               Netif Expire
+0/1                utun4              USc                 utun4
+77.88/18           192.0.2.1          UGSc                  en0
+77.88.8.8          192.0.2.1          UGHSI                 en0
+`)
+	if r, ok := Lookup(table, "77.88.8.8"); !ok || r.Target() != "77.88.0.0/18" {
+		t.Errorf("сеть уже маршрута на адрес с флагом I: %+v", r)
+	}
+	if r, ok := Lookup(table, "5.5.5.5"); !ok || r.Iface != "utun4" {
+		t.Errorf("0/1 туннеля: %+v", r)
+	}
+	if _, ok := Lookup(table, "200.1.1.1"); ok {
+		t.Error("для 200.1.1.1 в таблице только маршрут по умолчанию - его тут нет")
+	}
+}

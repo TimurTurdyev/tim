@@ -52,3 +52,24 @@ func All(fns ...func()) {
 	}
 	wg.Wait()
 }
+
+// Memo: значение по ключу считается один раз; кто спросил тот же ключ параллельно, ждёт первого.
+type Memo[K comparable, V any] struct {
+	mu   sync.Mutex
+	vals map[K]func() V
+}
+
+// Get отдаёт значение ключа, считая его fn при первом обращении.
+func (m *Memo[K, V]) Get(key K, fn func() V) V {
+	m.mu.Lock()
+	if m.vals == nil {
+		m.vals = map[K]func() V{}
+	}
+	once, ok := m.vals[key]
+	if !ok {
+		once = sync.OnceValue(fn)
+		m.vals[key] = once
+	}
+	m.mu.Unlock()
+	return once()
+}

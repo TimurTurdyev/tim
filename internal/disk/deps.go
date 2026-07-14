@@ -1,11 +1,11 @@
 package disk
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,7 +53,7 @@ func deps(env *app.Env, o options, args []string) error {
 	for k := range s.ByKind {
 		kinds = append(kinds, k)
 	}
-	sort.Slice(kinds, func(i, j int) bool { return s.ByKind[kinds[i]] > s.ByKind[kinds[j]] })
+	slices.SortFunc(kinds, func(a, b string) int { return cmp.Or(cmp.Compare(s.ByKind[b], s.ByKind[a]), cmp.Compare(a, b)) })
 	var parts []string
 	for _, k := range kinds {
 		parts = append(parts, k+" "+ui.Bytes(s.ByKind[k]))

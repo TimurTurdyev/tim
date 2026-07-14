@@ -41,9 +41,15 @@ func GitCheck(dir string) health.Check {
 	return health.GitCheck(g, EnvGit(dir))
 }
 
+// DomainChecks: почта и регистрация домена на один обход - у проектов на поддоменах домен общий,
+// и спрашивать его DNS и whois по разу на проект незачем.
+type DomainChecks struct {
+	mail, reg par.Memo[string, health.Check]
+}
+
 // CheckRow: все проверки одного проекта. Сетевые идут параллельно; local и net оставляют только
 // локальные или только сетевые.
-func CheckRow(p *config.Project, dir string, local, net bool) health.Row {
+func CheckRow(p *config.Project, dir string, local, net bool, shared *DomainChecks) health.Row {
 	var checks []func() health.Check
 	if !net {
 		checks = append(checks, func() health.Check { return GitCheck(dir) })
@@ -51,11 +57,13 @@ func CheckRow(p *config.Project, dir string, local, net bool) health.Row {
 	host, _ := netinfo.HostPort(p.URL, "")
 	if !local && p.URL != "" && host != "" && !fill.Local(host) {
 		base := inspect.Registrable(host)
+		mail := func() health.Check { return health.Mail(base) }
+		reg := func() health.Check { return health.DomainReg(base) }
 		checks = append(checks,
 			func() health.Check { return health.Site(p.URL) },
 			func() health.Check { return health.Cert(host) },
-			func() health.Check { return health.Mail(base) },
-			func() health.Check { return health.DomainReg(base) },
+			func() health.Check { return shared.mail.Get(base, mail) },
+			func() health.Check { return shared.reg.Get(base, reg) },
 		)
 	}
 	run := func(check func() health.Check) health.Check { return check() }

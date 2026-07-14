@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -145,11 +146,7 @@ func (p *projects) refill() {
 }
 
 func sortRows(rows []ProjectRow) {
-	for i := 1; i < len(rows); i++ {
-		for j := i; j > 0 && rows[j].Name < rows[j-1].Name; j-- {
-			rows[j], rows[j-1] = rows[j-1], rows[j]
-		}
-	}
+	slices.SortStableFunc(rows, func(a, b ProjectRow) int { return strings.Compare(a.Name, b.Name) })
 }
 
 func (p *projects) current() *ProjectRow {

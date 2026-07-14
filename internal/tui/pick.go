@@ -192,16 +192,24 @@ func highlight(s string, pos []int, selected bool) string {
 	if selected {
 		hitStyle = styleHit.Background(colRow)
 	}
+	// Один Render на участок подряд совпавших или не совпавших рун, а не на каждую руну.
+	runes := []rune(s)
 	var b strings.Builder
-	for i, r := range []rune(s) {
-		switch {
-		case hit[i]:
-			b.WriteString(hitStyle.Render(string(r)))
-		case selected:
-			b.WriteString(styleRow.Render(string(r)))
-		default:
-			b.WriteRune(r)
+	for start := 0; start < len(runes); {
+		end := start + 1
+		for end < len(runes) && hit[end] == hit[start] {
+			end++
 		}
+		part := string(runes[start:end])
+		switch {
+		case hit[start]:
+			b.WriteString(hitStyle.Render(part))
+		case selected:
+			b.WriteString(styleRow.Render(part))
+		default:
+			b.WriteString(part)
+		}
+		start = end
 	}
 	return b.String()
 }

@@ -118,7 +118,7 @@ func Find(list []Full, query string) []App {
 	}
 	for i, m := range fuzzy.Filter(q, search) {
 		// Слишком слабое совпадение - шум: на "go" подойдёт половина системы.
-		if m.Score < len([]rune(q))*2 {
+		if m.Score < fuzzy.MinScore(q) {
 			continue
 		}
 		a := apps[m.Index]

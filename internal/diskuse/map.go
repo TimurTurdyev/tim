@@ -1,11 +1,11 @@
 package diskuse
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -106,7 +106,7 @@ func Rows(spots []Spot, home string, owner func(path string) string) []Row {
 		r.Name = placeName(r.Name, s.Path, owner(s.Path))
 		rows = append(rows, r)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Size > rows[j].Size })
+	slices.SortStableFunc(rows, func(a, b Row) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Name, b.Name)) })
 	return rows
 }
 

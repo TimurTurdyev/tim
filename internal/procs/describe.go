@@ -1,8 +1,9 @@
 package procs
 
 import (
+	"cmp"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -96,7 +97,7 @@ func Hogs(list []Full, minCPU float64, minAge time.Duration) []Hog {
 		}
 		out = append(out, Hog{Full: p, Name: name, Note: note})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CPU > out[j].CPU })
+	slices.SortStableFunc(out, func(a, b Hog) int { return cmp.Or(cmp.Compare(b.CPU, a.CPU), cmp.Compare(a.Name, b.Name)) })
 	return out
 }
 

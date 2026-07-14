@@ -1,7 +1,8 @@
 package netinfo
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -36,6 +37,8 @@ func ParseNettop(out string) []Flow {
 		}
 		list = append(list, Flow{Name: name, PID: pid, In: in, Out: outB})
 	}
-	sort.Slice(list, func(i, j int) bool { return list[i].In+list[i].Out > list[j].In+list[j].Out })
+	slices.SortFunc(list, func(a, b Flow) int {
+		return cmp.Or(cmp.Compare(b.In+b.Out, a.In+a.Out), cmp.Compare(a.Name, b.Name), cmp.Compare(a.PID, b.PID))
+	})
 	return list
 }

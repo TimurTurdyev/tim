@@ -49,7 +49,8 @@ func Clones(root string, depth int) ([]string, error) {
 }
 
 // Names даёт каждому клону уникальное имя: базовое имя папки, а если оно равно wrapper - имя родителя.
-// При совпадениях к имени слева добавляются родительские папки, пока имена не разойдутся.
+// При совпадениях к имени слева добавляются родительские папки: у каждого клона - самый короткий
+// хвост пути, которого нет у других клонов и среди занятых имён.
 func Names(clones []string, wrapper string, taken map[string]bool) []string {
 	parts := make([][]string, len(clones))
 	for i, c := range clones {
@@ -59,31 +60,20 @@ func Names(clones []string, wrapper string, taken map[string]bool) []string {
 		}
 		parts[i] = segs
 	}
-	width := make([]int, len(clones))
-	for i := range width {
-		width[i] = 1
-	}
-	for range 8 {
-		names := make([]string, len(clones))
-		count := map[string]int{}
-		for i := range clones {
-			names[i] = join(parts[i], width[i])
-			count[names[i]]++
-		}
-		clash := false
-		for i, n := range names {
-			if (count[n] > 1 || taken[n]) && width[i] < len(parts[i]) {
-				width[i]++
-				clash = true
-			}
-		}
-		if !clash {
-			return names
+	// Сколько клонов имеют такой же хвост из n папок: хвост уникален, когда он один.
+	tails := map[string]int{}
+	for _, segs := range parts {
+		for n := 1; n <= len(segs); n++ {
+			tails[join(segs, n)]++
 		}
 	}
 	names := make([]string, len(clones))
-	for i := range clones {
-		names[i] = join(parts[i], width[i])
+	for i, segs := range parts {
+		n := 1
+		for n < len(segs) && (tails[join(segs, n)] > 1 || taken[join(segs, n)]) {
+			n++
+		}
+		names[i] = join(segs, n)
 	}
 	return names
 }

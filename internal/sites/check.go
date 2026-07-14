@@ -78,8 +78,9 @@ func check(env *app.Env, args []string, o checkOptions) error {
 
 // checkRows: проверки проектов параллельно; кому проверять нечего, в таблице только шумят.
 func checkRows(cfg *config.Config, projects []*config.Project, o checkOptions) []health.Row {
+	var shared DomainChecks
 	rows := par.Map(projects, par.Limit, func(p *config.Project) health.Row {
-		return CheckRow(p, cfg.ProjectDir(p), o.local, o.net)
+		return CheckRow(p, cfg.ProjectDir(p), o.local, o.net, &shared)
 	})
 	kept := rows[:0]
 	for _, r := range rows {

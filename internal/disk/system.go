@@ -125,8 +125,7 @@ func printModels(hub string) {
 	g := par.NewGroup(par.Limit)
 	for i := range models {
 		g.Go(func() {
-			models[i].Size = diskuse.ModelSize(models[i].Path)
-			models[i].LastUsed = diskuse.LastUsed(models[i].Path)
+			models[i].Size, models[i].LastUsed = diskuse.Stats(models[i].Path)
 		})
 	}
 	g.Wait()

@@ -157,3 +157,25 @@ func kind(dest string) string {
 	}
 	return "-host"
 }
+
+// Scoped: маршрут macOS с флагом I привязан к интерфейсу и общий трафик не ведёт.
+func (r TableRoute) Scoped() bool { return strings.Contains(r.Flags, "I") }
+
+// Lookup: по какому маршруту таблицы уйдёт адрес - самый узкий из содержащих его, без привязанных
+// к интерфейсу. ok=false - подходящего нет (маршрут по умолчанию в таблицу не попадает).
+func Lookup(table []TableRoute, addr string) (TableRoute, bool) {
+	a, err := netip.ParseAddr(addr)
+	if err != nil {
+		return TableRoute{}, false
+	}
+	best, found := TableRoute{}, false
+	for _, r := range table {
+		if r.Scoped() || !r.Dest.Contains(a) {
+			continue
+		}
+		if !found || r.Dest.Bits() > best.Dest.Bits() {
+			best, found = r, true
+		}
+	}
+	return best, found
+}
