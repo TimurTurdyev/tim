@@ -33,7 +33,7 @@ func TestParseCRT(t *testing.T) {
 }
 
 func TestParseHostSearch(t *testing.T) {
-	subs, err := ParseHostSearch("admin.example.com,1.2.3.4\nwww.example.com,1.2.3.4\nother.org,5.6.7.8\n", "example.com")
+	subs, err := ParseHostSearch("admin.example.com,192.0.2.4\nwww.example.com,192.0.2.4\nother.org,192.0.2.8\n", "example.com")
 	if err != nil || len(subs) != 2 || subs[0] != "admin.example.com" {
 		t.Fatalf("%v %v", subs, err)
 	}

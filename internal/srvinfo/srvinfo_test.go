@@ -41,28 +41,31 @@ func TestParseUbuntu(t *testing.T) {
 func TestEvaluateUbuntu(t *testing.T) {
 	data, _ := os.ReadFile("testdata/ubuntu.txt")
 	got := Evaluate(Parse(string(data)), time.Now())
-	text := map[string]level.Level{}
+	// Находка - по имени, у портов ещё и по номеру: текст для человека не сравниваем.
+	found := map[string]level.Level{}
 	for _, c := range got {
-		text[c.Name+":"+c.Text] = c.Level
+		key := c.Name
+		if c.Name == "порт" {
+			key += ":" + strings.Fields(c.Text)[0]
+		}
+		found[key] = c.Level
 	}
 	want := map[string]level.Level{
-		"перезагрузка:нужна":      level.Warn,
-		"порт:21 FTP":             level.Warn,
-		"порт:7777 8888":          level.Warn,
-		"юнит:networking.service": level.Warn,
-		"sshd:не проверено":       level.Skip,
-		"nginx:не проверено":      level.Skip,
-		"защита:fail2ban не запущен, ufw не проверен": level.Warn,
+		"перезагрузка": level.Warn,
+		"порт:21":      level.Warn,
+		"порт:7777":    level.Warn,
+		"юнит":         level.Warn,
+		"sshd":         level.Skip,
+		"nginx":        level.Skip,
+		"защита":       level.Warn,
 	}
 	for k, l := range want {
-		if got, ok := text[k]; !ok || got != l {
-			t.Errorf("нет находки %q уровня %v; есть: %v", k, l, text)
+		if got, ok := found[k]; !ok || got != l {
+			t.Errorf("нет находки %q уровня %v; есть: %v", k, l, found)
 		}
 	}
-	for k := range text {
-		if strings.HasPrefix(k, "порт:3306") {
-			t.Error("MySQL на loopback - не дыра")
-		}
+	if _, ok := found["порт:3306"]; ok {
+		t.Error("MySQL на loopback - не дыра")
 	}
 }
 

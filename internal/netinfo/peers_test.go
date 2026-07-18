@@ -5,12 +5,12 @@ import "testing"
 func TestParseLsofPeers(t *testing.T) {
 	out := `COMMAND     PID   USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
 launchd       1   root    7u  IPv6 0x1b2c3d4e5f6a7b8c      0t0  TCP *:22 (LISTEN)
-firefox   12258 timurt   75u  IPv4 0xa782e9c2d96cf0e8      0t0  TCP 10.8.1.1:53261->203.0.113.5:443 (ESTABLISHED)
-Google Chrome Helper   4321 timurt   67u  IPv4 0xaf083d02809e2151      0t0  TCP 192.168.3.207:53255->198.51.100.7:443 (ESTABLISHED)
-Telegram  777 timurt   30u  IPv4 0x00000000000000ab      0t0  UDP 10.8.1.1:60000->203.0.113.9:443
-OpenVPN\x20Connect 888 timurt 12u IPv4 0x00000000000000cd      0t0  TCP 192.168.3.207:40000->203.0.113.11:1194 (ESTABLISHED)
+firefox   12258 dev   75u  IPv4 0xa782e9c2d96cf0e8      0t0  TCP 10.8.1.1:53261->203.0.113.5:443 (ESTABLISHED)
+Google Chrome Helper   4321 dev   67u  IPv4 0xaf083d02809e2151      0t0  TCP 192.168.3.207:53255->198.51.100.7:443 (ESTABLISHED)
+Telegram  777 dev   30u  IPv4 0x00000000000000ab      0t0  UDP 10.8.1.1:60000->203.0.113.9:443
+OpenVPN\x20Connect 888 dev 12u IPv4 0x00000000000000cd      0t0  TCP 192.168.3.207:40000->203.0.113.11:1194 (ESTABLISHED)
 mDNSRespo   456 _mdns    9u  IPv4 0x0000000000000001      0t0  UDP *:5353
-ssh       99001 timurt    3u  IPv6 0x0000000000000002      0t0  TCP [fd58::1]:50000->[2001:db8::10]:22 (ESTABLISHED)
+ssh       99001 dev    3u  IPv6 0x0000000000000002      0t0  TCP [fd58::1]:50000->[2001:db8::10]:22 (ESTABLISHED)
 `
 	got := ParseLsofPeers(out)
 	want := []Peer{

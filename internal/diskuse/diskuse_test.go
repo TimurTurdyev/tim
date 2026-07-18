@@ -1,6 +1,7 @@
 package diskuse
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -65,31 +66,27 @@ func TestSpotsDrillDown(t *testing.T) {
 	}
 }
 
+func TestParseACF(t *testing.T) {
+	g := ParseACF("\"AppState\"\n{\n\t\"name\"\t\t\"Dota 2\"\n\t\"installdir\"\t\t\"dota 2 beta\"\n\t\"LastPlayed\"\t\t\"1780701016\"\n}")
+	if g.Name != "Dota 2" || g.Dir != "dota 2 beta" || g.LastPlayed.Unix() != 1780701016 {
+		t.Errorf("acf %+v", g)
+	}
+}
+
 func TestParseAPFS(t *testing.T) {
-	out := `APFS Containers (2 found)
-+-- Container disk1 X
-    +-> Volume disk1s1 A
-    |   APFS Volume Disk (Role):   disk1s1 (xART)
-    |   Name:                      xART (Case-insensitive)
-    |   Capacity Consumed:         6000 B (6.0 KB)
-+-- Container disk3 Y
-    +-> Volume disk3s1 B
-    |   APFS Volume Disk (Role):   disk3s1 (System)
-    |   Name:                      Macintosh HD (Case-insensitive)
-    |   Mount Point:               Not Mounted
-    |   Capacity Consumed:         13659275264 B (13.7 GB)
-    +-> Volume disk3s5 C
-    |   APFS Volume Disk (Role):   disk3s5 (Data)
-    |   Name:                      Data (Case-insensitive)
-    |   Mount Point:               /System/Volumes/Data
-    |   Capacity Consumed:         835151556608 B (835.2 GB)
-    +-> Volume disk3s7 D
-    |   APFS Volume Disk (Role):   disk3s7 (No specific role)
-    |   Name:                      old-backup (Case-sensitive)
-    |   Capacity Consumed:         41364611072 B (41.4 GB)
-`
+	out := sample(t, "diskutil-apfs-list.txt")
 	v := ParseAPFS(out, "/System/Volumes/Data")
 	if len(v) != 3 || v[0].Role != "System" || v[2].Name != "old-backup" || v[2].Size != 41364611072 || v[1].Mount != "/System/Volumes/Data" {
 		t.Errorf("%+v", v)
 	}
+}
+
+// sample: образец вывода утилиты из testdata.
+func sample(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

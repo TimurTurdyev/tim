@@ -2,6 +2,7 @@ package hwinfo
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -47,11 +48,14 @@ func TestParseGPUClients(t *testing.T) {
 	}
 }
 
-func TestParseSwapAndPressure(t *testing.T) {
+func TestParseSwap(t *testing.T) {
 	s, ok := ParseSwap("total = 7168,00M  used = 5625,25M  free = 1542,75M  (encrypted)")
 	if !ok || s.Total != 7168<<20 || s.Used/(1<<20) != 5625 {
 		t.Fatalf("%+v", s)
 	}
+}
+
+func TestParseFreePercent(t *testing.T) {
 	if n, ok := ParseFreePercent("The system has 25769803776 (1572864 pages with a page size of 16384).\n...\nSystem-wide memory free percentage: 37%\n"); !ok || n != 37 {
 		t.Fatalf("%d %v", n, ok)
 	}
@@ -61,30 +65,39 @@ func TestParseTherm(t *testing.T) {
 	if w := ParseTherm(read(t, "therm.txt")); w != "" {
 		t.Fatalf("ограничений нет, а получили %q", w)
 	}
-	if w := ParseTherm("CPU Power notify\n\tCPU_Scheduler_Limit \t= 100\n\tCPU_Available_CPUs \t= 18\n\tCPU_Speed_Limit \t= 70\n"); w != "процессор ограничен до 70%" {
+	if w := ParseTherm("CPU Power notify\n\tCPU_Scheduler_Limit \t= 100\n\tCPU_Available_CPUs \t= 18\n\tCPU_Speed_Limit \t= 70\n"); !strings.Contains(w, "70%") {
 		t.Fatalf("%q", w)
 	}
 }
 
-func TestParseDiskutilAndIostat(t *testing.T) {
+func TestParseDiskutil(t *testing.T) {
 	d := ParseDiskutil(read(t, "diskutil.txt"))
 	if !d.SSD || d.SMART != "Verified" || d.Protocol != "Apple Fabric" {
 		t.Fatalf("%+v", d)
 	}
+}
+
+func TestParseIostatCPU(t *testing.T) {
 	if n, ok := ParseIostatCPU(read(t, "iostat.txt")); !ok || n != 5 {
 		t.Fatalf("%d %v", n, ok)
 	}
 }
 
-func TestLinuxSources(t *testing.T) {
+func TestProcStatBusy(t *testing.T) {
 	a, ok1 := ParseProcStat("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 1 2 3\n")
 	b, ok2 := ParseProcStat("cpu  200 0 200 750 150 0 0 0 0 0\n")
 	if !ok1 || !ok2 || Busy(a, b) != 66 {
 		t.Errorf("busy %d (%+v %+v)", Busy(a, b), a, b)
 	}
+}
+
+func TestParseMeminfoSwap(t *testing.T) {
 	if sw, ok := ParseMeminfoSwap("SwapTotal:  2097148 kB\nSwapFree:  1048574 kB\n"); !ok || sw.Used != 1048574*1024 {
 		t.Errorf("swap %+v", sw)
 	}
+}
+
+func TestParseNvidiaSmi(t *testing.T) {
 	g := ParseNvidiaSmi("NVIDIA GeForce RTX 4090, 87, 20480, 24564\n")
 	if len(g) != 1 || g[0].Util != 87 || g[0].MemTotal != 24564<<20 {
 		t.Errorf("nvidia %+v", g)

@@ -1,6 +1,9 @@
 package inspect
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 const rdapSample = `{"objectClassName":"domain","ldhName":"EXAMPLE.COM",
 "events":[{"eventAction":"registration","eventDate":"1995-08-14T04:00:00Z"},
@@ -25,20 +28,6 @@ func TestParseRDAP(t *testing.T) {
 	}
 }
 
-const whoisRu = `% TCI Whois Service. Terms of use:
-domain:        EXAMPLE.RU
-nserver:       ns1.example.net.
-nserver:       ns2.example.net.
-state:         REGISTERED, DELEGATED, VERIFIED
-org:           Example LLC
-registrar:     RU-CENTER-RU
-admin-contact: https://www.nic.ru/whois
-created:       2004-02-11T12:00:00Z
-paid-till:     2027-02-11T21:00:00Z
-free-date:     2027-03-15
-source:        TCI
-`
-
 const whoisCom = `   Domain Name: EXAMPLE.ORG
    Registrar: Example Registrar, Inc.
    Creation Date: 2001-05-02T10:00:00Z
@@ -48,7 +37,7 @@ const whoisCom = `   Domain Name: EXAMPLE.ORG
 `
 
 func TestParseWhois(t *testing.T) {
-	ru := ParseWhois(whoisRu)
+	ru := ParseWhois(sample(t, "whois-ru.txt"))
 	if ru.Registrar != "RU-CENTER-RU" || ru.Created.Year() != 2004 || ru.Expires.Year() != 2027 {
 		t.Errorf("ru: %+v", ru)
 	}
@@ -59,4 +48,14 @@ func TestParseWhois(t *testing.T) {
 	if com.Registrar != "Example Registrar, Inc." || com.Expires.Year() != 2028 || com.Nameservers[0] != "ns1.example.org" {
 		t.Errorf("com: %+v", com)
 	}
+}
+
+// sample: образец вывода утилиты из testdata.
+func sample(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

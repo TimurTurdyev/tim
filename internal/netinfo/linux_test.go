@@ -5,34 +5,38 @@ import (
 	"testing"
 )
 
-func TestParseIPRoute(t *testing.T) {
-	out := `default via 10.8.0.1 dev wg0 proto static
+const ipRouteSample = `default via 10.8.0.1 dev wg0 proto static
 default via 192.168.1.1 dev wlp3s0 proto dhcp src 192.168.1.40 metric 600
 0.0.0.0/1 dev wg0 scope link
-77.88.0.0/18 via 192.168.1.1 dev wlp3s0
-157.22.175.251 via 192.168.1.1 dev wlp3s0
+10.88.0.0/18 via 192.168.1.1 dev wlp3s0
+203.0.113.40 via 192.168.1.1 dev wlp3s0
 192.168.1.0/24 dev wlp3s0 proto kernel scope link src 192.168.1.40 metric 600
 `
-	dev, gw := ParseIPRouteDefault(out)
+
+func TestParseIPRouteDefault(t *testing.T) {
+	dev, gw := ParseIPRouteDefault(ipRouteSample)
 	// Туннель wg0 стоит первым, но физический интерфейс - wlp3s0.
 	if dev != "wlp3s0" || gw != "192.168.1.1" {
 		t.Fatalf("%s %s", dev, gw)
 	}
-	table := ParseIPRoute(out)
+}
+
+func TestParseIPRoute(t *testing.T) {
+	table := ParseIPRoute(ipRouteSample)
 	m := map[string]TableRoute{}
 	for _, r := range table {
 		m[r.Target()] = r
 	}
-	if r := m["77.88.0.0/18"]; r.Gateway != "192.168.1.1" || r.Iface != "wlp3s0" || r.Flags != "UGS" {
+	if r := m["10.88.0.0/18"]; r.Gateway != "192.168.1.1" || r.Iface != "wlp3s0" || r.Flags != "UGS" {
 		t.Fatalf("%+v", r)
 	}
-	if r := m["157.22.175.251"]; !strings.Contains(r.Flags, "H") {
+	if r := m["203.0.113.40"]; !strings.Contains(r.Flags, "H") {
 		t.Fatalf("host-маршрут: %+v", r)
 	}
 	if r := m["192.168.1.0/24"]; strings.Contains(r.Flags, "S") {
 		t.Fatalf("маршрут ядра не статический: %+v", r)
 	}
-	if r := m["0.0.0.0/1"]; !IsTunnelIface(r.Iface) {
+	if r := m["0.0.0.0/1"]; r.Iface != "wg0" {
 		t.Fatalf("wg0 - туннель: %+v", r)
 	}
 }

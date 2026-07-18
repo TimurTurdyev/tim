@@ -2,6 +2,7 @@ package netinfo
 
 import (
 	"net/netip"
+	"os"
 	"testing"
 )
 
@@ -14,12 +15,12 @@ func TestParseServiceOrder(t *testing.T) {
 }
 
 func TestParseRouteGet(t *testing.T) {
-	out := "   route to: 89.191.225.254\ndestination: 89.191.225.254\n    gateway: 10.168.20.1\n  interface: en0\n      flags: <UP,GATEWAY,HOST,DONE,STATIC>\n"
+	out := "   route to: 203.0.113.20\ndestination: 203.0.113.20\n    gateway: 10.168.20.1\n  interface: en0\n      flags: <UP,GATEWAY,HOST,DONE,STATIC>\n"
 	r := ParseRouteGet(out)
 	if r.Gateway != "10.168.20.1" || r.Iface != "en0" {
 		t.Errorf("route: %+v", r)
 	}
-	if r := ParseRouteGet("   route to: 5.253.63.13\n  interface: utun4\n"); r.Gateway != "" || r.Iface != "utun4" {
+	if r := ParseRouteGet("   route to: 203.0.113.30\n  interface: utun4\n"); r.Gateway != "" || r.Iface != "utun4" {
 		t.Errorf("tunnel route: %+v", r)
 	}
 }
@@ -32,24 +33,8 @@ func TestParseLsof(t *testing.T) {
 	}
 }
 
-const tableSample = `Routing tables
-
-Internet:
-Destination        Gateway            Flags               Netif Expire
-0/1                utun4              UScg                utun4
-default            192.0.2.1          UGScg                 en0
-10.8/16            10.8.0.1           UGSc                utun4
-128.0/1            utun4              UScg                utun4
-198.51.100/24      192.0.2.1          UGSc                  en0
-198.51.100.9       192.0.2.254        UGHS                  en0
-203.0.113.5        192.0.2.1          UGHS                  en0
-203.0.113.6        192.168.7.1        UGHS                  en7
-192.0.2.1/32       link#14            UCS                   en0      !
-192.0.2.1          8:31:a4:55:0:2e    UHLWIir               en0   1197
-`
-
 func TestParseRoutesExpandsNets(t *testing.T) {
-	list := ParseRoutes(tableSample)
+	list := ParseRoutes(sample(t, "netstat-rn.txt"))
 	want := map[string]bool{"0.0.0.0/1": true, "10.8.0.0/16": true, "128.0.0.0/1": true, "198.51.100.0/24": true}
 	found := 0
 	for _, r := range list {
@@ -63,7 +48,7 @@ func TestParseRoutesExpandsNets(t *testing.T) {
 }
 
 func TestStale(t *testing.T) {
-	list := ParseRoutes(tableSample)
+	list := ParseRoutes(sample(t, "netstat-rn.txt"))
 	all := Stale(list, "192.0.2.1", nil)
 	if len(all) != 2 || all[0].Target() != "198.51.100.9" || all[1].Target() != "203.0.113.6" {
 		t.Errorf("stale all: %+v", all)
@@ -89,16 +74,26 @@ LISTEN 0      128   [::ffff:127.0.0.1]:8000         *:*    users:(("php",pid=99,
 func TestLookupNarrowest(t *testing.T) {
 	table := ParseRoutes(`Destination        Gateway            Flags               Netif Expire
 0/1                utun4              USc                 utun4
-77.88/18           192.0.2.1          UGSc                  en0
-77.88.8.8          192.0.2.1          UGHSI                 en0
+10.88/18           192.0.2.1          UGSc                  en0
+10.88.8.8          192.0.2.1          UGHSI                 en0
 `)
-	if r, ok := Lookup(table, "77.88.8.8"); !ok || r.Target() != "77.88.0.0/18" {
+	if r, ok := Lookup(table, "10.88.8.8"); !ok || r.Target() != "10.88.0.0/18" {
 		t.Errorf("сеть уже маршрута на адрес с флагом I: %+v", r)
 	}
-	if r, ok := Lookup(table, "5.5.5.5"); !ok || r.Iface != "utun4" {
+	if r, ok := Lookup(table, "10.5.5.5"); !ok || r.Iface != "utun4" {
 		t.Errorf("0/1 туннеля: %+v", r)
 	}
-	if _, ok := Lookup(table, "200.1.1.1"); ok {
-		t.Error("для 200.1.1.1 в таблице только маршрут по умолчанию - его тут нет")
+	if _, ok := Lookup(table, "203.0.113.99"); ok {
+		t.Error("для 203.0.113.99 в таблице только маршрут по умолчанию - его тут нет")
 	}
+}
+
+// sample: образец вывода утилиты из testdata.
+func sample(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

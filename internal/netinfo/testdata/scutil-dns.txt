@@ -1,0 +1,17 @@
+DNS configuration
+
+resolver #1
+  search domain[0] : lan
+  nameserver[0] : 192.0.2.1
+  nameserver[1] : 198.51.100.53
+  flags    : Request A records
+  order    : 5000
+
+resolver #2
+  domain   : local
+  options  : mdns
+
+DNS configuration (for scoped queries)
+
+resolver #1
+  nameserver[0] : 203.0.113.53

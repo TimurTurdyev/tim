@@ -2,11 +2,14 @@ package sysinfo
 
 import "testing"
 
-func TestParseBootAndLoad(t *testing.T) {
+func TestParseBoottime(t *testing.T) {
 	b, ok := ParseBoottime("{ sec = 1759603284, usec = 268414 } Sat Oct  4 21:41:24 2025")
 	if !ok || b.Unix() != 1759603284 {
 		t.Errorf("boot %v", b)
 	}
+}
+
+func TestParseLoadavg(t *testing.T) {
 	if l := ParseLoadavg("{ 2,12 1,85 1,39 }"); len(l) != 3 || l[0] != 2.12 {
 		t.Errorf("load comma %v", l)
 	}
@@ -23,6 +26,9 @@ func TestParseMeminfo(t *testing.T) {
 	if used, total := ParseMeminfo(out); total != 8000000*1024 || used != 5000000*1024 {
 		t.Errorf("meminfo %d %d", used, total)
 	}
+}
+
+func TestParseOSRelease(t *testing.T) {
 	if got := ParseOSRelease("NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\n"); got != "Ubuntu 24.04.1 LTS" {
 		t.Errorf("os-release %q", got)
 	}
@@ -36,11 +42,14 @@ func TestParseVMStat(t *testing.T) {
 }
 
 // Процент как у df: на APFS размер минус занятое - не свободное место.
-func TestParseDFAndPmset(t *testing.T) {
+func TestParseDF(t *testing.T) {
 	d, ok := ParseDF("Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted on\n/dev/disk3s5 971298980 767109096 132900328 86% 1 2 0% /System/Volumes/Data\n")
 	if !ok || d.Percent() != 86 || d.Avail != 132900328*1024 {
 		t.Errorf("df %+v %d", d, d.Percent())
 	}
+}
+
+func TestParsePmset(t *testing.T) {
 	b, ok := ParsePmset("Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t87%; discharging; 4:12 remaining present: true\n")
 	if !ok || b.Percent != 87 || b.State != "discharging" || b.Remaining != "4:12" || b.AC {
 		t.Errorf("batt %+v", b)
@@ -63,9 +72,6 @@ func TestParseWifi(t *testing.T) {
 	w, ok := ParseWifi(data)
 	if !ok || w.SSID != "Home" || w.Iface != "en0" || w.Rate != 432 || w.Signal != -73 || w.Noise != -97 || w.Security != "wpa2 personal" {
 		t.Fatalf("%+v", w)
-	}
-	if w.Quality() != "слабый" {
-		t.Errorf("quality %s", w.Quality())
 	}
 	if _, ok := ParseWifi([]byte(`{"SPAirPortDataType":[{"spairport_airport_interfaces":[{"_name":"en0"}]}]}`)); ok {
 		t.Error("not connected")

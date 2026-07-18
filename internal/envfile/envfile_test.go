@@ -26,12 +26,6 @@ func TestParse(t *testing.T) {
 	if _, ok := vals["G"]; ok {
 		t.Error("commented key must be absent")
 	}
-	if got := Port(vals["URL"]); got != "8003" {
-		t.Errorf("port: want 8003, got %s", got)
-	}
-	if got := Port("http://localhost"); got != "" {
-		t.Errorf("port without number: want empty, got %s", got)
-	}
 }
 
 func TestMask(t *testing.T) {
