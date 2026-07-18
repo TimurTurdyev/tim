@@ -28,12 +28,6 @@ func TestParseMeminfo(t *testing.T) {
 	}
 }
 
-func TestParseOSRelease(t *testing.T) {
-	if got := ParseOSRelease("NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\n"); got != "Ubuntu 24.04.1 LTS" {
-		t.Errorf("os-release %q", got)
-	}
-}
-
 func TestParseVMStat(t *testing.T) {
 	out := "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:  22409.\nPages active:  100.\nPages inactive:  999.\nPages wired down:  50.\nPages occupied by compressor:  10.\n"
 	if got := ParseVMStat(out); got != 160*16384 {

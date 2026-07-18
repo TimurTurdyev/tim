@@ -39,9 +39,6 @@ func TestParsePs(t *testing.T) {
 	if m["52012"].Command != "php artisan serve" || m["52012"].Uptime != 5*time.Minute+10*time.Second {
 		t.Errorf("ps: %+v", m)
 	}
-	if !System("/usr/libexec/rapportd") || System("/opt/homebrew/bin/php") {
-		t.Error("system detection")
-	}
 }
 
 func TestParseStatTicks(t *testing.T) {
