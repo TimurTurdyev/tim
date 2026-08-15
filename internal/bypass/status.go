@@ -35,8 +35,9 @@ func printRoutes(cfg *config.Config, probe bool) {
 	}
 	ui.Println(GuardLine())
 	ui.Println(ui.Dim(ui.Pad("ЦЕЛЬ", 24) + " " + ui.Pad("ПОМЕТКА", 11) + " " + ui.Pad("АДРЕС", 18) + " СОСТОЯНИЕ"))
-	for _, h := range cfg.Hosts {
-		dests := ExpandAddr(h.Addr)
+	expanded := ExpandHosts(cfg.Hosts)
+	for hi, h := range cfg.Hosts {
+		dests := expanded[hi]
 		if len(dests) == 0 {
 			ui.Println(ui.Pad(h.Addr, 24) + " " + ui.Pad(h.Label, 11) + " " + ui.Bad("не раскрывается в адреса"))
 			continue
@@ -164,8 +165,8 @@ func printVPN(cfg *config.Config) {
 // BypassCount: сколько адресов целей сейчас идут мимо VPN и сколько их всего.
 func BypassCount(cfg *config.Config) (ok, total int) {
 	phys, gw := netinfo.Physical()
-	for _, h := range cfg.Hosts {
-		for _, d := range ExpandAddr(h.Addr) {
+	for _, dests := range ExpandHosts(cfg.Hosts) {
+		for _, d := range dests {
 			total++
 			if _, bad := RouteState(d, phys, gw); !bad && Bypassed(d, phys, gw) {
 				ok++

@@ -97,3 +97,10 @@ func sample(t *testing.T, name string) string {
 	}
 	return string(data)
 }
+
+func TestParseDefaults(t *testing.T) {
+	list := ParseDefaults(sample(t, "netstat-rn.txt") + "default            192.0.2.1          UGScIg                en0\n")
+	if len(list) != 2 || list[0].Scoped() || !list[1].Scoped() || list[1].Iface != "en0" || list[0].Gateway != "192.0.2.1" {
+		t.Errorf("%+v", list)
+	}
+}

@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -22,13 +24,20 @@ import (
 // TTL: анонсы меняются, но не каждый час; сутки - разумный срок.
 const TTL = 24 * time.Hour
 
-// retryAfter: пауза после отказа RIPEstat, maxBody: больше ответ не бывает, а память не резиновая.
+// retryAfter: пауза после отказа RIPEstat, maxBody: больше ответ не бывает, а память не резиновая,
+// anyAS: ключ паузы для всего RIPEstat, когда до него нет связи.
 const (
 	retryAfter = 10 * time.Minute
 	maxBody    = 4 << 20
+	anyAS      = "*"
 )
 
-var client = &http.Client{Timeout: 20 * time.Second}
+// Большие AS RIPEstat отдаёт долго, а вот соединение без сети должно отваливаться быстро.
+var client = &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{
+	Proxy:               http.ProxyFromEnvironment,
+	DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+	TLSHandshakeTimeout: 5 * time.Second,
+}}
 
 var (
 	failMu   sync.Mutex
@@ -107,11 +116,15 @@ func siblings(a, b netip.Prefix) (netip.Prefix, bool) {
 func Prefixes(dir, as string) ([]string, error) {
 	as = strings.TrimPrefix(strings.ToUpper(as), "AS")
 	return cache.Get(cache.Path(filepath.Join(dir, "asn"), as), TTL, func() ([]string, error) {
-		if wait := retryIn(as); wait > 0 {
+		if wait := max(retryIn(as), retryIn(anyAS)); wait > 0 {
 			return nil, errors.New("RIPEstat не отвечал, повтор через " + wait.Round(time.Minute).String())
 		}
 		list, err := fetch(as)
 		if err != nil {
+			// Не дозвонились - не ответит и про другие AS: пауза для всех, они возьмут старый кэш.
+			if _, unreachable := errors.AsType[*url.Error](err); unreachable {
+				failed(anyAS)
+			}
 			failed(as)
 			return nil, err
 		}

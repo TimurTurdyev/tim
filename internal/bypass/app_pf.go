@@ -39,6 +39,10 @@ func ProxyPID() int {
 	if err != nil || pid <= 0 || !alive(pid) {
 		return 0
 	}
+	// Файл мог пережить перезагрузку, а номер - достаться чужому процессу: его не трогаем.
+	if args, _ := runner.Output("ps", "-p", strconv.Itoa(pid), "-o", "args="); !strings.Contains(args, "novpn-proxy") {
+		return 0
+	}
 	return pid
 }
 
@@ -181,10 +185,14 @@ func scopedDefaultOn(phys netinfo.Service, gw string) error {
 	if scopedGateway(phys.Device) == gw {
 		return nil
 	}
-	if _, err := privileged.Run("route", "-n", "add", "-ifscope", phys.Device, "default", gw); err != nil && !strings.Contains(err.Error(), "exists") {
+	if out, err := privileged.Run("route", "-n", "add", "-ifscope", phys.Device, "default", gw); err != nil {
+		if strings.Contains(out+err.Error(), "exists") {
+			// Маршрут уже был и он не наш: --off его снимать не должен.
+			return nil
+		}
 		return ui.Errorf("scoped-маршрут для %s не завёлся: %v", phys.Device, err)
 	}
-	remember("scoped", phys.Device)
+	remember("scoped", phys.Device+" "+gw)
 	ui.Println(ui.Dim("заведён scoped-маршрут по умолчанию для " + phys.Device + " через " + gw + " - по нему ходит прокси; --off снимет"))
 	return nil
 }
@@ -199,16 +207,58 @@ func scopedGateway(dev string) string {
 	return ""
 }
 
+// scopedRestore снимает только свою scoped-копию - строку default с флагом I на том интерфейсе.
+// Без неё delete -ifscope на основном интерфейсе может задеть сам маршрут по умолчанию.
 func scopedRestore() error {
-	dev, ok := recall("scoped")
+	saved, ok := recall("scoped")
 	if !ok {
 		return nil
 	}
-	out, err := privileged.Run("route", "-n", "delete", "-ifscope", dev, "default")
-	if err != nil && !strings.Contains(out+err.Error(), "not in table") {
-		return ui.Errorf("scoped-маршрут %s не снялся: %s", dev, firstLine(out, err))
+	dev, _, _ := strings.Cut(saved, " ")
+	if scopedDefault(dev) {
+		out, err := privileged.Run("route", "-n", "delete", "-ifscope", dev, "default")
+		if err != nil && !strings.Contains(out+err.Error(), "not in table") {
+			return ui.Errorf("scoped-маршрут %s не снялся: %s", dev, firstLine(out, err))
+		}
 	}
 	forget("scoped")
+	return nil
+}
+
+func scopedDefault(dev string) bool {
+	table, _ := runner.Output("netstat", "-rn", "-f", "inet")
+	for _, r := range netinfo.ParseDefaults(table) {
+		if r.Iface == dev && r.Scoped() {
+			return true
+		}
+	}
+	return false
+}
+
+// keepDefault: после правок маршрутов у физического интерфейса должен остаться маршрут по
+// умолчанию. Пропал - возвращаем: без него VPN-клиент теряет дорогу к своему серверу, и
+// пропадает весь интернет.
+func keepDefault() error {
+	if runner.DryRun {
+		return nil
+	}
+	table, _ := runner.Output("netstat", "-rn", "-f", "inet")
+	for _, r := range netinfo.ParseDefaults(table) {
+		if !r.Scoped() {
+			return nil
+		}
+	}
+	phys, gw := netinfo.Physical()
+	if phys.Device == "" {
+		return nil // сети нет вовсе - и возвращать нечего
+	}
+	if gw == "" {
+		return ui.Errorf("маршрута по умолчанию нет, а шлюз %s не найден: переподключи сеть", phys.Device)
+	}
+	if out, err := privileged.Run("route", "-n", "add", "default", gw); err != nil && !strings.Contains(out+err.Error(), "exists") {
+		return ui.Errorf("маршрут по умолчанию пропал и не вернулся: %s; переподключи сеть", firstLine(out, err))
+	}
+	ui.Println(ui.Warn("маршрут по умолчанию пропал - вернул через " + gw))
 	return nil
 }
 
@@ -223,7 +273,7 @@ func pfOff() error {
 			errs = append(errs, ui.Errorf("прокси (pid %d) не остановился: %s", pid, firstLine(out, err)))
 		}
 	}
-	errs = append(errs, forwardingRestore(), scopedRestore())
+	errs = append(errs, forwardingRestore(), scopedRestore(), keepDefault())
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}

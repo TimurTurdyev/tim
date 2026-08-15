@@ -235,11 +235,9 @@ func Clean(cfg *config.Config, all bool) error {
 	var only map[netip.Prefix]bool
 	if !all {
 		only = map[netip.Prefix]bool{}
-		for _, h := range cfg.Hosts {
-			for _, d := range ExpandAddr(h.Addr) {
-				if p, ok := netinfo.ParseDest(d); ok {
-					only[p] = true
-				}
+		for _, d := range flatten(ExpandHosts(cfg.Hosts)) {
+			if p, ok := netinfo.ParseDest(d); ok {
+				only[p] = true
 			}
 		}
 	}

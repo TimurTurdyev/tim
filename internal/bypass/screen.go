@@ -59,8 +59,9 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 	}
 	var targets []target
 	total, ok := 0, 0
-	for _, h := range cfg.Hosts {
-		t, dests, fine := targetRow(h, phys, gw, probe)
+	expanded := ExpandHosts(cfg.Hosts)
+	for i, h := range cfg.Hosts {
+		t, dests, fine := targetRow(h, expanded[i], phys, gw, probe)
 		total += dests
 		ok += fine
 		targets = append(targets, t)
@@ -79,8 +80,7 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 }
 
 // targetRow: строка цели с адресами в панели; dests - сколько адресов, fine - сколько идут мимо VPN.
-func targetRow(h config.Host, phys netinfo.Service, gw string, probe bool) (t target, dests, fine int) {
-	addrs := ExpandAddr(h.Addr)
+func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, probe bool) (t target, dests, fine int) {
 	t.row = tui.BoardRow{ID: h.Addr, Title: h.Addr, Sub: h.Label}
 	if len(addrs) == 0 {
 		t.bad = 1

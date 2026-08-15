@@ -179,3 +179,15 @@ func Lookup(table []TableRoute, addr string) (TableRoute, bool) {
 	}
 	return best, found
 }
+
+// ParseDefaults: маршруты по умолчанию из netstat -rn; у scoped-копии интерфейса во флагах I.
+func ParseDefaults(out string) []TableRoute {
+	var list []TableRoute
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 4 && f[0] == "default" {
+			list = append(list, TableRoute{Dest: netip.PrefixFrom(netip.IPv4Unspecified(), 0), Gateway: f[1], Flags: f[2], Iface: f[3]})
+		}
+	}
+	return list
+}

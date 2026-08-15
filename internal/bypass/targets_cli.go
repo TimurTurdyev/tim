@@ -79,9 +79,9 @@ func removeTargets(env *app.Env, args []string) error {
 			return ui.Errorf("в списке нет %s: tim route list", a)
 		}
 		for _, h := range removed {
-			dests = append(dests, ExpandAddr(h.Addr)...)
 			ui.Println(ui.Label("убран ") + h.Addr)
 		}
+		dests = append(dests, flatten(ExpandHosts(removed))...)
 	}
 	if err := env.Save(); err != nil {
 		return err

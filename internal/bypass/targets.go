@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -64,14 +65,24 @@ func ExpandAddr(addr string) []string {
 	return Expand(t)
 }
 
+// ExpandHosts: адреса и сети каждой цели, в том же порядке. Цели раскрываются параллельно: без
+// сети таймауты DNS и RIPEstat иначе складываются в минуты.
+func ExpandHosts(hosts []config.Host) [][]string {
+	return par.Map(hosts, par.Limit, func(h config.Host) []string { return ExpandAddr(h.Addr) })
+}
+
+func flatten(lists [][]string) []string {
+	var out []string
+	for _, l := range lists {
+		out = append(out, l...)
+	}
+	return out
+}
+
 // CollectDests: аргументы как пометки, цели из конфига или новые цели; без аргументов все цели конфига.
 func CollectDests(cfg *config.Config, args []string) ([]string, error) {
 	if len(args) == 0 {
-		var all []string
-		for _, h := range cfg.Hosts {
-			all = append(all, ExpandAddr(h.Addr)...)
-		}
-		return all, nil
+		return flatten(ExpandHosts(cfg.Hosts)), nil
 	}
 	var out []string
 	for _, a := range args {

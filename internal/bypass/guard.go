@@ -85,11 +85,7 @@ func GuardLine() string {
 // WantedDests: все адреса и сети целей конфига. Конфиг перечитывается каждый цикл, чтобы
 // tim route add и rm действовали на стража без перезапуска.
 func WantedDests(c *config.Config) []string {
-	var out []string
-	for _, h := range c.Hosts {
-		out = append(out, ExpandAddr(h.Addr)...)
-	}
-	return out
+	return flatten(ExpandHosts(c.Hosts))
 }
 
 func LogLine(format string, a ...any) {
