@@ -130,13 +130,14 @@ func (h *Home) after(args []string) {
 }
 
 // resetFlags: cobra помнит значения флагов между запусками в одном процессе; перед каждым - по умолчанию.
+// Общие флаги (--dry-run, --no-input) заданы на весь запуск tim и остаются как были.
 func (h *Home) resetFlags(args []string) {
 	c, _, err := h.root.Find(args)
 	if err != nil || c == nil {
 		return
 	}
 	c.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Changed {
+		if f.Changed && h.root.PersistentFlags().Lookup(f.Name) == nil {
 			_ = f.Value.Set(f.DefValue)
 			f.Changed = false
 		}
