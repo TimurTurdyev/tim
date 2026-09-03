@@ -119,7 +119,7 @@ func AppCheck() error {
 	switch {
 	case direct == "":
 		ui.Println(ui.Bad("под группой наружу не вышло: " + ui.Dash(resp.Err)))
-		ui.Println(ui.Dim("снять: tim direct --off; ниже - что видит система"))
+		ui.Println(ui.Dim("снять: tim direct off; ниже - что видит система"))
 		err := AppStatus()
 		stop(true)
 		return err
@@ -222,7 +222,7 @@ func AppLaunch(name string) error {
 		return ui.Errorf("%s не запустился: %s", appName, resp.Err)
 	}
 	ui.Println(ui.Label(appName+" запущен мимо VPN") + ui.Dim("  pid "+strconv.Itoa(resp.PID)+"; проверить: открой в нём ifconfig.co"))
-	ui.Println(ui.Dim("вернуть под VPN: закрой программу и открой как обычно; снять правила: tim direct --off"))
+	ui.Println(ui.Dim("вернуть под VPN: закрой программу и открой как обычно; снять правила: tim direct off"))
 	return nil
 }
 
@@ -259,7 +259,7 @@ func firstLine(out string, err error) string {
 	return strings.SplitN(out, "\n", 2)[0]
 }
 
-// prevFile: что было до нас (sysctl, маршрут) - --off вернёт как было.
+// prevFile: что было до нас (sysctl, маршрут) - direct off вернёт как было.
 func prevFile(name string) string { return filepath.Join(GuardDir(), "novpn-"+name+".prev") }
 
 func remember(name, value string) {

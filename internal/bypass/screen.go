@@ -24,7 +24,7 @@ func Screen(env *app.Env) tui.Screen {
 		Load:    func(bool) tui.BoardData { return screenData(env.Cfg, probe) },
 		Actions: []tui.BoardAction{
 			{Key: "f", Label: "починить", Do: func(*tui.BoardRow) tui.Action {
-				return tui.Action{Exit: func() { env.After([]string{"vpn", "fix"}) }}
+				return tui.Action{Exit: func() { env.After([]string{"route", "fix"}) }}
 			}},
 			{Key: "t", Label: "проверить порты", Run: func(*tui.BoardRow) (string, error) {
 				probe = true
@@ -34,7 +34,7 @@ func Screen(env *app.Env) tui.Screen {
 				if row == nil {
 					return tui.Action{}
 				}
-				return tui.Action{Exit: func() { env.After([]string{"route", "rm", row.ID}) }}
+				return tui.Action{Exit: func() { env.After([]string{"direct", "rm", row.ID}) }}
 			}},
 			{Key: "s", Label: "страж", Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
 		},
@@ -53,7 +53,7 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 	d.Status = phys.Name + " " + phys.Device + " \u00b7 шлюз " + ui.Dash(gw)
 	d.Head = append(d.Head, ui.Pad(vpnLamp(), 60)+guardLamp())
 	if len(cfg.Hosts) == 0 {
-		d.Head = append(d.Head, ui.Dim("целей обхода нет: tim route add <адрес|домен|подсеть|as:N>"))
+		d.Head = append(d.Head, ui.Dim("целей обхода нет: tim direct <сайт|адрес|подсеть|as:N>"))
 		d.Empty = "цели обхода появятся здесь"
 		return d
 	}

@@ -37,7 +37,7 @@ func unblock(env *app.Env, site string, o unblockOptions) error {
 	}
 	host, _ := netinfo.HostPort(url, "")
 	if host == "" || !strings.Contains(host, ".") {
-		return ui.Errorf("нужен адрес сайта: tim vpn unblock example.com")
+		return ui.Errorf("нужен адрес сайта: tim direct example.org")
 	}
 	if len(netinfo.Tunnels()) == 0 {
 		return ui.Errorf("туннеля нет: VPN выключен, сайт и так идёт напрямую")
@@ -141,7 +141,7 @@ func (u *unblocking) report(url string, cdn []*Group) {
 	if len(u.added) == 0 {
 		ui.Println(ui.Dim("ничего не добавлено: сайт и так идёт мимо VPN или не ходил в туннель"))
 	} else {
-		ui.Println(ui.Label(u.host) + ui.Dim(fmt.Sprintf("  мимо VPN идут %d %s; убрать разом: tim route rm %s",
+		ui.Println(ui.Label(u.host) + ui.Dim(fmt.Sprintf("  мимо VPN идут %d %s; убрать разом: tim direct rm %s",
 			len(u.added), ui.Plural(len(u.added), "сеть", "сети", "сетей"), u.host)))
 		_ = runner.OpenBrowser(url)
 	}
@@ -153,7 +153,7 @@ func (u *unblocking) report(url string, cdn []*Group) {
 		list = append(list, "as:"+g.AS.ASN+" "+ui.Clip(g.AS.Name, 24))
 	}
 	ui.Println(ui.Dim("ещё сайт ходил в общие сети, их мимо VPN не пускаю: " + strings.Join(list, "; ")))
-	ui.Println(ui.Dim("если без них не работает: tim vpn exclude as:N --force, но через них ходит и всё остальное"))
+	ui.Println(ui.Dim("если без них не работает: tim direct as:N --force, но через них ходит и всё остальное"))
 }
 
 // offerGroups печатает новые сети круга и отдаёт их целями.

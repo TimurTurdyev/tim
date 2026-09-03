@@ -15,6 +15,7 @@ MANDIR := $(shell go env GOPATH)/share/man/man1
 install: man
 	go install -ldflags "$(LDFLAGS)" .
 	mkdir -p $(MANDIR)
+	rm -f $(MANDIR)/tim.1 $(MANDIR)/tim-*.1
 	cp man/*.1 $(MANDIR)/
 
 man:

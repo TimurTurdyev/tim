@@ -108,7 +108,7 @@ type dirIndex struct {
 }
 
 // Path отдаёт путь к конфигу: TIM_CONFIG, иначе $XDG_CONFIG_HOME/tim/config.toml или ~/.config/tim/config.toml.
-// Под sudo домашняя папка - того, кто вызвал sudo: у root свой пустой конфиг, и sudo tim route add
+// Под sudo домашняя папка - того, кто вызвал sudo: у root свой пустой конфиг, и sudo tim direct
 // иначе записал бы цель не туда.
 func Path() string {
 	if p := os.Getenv("TIM_CONFIG"); p != "" {

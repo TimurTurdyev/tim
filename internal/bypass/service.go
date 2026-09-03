@@ -125,7 +125,7 @@ func uninstallGuard() error {
 	if !runner.DryRun {
 		_ = os.Remove(routewatch.Path(StateDir()))
 	}
-	ui.Println(ui.Label("страж убран") + ui.Dim("  после смены сети маршруты придётся поднимать: tim vpn fix"))
+	ui.Println(ui.Label("страж убран") + ui.Dim("  после смены сети маршруты придётся чинить: tim route fix"))
 	return nil
 }
 

@@ -154,7 +154,7 @@ func network(cfg *config.Config) []string {
 		ok, total := bypass.BypassCount(cfg)
 		state := fmt.Sprintf("обход %d/%d", ok, total)
 		if ok < total {
-			state = ui.Warn(state + " (tim vpn fix)")
+			state = ui.Warn(state + " (tim route fix)")
 		}
 		line += "  " + state
 	}

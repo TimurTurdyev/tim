@@ -38,7 +38,7 @@ func chooseNets(env *app.Env, seconds int, label string, o addOptions) error {
 	ui.Println()
 	chosen, err := app.ChooseManyFrom("Какие сети пустить мимо VPN?", opts, sel)
 	if err != nil {
-		return app.PickErr(err, "tim vpn exclude as:N", nil)
+		return app.PickErr(err, "tim direct as:N", nil)
 	}
 	if len(chosen) == 0 {
 		return nil
@@ -100,7 +100,7 @@ func suggestExclude(groups []*Group, sel []bool, label string) {
 	if len(nets) == 0 {
 		return
 	}
-	line := "пустить мимо VPN: tim vpn exclude " + strings.Join(nets, " ")
+	line := "пустить мимо VPN: tim direct " + strings.Join(nets, " ")
 	if label != "" {
 		line += " --label " + label
 	}

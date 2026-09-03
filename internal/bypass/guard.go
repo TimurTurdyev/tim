@@ -59,7 +59,7 @@ func GuardRunning() bool {
 	return false
 }
 
-// GuardLine: одна строка о страже для tim route и tim vpn.
+// GuardLine: одна строка о страже для tim route, tim direct и tim vpn.
 func GuardLine() string {
 	if !GuardInstalled() {
 		return ui.Dim("страж не установлен: после смены сети обход сам не починится; sudo tim route install")
@@ -83,7 +83,7 @@ func GuardLine() string {
 }
 
 // WantedDests: все адреса и сети целей конфига. Конфиг перечитывается каждый цикл, чтобы
-// tim route add и rm действовали на стража без перезапуска.
+// tim direct и direct rm действовали на стража без перезапуска.
 func WantedDests(c *config.Config) []string {
 	return flatten(ExpandHosts(c.Hosts))
 }

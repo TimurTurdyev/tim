@@ -76,7 +76,7 @@ func removeTargets(env *app.Env, args []string) error {
 			}
 		}
 		if len(removed) == 0 {
-			return ui.Errorf("в списке нет %s: tim route list", a)
+			return ui.Errorf("в списке нет %s: tim direct list", a)
 		}
 		for _, h := range removed {
 			ui.Println(ui.Label("убран ") + h.Addr)
@@ -115,7 +115,7 @@ func fix(env *app.Env) error {
 
 func printTargets(cfg *config.Config) {
 	if len(cfg.Hosts) == 0 {
-		ui.Println(ui.Dim("список пуст: tim route add <адрес|домен|подсеть>"))
+		ui.Println(ui.Dim("список пуст: tim direct <сайт|адрес|подсеть|as:N>"))
 	}
 	for _, h := range cfg.Hosts {
 		ui.Println(ui.Pad(h.Addr, 24) + " " + h.Label)

@@ -161,7 +161,7 @@ func forwardingOn() error {
 		return ui.Errorf("ip forwarding не включился: %v", err)
 	}
 	remember("forwarding", "0")
-	ui.Println(ui.Dim("включён net.inet.ip.forwarding - без него pf не довозит пакет до прокси; --off вернёт 0"))
+	ui.Println(ui.Dim("включён net.inet.ip.forwarding - без него pf не довозит пакет до прокси; tim direct off вернёт 0"))
 	return nil
 }
 
@@ -187,13 +187,13 @@ func scopedDefaultOn(phys netinfo.Service, gw string) error {
 	}
 	if out, err := privileged.Run("route", "-n", "add", "-ifscope", phys.Device, "default", gw); err != nil {
 		if strings.Contains(out+err.Error(), "exists") {
-			// Маршрут уже был и он не наш: --off его снимать не должен.
+			// Маршрут уже был и он не наш: direct off его снимать не должен.
 			return nil
 		}
 		return ui.Errorf("scoped-маршрут для %s не завёлся: %v", phys.Device, err)
 	}
 	remember("scoped", phys.Device+" "+gw)
-	ui.Println(ui.Dim("заведён scoped-маршрут по умолчанию для " + phys.Device + " через " + gw + " - по нему ходит прокси; --off снимет"))
+	ui.Println(ui.Dim("заведён scoped-маршрут по умолчанию для " + phys.Device + " через " + gw + " - по нему ходит прокси; tim direct off снимет"))
 	return nil
 }
 
@@ -301,7 +301,7 @@ func pfStatus() {
 	case err != nil:
 		ui.Println(ui.Dim("правил pf нет: " + firstLine(rules, err)))
 	case strings.TrimSpace(rules) == "":
-		ui.Println(ui.Dim("правил pf нет: tim direct <приложение> или --check"))
+		ui.Println(ui.Dim("правил pf нет: tim direct <приложение> или tim direct check"))
 	default:
 		ui.Println(ui.Label("правила pf в " + Anchor))
 		for _, l := range strings.Split(rules, "\n") {

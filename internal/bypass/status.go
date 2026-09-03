@@ -30,7 +30,7 @@ func printRoutes(cfg *config.Config, probe bool) {
 	}
 	ui.Println(line)
 	if len(cfg.Hosts) == 0 {
-		ui.Println(ui.Dim("целей обхода нет: tim route add <адрес|домен|подсеть>"))
+		ui.Println(ui.Dim("целей обхода нет: tim direct <сайт|адрес|подсеть|as:N>"))
 		return
 	}
 	ui.Println(GuardLine())
@@ -152,7 +152,7 @@ func printVPN(cfg *config.Config) {
 	if ok, total := BypassCount(cfg); total > 0 {
 		line := ui.Label("обход ") + strconv.Itoa(ok) + " из " + strconv.Itoa(total) + " адресов"
 		if ok < total {
-			line += "  " + ui.Dim("tim vpn fix")
+			line += "  " + ui.Dim("tim route fix")
 		}
 		ui.Println(line)
 		ui.Println(GuardLine())

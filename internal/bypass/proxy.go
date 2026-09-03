@@ -24,7 +24,7 @@ type proxyOptions struct {
 // serveProxy: прозрачный прокси для обхода по приложению, живёт под root отдельно от tim.
 func serveProxy(o proxyOptions) error {
 	if os.Geteuid() != 0 {
-		return ui.Errorf("novpn-proxy запускает tim vpn app под root, руками он не нужен")
+		return ui.Errorf("novpn-proxy запускает tim direct <приложение> под root, руками он не нужен")
 	}
 	ip := net.ParseIP(o.ip)
 	if ip == nil || o.iface == "" {

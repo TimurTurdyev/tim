@@ -62,7 +62,7 @@ var groups = []struct {
 	cmds      []string
 }{
 	{"proj", "Проекты:", []string{"proj", "new", "go", "db", "each", "sync", "motd", "disk", "config", "init"}},
-	{"net", "Сервер и сеть:", []string{"ssh", "tunnel", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "domain", "mail", "http"}},
+	{"net", "Сервер и сеть:", []string{"ssh", "tunnel", "direct", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "domain", "mail", "http"}},
 	{"run", "Локальный запуск:", []string{"serve", "env", "logs", "open", "svc", "php"}},
 	{"util", "Утилиты:", utilCmds},
 	{"self", "Сам tim:", []string{"doctor", "version", "self-update"}},

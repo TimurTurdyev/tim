@@ -5,32 +5,17 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// directOptions: флаги tim direct - что делать и как смотреть за сайтом.
+// directOptions: флаги tim direct - цель в конфиге и как смотреть за сайтом.
 type directOptions struct {
-	add                       addOptions
-	unblock                   unblockOptions
-	watch, check, status, off bool
+	add     addOptions
+	unblock unblockOptions
 }
 
 // direct: одна команда на весь обход VPN. Что пустить напрямую, видно по аргументу: сеть по форме,
 // приложение по тому, что оно установлено, остальное с точкой - сайт.
 func direct(env *app.Env, args []string, o directOptions) error {
-	switch {
-	case o.status:
-		if err := AppStatus(); err != nil {
-			return err
-		}
-		ui.Println()
-		printRoutes(env.Cfg, false)
-		return nil
-	case o.off:
-		return AppOff()
-	case o.check:
-		return AppCheck()
-	case o.watch:
-		return chooseNets(env, o.unblock.seconds, watchLabel(o.add, args), o.add)
-	case len(args) == 0:
-		return ui.Errorf("что пустить напрямую? сайт (example.com), приложение (Firefox) или сеть (as:N, адрес, подсеть)")
+	if len(args) == 0 {
+		return directStatus(env)
 	}
 	switch Classify(args[0], AppExists) {
 	case KindApp:
@@ -48,4 +33,14 @@ func direct(env *app.Env, args []string, o directOptions) error {
 		return addTargets(env, args, o.add)
 	}
 	return ui.Errorf("не понял %s: сайт пишется с точкой, приложение - как оно называется в системе, сеть - as:N, адрес или подсеть", args[0])
+}
+
+// directStatus: что сейчас идёт напрямую - приложения под правилами и цели с маршрутами.
+func directStatus(env *app.Env) error {
+	if err := AppStatus(); err != nil {
+		return err
+	}
+	ui.Println()
+	printRoutes(env.Cfg, false)
+	return nil
 }
