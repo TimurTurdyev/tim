@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Доска: список строк, панель выбранной и действия буквами. На ней живут экраны без своей
@@ -23,11 +26,13 @@ type BoardRow struct {
 
 // BoardData: всё, что показывает доска за один раз.
 type BoardData struct {
-	Status string
-	Head   []string // над списком: лампочки, шапка таблицы
-	Rows   []BoardRow
-	Foot   []string // под панелью: замечания
-	Empty  string   // что сказать, если строк нет
+	Status  string
+	Head    []string // над списком: полосы, сводка
+	Lamps   []string // короткие состояния под шапкой: по два в ряд, если влезают
+	Columns string   // шапка таблицы прямо над списком
+	Rows    []BoardRow
+	Foot    []string // под панелью: замечания
+	Empty   string   // что сказать, если строк нет
 }
 
 // BoardAction: действие по букве. Do открывает экран или выходит; Run делает в фоне, результат
@@ -195,23 +200,31 @@ func (b *board) View(width, height int) string {
 		if text == "" {
 			text = "смотрю..."
 		}
-		out = append(out, "  "+styleEmpty.Render(text))
+		for _, l := range ui.Wrap(text, width-4) {
+			out = append(out, "  "+styleEmpty.Render(l))
+		}
 		return strings.Join(out, "\n")
 	}
-	for _, h := range b.data.Head {
-		out = append(out, "  "+h)
+	out = append(out, b.head(width)...)
+	var footLines []string
+	for _, f := range b.data.Foot {
+		footLines = append(footLines, ui.Wrap(f, width-4)...)
 	}
-	if len(b.data.Head) > 0 {
-		out = append(out, "")
+	foot := len(footLines)
+	if foot > 0 {
+		foot++
 	}
 	var pane []string
 	if cur := b.current(); cur != nil && cur.Title != "" {
-		pane = Pane(cur.Title, cur.Sub, cur.Pane, width-4)
+		// Панель не отнимает у списка последние строки: на низком экране её хвост сворачивается.
+		room := height - len(out) - min(len(b.data.Rows), 4) - foot - 3
+		var rows []string
+		for _, r := range cur.Pane {
+			rows = append(rows, ui.Wrap(r, width-8)...)
+		}
+		pane = Pane(cur.Title, cur.Sub, clipRows(rows, room), width-4)
 	}
-	tail := len(pane) + len(b.data.Foot)
-	if len(b.data.Foot) > 0 {
-		tail++
-	}
+	tail := len(pane) + foot
 	listH := max(3, height-len(out)-tail-1)
 	if len(b.data.Rows) == 0 {
 		out = append(out, "  "+styleDim.Render(b.data.Empty))
@@ -224,11 +237,45 @@ func (b *board) View(width, height int) string {
 	for _, p := range pane {
 		out = append(out, "  "+p)
 	}
-	if len(b.data.Foot) > 0 {
+	if foot > 0 {
 		out = append(out, "")
-		for _, f := range b.data.Foot {
+		for _, f := range footLines {
 			out = append(out, "  "+f)
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// head: шапка, лампы и названия колонок - всё, что над списком.
+func (b *board) head(width int) []string {
+	var out []string
+	for _, h := range b.data.Head {
+		out = append(out, "  "+h)
+	}
+	if len(b.data.Lamps) > 0 {
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		for _, l := range ui.Pairs(b.data.Lamps, width-4) {
+			out = append(out, "  "+l)
+		}
+	}
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	if b.data.Columns != "" {
+		out = append(out, "  "+b.data.Columns, "")
+	}
+	return out
+}
+
+// clipRows: не больше n строк; последняя говорит, сколько не влезло.
+func clipRows(rows []string, n int) []string {
+	if len(rows) <= n {
+		return rows
+	}
+	if n < 1 {
+		return nil
+	}
+	return append(slices.Clone(rows[:n-1]), styleDim.Render(fmt.Sprintf("и ещё %d", len(rows)-n+1)))
 }

@@ -58,7 +58,8 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 
 func domainData(rep *domaudit.Report) tui.BoardData {
 	d := tui.BoardData{Status: fmt.Sprintf("имён %d \u00b7 адресов %d", len(rep.Hosts), len(rep.Addrs))}
-	d.Head = append(ui.Pairs(domainLamps(rep.Domain), 52), "", ui.Dim(ui.Pad("ИМЯ", 30)+ui.Pad("АДРЕС", 18)+ui.Pad("ОТВЕТ", 12)+"ЗАМЕТКА"))
+	d.Lamps = domainLamps(rep.Domain)
+	d.Columns = ui.Dim(ui.Pad("ИМЯ", 30) + ui.Pad("АДРЕС", 18) + ui.Pad("ОТВЕТ", 12) + "ЗАМЕТКА")
 	v := newDomainView(rep)
 	for _, h := range sortHosts(rep) {
 		d.Rows = append(d.Rows, v.row(h))
@@ -132,9 +133,9 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	if note == "" {
 		note = v.note(h, ip)
 	}
-	row.Cells = ui.Pad(h.Name, 30) + ui.Pad(ip, 18) + ui.Pad(status, 12) + ui.Dim(note)
+	row.Cells = ui.Fit(h.Name, 29) + " " + ui.Fit(ip, 17) + " " + ui.Pad(status, 12) + ui.Dim(note)
 	for _, ip := range h.IPs {
-		line := ui.Pad(ip, 18)
+		line := ui.Pad(ip, 17) + " "
 		if a, ok := v.addrs[ip]; ok {
 			line += ui.Dim(strings.TrimSpace(a.AS.Name + " " + a.AS.Country + " AS" + a.AS.ASN))
 			if a.PTR != "" {

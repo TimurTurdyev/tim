@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -344,6 +345,10 @@ func (a *App) View() tea.View {
 	for len(lines) < bodyH {
 		lines = append(lines, "")
 	}
+	// Терминал режет длинную строку молча; тильда хотя бы показывает, что там было ещё.
+	for i, l := range lines {
+		lines[i] = ui.Clip(l, w)
+	}
 	if a.toast.text != "" {
 		lines[bodyH-1] = " " + a.toast.cls.Render(a.toast.text)
 	}
@@ -358,10 +363,14 @@ func (a *App) topBar(s Screen) string {
 	for _, c := range s.Crumbs() {
 		crumbs += " " + symPointer + " " + c
 	}
-	left += styleCrumb.Render(crumbs)
-	right := styleStatus.Render(s.Status() + " ")
+	left = ui.Clip(left+styleCrumb.Render(crumbs), a.width)
+	// Крошки важнее строки состояния: на узком экране она обрезается или уходит.
+	right := ""
+	if room := a.width - lipgloss.Width(left) - 4; room >= 8 {
+		right = styleStatus.Render(ui.Clip(s.Status(), room) + " ")
+	}
 	gap := a.width - lipgloss.Width(left) - lipgloss.Width(right)
-	return styleTop.Render(left + strings.Repeat(" ", max(1, gap)) + right)
+	return styleTop.Render(left + strings.Repeat(" ", max(0, gap)) + right)
 }
 
 func (a *App) keyBar(s Screen) string {
@@ -369,19 +378,40 @@ func (a *App) keyBar(s Screen) string {
 	if a.overlay != nil {
 		keys = a.overlay.keys()
 	}
-	var parts []string
-	for _, k := range keys {
-		parts = append(parts, styleKeyCap.Render(" "+k.K+" ")+styleKeyDesc.Render(" "+k.D))
-	}
-	left := " " + strings.Join(parts, styleKeyDesc.Render("  "))
 	right := ""
 	if c := s.Command(); c != "" && a.overlay == nil {
 		right = styleKeyDesc.Render(c + " ")
 	}
+	left := " " + strings.Join(keyCaps(keys), styleKeyDesc.Render("  "))
+	if lipgloss.Width(left) > a.width {
+		left = " " + strings.Join(fitKeys(keys, a.width-1), styleKeyDesc.Render("  "))
+	}
 	gap := a.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		right = ""
-		gap = 1
+		gap = max(0, a.width-lipgloss.Width(left))
 	}
 	return styleKeyBar.Render(left + strings.Repeat(" ", gap) + right)
+}
+
+func keyCaps(keys []Key) []string {
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = styleKeyCap.Render(" "+k.K+" ") + styleKeyDesc.Render(" "+k.D)
+	}
+	return parts
+}
+
+// fitKeys: клавиши, которые влезают в width, и в конце всегда "?" - там все остальные.
+func fitKeys(keys []Key, width int) []string {
+	more := keyCaps([]Key{{"?", "все клавиши"}})[0]
+	budget := width - lipgloss.Width(more)
+	var parts []string
+	for _, p := range keyCaps(slices.DeleteFunc(slices.Clone(keys), func(k Key) bool { return k.K == "?" })) {
+		if budget -= lipgloss.Width(p) + 2; budget < 0 {
+			break
+		}
+		parts = append(parts, p)
+	}
+	return append(parts, more)
 }

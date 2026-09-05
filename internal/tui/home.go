@@ -271,7 +271,11 @@ func (h *home) View(width, height int) string {
 			}
 		}
 		if h.data.Warning != "" {
-			out = append(out, "  "+styleAmber.Render(symWarn+" "+h.data.Warning)+styleDim.Render("   enter - разобраться"))
+			warn, hint := styleAmber.Render(symWarn+" "+h.data.Warning), styleDim.Render("   enter - разобраться")
+			if ui.Width(warn+hint)+2 > width {
+				hint = ""
+			}
+			out = append(out, "  "+warn+hint)
 		}
 	}
 	if !h.ready {

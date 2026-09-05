@@ -51,7 +51,7 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 	var d tui.BoardData
 	phys, gw := netinfo.Physical()
 	d.Status = phys.Name + " " + phys.Device + " \u00b7 шлюз " + ui.Dash(gw)
-	d.Head = append(d.Head, ui.Pad(vpnLamp(), 60)+guardLamp())
+	d.Head = append(d.Head, vpnLamp(), guardLamp())
 	if len(cfg.Hosts) == 0 {
 		d.Head = append(d.Head, ui.Dim("целей обхода нет: tim direct <сайт|адрес|подсеть|as:N>"))
 		d.Empty = "цели обхода появятся здесь"
@@ -119,7 +119,7 @@ func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, p
 	case t.bad > 0:
 		state = ui.Warn("\u25b2 " + ui.Count(t.bad, "адрес", "адреса", "адресов") + " через туннель")
 	}
-	t.row.Cells = ui.Pad(h.Addr, 26) + ui.Pad(ui.Dim(h.Label), 14) + ui.Pad(strconv.Itoa(len(addrs)), 8) + state
+	t.row.Cells = ui.Fit(h.Addr, 25) + " " + ui.Fit(ui.Dim(h.Label), 13) + " " + ui.Pad(strconv.Itoa(len(addrs)), 8) + state
 	return t, len(addrs), fine
 }
 
@@ -139,7 +139,7 @@ func guardLamp() string {
 	st, hasSt := GuardStatus()
 	switch {
 	case !GuardInstalled():
-		return ui.Warn("\u25b2 страж не установлен ") + ui.Dim("после смены сети обход сам не починится: sudo tim route install")
+		return ui.Warn("\u25b2 страж не установлен ") + ui.Dim("обход сам не починится: sudo tim route install")
 	case !GuardRunning():
 		return ui.Bad("\u2715 страж не работает ") + ui.Dim("tim route status")
 	case !hasSt:

@@ -126,8 +126,14 @@ func HelpBox(screenKeys []Key, width int) []string {
 	for _, k := range globalKeys {
 		g = append(g, k.K+" "+k.D)
 	}
-	rows = append(rows, styleDim.Render("Везде:  "+strings.Join(g, "  "+symDot+"  ")))
-	rows = append(rows, styleDim.Render("Убрать - всегда в Корзину и с подтверждением. Команда для терминала - внизу справа."), "")
+	notes := "Везде:  " + strings.Join(g, "  "+symDot+"  ") + "\n" +
+		"Убрать - всегда в Корзину и с подтверждением. Команда для терминала - внизу справа."
+	for _, note := range strings.Split(notes, "\n") {
+		for _, l := range ui.Wrap(note, w-4) {
+			rows = append(rows, styleDim.Render(l))
+		}
+	}
+	rows = append(rows, "")
 	return Pane("Клавиши этого экрана", "", rows, w)
 }
 

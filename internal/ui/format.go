@@ -84,6 +84,11 @@ func Clip(s string, width int) string {
 	return ansi.Truncate(s, width, "~")
 }
 
+// Wrap: текст по словам в строки не шире width; слово длиннее строки режется.
+func Wrap(s string, width int) []string {
+	return strings.Split(ansi.Wrap(s, max(1, width), ""), "\n")
+}
+
 // Fit: ровно width колонок - короткое добивается пробелами, длинное обрезается с тильдой.
 func Fit(s string, width int) string { return Pad(Clip(s, width), width) }
 
@@ -173,15 +178,17 @@ func Bar(pct, width int) string {
 	return b + " " + Pad(strconv.Itoa(pct)+"%", 5)
 }
 
-// Pairs: строки по две в ряд, левая колонка шириной left.
-func Pairs(items []string, left int) []string {
+// Pairs: строки по две в ряд, каждая в своей половине width; не влезает пара - по одной.
+func Pairs(items []string, width int) []string {
+	half := width / 2
 	var out []string
-	for i := 0; i < len(items); i += 2 {
-		line := items[i]
-		if i+1 < len(items) {
-			line = Pad(line, left) + items[i+1]
+	for i := 0; i < len(items); i++ {
+		if i+1 < len(items) && Width(items[i]) < half && Width(items[i+1]) <= width-half {
+			out = append(out, Pad(items[i], half)+items[i+1])
+			i++
+			continue
 		}
-		out = append(out, line)
+		out = append(out, items[i])
 	}
 	return out
 }

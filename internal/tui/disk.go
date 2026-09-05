@@ -268,16 +268,7 @@ func (d *disk) View(width, height int) string {
 	out = append(out, "  "+Bar(frac, min(60, width-40))+"  "+pctStyle(d.data.UsedPct)+
 		styleDim.Render("  замер "+ui.Ago(d.data.MeasuredAt)+", r - заново"))
 	out = append(out, "")
-	var tabs []string
-	for i, t := range d.data.Tabs {
-		label := " " + t.Title + " " + ui.Bytes(t.Total) + " "
-		if i == d.tab {
-			tabs = append(tabs, styleTabOn.Render(label))
-		} else {
-			tabs = append(tabs, styleTabOff.Render(label))
-		}
-	}
-	out = append(out, "  "+strings.Join(tabs, " "), "")
+	out = append(out, "  "+d.tabs(width-2), "")
 	paneH := 0
 	cur := d.current()
 	var pane []string
@@ -306,7 +297,11 @@ func (d *disk) View(width, height int) string {
 		pane = Pane(cur.Name, cur.shown(), rows, width-4)
 		paneH = len(pane)
 	}
-	notes := len(d.data.Notes)
+	var noteLines []string
+	for _, n := range d.data.Notes {
+		noteLines = append(noteLines, ui.Wrap(n, width-4)...)
+	}
+	notes := len(noteLines)
 	listH := max(3, height-len(out)-paneH-notes-2)
 	out = append(out, d.list.View(width, listH)...)
 	for len(out) < height-paneH-notes-1 {
@@ -322,10 +317,33 @@ func (d *disk) View(width, height int) string {
 	for _, p := range pane {
 		out = append(out, "  "+p)
 	}
-	for _, n := range d.data.Notes {
+	for _, n := range noteLines {
 		out = append(out, "  "+styleDim.Render(n))
 	}
 	return strings.Join(out, "\n")
+}
+
+// tabs: разделы с размерами; не влезают в width - размер остаётся только у открытого.
+func (d *disk) tabs(width int) string {
+	render := func(short bool) string {
+		var tabs []string
+		for i, t := range d.data.Tabs {
+			label := " " + t.Title + " "
+			if !short || i == d.tab {
+				label += ui.Bytes(t.Total) + " "
+			}
+			if i == d.tab {
+				tabs = append(tabs, styleTabOn.Render(label))
+			} else {
+				tabs = append(tabs, styleTabOff.Render(label))
+			}
+		}
+		return strings.Join(tabs, " ")
+	}
+	if full := render(false); ui.Width(full) <= width {
+		return full
+	}
+	return render(true)
 }
 
 func pctStyle(pct int) string {

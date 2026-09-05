@@ -154,11 +154,21 @@ func (h *hw) View(width, height int) string {
 		return strings.Join(out, "\n")
 	}
 	s := h.last
-	barW := min(40, max(16, width-62))
-	sparkW := min(30, max(8, width-20-barW-20))
+	vram := ""
+	if s.GPUValid {
+		vram = "видеопамять " + ui.Bytes(s.VRAM)
+	}
+	mem := ui.Bytes(s.MemUsed) + " из " + ui.Bytes(s.MemTotal)
+	if s.SwapTotal > 0 {
+		mem += ", swap " + ui.Bytes(s.SwapUsed)
+	}
+	// Сначала место под цифры справа, остаток делят полоса и график; на узком экране график уходит.
+	rest := width - 2 - 11 - 6 - max(ui.Width(vram), ui.Width(mem)) - 3 - 2
+	barW := min(40, max(16, rest*11/20))
+	sparkW := min(30, rest-barW-3)
 	row := func(label string, pct int, hist []float64, tail string) string {
 		line := "  " + styleDim.Render(ui.Fit(label, 11)) + Bar(float64(pct)/100, barW) + "  " + pctLevel(pct).Render(fmt.Sprintf("%3d%%", pct))
-		if hist != nil {
+		if hist != nil && sparkW >= 8 {
 			line += "   " + spark(hist, sparkW, pct)
 		}
 		if tail != "" {
@@ -168,18 +178,14 @@ func (h *hw) View(width, height int) string {
 	}
 	out = append(out, row("процессор", s.CPU, h.cpuH, ""))
 	if s.GPUValid {
-		out = append(out, row("видеокарта", s.GPU, h.gpuH, "видеопамять "+ui.Bytes(s.VRAM)))
-	}
-	mem := ui.Bytes(s.MemUsed) + " из " + ui.Bytes(s.MemTotal)
-	if s.SwapTotal > 0 {
-		mem += ", swap " + ui.Bytes(s.SwapUsed)
+		out = append(out, row("видеокарта", s.GPU, h.gpuH, vram))
 	}
 	out = append(out, row("память", s.Mem, h.memH, mem))
 	if s.Disk > 0 {
 		out = append(out, row("диск", s.Disk, nil, ""))
 	}
 	if len(s.Load) == 3 {
-		out = append(out, "  "+styleDim.Render(fmt.Sprintf("%-11snагрузка %.1f %.1f %.1f за 1, 5 и 15 минут", "", s.Load[0], s.Load[1], s.Load[2])))
+		out = append(out, "  "+styleDim.Render(fmt.Sprintf("%-11sнагрузка %.1f %.1f %.1f за 1, 5 и 15 минут", "", s.Load[0], s.Load[1], s.Load[2])))
 	}
 	out = append(out, "")
 	if len(s.Top) > 0 {

@@ -94,7 +94,7 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 		if p, err := cfg.Pick(r.Name); err == nil && p.URL != "" {
 			row.Sub = p.URL
 		}
-		row.Cells = ui.Pad(r.Name, 20)
+		row.Cells = ui.Fit(r.Name, 19) + " "
 		for _, col := range cols {
 			c := r.Get(col.name)
 			row.Cells += ui.Pad(level.Lamp(c.Level, ui.Clip(c.Text, col.width-3)), col.width)
@@ -109,7 +109,11 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 		if len(row.Pane) == 0 {
 			row.Pane = []string{ui.OK("\u25cf всё в порядке")}
 		}
-		row.Pane = append(row.Pane, ui.Dim("\u2192 enter покажет проверку целиком, tim domain "+row.Sub+" - домен"))
+		hint := "\u2192 enter покажет проверку целиком"
+		if row.Sub != "" {
+			hint += ", tim domain " + row.Sub + " - домен"
+		}
+		row.Pane = append(row.Pane, ui.Dim(hint))
 		d.Rows = append(d.Rows, row)
 	}
 	if hidden > 0 {

@@ -338,14 +338,22 @@ func (o *onboard) View(width, height int) string {
 			out = append(out, "  "+styleDim.Render("репозиториев не нашёл; enter запишет конфиг с пустым реестром, esc - другая папка"))
 		}
 	}
-	for len(out) < height-2 {
-		out = append(out, "")
-	}
+	note := ""
 	switch o.step {
 	case 0:
-		out = append(out, "  "+styleDim.Render("Конфиг будет здесь: ~/.config/tim/config.toml. Его можно править руками, tim перечитывает сам."))
+		note = "Конфиг будет здесь: ~/.config/tim/config.toml. Его можно править руками, tim перечитывает сам."
 	case 1:
-		out = append(out, "  "+styleDim.Render("Порты выдаются при запуске с 8000, чтобы проекты не толкались. Поменять: tim proj или правка конфига."))
+		note = "Порты выдаются при запуске с 8000, чтобы проекты не толкались. Поменять: tim proj или правка конфига."
+	}
+	var tail []string
+	if note != "" {
+		tail = ui.Wrap(note, width-4)
+	}
+	for len(out) < height-1-len(tail) {
+		out = append(out, "")
+	}
+	for _, l := range tail {
+		out = append(out, "  "+styleDim.Render(l))
 	}
 	return strings.Join(out, "\n")
 }

@@ -44,8 +44,8 @@ func serverData(target string) tui.BoardData {
 		return d
 	}
 	d.Status = summaryLine(r)
-	d.Head = append(serverBars(r), "")
-	d.Head = append(d.Head, ui.Pairs(serverLamps(r), 46)...)
+	d.Head = serverBars(r)
+	d.Lamps = serverLamps(r)
 	for _, c := range srvinfo.Evaluate(r, time.Now()) {
 		d.Rows = append(d.Rows, findingRow(c, r))
 	}
