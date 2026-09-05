@@ -10,22 +10,6 @@ import (
 
 // Общие детали экранов: полоса, панель в рамке, плитка.
 
-var (
-	styleDim    = lipgloss.NewStyle().Foreground(colDim)
-	styleText   = lipgloss.NewStyle().Foreground(colText)
-	styleBold   = lipgloss.NewStyle().Foreground(colText).Bold(true)
-	styleAccent = lipgloss.NewStyle().Foreground(colAccent)
-	styleAmber  = lipgloss.NewStyle().Foreground(colWarn)
-	styleBad    = lipgloss.NewStyle().Foreground(colBad)
-	styleGood   = lipgloss.NewStyle().Foreground(colOK)
-	styleGhost  = lipgloss.NewStyle().Foreground(colGhost)
-	styleSelBg  = lipgloss.NewStyle().Background(colRow)
-	stylePaneT  = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleTabOn  = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
-	styleTabOff = lipgloss.NewStyle().Background(colBarBg).Foreground(colDim)
-	styleHead   = lipgloss.NewStyle().Foreground(colDim)
-)
-
 // Bar: полоса на n клеток; цвет по порогу - до 60% спокойный, до 85% внимание, выше плохо.
 func Bar(frac float64, n int) string {
 	f := max(0, min(n, int(frac*float64(n)+0.5)))

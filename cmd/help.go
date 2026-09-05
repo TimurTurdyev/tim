@@ -209,7 +209,7 @@ func splash() {
 	side := []string{""}
 	for i, line := range brand.Title {
 		if on {
-			side = append(side, "\x1b[1;"+brand.TitleGradient[i].FG(depth, "36")+"m"+line+"\x1b[0m")
+			side = append(side, "\x1b[1;"+ui.Palette()[brand.TitleGradient[i]].FG(depth, "36")+"m"+line+"\x1b[0m")
 		} else {
 			side = append(side, line)
 		}

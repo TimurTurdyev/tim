@@ -50,11 +50,12 @@ func isTerminal(f *os.File) bool {
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
-func wrap(code, s string) string {
+// paint: палитра выбирается, только когда цвет и правда нужен - без цвета фон не важен.
+func paint(s, bold string, c brand.Color, basic string) string {
 	if !enabled.Load() {
 		return s
 	}
-	return "\x1b[" + code + "m" + s + "\x1b[0m"
+	return "\x1b[" + bold + Palette()[c].FG(depth, basic) + "m" + s + "\x1b[0m"
 }
 
 // Capture выполняет f и возвращает всё, что ушло в ui, с цветами: вывод покажется на экране.
@@ -96,16 +97,16 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// Роли текста в фирменных цветах; в терминале на 16 цветов - ближайшие стандартные.
-func Label(s string) string { return wrap(brand.Teal.FG(depth, "36"), s) }
-func OK(s string) string    { return wrap(brand.Green.FG(depth, "32"), s) }
-func Dim(s string) string   { return wrap(brand.Gray.FG(depth, "90"), s) }
-func Warn(s string) string  { return wrap(brand.Amber.FG(depth, "33"), s) }
-func Bad(s string) string   { return wrap(brand.Red.FG(depth, "31"), s) }
-func Info(s string) string  { return wrap(brand.Blue.FG(depth, "34"), s) }
+// Роли текста в фирменных цветах под фон терминала; в терминале на 16 цветов - ближайшие стандартные.
+func Label(s string) string { return paint(s, "", brand.Teal, "36") }
+func OK(s string) string    { return paint(s, "", brand.Green, "32") }
+func Dim(s string) string   { return paint(s, "", brand.Gray, "90") }
+func Warn(s string) string  { return paint(s, "", brand.Amber, "33") }
+func Bad(s string) string   { return paint(s, "", brand.Red, "31") }
+func Info(s string) string  { return paint(s, "", brand.Blue, "34") }
 
 // Title: заголовок раздела - жирный фирменный.
-func Title(s string) string { return wrap("1;"+brand.Teal.FG(depth, "36"), s) }
+func Title(s string) string { return paint(s, "1;", brand.Teal, "36") }
 
 // Colors: цвета включены и сколько их; для картинок вроде маскота.
 func Colors() (bool, brand.Depth) { return enabled.Load(), depth }

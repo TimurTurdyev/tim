@@ -7,28 +7,12 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 const maxRows = 10
-
-var (
-	styleTitle   = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleCount   = lipgloss.NewStyle().Foreground(colDim)
-	styleHit     = lipgloss.NewStyle().Foreground(colOK).Bold(true)
-	styleHint    = lipgloss.NewStyle().Foreground(colDim)
-	styleRow     = lipgloss.NewStyle().Background(colRow).Bold(true)
-	styleKey     = lipgloss.NewStyle().Foreground(colInfo)
-	styleEmpty   = lipgloss.NewStyle().Foreground(colDim).Italic(true)
-	stylePrompt  = lipgloss.NewStyle().Foreground(colAccent)
-	styleChosen  = lipgloss.NewStyle().Foreground(colOK)
-	styleEchoKey = lipgloss.NewStyle().Foreground(colDim)
-	// Та же полоса слева, что у вопросов huh: все окна визарда выглядят одинаково.
-	styleFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder(), false, false, false, true).
-			BorderForeground(colAccent).PaddingLeft(1)
-)
 
 type picker struct {
 	title   string
@@ -53,16 +37,13 @@ func Pick(prompt string, items []Item) (int, error) {
 		return -1, ErrNoTTY
 	}
 	defer func() { _ = tty.Close() }()
+	setStyles(ui.Light())
 	in := textinput.New()
 	in.Prompt = symPointer + " "
 	in.Placeholder = "начни печатать, чтобы отфильтровать"
 	// Без ширины textinput обрезает подсказку до одной буквы: буфер под неё - ширина плюс один.
 	in.SetWidth(48)
-	st := in.Styles()
-	st.Focused.Prompt = stylePrompt
-	st.Focused.Placeholder = styleHint
-	st.Cursor.Color = colAccent
-	in.SetStyles(st)
+	styleInput(&in)
 	in.Focus()
 	p := &picker{title: prompt, input: in, items: items, chosen: -1}
 	p.titles = make([]string, len(items))
@@ -92,9 +73,15 @@ func (p *picker) refilter() {
 	}
 }
 
-func (p *picker) Init() tea.Cmd { return textinput.Blink }
+func (p *picker) Init() tea.Cmd { return tea.Batch(textinput.Blink, tea.RequestBackgroundColor) }
 
 func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if bg, ok := msg.(tea.BackgroundColorMsg); ok {
+		if useBackground(bg) {
+			styleInput(&p.input)
+		}
+		return p, nil
+	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc", "ctrl+c":
@@ -180,6 +167,14 @@ func clipTitle(s string, width int) string {
 		return s
 	}
 	return string(r[:width-1]) + "~"
+}
+
+func styleInput(in *textinput.Model) {
+	st := in.Styles()
+	st.Focused.Prompt = stylePrompt
+	st.Focused.Placeholder = styleHint
+	st.Cursor.Color = colAccent
+	in.SetStyles(st)
 }
 
 // highlight подсвечивает буквы, совпавшие с запросом; на выделенной строке - на её фоне.

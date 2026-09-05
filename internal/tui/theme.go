@@ -1,28 +1,32 @@
 package tui
 
 import (
+	"image/color"
+	"os"
+
 	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
+	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Фирменные цвета из пакета brand: те же, что у остального вывода tim. Терминалу без truecolor
-// lipgloss подберёт ближайшие сам.
+// Цвета и стили экранов под фон терминала; их задаёт setStyles. Терминалу без truecolor lipgloss
+// подберёт ближайшие цвета сам.
 var (
-	colAccent = lipgloss.Color(brand.Teal.Hex())
-	colOK     = lipgloss.Color(brand.Green.Hex())
-	colInfo   = lipgloss.Color(brand.Blue.Hex())
-	colDim    = lipgloss.Color(brand.Gray.Hex())
-	colBad    = lipgloss.Color(brand.Red.Hex())
-	colOnAcc  = lipgloss.Color("#0E1A19")
-	colRow    = lipgloss.Color(brand.Shade.Hex())
-	colWarn   = lipgloss.Color(brand.Amber.Hex())
-	colText   = lipgloss.Color("#D7DAE0")
-	colBarBg  = lipgloss.Color("#1F2227") // верхняя и нижняя строки каркаса
-	colKeyBg  = lipgloss.Color("#33373F") // подложка клавиш
-	colGhost  = lipgloss.Color("#2B2F37") // пустая часть полосы
+	colAccent, colOK, colInfo, colDim, colBad, colWarn                          color.Color
+	colRow, colText, colCrumb, colBarBg, colKeyBg, colGhost, colOnAcc, colOnBad color.Color
+
+	styleTop, styleBrand, styleCrumb, styleStatus, styleKeyBar, styleKeyCap, styleKeyDesc lipgloss.Style
+	styleToastOK, styleToastWn, styleToastBd                                              lipgloss.Style
+	styleBtnDanger, styleBtnMain, styleBtnQuiet                                           lipgloss.Style
+	styleTitle, styleCount, styleHit, styleHint, styleRow, styleKey, styleEmpty           lipgloss.Style
+	stylePrompt, styleChosen, styleEchoKey, styleFrame                                    lipgloss.Style
+	styleDim, styleText, styleBold, styleAccent, styleAmber, styleBad, styleGood          lipgloss.Style
+	styleGhost, styleSelBg, stylePaneT, styleTabOn, styleTabOff, styleHead                lipgloss.Style
 )
 
 // Символы интерфейса записаны кодами, чтобы исходник оставался набранным с клавиатуры.
@@ -42,8 +46,102 @@ const (
 	symShade   = "\u2591"
 )
 
-func timTheme(isDark bool) *huh.Styles {
-	t := huh.ThemeBase(isDark)
+// Тёмные до того, как экран узнает фон: определять его здесь - читать файл на старте каждой команды.
+func init() { setStyles(false) }
+
+// setStyles: цвета и стили из палитры под фон.
+func setStyles(light bool) {
+	p := brand.Dark
+	if light {
+		p = brand.Light
+	}
+	c := func(r brand.Color) color.Color { return lipgloss.Color(p[r].Hex()) }
+	colAccent, colOK, colInfo = c(brand.Teal), c(brand.Green), c(brand.Blue)
+	colDim, colBad, colWarn = c(brand.Gray), c(brand.Red), c(brand.Amber)
+	colRow, colText, colCrumb, colBarBg = c(brand.Shade), c(brand.Text), c(brand.Crumb), c(brand.Bar)
+	colKeyBg, colGhost, colOnAcc, colOnBad = c(brand.KeyCap), c(brand.Ghost), c(brand.OnAccent), c(brand.OnBad)
+	chromeStyles()
+	textStyles()
+}
+
+// chromeStyles: каркас - верхняя строка, строка клавиш, всплывающие сообщения, кнопки окон.
+func chromeStyles() {
+	styleTop = lipgloss.NewStyle().Background(colBarBg)
+	styleBrand = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
+	styleCrumb = lipgloss.NewStyle().Foreground(colCrumb).Background(colBarBg)
+	styleStatus = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
+	styleKeyBar = lipgloss.NewStyle().Background(colBarBg)
+	styleKeyCap = lipgloss.NewStyle().Background(colKeyBg).Foreground(colInfo)
+	styleKeyDesc = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
+	styleToastOK = lipgloss.NewStyle().Foreground(colOK).Bold(true)
+	styleToastWn = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
+	styleToastBd = lipgloss.NewStyle().Foreground(colBad).Bold(true)
+	styleBtnDanger = lipgloss.NewStyle().Background(colBad).Foreground(colOnBad).Bold(true).Padding(0, 2)
+	styleBtnMain = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true).Padding(0, 2)
+	styleBtnQuiet = lipgloss.NewStyle().Background(colKeyBg).Foreground(colText).Padding(0, 2)
+	styleTabOn = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
+	styleTabOff = lipgloss.NewStyle().Background(colBarBg).Foreground(colDim)
+	// Та же полоса слева, что у вопросов huh: все окна визарда выглядят одинаково.
+	styleFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder(), false, false, false, true).
+		BorderForeground(colAccent).PaddingLeft(1)
+}
+
+// textStyles: текст списков, панелей и выбора.
+func textStyles() {
+	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleCount = lipgloss.NewStyle().Foreground(colDim)
+	styleHit = lipgloss.NewStyle().Foreground(colOK).Bold(true)
+	styleHint = lipgloss.NewStyle().Foreground(colDim)
+	styleRow = lipgloss.NewStyle().Background(colRow).Bold(true)
+	styleKey = lipgloss.NewStyle().Foreground(colInfo)
+	styleEmpty = lipgloss.NewStyle().Foreground(colDim).Italic(true)
+	stylePrompt = lipgloss.NewStyle().Foreground(colAccent)
+	styleChosen = lipgloss.NewStyle().Foreground(colOK)
+	styleEchoKey = lipgloss.NewStyle().Foreground(colDim)
+	styleDim = lipgloss.NewStyle().Foreground(colDim)
+	styleText = lipgloss.NewStyle().Foreground(colText)
+	styleBold = lipgloss.NewStyle().Foreground(colText).Bold(true)
+	styleAccent = lipgloss.NewStyle().Foreground(colAccent)
+	styleAmber = lipgloss.NewStyle().Foreground(colWarn)
+	styleBad = lipgloss.NewStyle().Foreground(colBad)
+	styleGood = lipgloss.NewStyle().Foreground(colOK)
+	styleGhost = lipgloss.NewStyle().Foreground(colGhost)
+	styleSelBg = lipgloss.NewStyle().Background(colRow)
+	stylePaneT = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHead = lipgloss.NewStyle().Foreground(colDim)
+}
+
+// useBackground: терминал ответил, какой у него фон. Палитра - по ответу, фон запоминается для
+// обычного вывода и следующего экрана; true - палитра сменилась и нарисованное надо пересобрать.
+func useBackground(msg tea.BackgroundColorMsg) bool {
+	if ui.ThemeFixed() {
+		return false
+	}
+	light := !msg.IsDark()
+	rememberBackground(light)
+	if light == ui.Light() {
+		return false
+	}
+	ui.SetLight(light)
+	setStyles(light)
+	return true
+}
+
+func rememberBackground(light bool) {
+	word := "dark"
+	if light {
+		word = "light"
+	}
+	path := ui.BackgroundFile()
+	if old, err := os.ReadFile(path); runner.DryRun || err == nil && string(old) == word {
+		return
+	}
+	_ = runner.WriteAtomic(path, []byte(word), 0o644)
+}
+
+// timTheme: huh сам фон не спрашивает и всегда передаёт false, поэтому фон тот же, что у всего tim.
+func timTheme(bool) *huh.Styles {
+	t := huh.ThemeBase(!ui.Light())
 	f := &t.Focused
 	f.Base = f.Base.BorderForeground(colAccent)
 	f.Card = f.Base

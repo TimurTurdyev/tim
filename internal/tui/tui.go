@@ -7,6 +7,8 @@ import (
 
 	"charm.land/huh/v2"
 	"github.com/charmbracelet/x/term"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 var (
@@ -77,6 +79,7 @@ func run(field huh.Field) error {
 		return ErrNoTTY
 	}
 	defer func() { _ = tty.Close() }()
+	setStyles(ui.Light())
 	form := huh.NewForm(huh.NewGroup(field)).WithInput(tty).WithOutput(tty).
 		WithTheme(huh.ThemeFunc(timTheme)).WithKeyMap(ruKeys()).WithShowHelp(true)
 	if err := form.Run(); err != nil {

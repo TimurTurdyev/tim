@@ -9,23 +9,11 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Экранный режим tim: один каркас у всех экранов - верхняя строка с крошками, тело, строка клавиш.
 // Экраны лежат стопкой: esc возвращает на предыдущий, с первого - выходит.
-
-var (
-	styleTop     = lipgloss.NewStyle().Background(colBarBg)
-	styleBrand   = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true)
-	styleCrumb   = lipgloss.NewStyle().Foreground(colText).Background(colBarBg)
-	styleStatus  = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
-	styleKeyBar  = lipgloss.NewStyle().Background(colBarBg)
-	styleKeyCap  = lipgloss.NewStyle().Background(colKeyBg).Foreground(colInfo)
-	styleKeyDesc = lipgloss.NewStyle().Foreground(colDim).Background(colBarBg)
-	styleToastOK = lipgloss.NewStyle().Foreground(colOK).Bold(true)
-	styleToastWn = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
-	styleToastBd = lipgloss.NewStyle().Foreground(colBad).Bold(true)
-)
 
 // globalKeys: то, что одинаково на всех экранах - для справки.
 var globalKeys = []Key{{"esc", "назад, с первого - выход"}, {"?", "справка"}, {":", "любая команда tim"}, {"q", "выход"}}
@@ -118,6 +106,7 @@ type App struct {
 	Dir     string // куда перейти после выхода
 	after   func()
 	quit    bool
+	askedBg bool // фон терминала уже спрошен
 }
 
 // Run открывает экран на весь терминал и держит, пока пользователь не выйдет.
@@ -132,6 +121,7 @@ func Run(root Screen, opts Options) (dir string, err error) {
 	}
 	defer func() { _ = tty.Close() }()
 	app := &App{opts: opts, stack: []frame{{s: root, id: 1}}, lastID: 1, width: 100, height: 30}
+	setStyles(ui.Light())
 	m, err := tea.NewProgram(app, tea.WithInput(tty), tea.WithOutput(tty)).Run()
 	if err != nil {
 		return "", err
@@ -225,6 +215,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
+		// Размер приходит сразу после старта - тогда же один раз спрашивается фон терминала.
+		if !a.askedBg {
+			a.askedBg = true
+			return a, tea.RequestBackgroundColor
+		}
+		return a, nil
+	case tea.BackgroundColorMsg:
+		// Строки экрана уже покрашены через ui прежней палитрой - экран собирается заново.
+		if useBackground(msg) {
+			return a, a.init(a.top())
+		}
 		return a, nil
 	case toastMsg:
 		if msg.id == a.toast.id {

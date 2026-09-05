@@ -5,19 +5,12 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Наложения поверх экрана: подтверждение, справка, командная строка.
-
-var (
-	styleBtnDanger = lipgloss.NewStyle().Background(colBad).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Padding(0, 2)
-	styleBtnMain   = lipgloss.NewStyle().Background(colAccent).Foreground(colOnAcc).Bold(true).Padding(0, 2)
-	styleBtnQuiet  = lipgloss.NewStyle().Background(colKeyBg).Foreground(colText).Padding(0, 2)
-)
 
 // Dialog: окно подтверждения. Что именно, какой командой, можно ли вернуть - и одно действие.
 type Dialog struct {
