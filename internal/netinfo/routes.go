@@ -3,6 +3,7 @@ package netinfo
 import (
 	"net/netip"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -57,12 +58,16 @@ func ParseRoutes(out string) []TableRoute {
 // normalizeDest: netstat сокращает сети до 10.8/16, такие дополняются нулями.
 func normalizeDest(s string) (netip.Prefix, bool) {
 	addr, bits, hasBits := strings.Cut(s, "/")
-	if !hasBits {
-		return ParseDest(addr)
-	}
 	parts := strings.Split(addr, ".")
 	if len(parts) > 4 {
 		return netip.Prefix{}, false
+	}
+	if !hasBits {
+		if len(parts) == 4 {
+			return ParseDest(addr)
+		}
+		// Маску по классу сети netstat не пишет: 203.0.113 - это /24, 172.16 - /16, 127 - /8.
+		bits = strconv.Itoa(8 * len(parts))
 	}
 	for len(parts) < 4 {
 		parts = append(parts, "0")
