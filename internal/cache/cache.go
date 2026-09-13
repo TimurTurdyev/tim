@@ -35,11 +35,19 @@ func Path(dir, key string) string {
 	return filepath.Join(dir, safe+".json")
 }
 
-// Load читает запись; ok=false - файла нет, он битый или пустой.
+// Load читает запись; ok=false - файла нет, он битый, пустой или в старом формате без value:
+// такой надо получить заново, а не считать свежим пустым ответом.
 func Load[T any](path string) (Entry[T], bool) {
-	var e Entry[T]
+	var raw struct {
+		Fetched time.Time       `json:"fetched"`
+		Value   json.RawMessage `json:"value"`
+	}
 	data, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(data, &e) != nil || e.Fetched.IsZero() {
+	if err != nil || json.Unmarshal(data, &raw) != nil || raw.Fetched.IsZero() || len(raw.Value) == 0 {
+		return Entry[T]{}, false
+	}
+	e := Entry[T]{Fetched: raw.Fetched}
+	if json.Unmarshal(raw.Value, &e.Value) != nil {
 		return Entry[T]{}, false
 	}
 	return e, true
