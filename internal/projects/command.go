@@ -83,13 +83,20 @@ func projCommand(env *app.Env) *cobra.Command {
 		Use:   "here",
 		Short: "Имя проекта для текущей папки",
 		RunE:  func(cmd *cobra.Command, args []string) error { return printHere(env.Cfg) },
-	}, scanCmd, add, &cobra.Command{
-		Use:               "rm <имя>",
+	}, scanCmd, add, removeCommand(env))
+	return c
+}
+
+func removeCommand(env *app.Env) *cobra.Command {
+	var yes bool
+	c := &cobra.Command{
+		Use:               "rm <имя> [-y]",
 		Short:             "Убрать проект из реестра (папка остаётся)",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return removeProject(env, args[0]) },
-	})
+		RunE:              func(cmd *cobra.Command, args []string) error { return removeProject(env, args[0], yes) },
+	}
+	c.Flags().BoolVarP(&yes, "yes", "y", false, "не спрашивать подтверждения")
 	return c
 }
 
