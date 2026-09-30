@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -47,6 +48,8 @@ func guard(env *app.Env, every time.Duration) error {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
+	exe, _ := os.Executable()
+	built, _ := os.Stat(exe)
 	lastErr := ""
 	for {
 		check(env, &st)
@@ -63,7 +66,45 @@ func guard(env *app.Env, every time.Duration) error {
 			return nil
 		case <-ticker.C:
 		}
+		if now, ok := replaced(exe, built); ok {
+			LogLine("tim обновился - перезапускаюсь на новой версии")
+			if err := runner.Replace(exe, os.Args[1:]...); err != nil {
+				LogLine("перезапуск не удался, работаю на прежней версии: %v", err)
+				built = now
+			}
+		}
 	}
+}
+
+// replaced: файл tim заменён новым (make install, self-update, пакетный менеджер) и уже дописан -
+// не моложе двух секунд, чтобы не запустить файл посреди копирования.
+func replaced(exe string, built os.FileInfo) (os.FileInfo, bool) {
+	now, err := os.Stat(exe)
+	if err != nil || built == nil || !now.Mode().IsRegular() || now.Mode().Perm()&0o111 == 0 {
+		return nil, false
+	}
+	changed := !os.SameFile(built, now) || !now.ModTime().Equal(built.ModTime())
+	return now, changed && time.Since(now.ModTime()) > 2*time.Second
+}
+
+// GuardAfterUpdate: tim обновлён - страж сам перейдёт на новый файл за один цикл; ждём его отчёт,
+// чтобы сказать, что он уже на новой версии.
+func GuardAfterUpdate(since time.Time) {
+	if !GuardRunning() {
+		return
+	}
+	for range 30 {
+		time.Sleep(500 * time.Millisecond)
+		if st, ok := GuardStatus(); ok && st.Started.After(since) {
+			ui.Println(ui.Dim("страж перешёл на новую версию"))
+			return
+		}
+	}
+	restart := "sudo launchctl kickstart -k system/" + GuardLabel
+	if runtime.GOOS == "linux" {
+		restart = "sudo systemctl restart " + GuardUnit
+	}
+	ui.Println(ui.Warn("страж ещё на прежней версии") + ui.Dim("  перезапустить: "+restart))
 }
 
 // check: цели перечитываются из конфига каждый цикл - их могли добавить, пока страж работает.
@@ -137,6 +178,59 @@ func guardJob() (schedule.Job, error) {
 	env := map[string]string{"TIM_CONFIG": config.Path(), "TIM_NO_INPUT": "1",
 		"PATH": "/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/opt/homebrew/bin"}
 	return schedule.Job{Label: GuardLabel, Args: []string{self, "route", "watch"}, Daemon: true, Env: env, Log: GuardLog()}, nil
+}
+
+// offerGuard: появилась первая цель обхода - самое время поставить стража, иначе маршруты пропадут
+// после перезагрузки и смены сети. Отказались - больше не спрашиваем: подсказка есть в tim direct.
+func offerGuard(env *app.Env, before int) {
+	if before > 0 || len(env.Cfg.Hosts) == 0 || GuardInstalled() {
+		return
+	}
+	question := "маршруты пропадут после перезагрузки и смены сети - поставить стража, чтобы чинил сам?"
+	if runner.NoInput || !stdinTerminal() {
+		ui.Println(ui.Dim("маршруты пропадут после перезагрузки и смены сети; чинить сам будет страж: sudo tim route install"))
+		return
+	}
+	if !runner.ConfirmDefault(question, true) {
+		ui.Println(ui.Dim("поставить потом: sudo tim route install"))
+		return
+	}
+	if err := guardService("install"); err != nil {
+		ui.Println(ui.Warn("страж не поставлен: " + err.Error()))
+	}
+}
+
+// offerUnguard: целей не осталось - стражу нечего держать.
+func offerUnguard(env *app.Env) {
+	if len(env.Cfg.Hosts) > 0 || !GuardInstalled() {
+		return
+	}
+	if runner.NoInput || !stdinTerminal() {
+		ui.Println(ui.Dim("целей обхода не осталось; снять стража: sudo tim route uninstall"))
+		return
+	}
+	if !runner.ConfirmDefault("целей обхода не осталось - снять стража?", true) {
+		return
+	}
+	if err := guardService("uninstall"); err != nil {
+		ui.Println(ui.Warn("страж не снят: " + err.Error()))
+	}
+}
+
+// guardService: tim route install или uninstall из другой команды. Под root - сразу, иначе отдельным
+// процессом через sudo: asRoot повторил бы через sudo всю текущую команду.
+func guardService(action string) error {
+	if os.Geteuid() == 0 {
+		if action == "install" {
+			return installGuard()
+		}
+		return uninstallGuard()
+	}
+	self, err := schedule.SelfPath()
+	if err != nil {
+		return err
+	}
+	return runner.Exec("sudo", "env", "TIM_CONFIG="+config.Path(), self, "route", action)
 }
 
 // asRoot: команда нужна под root. Забыли sudo - спрашиваем и повторяем ту же команду через sudo,

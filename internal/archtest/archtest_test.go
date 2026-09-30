@@ -28,6 +28,7 @@ var (
 		"motd":    {"bypass", "machine", "projects", "serve"},
 		"bypass":  {"machine"}, // приложение мимо VPN: открытый экземпляр сначала закрывается
 		"servers": {"bypass"},  // ssh и туннели заводят маршрут мимо VPN до сервера
+		"shell":   {"bypass"},  // self-update ждёт, пока страж перейдёт на новую версию
 		"sites":   {"machine"}, // обход заодно говорит о забытых dev-серверах и прожорливых процессах
 	}
 	execAllowed = []string{"runner", "privileged"}

@@ -11,6 +11,7 @@ import (
 
 // addTargets: цели в конфиг и маршруты к ним; с owner домен заменяется сетями его владельца.
 func addTargets(env *app.Env, args []string, o addOptions) error {
+	before := len(env.Cfg.Hosts)
 	var dests []string
 	for _, a := range args {
 		targets, label, err := resolveTarget(a, o, len(args) == 1)
@@ -35,7 +36,11 @@ func addTargets(env *app.Env, args []string, o addOptions) error {
 	if o.noUp {
 		return nil
 	}
-	return Up(env.Cfg, dests)
+	if err := Up(env.Cfg, dests); err != nil {
+		return err
+	}
+	offerGuard(env, before)
+	return nil
 }
 
 // resolveTarget: цель из аргумента; домен с owner - сети владельца, и пометкой становится сам домен.
@@ -86,7 +91,11 @@ func removeTargets(env *app.Env, args []string) error {
 	if err := env.Save(); err != nil {
 		return err
 	}
-	return Down(dests)
+	if err := Down(dests); err != nil {
+		return err
+	}
+	offerUnguard(env)
+	return nil
 }
 
 func up(env *app.Env, args []string) error {

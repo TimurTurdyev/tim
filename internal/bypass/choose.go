@@ -18,6 +18,7 @@ import (
 
 // chooseNets: посмотреть, выбрать, завести маршруты. label - пометка целей, обычно сайт, ради которого всё.
 func chooseNets(env *app.Env, seconds int, label string, o addOptions) error {
+	before := len(env.Cfg.Hosts)
 	seen, err := WatchTunnel(seconds, nil, "смотрю в туннель: открой сайт или программу, которая не работает")
 	if err != nil {
 		return err
@@ -59,7 +60,11 @@ func chooseNets(env *app.Env, seconds int, label string, o addOptions) error {
 	if o.noUp || runner.DryRun && len(dests) == 0 {
 		return nil
 	}
-	return Up(env.Cfg, dests)
+	if err := Up(env.Cfg, dests); err != nil {
+		return err
+	}
+	offerGuard(env, before)
+	return nil
 }
 
 // printGroups печатает сети, куда ходили через туннель; общие сети заранее не отмечены.

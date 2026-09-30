@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/minio/selfupdate"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/release"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -56,6 +58,7 @@ func selfUpdate(current string, check bool) error {
 	if err != nil {
 		return err
 	}
+	updated := time.Now()
 	if err := selfupdate.Apply(bytes.NewReader(bin), selfupdate.Options{TargetPath: exe}); err != nil {
 		if rerr := selfupdate.RollbackError(err); rerr != nil {
 			return ui.Errorf("замена не удалась и откат тоже: %v; старый файл: %s.old", rerr, exe)
@@ -63,5 +66,6 @@ func selfUpdate(current string, check bool) error {
 		return ui.Errorf("замена не удалась, оставлена прежняя версия: %v", err)
 	}
 	ui.Println(ui.Label("обновлено до ") + rel.Tag + ui.Dim("  "+exe))
+	bypass.GuardAfterUpdate(updated)
 	return nil
 }

@@ -42,6 +42,7 @@ func unblock(env *app.Env, site string, o unblockOptions) error {
 	if len(netinfo.Tunnels()) == 0 {
 		return ui.Errorf("туннеля нет: VPN выключен, сайт и так идёт напрямую")
 	}
+	before := len(env.Cfg.Hosts)
 	u := &unblocking{env: env, host: host, known: map[string]bool{}}
 	for _, h := range env.Cfg.Hosts {
 		u.known[h.Addr] = true
@@ -75,6 +76,7 @@ func unblock(env *app.Env, site string, o unblockOptions) error {
 		}
 	}
 	u.report(url, cdn)
+	offerGuard(env, before)
 	return nil
 }
 
