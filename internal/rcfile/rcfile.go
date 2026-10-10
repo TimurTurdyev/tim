@@ -89,7 +89,7 @@ func Script(shell string, sh config.Shell) (string, error) {
 	}
 	switch {
 	case sh.Motd:
-		b.WriteString("command tim motd\n")
+		b.WriteString("command tim status\n")
 		if sh.CdInfoOn() {
 			b.WriteString("_TIM_PROJECT=$(command tim hook cd --quiet)\n")
 		}

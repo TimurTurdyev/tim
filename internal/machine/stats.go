@@ -53,7 +53,7 @@ func installStats() error {
 	return nil
 }
 
-// localSample: замер этой машины теми же источниками, что и motd.
+// localSample: замер этой машины теми же источниками, что и status.
 func localSample() stats.Sample {
 	s := stats.Sample{At: time.Now()}
 	par.All(

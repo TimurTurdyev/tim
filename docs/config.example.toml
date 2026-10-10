@@ -5,7 +5,7 @@
 dev = "/Users/me/Dev"   # корень проектов: относительные path ниже считаются от него
 wrapper = "app"         # клон лежит в подпапке папки проекта: shop/app; пусто - сама папка
 editor = "code"         # чем открывать проект; пусто - $VISUAL, на Linux ещё $EDITOR, иначе Finder
-motd = ["system", "project", "repos"]   # разделы tim motd по умолчанию: system, project, net, ports,
+motd = ["system", "project", "repos"]   # разделы tim status по умолчанию: system, project, net, ports,
                                         # services, repos, procs, versions
 
 [shell]                 # что добавляет tim init zsh

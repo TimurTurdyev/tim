@@ -17,7 +17,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// HogLines: процессы, которые больше часа едят хотя бы целое ядро, строками для check и motd.
+// HogLines: процессы, которые больше часа едят хотя бы целое ядро, строками для check и status.
 func HogLines(indent string) []string {
 	list, err := procs.All()
 	if err != nil {

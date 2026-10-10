@@ -50,7 +50,7 @@ var examples = map[string]string{
 	"tim vpn":         "  tim vpn                    # туннель, страж и цели одним экраном",
 	"tim tunnel":      "  tim tunnel up prod          # SOCKS на 127.0.0.1:1080\n  tim tunnel all prod         # весь трафик через ssh\n  tim tunnel port 15432:5432 prod\n  tim tunnel db shop\n  tim tunnel expose 8000",
 	"tim db":          "  tim db                     # клиент по .env проекта\n  tim db shop dump\n  tim db shop --via prod",
-	"tim motd":        "  tim motd\n  tim motd repos versions\n  tim motd --all --time",
+	"tim status":      "  tim status\n  tim status repos versions\n  tim status --all --time",
 	"tim site":        "  tim site example.com\n  tim site https://shop.example.com --json",
 	"tim mail":        "  tim mail example.com\n  tim mail example.com --selector s2024",
 	"tim http":        "  tim http example.com\n  tim http -L http://example.com",
@@ -100,7 +100,7 @@ var overviewSections = []struct {
 		{"tim og <url>", "превью ссылки в мессенджерах"},
 	}},
 	{"Машина", [][2]string{
-		{"tim motd", "сводка: машина, проект, сеть"},
+		{"tim status", "сводка: машина, проект, сеть"},
 		{"tim top", "кто съел память и CPU"},
 		{"tim disk", "куда ушло место и что можно убрать"},
 		{"tim hw", "железо и загрузка: процессор, видеокарта, память"},

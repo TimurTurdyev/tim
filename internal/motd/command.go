@@ -12,8 +12,9 @@ import (
 func Commands(env *app.Env) []*cobra.Command {
 	var all, timing bool
 	c := &cobra.Command{
-		Use:       "motd [раздел...] [--all] [--time]",
-		Short:     "Сводка: проект, сеть, порты, сервисы, репозитории, процессы, версии",
+		Use:       "status [раздел...] [--all] [--time]",
+		Aliases:   []string{"motd"},
+		Short:     "Сводка: машина, проект, сеть, порты, сервисы, репозитории, процессы, версии",
 		Long:      "Разделы: system, project, net, ports, services, repos, procs, versions. По умолчанию ключ motd в конфиге или system project net ports services.",
 		ValidArgs: names(),
 		RunE:      func(cmd *cobra.Command, args []string) error { return show(env.Cfg, args, all, timing) },
