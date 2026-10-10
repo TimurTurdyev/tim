@@ -1,0 +1,73 @@
+# Пример ~/.config/tim/config.toml со всеми разделами. Адреса и имена выдуманы.
+# Обычно файл руками не пишут: его заводит tim config init, а дополняют tim proj, tim sync и tim direct.
+# tim переписывает конфиг сам, комментарии при этом пропадают; прежняя версия остаётся в config.toml.bak.
+
+dev = "/Users/me/Dev"   # корень проектов: относительные path ниже считаются от него
+wrapper = "app"         # клон лежит в подпапке папки проекта: shop/app; пусто - сама папка
+editor = "code"         # чем открывать проект; пусто - $VISUAL, на Linux ещё $EDITOR, иначе Finder
+motd = ["system", "project", "repos"]   # разделы tim motd по умолчанию: system, project, net, ports,
+                                        # services, repos, procs, versions
+
+[shell]                 # что добавляет tim init zsh
+  motd = true           # сводка при открытии терминала
+  cd_info = true        # проект и ветка при входе в папку проекта
+
+[shell.aliases]
+  gs = "git status -sb"
+
+[groups]                # tim serve @shop поднимает все проекты группы
+  shop = ["shop", "shop-admin"]
+
+[tunnel]                # tim tunnel без аргументов
+  host = "prod"         # сервер: алиас из ~/.ssh/config
+  port = 1080           # порт SOCKS на 127.0.0.1
+
+[[task]]                # tim each deps - во всех проектах с файлом marker
+  name = "deps"
+  marker = "composer.json"
+  run = "composer outdated --direct"
+
+[[task]]                # с версией: tim each kit покажет, где версия старше последней
+  name = "kit"
+  marker = "package.json"
+  run = "npm install my-kit@latest"
+  version_key = "version"                 # ключ в marker, где записана версия
+  version_cmd = "npm view my-kit version" # команда, которая печатает последнюю версию
+  scan = true           # искать проекты по всему dev, а не только в реестре
+
+[[template]]            # tim new site --stack static
+  name = "static"
+  steps = ["mkdir -p {dir}", "cd {dir} && git init"]   # {dir}, {name}, {parent} подставляются
+  port = true           # выдать проекту свой порт
+
+[[project]]
+  name = "shop"
+  path = "shop/app"     # от dev; можно и абсолютный путь
+  port = 8010           # tim serve; без него tim подберёт свободный и запишет сам
+  db = "pgsql:shop"     # драйвер и база, сверяется с DB_DATABASE в .env
+  url = "https://shop.example.com"   # боевой адрес: tim check, tim cert, tim domain
+  ssh = "prod"          # алиас сервера из ~/.ssh/config
+  remote = "/srv/shop/current/public"   # корень сайта на сервере: по нему tim sync --remote находит домен в nginx
+  deploy = "/srv/shop"  # каталог проекта на сервере: tim env diff shop --server сверяет его .env
+
+[[project]]
+  name = "legacy"
+  path = "legacy"
+  serve = "php -S 0.0.0.0:9000 -t www"   # своя команда запуска, если догадка tim не подошла
+
+# Цели обхода VPN. Заводятся командой tim direct, убираются tim direct rm. Страж маршрутов
+# (sudo tim route install) перечитывает их каждые 10 секунд и держит маршруты живыми.
+[[host]]
+  addr = "203.0.113.5"        # адрес: маршрут на него одного
+  label = "prod"              # пометка: tim direct rm prod уберёт все цели с ней
+
+[[host]]
+  addr = "198.51.100.0/24"    # подсеть
+  label = "office"
+
+[[host]]
+  addr = "git.example.com"    # домен: все его адреса из DNS на момент проверки
+
+[[host]]
+  addr = "as:64500"           # все сети компании по номеру AS; список из RIPE, обновляется раз в сутки
+  label = "example.com"
