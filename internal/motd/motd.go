@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -25,6 +26,9 @@ var sections = []section{
 }
 
 var defaultSections = []string{"system", "project", "net", "ports", "services"}
+
+// artGap: отступ сводки от маскота.
+const artGap = "   "
 
 // section: раздел сводки и сколько его ждать.
 type section struct {
@@ -55,25 +59,63 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 		}
 	}
 	g.Wait()
+	var out []string
 	for i, s := range sections {
 		if !chosen[s.name] {
 			continue
 		}
-		for _, l := range results[i].lines {
-			ui.Println(l)
-		}
+		out = append(out, results[i].lines...)
 		if timing {
 			note := fmt.Sprintf("%s %d мс", s.name, results[i].took.Milliseconds())
 			if results[i].late {
 				note += ", не успел"
 			}
-			ui.Println(ui.Dim("  " + note))
+			out = append(out, ui.Dim("  "+note))
 		}
 	}
 	if timing {
-		ui.Println(ui.Dim(fmt.Sprintf("всего %d мс", time.Since(start).Milliseconds())))
+		out = append(out, ui.Dim(fmt.Sprintf("всего %d мс", time.Since(start).Milliseconds())))
+	}
+	// Рядом с одной-двумя строками шесть строк картинки лишние.
+	if len(out) >= 3 {
+		out = withArt(out)
+	}
+	for _, l := range out {
+		ui.Println(l)
 	}
 	return nil
+}
+
+// withArt: маскот слева от сводки, если терминал цветной и вмещает обе колонки; иначе строки как есть.
+func withArt(lines []string) []string {
+	on, depth := ui.Colors()
+	if !on {
+		return lines
+	}
+	art := brand.Mascot(brand.Calm, depth)
+	widest := 0
+	for _, l := range lines {
+		widest = max(widest, ui.Width(l))
+	}
+	if len(art) == 0 || ui.Cols() < brand.MascotWidth+len(artGap)+widest {
+		return lines
+	}
+	// Верхняя строка картинки пустая - место для "z" во сне; у короткой сводки без неё куб вровень с текстом.
+	if len(lines) < len(art) {
+		art = art[1:]
+	}
+	out := make([]string, max(len(art), len(lines)))
+	for i := range out {
+		left := strings.Repeat(" ", brand.MascotWidth)
+		if i < len(art) {
+			left = art[i]
+		}
+		out[i] = left
+		if i < len(lines) {
+			out[i] += artGap + lines[i]
+		}
+	}
+	return out
 }
 
 // choose: разделы из аргументов, а без них - ключ motd конфига или разделы по умолчанию.

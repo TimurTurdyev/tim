@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
@@ -110,6 +111,19 @@ func Title(s string) string { return paint(s, "1;", brand.Teal, "36") }
 
 // Colors: цвета включены и сколько их; для картинок вроде маскота.
 func Colors() (bool, brand.Depth) { return enabled.Load(), depth }
+
+// Cols: ширина терминала, куда идёт вывод; 0 - не терминал: труба или захват экраном.
+func Cols() int {
+	f, ok := writer().(*os.File)
+	if !ok {
+		return 0
+	}
+	w, _, err := term.GetSize(f.Fd())
+	if err != nil {
+		return 0
+	}
+	return w
+}
 
 func Printf(format string, a ...any) { _, _ = fmt.Fprintf(writer(), format, a...) }
 func Println(a ...any)               { _, _ = fmt.Fprintln(writer(), a...) }
