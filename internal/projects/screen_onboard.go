@@ -28,7 +28,7 @@ func OnboardScreen(env *app.Env, next func() tui.Screen) tui.Screen {
 		Home:  next,
 	}
 	if on, depth := ui.Colors(); on {
-		o.Art = brand.Raccoon(brand.Calm, depth)
+		o.Art = brand.Mascot(brand.Calm, depth)
 	}
 	return tui.NewOnboard(o)
 }
