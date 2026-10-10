@@ -235,9 +235,11 @@ func (h *home) View(width, height int) string {
 		}
 		right := append([]string{styleHead.Render("РАЗДЕЛЫ")}, secs...)
 		rows := Beside(left, 52, right, width)
-		for i, r := range rows {
+		// Строки рядом с картинкой собираются сразу уже: обрезка готовой строки ставила "~" на хвост из пробелов.
+		narrow := Beside(left, 52, right, width-14)
+		for i := range rows {
 			if i+len(head) < len(art) {
-				rows[i] = ui.Fit(r, width-14) + art[i+len(head)]
+				rows[i] = narrow[i] + art[i+len(head)]
 			}
 		}
 		out = append(out, rows...)
