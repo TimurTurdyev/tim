@@ -40,6 +40,9 @@ const usageTemplate = `{{h "Использование:"}}{{if .Runnable}}
 {{dim (print "Подробнее о команде: " .CommandPath " <команда> --help")}}{{end}}
 `
 
+// helpOnce: русская справка настраивается один раз за запуск.
+var helpOnce sync.Once
+
 var examples = map[string]string{
 	"tim go":          "  tim go                     # выбор проекта из реестра и переход\n  tim go shop .              # в папку над клоном",
 	"tim proj":        "  tim proj list clients\n  tim proj scan --add\n  tim proj add . --name shop --url https://shop.example.com",
@@ -152,7 +155,10 @@ func colorExamples(s string) string {
 }
 
 // applyHelp: шаблон, русские подписи справочных флагов и примеры; вызывается после всех init().
-func applyHelp() {
+// Один раз за запуск: экран зовёт её перед каждой справкой изнутри.
+func applyHelp() { helpOnce.Do(setupHelp) }
+
+func setupHelp() {
 	cobra.AddTemplateFunc("h", ui.Info)
 	cobra.AddTemplateFunc("name", ui.Label)
 	cobra.AddTemplateFunc("dim", ui.Dim)

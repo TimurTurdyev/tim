@@ -77,7 +77,12 @@ func init() {
 	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
 	root.CompletionOptions.HiddenDefaultCmd = true
 	env.Version = resolveVersion()
-	screens = home.New(env, root, home.Options{Examples: examples, Overview: overview, Translate: translateError})
+	screens = home.New(env, root, home.Options{Examples: examples, Overview: overview, Translate: translateError,
+		Utils: utilCmds, Prepare: func(args []string) {
+			if needsHelp(args) {
+				applyHelp()
+			}
+		}})
 	// В терминале tim без аргументов - главный экран; в трубе и скриптах - заставка.
 	root.RunE = func(cmd *cobra.Command, args []string) error { return screens.Run() }
 	runner.ConfirmFunc = func(q string, def bool) (bool, bool) {

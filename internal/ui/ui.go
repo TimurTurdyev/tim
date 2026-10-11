@@ -125,6 +125,13 @@ func Cols() int {
 	return w
 }
 
+// Writer: вывод ui для чужого кода, например справки cobra; при захвате экраном пишет в захват.
+func Writer() io.Writer { return proxy{} }
+
+type proxy struct{}
+
+func (proxy) Write(p []byte) (int, error) { return writer().Write(p) }
+
 func Printf(format string, a ...any) { _, _ = fmt.Fprintf(writer(), format, a...) }
 func Println(a ...any)               { _, _ = fmt.Fprintln(writer(), a...) }
 

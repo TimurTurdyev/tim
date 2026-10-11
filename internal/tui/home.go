@@ -90,7 +90,7 @@ func (h *home) Keys() []Key {
 	if h.Typing() {
 		return []Key{{symUpDown, "выбор"}, {"enter", "открыть"}, {"esc", "очистить"}}
 	}
-	return []Key{{symUpDown, "выбор"}, {"enter", "открыть"}, {"буква", "раздел"}, {":", "команда"}, {"?", "клавиши"}, {"esc", "выход"}}
+	return []Key{{symUpDown, "выбор"}, {"enter", "открыть"}, {"буква enter", "раздел"}, {":", "команда"}, {"?", "клавиши"}, {"esc", "выход"}}
 }
 
 func (h *home) refill() {
@@ -181,19 +181,11 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 				return app.Do(h.data.WarnOpen())
 			}
 			return nil
-		case "r", "к":
-			if h.input.Value() == "" {
-				return func() tea.Msg { return homeDataMsg(h.opts.Load()) }
-			}
+		case "ctrl+r":
+			return func() tea.Msg { return homeDataMsg(h.opts.Load()) }
 		}
-		// Буква раздела работает, пока строка поиска пуста.
-		if h.input.Value() == "" && len(k) == 1 {
-			for _, s := range h.data.Sections {
-				if s.Key == k && s.Open != nil {
-					return app.Do(s.Open())
-				}
-			}
-		}
+		// Буквы идут в поиск, а не открывают раздел сразу: иначе не найти ssh или проект на s.
+		// Буква раздела в поиске ставит раздел первым - он открывается по enter.
 	}
 	var cmd tea.Cmd
 	before := h.input.Value()

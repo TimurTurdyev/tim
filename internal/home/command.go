@@ -27,6 +27,8 @@ type Home struct {
 	examples  map[string]string
 	overview  func()
 	translate func(string) string
+	prepare   func(args []string)
+	utils     []string
 	entries   func() []tui.CommandEntry
 }
 
@@ -35,11 +37,14 @@ type Options struct {
 	Examples  map[string]string   // примеры из справки - тоже подсказки для ":"
 	Overview  func()              // заставка, когда экрана открыть негде
 	Translate func(string) string // ошибки cobra по-русски
+	Prepare   func(args []string) // перед командой из экрана: например, русская справка
+	Utils     []string            // мелкие утилиты для раздела "Утилиты"
 }
 
 // New связывает экраны с командами: окружение получает запуск команд из экрана и главный экран.
 func New(env *app.Env, root *cobra.Command, o Options) *Home {
-	h := &Home{env: env, root: root, examples: o.Examples, overview: o.Overview, translate: o.Translate}
+	h := &Home{env: env, root: root, examples: o.Examples, overview: o.Overview, translate: o.Translate,
+		prepare: o.Prepare, utils: o.Utils}
 	// Дерево команд не меняется после запуска: подсказки собираются один раз, а не на каждую букву.
 	h.entries = sync.OnceValue(h.collectCommands)
 	env.Result, env.After, env.Open, env.Home = h.result, h.after, h.open, h.screen
@@ -111,11 +116,19 @@ func (h *Home) inside(args []string) (string, error) {
 	runner.NoInput, tui.Disabled = true, true
 	defer func() { runner.NoInput, tui.Disabled = prevIn, prevDis }()
 	h.resetFlags(args)
+	if h.prepare != nil {
+		h.prepare(args)
+	}
 	var err error
 	out := ui.Capture(func() {
+		// Справку и ошибки cobra пишет сама, мимо ui: без этого они ложатся поверх экрана.
+		h.root.SetOut(ui.Writer())
+		h.root.SetErr(ui.Writer())
 		h.root.SetArgs(args)
 		err = h.root.Execute()
 	})
+	h.root.SetOut(nil)
+	h.root.SetErr(nil)
 	h.root.SetArgs(nil)
 	return out, err
 }
@@ -174,10 +187,40 @@ func (h *Home) collectCommands() []tui.CommandEntry {
 			}
 			if l != "" && !seen[l] {
 				seen[l] = true
-				out = append(out, tui.CommandEntry{Line: l, Desc: desc})
+				out = append(out, tui.CommandEntry{Line: l, Desc: desc, Template: h.hasSample(l)})
 			}
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
 	return out
+}
+
+// hasSample: в примере есть значения для образца - проект shop, домен example.com, адрес. Такой
+// пример - шаблон: его подставляют и правят, а не выполняют как есть. Флаги без значений не в счёт.
+func (h *Home) hasSample(line string) bool {
+	c, rest, err := h.root.Find(strings.Fields(line))
+	if err != nil || c == nil {
+		return true
+	}
+	for i := 0; i < len(rest); i++ {
+		arg := rest[i]
+		if !strings.HasPrefix(arg, "-") {
+			return true
+		}
+		name := strings.TrimLeft(arg, "-")
+		if strings.Contains(name, "=") {
+			continue
+		}
+		f := c.Flags().Lookup(name)
+		if f == nil {
+			f = c.InheritedFlags().Lookup(name)
+		}
+		if f == nil && len(name) == 1 {
+			f = c.Flags().ShorthandLookup(name)
+		}
+		if f != nil && f.NoOptDefVal == "" {
+			i++ // значение флага
+		}
+	}
+	return false
 }

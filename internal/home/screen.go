@@ -29,6 +29,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
+// layoutKeys: буквы разделов в русской раскладке.
+var layoutKeys = map[string]string{"з": "p", "в": "d", "ь": "m", "т": "n", "ы": "s", "ц": "w", "г": "u"}
+
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
 var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true, "direct": true,
 	"disk": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
@@ -121,23 +124,28 @@ func (h *Home) load() tui.HomeData {
 	host, _, _ = strings.Cut(host, ".")
 	d := tui.HomeData{Status: host + " \u00b7 " + time.Now().Format("15:04")}
 	d.Recent = h.recent()
-	push := func(screen func() tui.Screen) func() tui.Action {
-		return func() tui.Action { return tui.Action{Push: screen()} }
-	}
-	d.Sections = []tui.Section{
-		{Key: "p", Title: "Проекты", Hint: "go, serve, db, check", Open: push(func() tui.Screen { return projects.Screen(h.env, "") })},
-		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
-		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(machine.HWScreen)},
-		{Key: "n", Title: "Сеть и VPN", Hint: "обход, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
-		{Key: "s", Title: "Dev-серверы", Hint: "фоновые, журналы", Open: push(func() tui.Screen { return serve.Screen(h.env) })},
-		{Key: "w", Title: "Сайты", Hint: "проверка, домен, почта", Open: push(func() tui.Screen { return sites.CheckScreen(h.env) })},
-		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: func() tui.Action { return h.result([]string{"help", "utils"}) }},
-	}
+	d.Sections = h.sections()
 	d.Tiles, d.Warning, d.WarnOpen = h.tiles()
 	if on, depth := ui.Colors(); on {
 		d.Art = brand.Mascot(brand.Calm, depth)
 	}
 	return d
+}
+
+// sections: разделы главного экрана; по ним же ищет строка поиска.
+func (h *Home) sections() []tui.Section {
+	push := func(screen func() tui.Screen) func() tui.Action {
+		return func() tui.Action { return tui.Action{Push: screen()} }
+	}
+	return []tui.Section{
+		{Key: "p", Title: "Проекты", Hint: "go, serve, db, check", Open: push(func() tui.Screen { return projects.Screen(h.env, "") })},
+		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(machine.HWScreen)},
+		{Key: "n", Title: "Сеть и VPN", Hint: "обход, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
+		{Key: "s", Title: "Dev-серверы", Hint: "фоновые, журналы", Open: push(func() tui.Screen { return serve.Screen(h.env) })},
+		{Key: "w", Title: "Сайты", Hint: "ответ, сертификат, почта, домен", Open: push(func() tui.Screen { return sites.SitesScreen(h.env) })},
+		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: push(h.utilsScreen)},
+	}
 }
 
 // tiles: плитки состояния и самое важное предупреждение - что открыть по нему.
@@ -237,11 +245,13 @@ func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
 
 // searchIndex: то, по чему ищет главный экран; собирается раз на экран, а не на каждую букву.
 type searchIndex struct {
-	cmds    []tui.CommandEntry
-	lines   []string // команда и её описание
-	names   []string
-	aliases []string
-	domains []string
+	cmds     []tui.CommandEntry
+	lines    []string // команда и её описание
+	names    []string
+	aliases  []string
+	domains  []string
+	sections []tui.Section
+	secLines []string // название раздела и подсказка
 }
 
 func (h *Home) newIndex() *searchIndex {
@@ -252,6 +262,10 @@ func (h *Home) newIndex() *searchIndex {
 	}
 	for _, p := range cfg.Projects {
 		ix.names = append(ix.names, p.Name)
+	}
+	ix.sections = h.sections()
+	for _, s := range ix.sections {
+		ix.secLines = append(ix.secLines, s.Title+" "+s.Hint)
 	}
 	return ix
 }
@@ -266,6 +280,15 @@ type hitGroup struct {
 func (g *hitGroup) add(hit tui.Hit, q string) {
 	g.hits = append(g.hits, hit)
 	g.exact = max(g.exact, exactness(q, hit.Title))
+}
+
+// sectionKey: запрос из одной буквы как клавиша раздела, с русской раскладкой.
+func sectionKey(q string) string {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if k, ok := layoutKeys[q]; ok {
+		return k
+	}
+	return q
 }
 
 func exactness(q, title string) int {
@@ -284,10 +307,16 @@ func exactness(q, title string) int {
 // search: команды, проекты, серверы и домены по запросу; внутри группы - самые похожие первыми.
 func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 	cfg := h.env.Cfg
-	groups := make([]hitGroup, 4)
+	groups := make([]hitGroup, 5)
 	for _, m := range fuzzy.FilterTop(q, ix.lines, 4) {
 		c := ix.cmds[m.Index]
-		groups[0].add(tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }}, q)
+		hit := tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }}
+		if c.Template {
+			// Пример с выдуманными значениями: enter подставляет его в ":" для правки.
+			hit.Note = ui.Dim("пример")
+			hit.Open = func() tui.Action { return tui.Action{Command: c.Line} }
+		}
+		groups[0].add(hit, q)
 	}
 	for _, m := range fuzzy.FilterTop(q, ix.names, 5) {
 		p := &cfg.Projects[m.Index]
@@ -301,9 +330,25 @@ func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 	}
 	for _, m := range fuzzy.FilterTop(q, ix.domains, 3) {
 		d := ix.domains[m.Index]
-		groups[3].add(tui.Hit{Kind: "сайты", Title: d, Hint: "что за сайт: адреса, сертификат, почта", Open: func() tui.Action {
-			return h.result([]string{"site", d})
+		groups[3].add(tui.Hit{Kind: "сайты", Title: d, Hint: "домен: имена, адреса, сертификат, почта", Open: func() tui.Action {
+			return h.runLine("domain " + d)
 		}}, q)
+	}
+	secHit := func(sec tui.Section) tui.Hit {
+		return tui.Hit{Kind: "разделы", Title: sec.Title, Hint: sec.Hint, Note: ui.Dim(sec.Key), Open: sec.Open}
+	}
+	byKey := ""
+	for _, sec := range ix.sections {
+		if sectionKey(q) == sec.Key {
+			byKey = sec.Key
+			groups[4].hits = append(groups[4].hits, secHit(sec))
+			groups[4].exact = 4 // буква раздела: раздел первым, enter его открывает
+		}
+	}
+	for _, m := range fuzzy.FilterTop(q, ix.secLines, 3) {
+		if sec := ix.sections[m.Index]; sec.Key != byKey {
+			groups[4].add(secHit(sec), q)
+		}
 	}
 	slices.SortStableFunc(groups, func(a, b hitGroup) int { return cmp.Compare(b.exact, a.exact) })
 	var out []tui.Hit
