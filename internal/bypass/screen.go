@@ -18,7 +18,7 @@ import (
 func Screen(env *app.Env) tui.Screen {
 	probe := false
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs:  []string{"Сеть", "VPN и обход"},
+		Crumbs:  []string{"Сеть и VPN"},
 		Command: func(*tui.BoardRow) string { return "tim vpn" },
 		Loading: "смотрю туннели и маршруты...",
 		Load:    func(bool) tui.BoardData { return screenData(env.Cfg, probe) },
@@ -41,10 +41,12 @@ func Screen(env *app.Env) tui.Screen {
 	})
 }
 
-// target: строка цели и сколько её адресов ушли в туннель.
+// target: строка цели и сколько её адресов ушли в туннель; ячейки собираются, когда известны ширины.
 type target struct {
-	row tui.BoardRow
-	bad int
+	row   tui.BoardRow
+	bad   int
+	count int
+	state string // пусто - всё мимо VPN
 }
 
 func screenData(cfg *config.Config, probe bool) tui.BoardData {
@@ -71,9 +73,22 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 	if ok < total {
 		summary += "   " + ui.Warn(fmt.Sprintf("\u25b2 %d через туннель", total-ok)) + ui.Dim("  f - починить")
 	}
-	d.Head = append(d.Head, summary, "",
-		ui.Dim(ui.Pad("ЦЕЛЬ", 26)+ui.Pad("ПОМЕТКА", 14)+ui.Pad("АДРЕСОВ", 8)+"СОСТОЯНИЕ"))
+	d.Head = append(d.Head, summary)
+	addrW, labelW, anyBad := len("ЦЕЛЬ"), len("ПОМЕТКА"), false
 	for _, t := range targets {
+		addrW = max(addrW, ui.Width(t.row.ID))
+		labelW = max(labelW, ui.Width(t.row.Sub))
+		anyBad = anyBad || t.state != ""
+	}
+	addrW, labelW = min(addrW, 28), min(labelW, 24)
+	// Состояние - только у отклонений: когда всё мимо VPN, столбец одинаковых строк не нужен.
+	head := ui.Pad("ЦЕЛЬ", addrW+2) + ui.Pad("ПОМЕТКА", labelW+2) + "АДРЕСОВ"
+	if anyBad {
+		head = ui.Pad(head, addrW+labelW+4+9) + "СОСТОЯНИЕ"
+	}
+	d.Columns = ui.Dim(head)
+	for _, t := range targets {
+		t.row.Cells = ui.Fit(t.row.ID, addrW) + "  " + ui.Fit(ui.Dim(t.row.Sub), labelW) + "  " + ui.Pad(strconv.Itoa(t.count), 9) + t.state
 		d.Rows = append(d.Rows, t.row)
 	}
 	return d
@@ -95,6 +110,9 @@ func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, p
 			t.bad++
 		}
 		line := ui.Pad(dest, 20) + state
+		if !bad && gw != "" {
+			line += ui.Dim(" через шлюз " + gw + " (" + phys.Device + ")")
+		}
 		if probe && !strings.Contains(dest, "/") {
 			if PortOpen(dest, "22") {
 				line += ui.Dim("  порт 22 отвечает")
@@ -112,14 +130,13 @@ func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, p
 	if t.bad > 0 {
 		t.row.Pane = append(t.row.Pane, ui.Dim("\u2192 f снимет протухшие маршруты и заведёт все цели заново, нужен sudo"))
 	}
-	state := ui.OK("\u25cf мимо VPN")
+	t.count = len(addrs)
 	switch {
 	case len(addrs) == 0:
-		state = ui.Bad("\u2715 нет адресов")
+		t.state = ui.Bad("\u2715 нет адресов")
 	case t.bad > 0:
-		state = ui.Warn("\u25b2 " + ui.Count(t.bad, "адрес", "адреса", "адресов") + " через туннель")
+		t.state = ui.Warn("\u25b2 " + ui.Count(t.bad, "адрес", "адреса", "адресов") + " через туннель")
 	}
-	t.row.Cells = ui.Fit(h.Addr, 25) + " " + ui.Fit(ui.Dim(h.Label), 13) + " " + ui.Pad(strconv.Itoa(len(addrs)), 8) + state
 	return t, len(addrs), fine
 }
 
