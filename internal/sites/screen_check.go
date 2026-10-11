@@ -47,7 +47,7 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 				}
 				return env.Result([]string{"check", row.ID})
 			}},
-			{Key: "e", Label: "только проблемы", Run: func(*tui.BoardRow) (string, error) {
+			{Key: "e", Label: "только проблемы", Free: true, Run: func(*tui.BoardRow) (string, error) {
 				mu.Lock()
 				only = !only
 				mu.Unlock()
@@ -79,11 +79,12 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 		d.Status += " \u00b7 всё в порядке"
 	}
 	cols := usedCols(rows)
-	head := ui.Pad("ПРОЕКТ", 20)
+	nameW := nameWidth(rows)
+	head := ui.Pad("ПРОЕКТ", nameW+1)
 	for _, col := range cols {
 		head += ui.Pad(strings.ToUpper(col.name), col.width)
 	}
-	d.Head = []string{ui.Dim(head)}
+	d.Columns = ui.Dim(head)
 	hidden := 0
 	for _, r := range rows {
 		if only && r.Level() < level.Warn {
@@ -94,21 +95,12 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 		if p, err := cfg.Pick(r.Name); err == nil && p.URL != "" {
 			row.Sub = p.URL
 		}
-		row.Cells = ui.Fit(r.Name, 19) + " "
+		row.Cells = ui.Fit(r.Name, nameW) + " "
 		for _, col := range cols {
 			c := r.Get(col.name)
 			row.Cells += ui.Pad(level.Lamp(c.Level, ui.Clip(c.Text, col.width-3)), col.width)
 		}
-		for _, c := range r.Problems() {
-			text := c.Detail
-			if text == "" {
-				text = c.Text
-			}
-			row.Pane = append(row.Pane, level.Lamp(c.Level, c.Name+": "+text))
-		}
-		if len(row.Pane) == 0 {
-			row.Pane = []string{ui.OK("\u25cf всё в порядке")}
-		}
+		row.Pane = problemLines(r)
 		hint := "\u2192 enter покажет проверку целиком"
 		if row.Sub != "" {
 			hint += ", tim domain " + row.Sub + " - домен"
