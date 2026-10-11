@@ -40,7 +40,6 @@ const (
 	symWarn    = "\u25b2"
 	symCross   = "\u2715"
 	symLamp    = "\u25cf"
-	symOff     = "\u25cb"
 	symArrow   = "\u2192"
 	symBlock   = "\u2588"
 	symShade   = "\u2591"

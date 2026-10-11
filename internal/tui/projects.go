@@ -70,7 +70,9 @@ func NewProjects(opts ProjectsOpts) Screen {
 	st.Focused.Placeholder = styleHint
 	st.Cursor.Color = colAccent
 	in.SetStyles(st)
-	in.Focus()
+	// Фильтр спит, пока не нажали "/": буквы - действия над проектом. Иначе первая буква имени
+	// запускала бы действие: s у simple-cart поднимал сервер верхнего проекта.
+	in.Blur()
 	p := &projects{opts: opts, input: in, cards: map[string]ProjectCard{}}
 	p.refill()
 	return p
@@ -97,10 +99,27 @@ func (p *projects) Command() string {
 	return "tim go"
 }
 
-func (p *projects) Typing() bool { return p.input.Value() != "" }
+func (p *projects) Typing() bool { return p.input.Focused() }
+
+// Escape: первый esc уходит из фильтра, второй очищает его, третий - назад.
+func (p *projects) Escape() bool {
+	switch {
+	case p.input.Focused():
+		p.input.Blur()
+	case p.input.Value() != "":
+		p.input.SetValue("")
+		p.refill()
+	default:
+		return false
+	}
+	return true
+}
 
 func (p *projects) Keys() []Key {
-	k := []Key{{symUpDown, "выбор"}, {"enter", "перейти"}}
+	if p.input.Focused() {
+		return []Key{{symUpDown, "выбор"}, {"enter", "перейти"}, {"esc", "готово"}}
+	}
+	k := []Key{{symUpDown, "выбор"}, {"enter", "перейти"}, {"/", "найти"}}
 	for _, a := range p.opts.Actions {
 		k = append(k, Key{a.Key, a.Label})
 	}
@@ -125,19 +144,25 @@ func (p *projects) refill() {
 	if p.byName {
 		sortRows(p.shown)
 	}
+	nameW := 10
+	for _, r := range p.opts.Rows {
+		nameW = max(nameW, ui.Width(r.Name))
+	}
+	nameW = min(nameW, 24)
 	p.list.Rows = nil
 	for _, r := range p.shown {
 		r := r
 		p.list.Rows = append(p.list.Rows, Row{Text: r.Name, Render: func(sel bool, w int) string {
-			lamp := styleDim.Render(symOff + "      ")
-			if r.Running {
-				lamp = styleGood.Render(symLamp + " :" + ui.Fit(r.Port, 5))
-			}
-			name := styleText.Render(ui.Fit(r.Name, 18))
+			name := styleText.Render(ui.Fit(r.Name, nameW))
 			if sel {
-				name = styleBold.Render(ui.Fit(r.Name, 18))
+				name = styleBold.Render(ui.Fit(r.Name, nameW))
 			}
-			return SelRow(sel, w, name+lamp+" "+styleDim.Render(ui.Fit(r.Stack, 10)+r.Age))
+			line := name + "  " + styleDim.Render(ui.Fit(r.Stack, 10)+ui.Fit(r.Age, 7))
+			// Лампа только у запущенных: столбец пустых кружков ничего не говорит.
+			if r.Running {
+				line += styleGood.Render(symLamp + " :" + r.Port)
+			}
+			return SelRow(sel, w, line)
 		}})
 	}
 	if p.list.Cursor >= len(p.list.Rows) {
@@ -182,6 +207,9 @@ func (p *projects) Update(msg tea.Msg, app *App) tea.Cmd {
 		if p.list.Key(k, 10) && (!p.Typing() || len(k) != 1) {
 			return p.loadCard()
 		}
+		if k == "/" && !p.Typing() {
+			return p.input.Focus()
+		}
 		switch k {
 		case "enter":
 			if cur := p.current(); cur != nil && p.opts.Go != nil {
@@ -220,12 +248,16 @@ func (p *projects) View(width, height int) string {
 	if p.byName {
 		order = "по имени  " + symDot + "  n недавние сверху"
 	}
-	left := []string{"  " + p.input.View(), "  " + styleHint.Render(order), ""}
+	filter := p.input.View()
+	if !p.input.Focused() && p.input.Value() == "" {
+		filter = styleHint.Render(symPointer + " / - найти по имени")
+	}
+	left := []string{"  " + filter, "  " + styleHint.Render(order), ""}
 	listH := max(3, height-len(left)-2)
 	rows := p.list.View(53, listH)
 	left = append(left, rows...)
 	if len(p.shown) > len(rows) && len(rows) < len(p.shown) {
-		left = append(left, "", "  "+styleHint.Render("печатай, чтобы найти"))
+		left = append(left, "", "  "+styleHint.Render("/ - найти по имени"))
 	}
 	var card []string
 	if cur := p.current(); cur != nil {
