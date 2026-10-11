@@ -41,6 +41,7 @@ type BoardAction struct {
 	Key, Label string
 	Do         func(row *BoardRow) Action
 	Run        func(row *BoardRow) (string, error)
+	Free       bool // работает и без выбранной строки; остальные на пустой доске не показываются
 }
 
 // BoardOpts: источники доски.
@@ -51,6 +52,7 @@ type BoardOpts struct {
 	Loading string                     // что сказать, пока первая загрузка идёт
 	Actions []BoardAction
 	Every   time.Duration // перечитывать само; 0 - только по r
+	Static  bool          // данные не меняются: без r
 }
 
 type board struct {
@@ -115,11 +117,19 @@ func (b *board) Command() string {
 }
 
 func (b *board) Keys() []Key {
-	k := []Key{{symUpDown, "выбор"}}
-	for _, a := range b.opts.Actions {
-		k = append(k, Key{a.Key, a.Label})
+	var k []Key
+	if len(b.data.Rows) > 0 {
+		k = append(k, Key{symUpDown, "выбор"})
 	}
-	return append(k, Key{"r", "обновить"}, Key{"esc", "назад"})
+	for _, a := range b.opts.Actions {
+		if a.Free || len(b.data.Rows) > 0 {
+			k = append(k, Key{a.Key, a.Label})
+		}
+	}
+	if !b.opts.Static {
+		k = append(k, Key{"r", "обновить"})
+	}
+	return append(k, Key{"esc", "назад"})
 }
 
 func (b *board) current() *BoardRow {
@@ -167,17 +177,17 @@ func (b *board) Update(msg tea.Msg, app *App) tea.Cmd {
 		if b.list.Key(k, 10) {
 			return nil
 		}
-		if k == "r" || k == "к" {
+		if (k == "r" || k == "к") && !b.opts.Static {
 			return b.load(true)
 		}
 		for _, a := range b.opts.Actions {
-			if a.Key != k {
+			row := b.current()
+			if a.Key != k || (row == nil && !a.Free) {
 				continue
 			}
 			if b.busy != "" {
 				return app.Toast(level.Warn, "подожди: "+b.busy)
 			}
-			row := b.current()
 			switch {
 			case a.Run != nil:
 				b.busy = a.Label
@@ -264,7 +274,8 @@ func (b *board) head(width int) []string {
 		out = append(out, "")
 	}
 	if b.data.Columns != "" {
-		out = append(out, "  "+b.data.Columns, "")
+		// Три пробела, как у строк списка с полосой выбора: иначе шапка на колонку левее значений.
+		out = append(out, "   "+b.data.Columns, "")
 	}
 	return out
 }

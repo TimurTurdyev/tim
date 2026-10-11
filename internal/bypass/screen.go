@@ -23,10 +23,10 @@ func Screen(env *app.Env) tui.Screen {
 		Loading: "смотрю туннели и маршруты...",
 		Load:    func(bool) tui.BoardData { return screenData(env.Cfg, probe) },
 		Actions: []tui.BoardAction{
-			{Key: "f", Label: "починить", Do: func(*tui.BoardRow) tui.Action {
+			{Key: "f", Label: "починить", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"route", "fix"}) }}
 			}},
-			{Key: "t", Label: "проверить порты", Run: func(*tui.BoardRow) (string, error) {
+			{Key: "t", Label: "проверить порты", Free: true, Run: func(*tui.BoardRow) (string, error) {
 				probe = true
 				return "порт 22 проверен у каждой цели", nil
 			}},
@@ -36,7 +36,7 @@ func Screen(env *app.Env) tui.Screen {
 				}
 				return tui.Action{Exit: func() { env.After([]string{"direct", "rm", row.ID}) }}
 			}},
-			{Key: "s", Label: "страж", Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
+			{Key: "s", Label: "страж", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
 		},
 	})
 }

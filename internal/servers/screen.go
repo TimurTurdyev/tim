@@ -22,10 +22,10 @@ func Screen(env *app.Env, target string) tui.Screen {
 		Command: func(*tui.BoardRow) string { return "tim server " + target },
 		Load:    func(bool) tui.BoardData { return serverData(target) },
 		Actions: []tui.BoardAction{
-			{Key: "s", Label: "ssh", Do: func(*tui.BoardRow) tui.Action {
+			{Key: "s", Label: "ssh", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"ssh", target}) }}
 			}},
-			{Key: "enter", Label: "отчёт целиком", Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"server", target}) }},
+			{Key: "enter", Label: "отчёт целиком", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"server", target}) }},
 		},
 	})
 }
