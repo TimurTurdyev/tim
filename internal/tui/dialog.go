@@ -145,10 +145,11 @@ type cmdline struct {
 	hits  []CommandEntry
 }
 
-func newCmdline(app *App) *cmdline {
+// newCmdline: строка ":"; text - что уже набрано, например пример для правки.
+func newCmdline(app *App, text string) *cmdline {
 	in := textinput.New()
 	in.Prompt = ": "
-	in.Placeholder = "команда tim, например serve shop -d"
+	in.Placeholder = "команда tim - начни печатать, tab подставит подсказку"
 	in.SetWidth(60)
 	st := in.Styles()
 	st.Focused.Prompt = stylePrompt
@@ -156,6 +157,8 @@ func newCmdline(app *App) *cmdline {
 	st.Cursor.Color = colAccent
 	in.SetStyles(st)
 	in.Focus()
+	in.SetValue(text)
+	in.CursorEnd()
 	c := &cmdline{input: in}
 	c.refill(app)
 	return c
@@ -183,8 +186,12 @@ func (c *cmdline) refill(app *App) {
 	c.list.Rows = nil
 	for _, h := range c.hits {
 		h := h
+		desc := h.Desc
+		if h.Template {
+			desc = strings.TrimSuffix("пример, "+desc, ", ")
+		}
 		c.list.Rows = append(c.list.Rows, Row{Text: h.Line, Render: func(sel bool, w int) string {
-			return SelRow(sel, w, ui.Fit(styleBold.Render(h.Line), 34)+styleDim.Render(h.Desc))
+			return SelRow(sel, w, ui.Fit(styleBold.Render(h.Line), 34)+styleDim.Render(desc))
 		}})
 	}
 	c.list.Cursor = 0
@@ -208,6 +215,12 @@ func (c *cmdline) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	case "enter":
 		line := strings.TrimSpace(c.input.Value())
 		if line == "" && c.list.Cursor < len(c.hits) {
+			if hit := c.hits[c.list.Cursor]; hit.Template {
+				c.input.SetValue(hit.Line)
+				c.input.CursorEnd()
+				c.refill(app)
+				return nil
+			}
 			line = c.hits[c.list.Cursor].Line
 		}
 		app.overlay = nil

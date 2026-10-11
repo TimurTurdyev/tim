@@ -54,11 +54,14 @@ type Action struct {
 	Run  func() (string, error) // выполнить и показать результат
 	Exit func()                 // закрыть tim и сделать это уже в терминале
 	Dir  string                 // закрыть tim и перейти в папку (через шим)
+	// Command: открыть строку ":" с этим текстом для правки - пример с аргументами, утилита.
+	Command string
 }
 
 // CommandEntry: подсказка для командной строки ":".
 type CommandEntry struct {
 	Line, Desc string
+	Template   bool // пример с выдуманными аргументами: выбор подставляет его для правки, а не выполняет
 }
 
 // Options: что каркасу нужно от главного экрана.
@@ -185,6 +188,8 @@ func (a *App) Do(act Action) tea.Cmd {
 		a.after = act.Exit
 		a.quit = true
 		return tea.Quit
+	case act.Command != "":
+		a.overlay = newCmdline(a, act.Command)
 	}
 	return nil
 }
@@ -258,7 +263,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case ":":
 			if !typing {
-				a.overlay = newCmdline(a)
+				a.overlay = newCmdline(a, "")
 				return a, nil
 			}
 		case "q", "й":
