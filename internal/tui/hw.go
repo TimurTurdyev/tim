@@ -21,7 +21,8 @@ type HWSample struct {
 	MemUsed, MemTotal   int64
 	SwapUsed, SwapTotal int64
 	Load                []float64
-	Disk                int // процент занятого
+	Disk                int   // процент занятого
+	DiskFree            int64 // свободно, байт; 0 - неизвестно
 	Top                 []TopRow
 }
 
@@ -182,7 +183,11 @@ func (h *hw) View(width, height int) string {
 	}
 	out = append(out, row("память", s.Mem, h.memH, mem))
 	if s.Disk > 0 {
-		out = append(out, row("диск", s.Disk, nil, ""))
+		free := ""
+		if s.DiskFree > 0 {
+			free = "свободно " + ui.Bytes(s.DiskFree)
+		}
+		out = append(out, row("диск", s.Disk, nil, free))
 	}
 	if len(s.Load) == 3 {
 		out = append(out, "  "+styleDim.Render(fmt.Sprintf("%-11sнагрузка %.1f %.1f %.1f за 1, 5 и 15 минут", "", s.Load[0], s.Load[1], s.Load[2])))

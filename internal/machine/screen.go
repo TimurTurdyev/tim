@@ -21,7 +21,7 @@ func HWScreen() tui.Screen {
 		Sample: func() tui.HWSample {
 			s := toHWSample(src.Sample(base()))
 			if d, ok := sysinfo.DataDisk(); ok {
-				s.Disk = d.Percent()
+				s.Disk, s.DiskFree = d.Percent(), int64(d.Avail)
 			}
 			return s
 		},
