@@ -158,7 +158,36 @@ func (h *Home) resetFlags(args []string) {
 }
 
 // commands: подсказки для строки ":" - команды с описанием и примеры из справки.
-func (h *Home) commands(string) []tui.CommandEntry { return h.entries() }
+// commands: подсказки для ":". После имени команды первыми идут её настоящие аргументы - из того же
+// автодополнения, что в оболочке: проекты, алиасы, фоновые серверы, а не образцы из справки.
+func (h *Home) commands(prefix string) []tui.CommandEntry {
+	return append(h.argEntries(prefix), h.entries()...)
+}
+
+func (h *Home) argEntries(prefix string) []tui.CommandEntry {
+	fields := strings.Fields(prefix)
+	toComplete := ""
+	if len(fields) > 0 && !strings.HasSuffix(prefix, " ") {
+		toComplete, fields = fields[len(fields)-1], fields[:len(fields)-1]
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	c, rest, err := h.root.Find(fields)
+	if err != nil || c == nil || c == h.root || c.ValidArgsFunction == nil {
+		return nil
+	}
+	vals, _ := c.ValidArgsFunction(c, rest, toComplete)
+	base := strings.Join(fields, " ")
+	var out []tui.CommandEntry
+	for _, v := range vals {
+		name, desc, _ := strings.Cut(v, "\t")
+		if strings.HasPrefix(name, toComplete) {
+			out = append(out, tui.CommandEntry{Line: base + " " + name, Desc: desc})
+		}
+	}
+	return out
+}
 
 func (h *Home) collectCommands() []tui.CommandEntry {
 	var out []tui.CommandEntry
