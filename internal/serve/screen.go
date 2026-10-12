@@ -16,7 +16,7 @@ import (
 // Screen: фоновые dev-серверы - браузер, стоп и старт, журнал.
 func Screen(env *app.Env) tui.Screen {
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs: []string{"Проекты", "Dev-серверы"},
+		Crumbs: []string{"Dev-серверы"},
 		Command: func(row *tui.BoardRow) string {
 			if row != nil {
 				return "tim serve logs " + row.ID
@@ -26,6 +26,9 @@ func Screen(env *app.Env) tui.Screen {
 		Load:  func(bool) tui.BoardData { return serveData() },
 		Every: 5 * time.Second,
 		Actions: []tui.BoardAction{
+			{Key: "n", Label: "запустить", Free: true, Do: func(*tui.BoardRow) tui.Action {
+				return tui.Action{Command: "serve "}
+			}},
 			{Key: "enter", Label: "браузер", Run: func(row *tui.BoardRow) (string, error) {
 				st, ok := stateOf(row)
 				if !ok {
@@ -104,7 +107,7 @@ func startAgain(env *app.Env, st run.State) (string, error) {
 }
 
 func serveData() tui.BoardData {
-	d := tui.BoardData{Empty: "фоновых серверов нет: tim serve <проект> -d"}
+	d := tui.BoardData{Empty: "фоновых серверов нет: n - запустить проект (tim serve <проект> -d)"}
 	states := run.ListStates()
 	alive := 0
 	for _, s := range states {
@@ -119,9 +122,8 @@ func serveData() tui.BoardData {
 		row.Pane = logTail(run.LogPath(s.Name), 6)
 		d.Rows = append(d.Rows, row)
 	}
-	d.Status = ui.Count(alive, "работает", "работают", "работают")
-	if len(states) == 0 {
-		d.Status = "нет фоновых"
+	if len(states) > 0 {
+		d.Status = ui.Count(alive, "работает", "работают", "работают")
 	}
 	return d
 }
