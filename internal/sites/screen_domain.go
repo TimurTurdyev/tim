@@ -137,7 +137,7 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	for _, ip := range h.IPs {
 		line := ui.Pad(ip, 17) + " "
 		if a, ok := v.addrs[ip]; ok {
-			line += ui.Dim(strings.TrimSpace(a.AS.Name + " " + a.AS.Country + " AS" + a.AS.ASN))
+			line += ui.Dim(asName(a.AS.Name, a.AS.Country) + " AS" + a.AS.ASN)
 			if a.PTR != "" {
 				line += ui.Dim("  " + a.PTR)
 			}
@@ -169,13 +169,23 @@ func (v domainView) note(h domaudit.Host, ip string) string {
 	case !ok:
 		return ""
 	case h.Name == v.rep.Domain:
-		return strings.TrimSpace(a.AS.Name + " " + a.AS.Country)
+		return asName(a.AS.Name, a.AS.Country)
 	case v.apex[ip]:
 		return "тот же сервер"
 	case a.CDN:
 		return "за CDN " + a.AS.Name
 	}
-	return "другой сервер: " + strings.TrimSpace(a.AS.Name+" "+a.AS.Country)
+	return "другой сервер: " + asName(a.AS.Name, a.AS.Country)
+}
+
+// asName: владелец сети без повторов. В RIPE имя часто "AdminVPS - AdminVPS OOO, RU": короткое имя
+// повторяет организацию, страна уже в конце.
+func asName(name, country string) string {
+	name = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(name), ", "+country))
+	if short, org, ok := strings.Cut(name, " - "); ok && strings.HasPrefix(org, short) {
+		name = org
+	}
+	return strings.TrimSpace(name + " " + country)
 }
 
 // hostStatus: ответ сайта лампой; у молчащих и сломанных сразу и заметка.
