@@ -69,12 +69,18 @@ func (l *leftovers) Status() string {
 	for _, g := range l.shown() {
 		sum += g.Size
 	}
+	if sum == 0 {
+		return "крупных нет"
+	}
 	return "найдено " + ui.Bytes(sum)
 }
 
 func (l *leftovers) Command() string { return "tim disk --leftovers" }
 
 func (l *leftovers) Keys() []Key {
+	if len(l.shown()) == 0 {
+		return []Key{{"h", "скрытые"}, {"esc", "назад"}}
+	}
 	return []Key{{symUpDown, "выбор"}, {"space", "отметить"}, {"a", "все"}, {"x", "убрать"}, {"h", "скрытые"}, {"esc", "назад"}}
 }
 

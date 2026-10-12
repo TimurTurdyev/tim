@@ -16,6 +16,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
+// plainDirs: безликие имена папок - по ним не понять, чей это проект.
+var plainDirs = map[string]bool{"app": true, "src": true, "env": true, "code": true, "www": true, "repo": true}
+
 // Обзор диска: замер с кэшем, строки по местам, тома, Steam и Chrome.
 
 // measured: дерево размеров и какие корни в нём измерены.
@@ -103,11 +106,35 @@ func Rows(spots []Spot, home string, owner func(path string) string) []Row {
 		case ok:
 			r.Name, r.Hint, r.Kind = l.Name, l.Hint, l.Kind
 		}
-		r.Name = placeName(r.Name, s.Path, owner(s.Path))
+		who := owner(s.Path)
+		if who == "" && ok && l.Deps {
+			// Папка не в реестре: без имени три строки "зависимости .venv" не отличить.
+			who = dirOwner(s.Path)
+		}
+		r.Name = placeName(r.Name, s.Path, who)
 		rows = append(rows, r)
 	}
 	slices.SortStableFunc(rows, func(a, b Row) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Name, b.Name)) })
 	return rows
+}
+
+// dirOwner: чья папка зависимостей, если проект не в реестре - репозиторий или папка над ней.
+// Безликое имя (app, src) - взять папку выше: клон часто лежит в обёртке shop/app.
+func dirOwner(path string) string {
+	dir := filepath.Dir(path)
+	if repo := repoRoot(path); repo != "" && repo != path {
+		dir = repo
+	}
+	top := dir
+	for plainDirs[filepath.Base(top)] && filepath.Dir(top) != top {
+		top = filepath.Dir(top)
+	}
+	if top == dir {
+		return filepath.Base(dir)
+	}
+	// Безликую часть оставить: у одного проекта бывает несколько окружений - app, env.
+	rel, _ := filepath.Rel(top, dir)
+	return filepath.Base(top) + "/" + rel
 }
 
 // placeName: подпись с тем, чьё это: "файлы Laravel: shop-admin", "бэкап example.com".

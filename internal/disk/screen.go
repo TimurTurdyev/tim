@@ -212,7 +212,7 @@ func browseScreen(st *state) tui.Screen {
 	if d, ok := sysinfo.DataDisk(); ok && len(st.args) == 0 {
 		used = int64(d.Size - d.Avail)
 	}
-	root := tui.Entry{Name: "диск", Dir: true, Size: used}
+	root := tui.Entry{Name: "Диск", Dir: true, Size: used}
 	if len(st.args) > 0 {
 		st.mu.Lock()
 		root = entry(st.roots[0], st.tree[st.roots[0]], home)

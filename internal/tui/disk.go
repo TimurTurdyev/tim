@@ -126,10 +126,19 @@ func (d *disk) refill() {
 	for _, r := range rows {
 		top = max(top, r.Size)
 	}
+	longest := 0
+	for _, r := range rows {
+		longest = max(longest, ui.Width(r.Name))
+	}
 	d.list.Rows = nil
 	for _, r := range rows {
 		r := r
 		d.list.Rows = append(d.list.Rows, Row{Text: r.Name, Render: func(sel bool, w int) string {
+			// Имя по самому длинному: на широком экране до 44, на узком - 34, чтобы осталась подсказка.
+			nameW := min(longest, 44)
+			if w < 130 {
+				nameW = min(nameW, 34)
+			}
 			mark := "  "
 			if r.Path != "" && d.marked.has(r.Path) {
 				mark = styleBad.Render(symCheck) + " "
@@ -137,9 +146,9 @@ func (d *disk) refill() {
 			size := styleText.Render(ui.Fit(ui.Bytes(r.Size), 9))
 			bar := styleAccent.Render(strings.Repeat(symBlock, max(1, int(r.Size*8/max(1, top))))) +
 				styleGhost.Render(strings.Repeat(symShade, 8-max(1, int(r.Size*8/max(1, top)))))
-			name := styleText.Render(ui.Fit(r.Name, 34))
+			name := styleText.Render(ui.Fit(r.Name, nameW))
 			if sel {
-				name = styleBold.Render(ui.Fit(r.Name, 34))
+				name = styleBold.Render(ui.Fit(r.Name, nameW))
 			}
 			tail := styleDim.Render(r.Hint)
 			if r.Warn != "" {
@@ -261,7 +270,7 @@ func (d *disk) View(width, height int) string {
 	if d.loading && len(d.data.Tabs) == 0 {
 		out = append(out, "", "  "+styleEmpty.Render("считаю, куда ушло место..."), "",
 			"  "+styleDim.Render("Первый замер домашней папки идёт около минуты, потом 15 минут берётся готовый."),
-			"  "+styleDim.Render("Можно не ждать: esc - выйти, замер продолжится в фоне."))
+			"  "+styleDim.Render("Можно не ждать: esc - назад, замер досчитается в фоне, пока tim открыт."))
 		return strings.Join(out, "\n")
 	}
 	frac := float64(d.data.UsedPct) / 100
