@@ -18,6 +18,14 @@ func TestNamesWrapperAndClashes(t *testing.T) {
 	}
 }
 
+// Одна обёртка shop/app не даёт угадать wrapper по повторам - имя всё равно shop, а не app.
+func TestNamesPlainWithoutWrapper(t *testing.T) {
+	got := Names([]string{"/r/Dev/shop/app", "/r/Dev/blog"}, "", nil)
+	if got[0] != "shop" || got[1] != "blog" {
+		t.Errorf("got %q", got)
+	}
+}
+
 func TestNamesAvoidTaken(t *testing.T) {
 	got := Names([]string{"/r/clients/blog"}, "", map[string]bool{"blog": true})
 	if got[0] != "clients-blog" {

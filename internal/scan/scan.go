@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+// plainNames: безликие имена клонов - проект называется по папке выше.
+var plainNames = map[string]bool{"app": true, "src": true, "code": true, "repo": true}
+
 var skip = map[string]bool{
 	"node_modules": true, "vendor": true, ".venv": true, "venv": true,
 	"dist": true, "build": true, "archive": true,
@@ -48,14 +51,15 @@ func Clones(root string, depth int) ([]string, error) {
 	return out, err
 }
 
-// Names даёт каждому клону уникальное имя: базовое имя папки, а если оно равно wrapper - имя родителя.
+// Names даёт каждому клону уникальное имя: базовое имя папки, а если оно равно wrapper или безлико
+// (app, src) - имя родителя: одна обёртка shop/app ещё не даёт угадать wrapper по повторам.
 // При совпадениях к имени слева добавляются родительские папки: у каждого клона - самый короткий
 // хвост пути, которого нет у других клонов и среди занятых имён.
 func Names(clones []string, wrapper string, taken map[string]bool) []string {
 	parts := make([][]string, len(clones))
 	for i, c := range clones {
 		segs := strings.Split(filepath.ToSlash(filepath.Clean(c)), "/")
-		if wrapper != "" && len(segs) > 1 && segs[len(segs)-1] == wrapper {
+		if last := segs[len(segs)-1]; len(segs) > 1 && (wrapper != "" && last == wrapper || plainNames[last]) {
 			segs = segs[:len(segs)-1]
 		}
 		parts[i] = segs
