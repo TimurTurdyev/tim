@@ -206,7 +206,7 @@ func serversTile() tui.TileData {
 	if len(names) > 0 {
 		rows = []string{ui.OK("\u25cf " + ui.Plural(len(names), "работает", "работают", "работают")), ui.Dim(strings.Join(names, ", "))}
 	}
-	return tui.TileData{Title: "серверы", Width: 26, Rows: rows}
+	return tui.TileData{Title: "dev-серверы", Width: 26, Rows: rows}
 }
 
 // recent: проекты, в которые заходили недавно.
