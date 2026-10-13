@@ -17,7 +17,7 @@ import (
 // Screen: отчёт о сервере - полосы места, памяти и нагрузки, лампы и находки с подсказкой, что делать.
 func Screen(env *app.Env, target string) tui.Screen {
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs:  []string{"Серверы", target},
+		Crumbs:  []string{"Сервер", target},
 		Loading: "захожу по ssh на " + target + ", только чтение",
 		Command: func(*tui.BoardRow) string { return "tim server " + target },
 		Load:    func(bool) tui.BoardData { return serverData(target) },
