@@ -214,7 +214,8 @@ func (h *Home) collectCommands() []tui.CommandEntry {
 			if i := strings.Index(l, "#"); i >= 0 {
 				l, desc = strings.TrimSpace(l[:i]), strings.TrimSpace(l[i+1:])
 			}
-			if l != "" && !seen[l] {
+			// Конвейер оболочки (pbpaste | tim jwt) из строки ":" не выполнить - в подсказки не берём.
+			if l != "" && !seen[l] && !strings.Contains(l, "|") {
 				seen[l] = true
 				out = append(out, tui.CommandEntry{Line: l, Desc: desc, Template: h.hasSample(l)})
 			}

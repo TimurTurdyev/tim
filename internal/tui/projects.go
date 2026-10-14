@@ -256,9 +256,7 @@ func (p *projects) View(width, height int) string {
 	listH := max(3, height-len(left)-2)
 	rows := p.list.View(53, listH)
 	left = append(left, rows...)
-	if len(p.shown) > len(rows) && len(rows) < len(p.shown) {
-		left = append(left, "", "  "+styleHint.Render("/ - найти по имени"))
-	}
+
 	var card []string
 	if cur := p.current(); cur != nil {
 		c, ok := p.cards[cur.Name]
