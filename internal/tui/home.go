@@ -42,8 +42,9 @@ type HomeData struct {
 	Tiles    []TileData
 	Warning  string
 	WarnOpen func() Action
-	Art      []string // маскот мелко, 6 строк по 12 клеток, уже с цветом
-	ArtLarge []string // он же крупно, 12 строк по 24 клетки - для широкого окна
+	// Art: маскот уже с цветом, крупно - для широкого окна; зовётся при отрисовке, чтобы настроение
+	// успевало за событиями (вернулся после удачной команды - рад). nil - без картинки.
+	Art func(large bool) []string
 }
 
 // HomeOpts: источники главного экрана.
@@ -207,12 +208,9 @@ func (h *home) View(width, height int) string {
 	}
 	// Картинка справа сверху. Всё, что рядом с ней, собирается сразу шириной cw: обрезка готовой
 	// строки ставила "~" на хвост из пробелов, а в поиске картинка обрывалась на четвёртой строке.
-	art := h.data.Art
-	if width >= 140 && len(h.data.ArtLarge) > 0 {
-		art = h.data.ArtLarge
-	}
-	if width < 90 {
-		art = nil
+	var art []string
+	if width >= 90 && h.data.Art != nil {
+		art = h.data.Art(width >= 140)
 	}
 	cw := width
 	if len(art) > 0 {

@@ -16,6 +16,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/disk"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/motd"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -125,9 +126,20 @@ func (h *Home) load() tui.HomeData {
 	d := tui.HomeData{Status: host + " \u00b7 " + time.Now().Format("15:04")}
 	d.Recent = h.recent()
 	d.Sections = h.sections()
-	d.Tiles, d.Warning, d.WarnOpen = h.tiles()
+	var health motd.Health
+	d.Tiles, d.Warning, d.WarnOpen, health = h.tiles()
 	if on, depth := ui.Colors(); on {
-		d.Art, d.ArtLarge = brand.Mascot(brand.Calm, depth), brand.MascotLarge(brand.Calm, depth)
+		d.Art = func(large bool) []string {
+			mood := health.Mood(time.Now())
+			// Вернулся после удачной команды - рад полминуты.
+			if time.Since(time.Unix(0, h.lastOK.Load())) < 30*time.Second {
+				mood = brand.Happy
+			}
+			if large {
+				return brand.MascotLarge(mood, depth)
+			}
+			return brand.Mascot(mood, depth)
+		}
 	}
 	return d
 }
@@ -148,8 +160,8 @@ func (h *Home) sections() []tui.Section {
 	}
 }
 
-// tiles: плитки состояния и самое важное предупреждение - что открыть по нему.
-func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Action) {
+// tiles: плитки состояния, самое важное предупреждение - что открыть по нему, и признаки беды для маскота.
+func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Action, health motd.Health) {
 	warn := func(text string, screen func() tui.Screen) {
 		if warning == "" {
 			warning, open = text, func() tui.Action { return tui.Action{Push: screen()} }
@@ -157,6 +169,7 @@ func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Ac
 	}
 	if data, ok := sysinfo.DataDisk(); ok {
 		pct := data.Percent()
+		health.DiskPct = pct
 		tiles = append(tiles, tui.TileData{Title: "диск", Width: 22, Rows: []string{
 			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
 			ui.Dim("свободно " + ui.Bytes(int64(data.Avail))),
@@ -167,24 +180,27 @@ func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Ac
 	}
 	if used, total := sysinfo.Memory(); total > 0 {
 		pct := int(used * 100 / total)
+		health.MemPct = pct
 		tiles = append(tiles, tui.TileData{Title: "память", Width: 22, Rows: []string{
 			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
 			ui.Dim(fmt.Sprintf("%.0f из %.0f GB", float64(used)/(1<<30), float64(total)/(1<<30))),
 		}})
 	}
 	if len(h.env.Cfg.Hosts) > 0 {
-		tiles = append(tiles, h.vpnTile(warn))
+		tiles = append(tiles, h.vpnTile(warn, &health))
 	}
-	return append(tiles, serversTile()), warning, open
+	return append(tiles, serversTile()), warning, open, health
 }
 
-func (h *Home) vpnTile(warn func(string, func() tui.Screen)) tui.TileData {
+func (h *Home) vpnTile(warn func(string, func() tui.Screen), health *motd.Health) tui.TileData {
 	vpn := func() tui.Screen { return bypass.Screen(h.env) }
 	ok, total := bypass.BypassCount(h.env.Cfg)
+	health.BypassOK, health.BypassAll = ok, total
 	guard := ui.Dim("страж не установлен")
-	if st, found := bypass.GuardStatus(); found && time.Since(st.LastCheck) < 10*time.Minute {
+	if bypass.GuardAlive() {
 		guard = ui.Dim("страж работает")
 	} else {
+		health.GuardMissing = true
 		warn("страж маршрутов не установлен: после смены сети обход сломается", vpn)
 	}
 	lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))

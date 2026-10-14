@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -30,6 +32,7 @@ type Home struct {
 	prepare   func(args []string)
 	utils     []string
 	entries   func() []tui.CommandEntry
+	lastOK    atomic.Int64 // когда последняя команда из экрана прошла без ошибки - маскот рад
 }
 
 // Options: что экранному режиму нужно от корня.
@@ -106,7 +109,13 @@ func (h *Home) open(s tui.Screen) error {
 // result: команда выполняется, не выходя из экрана, её вывод - на экране результата.
 func (h *Home) result(args []string) tui.Action {
 	title := strings.Join(args, " ")
-	return tui.Action{Push: tui.NewResult(title, func() (string, error) { return h.inside(args) },
+	return tui.Action{Push: tui.NewResult(title, func() (string, error) {
+		out, err := h.inside(args)
+		if err == nil {
+			h.lastOK.Store(time.Now().UnixNano())
+		}
+		return out, err
+	},
 		tui.ResultOpts{Copy: runner.ToClipboard, Next: nextAfter(args)})}
 }
 

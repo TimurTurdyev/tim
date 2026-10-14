@@ -152,6 +152,7 @@ func network(cfg *config.Config) []string {
 	}
 	if len(cfg.Hosts) > 0 && netinfo.IsTunnelIface(inet) {
 		ok, total := bypass.BypassCount(cfg)
+		seenBypass.Store(&[2]int{ok, total})
 		state := fmt.Sprintf("обход %d/%d", ok, total)
 		if ok < total {
 			state = ui.Warn(state + " (tim route fix)")

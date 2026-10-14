@@ -38,6 +38,12 @@ func GuardStatus() (routewatch.Status, bool) {
 	return routewatch.Load(StateDir())
 }
 
+// GuardAlive: страж проверял маршруты в последние 10 минут - иначе после смены сети обход сломается.
+func GuardAlive() bool {
+	st, ok := GuardStatus()
+	return ok && time.Since(st.LastCheck) < 10*time.Minute
+}
+
 func GuardInstalled() bool {
 	path := GuardPlist()
 	if runtime.GOOS == "linux" {
