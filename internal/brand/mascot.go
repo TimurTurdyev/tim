@@ -2,13 +2,16 @@ package brand
 
 import "strings"
 
-// Маскот - импульсный контейнер: куб анфас с панелью-индикатором, 24x12 пикселей четвертинками клетки,
-// 12 колонок на 6 строк. В клетке две краски: одна символом, другая фоном; прозрачное закрашивается
-// второй, если она есть, поэтому глаза и полоса не делят клетку с корпусом.
+// Маскот - импульсный контейнер: куб в три четверти, сверху и сбоку рёбра, на передней грани
+// панель-индикатор с глазами-сегментами и полоса готовности. Рисунок 24x12 пикселей: крупно - пиксель
+// на клетку (24 колонки на 12 строк), мелко - четвертинками, 12 колонок на 6 строк. В четвертинке две
+// краски: одна символом, другая фоном, поэтому глаза и полоса не делят клетку с корпусом.
 var mascotPal = map[byte]RGB{
-	'U': {156, 164, 184}, // фаска сверху
-	'N': {104, 112, 131}, // корпус: светлее фона любого тёмного терминала
-	'n': {70, 76, 92},    // фаска справа
+	'U': {168, 176, 196}, // верхняя грань
+	'u': {132, 140, 160}, // её рёбра
+	'N': {104, 112, 131}, // передняя грань: светлее фона любого тёмного терминала
+	'n': {76, 82, 98},    // бок
+	'm': {60, 65, 79},    // его рёбра
 	'E': {12, 22, 19},    // панель
 	'k': {44, 48, 58},    // пустая полоса
 	'T': {52, 196, 184},  // глаза: ярче фирменного бирюзового, на тёмной панели светятся
@@ -21,33 +24,36 @@ var mascotPal = map[byte]RGB{
 var mascotBase = []string{
 	"........................",
 	"........................",
-	"..UUUUUUUUUUUUUUUUUUUU..",
-	"..NNNNNNNNNNNNNNNNNNnn..",
-	"..NNEEEEEEEEEEEEEENNnn..",
-	"..NNEEEEEEEEEEEEEENNnn..",
-	"..NNEEEEEEEEEEEEEENNnn..",
-	"..NNEEEEEEEEEEEEEENNnn..",
-	"..NNEEEEEEEEEEEEEENNnn..",
-	"..NNEEEEEEEEEEEEEENNnn..",
-	"..NNkkkkkkkkkkkkkkNNnn..",
-	"..NNNNNNNNNNNNNNNNNNnn..",
+	"....UuUuUuUuUuUuUuUu....",
+	"....UuUuUuUuUuUuUuUu....",
+	"..NNNNNNNNNNNNNNNNnm....",
+	"..NNEEEEEEEEEEEENNnm....",
+	"..NNEEEEEEEEEEEENNnm....",
+	"..NNEEEEEEEEEEEENNnm....",
+	"..NNEEEEEEEEEEEENNnm....",
+	"..NNEEEEEEEEEEEENNnm....",
+	"..NNkkkkkkkkkkkkNN......",
+	"..NNNNNNNNNNNNNNNN......",
 }
 
-// Глаза-сегменты: какие из четырёх рядов панели горят. Ряды над ними и под ними пустые, иначе глаза
-// делят клетку с корпусом или сливаются с полосой.
-var mascotEyes = map[Mood][4]bool{
-	Calm:   {true, true, true, true},
-	Happy:  {true, true, false, false},
-	Upset:  {false, false, true, true},
-	Asleep: {false, false, false, true},
-	Blink:  {false, false, false, true},
+// Глаза-сегменты: какие из трёх рядов панели горят. Ряд над ними делит клетку с корпусом, ряд под
+// ними пустой - иначе глаза сливаются с полосой.
+var mascotEyes = map[Mood][3]bool{
+	Calm:   {true, true, true},
+	Happy:  {true, true, false},
+	Upset:  {false, true, true},
+	Asleep: {false, false, true},
+	Blink:  {false, false, true},
 }
 
 // Четвертинки по битам: левый верх, правый верх, левый низ, правый низ.
 const quads = " \u2597\u2596\u2584\u259d\u2590\u259e\u259f\u2598\u259a\u258c\u2599\u2580\u259c\u259b\u2588"
 
-// MascotWidth: ширина картинки в колонках терминала.
-const MascotWidth = 12
+// MascotWidth и MascotLargeWidth: ширина мелкой и крупной картинки в колонках терминала.
+const (
+	MascotWidth      = 12
+	MascotLargeWidth = 24
+)
 
 // Mood: выражение лица.
 type Mood int
@@ -75,13 +81,13 @@ func mascotGrid(m Mood) [][]byte {
 	}
 	for i, on := range mascotEyes[m] {
 		if on {
-			for _, x := range []int{7, 8, 13, 14} {
-				g[5+i][x] = eye
+			for _, x := range []int{6, 7, 12, 13} {
+				g[6+i][x] = eye
 			}
 		}
 	}
 	bar := map[Mood]byte{Happy: 'G', Upset: 'R'}[m]
-	for x := 4; bar != 0 && x < 18; x++ {
+	for x := 4; bar != 0 && x < 16; x++ {
 		g[10][x] = bar
 	}
 	return g
@@ -98,6 +104,33 @@ func Mascot(m Mood, d Depth) []string {
 		var b strings.Builder
 		for x := 0; x+1 < len(g[y]); x += 2 {
 			b.WriteString(quadCell([4]byte{g[y][x], g[y][x+1], g[y+1][x], g[y+1][x+1]}, d))
+		}
+		b.WriteString("\x1b[0m")
+		lines = append(lines, b.String())
+	}
+	return lines
+}
+
+// MascotLarge: та же картинка крупно - пиксель на клетку, цветом фона. Символов нет, поэтому шрифт и
+// межстрочный интервал терминала на неё не влияют. Без 256 цветов - пусто.
+func MascotLarge(m Mood, d Depth) []string {
+	if d == Basic {
+		return nil
+	}
+	var lines []string
+	for _, row := range mascotGrid(m) {
+		var b strings.Builder
+		prev := byte(0)
+		for _, c := range row {
+			if c != prev {
+				if c == '.' {
+					b.WriteString("\x1b[0m")
+				} else {
+					b.WriteString("\x1b[" + mascotPal[c].BG(d) + "m")
+				}
+				prev = c
+			}
+			b.WriteString(" ")
 		}
 		b.WriteString("\x1b[0m")
 		lines = append(lines, b.String())

@@ -127,7 +127,7 @@ func (h *Home) load() tui.HomeData {
 	d.Sections = h.sections()
 	d.Tiles, d.Warning, d.WarnOpen = h.tiles()
 	if on, depth := ui.Colors(); on {
-		d.Art = brand.Mascot(brand.Calm, depth)
+		d.Art, d.ArtLarge = brand.Mascot(brand.Calm, depth), brand.MascotLarge(brand.Calm, depth)
 	}
 	return d
 }

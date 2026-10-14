@@ -42,7 +42,8 @@ type HomeData struct {
 	Tiles    []TileData
 	Warning  string
 	WarnOpen func() Action
-	Art      []string // маскот, 6 строк по 12 клеток, уже с цветом
+	Art      []string // маскот мелко, 6 строк по 12 клеток, уже с цветом
+	ArtLarge []string // он же крупно, 12 строк по 24 клетки - для широкого окна
 }
 
 // HomeOpts: источники главного экрана.
@@ -204,14 +205,20 @@ func (h *home) View(width, height int) string {
 		"  " + h.input.View(),
 		"",
 	}
+	// Картинка справа сверху. Всё, что рядом с ней, собирается сразу шириной cw: обрезка готовой
+	// строки ставила "~" на хвост из пробелов, а в поиске картинка обрывалась на четвёртой строке.
 	art := h.data.Art
-	for i, l := range head {
-		if i < len(art) && width >= 90 {
-			out = append(out, ui.Fit(l, width-14)+art[i])
-		} else {
-			out = append(out, l)
-		}
+	if width >= 140 && len(h.data.ArtLarge) > 0 {
+		art = h.data.ArtLarge
 	}
+	if width < 90 {
+		art = nil
+	}
+	cw := width
+	if len(art) > 0 {
+		cw = width - ui.Width(art[0]) - 2
+	}
+	out = append(out, head...)
 	typing := h.Typing()
 	wide := width >= 90 && len(h.data.Sections) > 0
 	var secs []string
@@ -226,30 +233,22 @@ func (h *home) View(width, height int) string {
 			left = []string{"  " + styleHead.Render("НЕДАВНЕЕ"), "  " + styleHint.Render("проекты, в которые заходил, появятся здесь")}
 		}
 		right := append([]string{styleHead.Render("РАЗДЕЛЫ")}, secs...)
-		rows := Beside(left, 52, right, width)
-		// Строки рядом с картинкой собираются сразу уже: обрезка готовой строки ставила "~" на хвост из пробелов.
-		narrow := Beside(left, 52, right, width-14)
-		for i := range rows {
-			if i+len(head) < len(art) {
-				rows[i] = narrow[i] + art[i+len(head)]
-			}
-		}
-		out = append(out, rows...)
+		out = append(out, Beside(left, 52, right, cw)...)
 	case !typing:
-		out = append(out, h.list.View(width, len(h.list.Rows))...)
+		out = append(out, h.list.View(cw, len(h.list.Rows))...)
 		out = append(out, "", "  "+styleHead.Render("РАЗДЕЛЫ"))
 		for _, sc := range secs {
 			out = append(out, "  "+sc)
 		}
 	default:
-		out = append(out, h.list.View(width, max(3, height-len(head)-2))...)
+		out = append(out, h.list.View(cw, max(3, height-len(head)-2))...)
 	}
 	if !typing {
 		out = append(out, "")
 		var tiles [][]string
 		total := 2
 		for _, t := range h.data.Tiles {
-			if total+t.Width+1 > width {
+			if total+t.Width+1 > cw {
 				break
 			}
 			tiles = append(tiles, Tile(t.Title, t.Rows, t.Width))
@@ -274,6 +273,12 @@ func (h *home) View(width, height int) string {
 	}
 	if !h.ready {
 		out = append(out, "  "+styleEmpty.Render("собираю сводку..."))
+	}
+	for i, a := range art {
+		if i >= len(out) {
+			out = append(out, "")
+		}
+		out[i] = ui.Fit(out[i], cw) + a
 	}
 	return strings.Join(out, "\n")
 }
