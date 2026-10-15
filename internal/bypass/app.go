@@ -63,11 +63,26 @@ func AppOff() error {
 }
 
 // AppStatus: правила на месте ли, срабатывают ли, кто сейчас работает под группой.
-func AppStatus() error {
+func AppStatus(rules bool) error {
+	kernel := "pf"
 	if runtime.GOOS == "linux" {
+		kernel = "netfilter"
+	}
+	switch {
+	case !rules && !privileged.Ready():
+		// Ядро без root правил не показывает: просмотр не должен спрашивать пароль.
+		ui.Println(ui.Dim("правила " + kernel + ": tim direct --rules, спросит пароль администратора"))
+	case runtime.GOOS == "linux":
 		linuxStatus()
-	} else {
+	default:
 		pfStatus()
+	}
+	if runtime.GOOS != "linux" {
+		if pid := ProxyPID(); pid > 0 {
+			ui.Println(ui.Label("прокси ") + "работает, pid " + strconv.Itoa(pid) + ui.Dim("  журнал "+ProxyLogFile()))
+		} else {
+			ui.Println(ui.Dim("прокси не запущен"))
+		}
 	}
 	gid, err := GID()
 	if err != nil {
@@ -120,7 +135,7 @@ func AppCheck() error {
 	case direct == "":
 		ui.Println(ui.Bad("под группой наружу не вышло: " + ui.Dash(resp.Err)))
 		ui.Println(ui.Dim("снять: tim direct off; ниже - что видит система"))
-		err := AppStatus()
+		err := AppStatus(true)
 		stop(true)
 		return err
 	case viaVPN == "":

@@ -281,7 +281,7 @@ func pfOff() error {
 	return nil
 }
 
-// pfStatus: pf, прокси, правила анкора, состояния заворота, forwarding и scoped-маршрут.
+// pfStatus: pf, правила анкора, состояния заворота, forwarding и scoped-маршрут - всё под root.
 func pfStatus() {
 	// Без -q: с ним pfctl молчит и про правила, и про состояния.
 	if info, err := privileged.Run("pfctl", "-s", "info"); err == nil {
@@ -290,11 +290,6 @@ func pfStatus() {
 				ui.Println(ui.Label("pf ") + strings.TrimSpace(strings.TrimPrefix(l, "Status:")))
 			}
 		}
-	}
-	if pid := ProxyPID(); pid > 0 {
-		ui.Println(ui.Label("прокси ") + "работает, pid " + strconv.Itoa(pid) + ui.Dim("  журнал "+ProxyLogFile()))
-	} else {
-		ui.Println(ui.Dim("прокси не запущен"))
 	}
 	rules, err := privileged.Run("pfctl", "-a", Anchor, "-s", "all")
 	switch {

@@ -51,13 +51,15 @@ tim открывает сайт в браузере, смотрит, куда т
 трафик: программа запускается под группой novpn, а её соединения ядро уводит в физический
 интерфейс. Уже открытый экземпляр закрывается бережно и запускается заново.
 Сеть (as:64500, 203.0.113.5, 10.1.0.0/16) - цель в конфиг и маршрут через физический шлюз.
-Без аргументов - что сейчас идёт напрямую. Пароль sudo спрашивается один раз.
+Без аргументов - что сейчас идёт напрямую, без пароля; правила ядра для приложений - с --rules.
+Где нужны права администратора, пароль sudo спрашивается один раз.
 Вернуть под VPN: tim direct rm <цель|пометка>, приложения - tim direct off.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return direct(env, args, o) },
 	}
 	o.add.bind(c)
 	o.unblock.bind(c)
+	c.Flags().BoolVar(&o.rules, "rules", false, "без аргументов: показать и правила ядра (pf, netfilter) - спросит пароль")
 	c.AddCommand(
 		&cobra.Command{
 			Use:   "rm <цель|пометка...>",
@@ -108,6 +110,7 @@ func directWatchCommand(env *app.Env) *cobra.Command {
 }
 
 func routeCommand(env *app.Env) *cobra.Command {
+	var list bool
 	c := &cobra.Command{
 		Use:   "route",
 		Short: "Маршруты мимо VPN: поднять, снять, починить после смены сети, страж",
@@ -115,8 +118,9 @@ func routeCommand(env *app.Env) *cobra.Command {
 трафик к ней минует туннель VPN. Домен раскрывается во все A-записи в момент up, as:N - во все
 сети автономной системы. Заводить и убирать цели: tim direct и tim direct rm.`,
 		Args: cobra.NoArgs,
-		Run:  func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, false) },
+		Run:  func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, false, list) },
 	}
+	c.Flags().BoolVar(&list, "all", false, "все адреса, а не только с отклонением")
 	var all bool
 	clean := &cobra.Command{
 		Use:   "clean [--all]",
@@ -130,7 +134,7 @@ func routeCommand(env *app.Env) *cobra.Command {
 			Use:   "check",
 			Short: "Состояние плюс проверка порта 22 у адресов",
 			Args:  cobra.NoArgs,
-			Run:   func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, true) },
+			Run:   func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, true, true) },
 		},
 		&cobra.Command{
 			Use:   "up [цель|пометка...]",

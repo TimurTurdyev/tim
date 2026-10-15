@@ -16,7 +16,15 @@ import (
 )
 
 // printRoutes: интерфейс, куда идёт трафик, страж и состояние каждой цели; probe - проверить порт 22.
-func printRoutes(cfg *config.Config, probe bool) {
+// routeRow: строка таблицы целей - цель и пометка только у первого адреса.
+type routeRow struct {
+	name, label, dest, state string
+	bad                      bool
+}
+
+// printRoutes: куда идёт трафик и где каждая цель. Без all и probe - только адреса с отклонением
+// и итог: 725 одинаковых строк "в обход" ничего не говорят.
+func printRoutes(cfg *config.Config, probe, all bool) {
 	phys, gw := netinfo.Physical()
 	if phys.Device == "" {
 		ui.Println(ui.Warn("физический интерфейс не найден: сеть выключена?"))
@@ -34,12 +42,14 @@ func printRoutes(cfg *config.Config, probe bool) {
 		return
 	}
 	ui.Println(GuardLine())
-	ui.Println(ui.Dim(ui.Pad("ЦЕЛЬ", 24) + " " + ui.Pad("ПОМЕТКА", 11) + " " + ui.Pad("АДРЕС", 18) + " СОСТОЯНИЕ"))
+	var rows []routeRow
+	total, bad := 0, 0
 	expanded := ExpandHosts(cfg.Hosts)
 	for hi, h := range cfg.Hosts {
 		dests := expanded[hi]
 		if len(dests) == 0 {
-			ui.Println(ui.Pad(h.Addr, 24) + " " + ui.Pad(h.Label, 11) + " " + ui.Bad("не раскрывается в адреса"))
+			rows = append(rows, routeRow{name: h.Addr, label: h.Label, state: ui.Bad("не раскрывается в адреса"), bad: true})
+			bad++
 			continue
 		}
 		for i, d := range dests {
@@ -47,12 +57,42 @@ func printRoutes(cfg *config.Config, probe bool) {
 			if i > 0 {
 				name, label = "", ""
 			}
-			state, _ := RouteState(d, phys, gw)
+			state, wrong := RouteState(d, phys, gw)
 			if probe && !strings.Contains(d, "/") {
 				state += "  " + portNote(d)
 			}
-			ui.Println(ui.Pad(name, 24) + " " + ui.Pad(label, 11) + " " + ui.Pad(d, 18) + " " + state)
+			total++
+			if wrong {
+				bad++
+			}
+			rows = append(rows, routeRow{name: h.Addr, label: label, dest: d, state: state, bad: wrong})
+			rows[len(rows)-1].name = name
 		}
+	}
+	full := all || probe
+	nameW, labelW, destW := len("ЦЕЛЬ"), len("ПОМЕТКА"), len("АДРЕС")
+	for _, r := range rows {
+		if full || r.bad {
+			nameW, labelW, destW = max(nameW, ui.Width(r.name)), max(labelW, ui.Width(r.label)), max(destW, ui.Width(r.dest))
+		}
+	}
+	nameW, labelW, destW = min(nameW, 28), min(labelW, 24), min(destW, 18)
+	if full || bad > 0 {
+		ui.Println(ui.Dim(ui.Pad("ЦЕЛЬ", nameW) + "  " + ui.Pad("ПОМЕТКА", labelW) + "  " + ui.Pad("АДРЕС", destW) + "  СОСТОЯНИЕ"))
+	}
+	for _, r := range rows {
+		if full || r.bad {
+			ui.Println(ui.Fit(r.name, nameW) + "  " + ui.Fit(r.label, labelW) + "  " + ui.Fit(r.dest, destW) + "  " + r.state)
+		}
+	}
+	if !full {
+		line := fmt.Sprintf("в обход %d из %d адресов, целей %d", total-bad, total, len(cfg.Hosts))
+		if bad == 0 {
+			line = ui.OK(line)
+		} else {
+			line = ui.Warn(line)
+		}
+		ui.Println(line + ui.Dim("; весь список: tim route --all"))
 	}
 }
 

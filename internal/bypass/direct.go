@@ -9,13 +9,14 @@ import (
 type directOptions struct {
 	add     addOptions
 	unblock unblockOptions
+	rules   bool // без аргументов: показать и правила ядра, с паролем
 }
 
 // direct: одна команда на весь обход VPN. Что пустить напрямую, видно по аргументу: сеть по форме,
 // приложение по тому, что оно установлено, остальное с точкой - сайт.
 func direct(env *app.Env, args []string, o directOptions) error {
 	if len(args) == 0 {
-		return directStatus(env)
+		return directStatus(env, o.rules)
 	}
 	switch Classify(args[0], AppExists) {
 	case KindApp:
@@ -36,11 +37,11 @@ func direct(env *app.Env, args []string, o directOptions) error {
 }
 
 // directStatus: что сейчас идёт напрямую - приложения под правилами и цели с маршрутами.
-func directStatus(env *app.Env) error {
-	if err := AppStatus(); err != nil {
+func directStatus(env *app.Env, rules bool) error {
+	if err := AppStatus(rules); err != nil {
 		return err
 	}
 	ui.Println()
-	printRoutes(env.Cfg, false)
+	printRoutes(env.Cfg, false, false)
 	return nil
 }

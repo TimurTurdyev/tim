@@ -206,6 +206,15 @@ func Call(req Request) (Response, error) {
 	return resp, nil
 }
 
+// Ready: права root есть без вопроса - tim под root, помощник уже запущен или sudo помнит пароль.
+// Для просмотра: то, что требует root, без этого лучше не показывать, чем спрашивать пароль.
+func Ready() bool {
+	if os.Geteuid() == 0 || link != nil {
+		return true
+	}
+	return exec.Command("sudo", "-n", "true").Run() == nil
+}
+
 // Run выполняет команду под root и возвращает её вывод; ошибка - с текстом от самой команды.
 func Run(args ...string) (string, error) {
 	return RunStdin("", args...)
