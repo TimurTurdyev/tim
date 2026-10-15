@@ -113,11 +113,13 @@ func goCommand(env *app.Env) *cobra.Command {
 }
 
 func configCommand(env *app.Env) *cobra.Command {
+	var raw bool
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Где лежит конфиг и что в нём",
-		RunE:  func(cmd *cobra.Command, args []string) error { return printConfig(env.Cfg) },
+		RunE:  func(cmd *cobra.Command, args []string) error { return printConfig(env.Cfg, raw) },
 	}
+	c.Flags().BoolVar(&raw, "raw", false, "весь файл целиком")
 	var o initOptions
 	initCmd := &cobra.Command{
 		Use:   "init [--root папка] [--wrapper app] [--all] [--merge] [-y]",

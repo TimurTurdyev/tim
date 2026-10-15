@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -17,9 +18,54 @@ import (
 // scanDepth: на сколько уровней под корнем искать клоны.
 const scanDepth = 4
 
-func printConfig(cfg *config.Config) error {
-	ui.Println(ui.Dim(config.Path()))
-	return toml.NewEncoder(os.Stdout).Encode(cfg)
+// printConfig: где конфиг и что в нём - сводкой; весь файл - с raw. Сотни строк [[project]] на
+// вопрос "что в конфиге" не отвечают.
+func printConfig(cfg *config.Config, raw bool) error {
+	if raw {
+		ui.Println(ui.Dim(config.Path()))
+		return toml.NewEncoder(ui.Writer()).Encode(cfg)
+	}
+	label := func(s string) string { return ui.Label(ui.Pad(s, 10)) }
+	ui.Println(label("конфиг") + config.Path())
+	root := cfg.Dev
+	if cfg.Wrapper != "" {
+		root += ui.Dim("  клон в подпапке " + cfg.Wrapper)
+	}
+	ui.Println(label("корень") + root)
+	missing := 0
+	for i := range cfg.Projects {
+		if _, err := os.Stat(cfg.ProjectDir(&cfg.Projects[i])); err != nil {
+			missing++
+		}
+	}
+	line := ui.Count(len(cfg.Projects), "проект", "проекта", "проектов")
+	if missing > 0 {
+		line += ui.Warn(", без папки "+strconv.Itoa(missing)) + ui.Dim(" - tim doctor")
+	}
+	ui.Println(label("реестр") + line)
+	if len(cfg.Hosts) > 0 {
+		ui.Println(label("обход") + ui.Count(len(cfg.Hosts), "цель", "цели", "целей") + ui.Dim(" - tim route"))
+	}
+	if len(cfg.Tasks) > 0 {
+		ui.Println(label("задачи") + strconv.Itoa(len(cfg.Tasks)) + ui.Dim(" - tim each"))
+	}
+	if len(cfg.Groups) > 0 {
+		ui.Println(label("группы") + strconv.Itoa(len(cfg.Groups)))
+	}
+	sh := []string{"сводка при входе " + onOff(cfg.Shell.Motd), "проект при cd " + onOff(cfg.Shell.CdInfoOn())}
+	if len(cfg.Shell.Aliases) > 0 {
+		sh = append(sh, "алиасов "+strconv.Itoa(len(cfg.Shell.Aliases)))
+	}
+	ui.Println(label("оболочка") + strings.Join(sh, ", "))
+	ui.Println(ui.Dim("весь файл: tim config --raw; править можно руками, tim перечитывает сам"))
+	return nil
+}
+
+func onOff(on bool) string {
+	if on {
+		return "да"
+	}
+	return "нет"
 }
 
 // initConfig: мастер первого конфига. Без конфига в терминале - экран первого запуска.
