@@ -25,7 +25,11 @@ func OnboardScreen(env *app.Env, next func() tui.Screen) tui.Screen {
 		Scan:  onboardScan,
 		Save:  func(root string, chosen []tui.FoundProject) (string, error) { return onboardSave(env, root, chosen) },
 		Shell: onboardShell,
-		Home:  next,
+		ShellLine: func() string {
+			path, shell := rcfile.Path("")
+			return `строку eval "$(tim init ` + shell + `)" в ` + paths.Show(path)
+		}(),
+		Home: next,
 	}
 	if on, depth := ui.Colors(); on {
 		o.Art = brand.Mascot(brand.Calm, depth)

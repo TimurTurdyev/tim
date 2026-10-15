@@ -30,8 +30,10 @@ type OnboardOpts struct {
 	Scan  func(root string) []FoundProject
 	Save  func(root string, chosen []FoundProject) (string, error)
 	Shell func() (string, error) // подключить к оболочке; пусто - уже подключено
-	Home  func() Screen          // куда уйти после мастера
-	Art   []string
+	// ShellLine: что и куда допишет Shell, например eval "$(tim init zsh)" в ~/.zshrc.
+	ShellLine string
+	Home      func() Screen // куда уйти после мастера
+	Art       []string
 }
 
 type onboard struct {
@@ -316,8 +318,8 @@ func (o *onboard) View(width, height int) string {
 			"  " + stylePaneT.Render("Готово: "+o.saved),
 			"",
 			"  " + styleText.Render("Подключить tim к оболочке?"),
-			"  " + styleDim.Render("Одна строка в файле настроек shell: tim go станет делать cd, появятся подсказки и дополнение."),
-			"  " + styleDim.Render("Можно и потом: tim init"),
+			"  " + styleDim.Render("Допишу "+o.opts.ShellLine+": tim go станет делать cd, появятся подсказки и дополнение."),
+			"  " + styleDim.Render("Можно и потом: tim init setup"),
 		}
 	}
 	if o.step == 0 && len(o.opts.Art) > 0 {
