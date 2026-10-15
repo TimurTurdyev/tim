@@ -180,11 +180,13 @@ func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Ac
 	}
 	if used, total := sysinfo.Memory(); total > 0 {
 		pct := int(used * 100 / total)
-		health.MemPct = pct
 		tiles = append(tiles, tui.TileData{Title: "память", Width: 22, Rows: []string{
 			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
 			ui.Dim(fmt.Sprintf("%.0f из %.0f GB", float64(used)/(1<<30), float64(total)/(1<<30))),
 		}})
+	}
+	if health.SwapShort = machine.SwapShort(); health.SwapShort {
+		warn("памяти не хватает: своп занят больше чем наполовину", machine.HWScreen)
 	}
 	if len(h.env.Cfg.Hosts) > 0 {
 		tiles = append(tiles, h.vpnTile(warn, &health))

@@ -218,3 +218,14 @@ func TopRows(list []procs.Full) []TopRow {
 func Title(s Snapshot) string {
 	return s.Model + " \u00b7 " + strconv.Itoa(s.Cores) + " ядер \u00b7 " + ui.Bytes(s.MemTotal)
 }
+
+// SwapShort: своп занят больше чем наполовину - памяти не хватает постоянно, а не изредка. Правило
+// то же, что у tim hw и экрана железа; без sysctl (не macOS) - false.
+func SwapShort() bool {
+	out, err := runner.Output("sysctl", "-n", "vm.swapusage")
+	if err != nil {
+		return false
+	}
+	s, ok := hwinfo.ParseSwap(out)
+	return ok && s.Total > 0 && s.Used*2 > s.Total
+}

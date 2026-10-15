@@ -10,6 +10,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -93,14 +94,11 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 	return nil
 }
 
-// health: признаки беды для маскота - диск, память, страж; обход - если его посчитал раздел сети.
+// health: признаки беды для маскота - диск, своп, страж; обход - если его посчитал раздел сети.
 func health(cfg *config.Config) Health {
-	var h Health
+	h := Health{SwapShort: machine.SwapShort()}
 	if d, ok := sysinfo.DataDisk(); ok {
 		h.DiskPct = d.Percent()
-	}
-	if used, total := sysinfo.Memory(); total > 0 {
-		h.MemPct = int(used * 100 / total)
 	}
 	if len(cfg.Hosts) > 0 {
 		h.GuardMissing = !bypass.GuardAlive()
