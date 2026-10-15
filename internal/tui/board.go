@@ -237,7 +237,9 @@ func (b *board) View(width, height int) string {
 	tail := len(pane) + foot
 	listH := max(3, height-len(out)-tail-1)
 	if len(b.data.Rows) == 0 {
-		out = append(out, "  "+styleDim.Render(b.data.Empty))
+		for _, l := range ui.Wrap(b.data.Empty, width-4) {
+			out = append(out, "  "+styleDim.Render(l))
+		}
 	} else {
 		out = append(out, b.list.View(width, listH)...)
 	}
