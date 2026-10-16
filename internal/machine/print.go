@@ -52,7 +52,7 @@ func PrintHW(s Snapshot, full bool) {
 		}
 	}
 	if b, ok := ReadBattery(); ok {
-		ui.Println(hwLabel("батарея") + fmt.Sprintf("%d%%", b.Charge) + ui.Dim(fmt.Sprintf(", %d циклов, ёмкость %d%%", b.Cycles, b.Capacity)))
+		ui.Println(hwLabel("батарея") + fmt.Sprintf("%d%%", b.Charge) + ui.Dim(", "+ui.Count(b.Cycles, "цикл", "цикла", "циклов")+fmt.Sprintf(", ёмкость %d%%", b.Capacity)))
 	}
 	switch {
 	case s.Therm == "" && runtime.GOOS == "linux":

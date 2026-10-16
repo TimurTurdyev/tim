@@ -165,7 +165,7 @@ func killTarget(list []procs.Full, query string) (procs.App, error) {
 	}
 	opts := make([]app.Option, len(apps))
 	for i, a := range apps {
-		opts[i] = app.Option{Title: a.Name, Hint: fmt.Sprintf("%d процессов, %s", len(a.Procs), ui.Bytes(a.RSS))}
+		opts[i] = app.Option{Title: a.Name, Hint: ui.Count(len(a.Procs), "процесс", "процесса", "процессов") + ", " + ui.Bytes(a.RSS)}
 	}
 	k, err := app.Choose("что закрыть", "точное имя", opts)
 	if err != nil {
@@ -190,7 +190,7 @@ func killApp(a procs.App, o killOptions) error {
 		return nil
 	}
 	if !o.force {
-		q := fmt.Sprintf("завершить %s (%d процессов)?", a.Name, len(pids))
+		q := "завершить " + a.Name + " (" + ui.Count(len(pids), "процесс", "процесса", "процессов") + ")?"
 		if a.IsApp && runtime.GOOS == "darwin" {
 			q = "закрыть " + a.Name + " как Cmd+Q?"
 		}

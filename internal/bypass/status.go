@@ -86,7 +86,7 @@ func printRoutes(cfg *config.Config, probe, all bool) {
 		}
 	}
 	if !full {
-		line := fmt.Sprintf("в обход %d из %d адресов, целей %d", total-bad, total, len(cfg.Hosts))
+		line := fmt.Sprintf("в обход %d из %d %s, целей %d", total-bad, total, ui.Plural(total, "адреса", "адресов", "адресов"), len(cfg.Hosts))
 		if bad == 0 {
 			line = ui.OK(line)
 		} else {

@@ -208,7 +208,7 @@ func (h *Home) vpnTile(warn func(string, func() tui.Screen), health *motd.Health
 	lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))
 	if ok < total {
 		lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", ok, total))
-		warn(fmt.Sprintf("%d целей идут через VPN вместо обхода", total-ok), vpn)
+		warn(ui.Count(total-ok, "адрес", "адреса", "адресов")+" через VPN вместо обхода", vpn)
 	}
 	return tui.TileData{Title: "vpn", Width: 24, Rows: []string{lamp, guard}}
 }
