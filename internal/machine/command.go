@@ -133,7 +133,9 @@ func portCommand(env *app.Env) *cobra.Command {
 }
 
 func netCommand() *cobra.Command {
-	c := &cobra.Command{Use: "net", Short: "Сеть: проверка по шагам"}
+	// Без подкоманды - сама проверка: команда так и называется.
+	c := &cobra.Command{Use: "net", Short: "Сеть: проверка по шагам", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return checkNet() }}
 	check := &cobra.Command{
 		Use:   "check",
 		Short: "Шлюз, интернет, DNS, внешний IP, VPN: что именно не работает",

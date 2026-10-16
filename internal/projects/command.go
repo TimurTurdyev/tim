@@ -52,7 +52,9 @@ func Commands(env *app.Env) []*cobra.Command {
 }
 
 func projCommand(env *app.Env) *cobra.Command {
-	c := &cobra.Command{Use: "proj", Short: "Реестр проектов"}
+	// Без подкоманды - список: реестр и есть то, что хотят увидеть.
+	c := &cobra.Command{Use: "proj", Short: "Реестр проектов", Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) { printProjects(env.Cfg, "") }}
 	var addAll bool
 	scanCmd := &cobra.Command{
 		Use:   "scan [--add]",
