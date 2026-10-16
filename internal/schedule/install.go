@@ -50,6 +50,16 @@ func Uninstall(label, unit string, daemon bool) error {
 	return nil
 }
 
+// Installed: задание стоит - есть его файл launchd или юнит systemd пользователя.
+func Installed(label, unit string, daemon bool) bool {
+	path := PlistPath(label, daemon)
+	if runtime.GOOS == "linux" {
+		path = filepath.Join(systemdDir(daemon), unit+".service")
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // PlistPath: где лежит описание задания launchd.
 func PlistPath(label string, daemon bool) string {
 	if daemon {

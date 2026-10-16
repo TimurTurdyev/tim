@@ -120,6 +120,9 @@ func forecastLine(list []stats.Sample) string {
 	perDay, left, ok := stats.Forecast(list)
 	switch {
 	case !ok:
+		if !schedule.Installed(statsLabel, "tim-stats", false) {
+			return ui.Dim("для прогноза нужны замеры хотя бы за сутки, а ежечасный замер не стоит: tim stats --install")
+		}
 		return ui.Dim("для прогноза нужны замеры хотя бы за сутки")
 	case math.IsInf(left, 1) || perDay > -float64(100<<20):
 		return "место не убывает" + ui.Dim("  "+signedBytes(perDay)+" в сутки")
