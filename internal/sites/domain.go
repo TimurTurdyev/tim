@@ -141,10 +141,8 @@ func printAddrs(rep *domaudit.Report) {
 	ui.Println(ui.Info("Адреса и имена"))
 	for _, a := range rep.Addrs {
 		var parts []string
-		for _, s := range []string{a.AS.Name, a.AS.Country} {
-			if s != "" {
-				parts = append(parts, s)
-			}
+		if owner := asName(a.AS.Name, a.AS.Country); owner != "" {
+			parts = append(parts, owner)
 		}
 		if a.AS.ASN != "" {
 			parts = append(parts, "AS"+a.AS.ASN)
