@@ -128,7 +128,14 @@ func urlCommand() *cobra.Command {
 		Short: "Разобрать URL: схема, хост, порт, путь, параметры, фрагмент",
 		RunE:  func(cmd *cobra.Command, args []string) error { return urlParse(args) },
 	}
-	c := &cobra.Command{Use: "url", Short: "URL: encode, decode, parse"}
+	// С адресом без подкоманды - разбор: самое частое, зачем зовут tim url.
+	c := &cobra.Command{Use: "url [адрес]", Short: "URL: разобрать, закодировать, раскодировать", Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return urlParse(args)
+		}}
 	c.AddCommand(encode, decode, parse)
 	return c
 }

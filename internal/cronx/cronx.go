@@ -212,16 +212,31 @@ func list(f field, names []string, every string) string {
 	if strings.HasPrefix(f.raw, "*/") {
 		return "каждые " + strings.TrimPrefix(f.raw, "*/")
 	}
+	name := func(v int) string {
+		if names != nil && v < len(names) {
+			return names[v]
+		}
+		return strconv.Itoa(v)
+	}
+	// Подряд идущие - диапазоном: "9-18", а не десять чисел через запятую.
 	var out []string
 	for v := 0; v <= 59; v++ {
 		if !f.vals[v] {
 			continue
 		}
-		if names != nil && v < len(names) {
-			out = append(out, names[v])
-		} else {
-			out = append(out, strconv.Itoa(v))
+		end := v
+		for end < 59 && f.vals[end+1] {
+			end++
 		}
+		switch {
+		case end-v >= 2:
+			out = append(out, name(v)+"-"+name(end))
+		case end > v:
+			out = append(out, name(v), name(end))
+		default:
+			out = append(out, name(v))
+		}
+		v = end
 	}
 	return strings.Join(out, ", ")
 }

@@ -14,6 +14,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
+// dowShort: дни недели коротко, с воскресенья, как time.Weekday.
+var dowShort = []string{"вс", "пн", "вт", "ср", "чт", "пт", "сб"}
+
 // Полублоки: верхняя половина, нижняя, обе. Записаны кодами, чтобы исходник был набран с клавиатуры.
 const (
 	blockUpper = "\u2580"
@@ -146,7 +149,7 @@ func printCron(args []string, runs int) error {
 	}
 	ui.Println(ui.Label(s.Describe()))
 	for _, t := range s.Next(time.Now(), runs) {
-		ui.Println("  " + t.Format("Mon 2006-01-02 15:04") + ui.Dim("  "+relative(t)))
+		ui.Println("  " + dowShort[t.Weekday()] + " " + t.Format("2006-01-02 15:04") + ui.Dim("  "+relative(t)))
 	}
 	return nil
 }
