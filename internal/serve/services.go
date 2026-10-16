@@ -14,6 +14,10 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
+// brewStatus: состояния brew services по-русски; незнакомое показывается как есть.
+var brewStatus = map[string]string{"started": "работает", "stopped": "остановлен", "none": "остановлен",
+	"error": "ошибка", "scheduled": "по расписанию", "unknown": "неизвестно"}
+
 // systemd: на Linux службы - юниты systemd, а не brew services.
 func systemd() bool { return runtime.GOOS == "linux" && runner.Has("systemctl") }
 
@@ -46,17 +50,21 @@ func printServices() error {
 	}
 	for _, s := range list {
 		line := ui.Pad(s.Name, 22) + " "
+		status := s.Status
+		if ru, ok := brewStatus[status]; ok {
+			status = ru
+		}
 		switch s.Status {
 		case "started":
-			line = ui.Label(line + s.Status)
+			line = ui.Label(line + status)
 		case "error":
 			code := ""
 			if s.ExitCode != nil {
-				code = " " + strconv.Itoa(*s.ExitCode)
+				code = ", код " + strconv.Itoa(*s.ExitCode)
 			}
-			line = ui.Bad(line + s.Status + code)
+			line = ui.Bad(line + status + code)
 		default:
-			line = ui.Dim(line + s.Status)
+			line = ui.Dim(line + status)
 		}
 		ui.Println(line)
 	}
