@@ -75,12 +75,14 @@ var mascotFaces = map[Mood][]string{
 	Worried: {"..##", ".###", "####", "####", ".##."},
 	Upset:   {"#..#", ".##.", ".##.", "#..#", "...."},
 	Asleep:  {"....", "....", "#..#", ".##.", "...."},
-	Blink:   {"....", "....", "....", "####", "...."},
 }
+
+// blinkFace: кадр моргания - глаза закрыты, цвет и полоса остаются от настроения.
+var blinkFace = []string{"....", "....", "....", "####", "...."}
 
 // mascotInk и mascotBar: цвет глаз и полосы по настроению; полосы нет - пустая.
 var (
-	mascotInk = map[Mood]byte{Calm: 'T', Happy: 'T', Blink: 'T', Worried: 'Y', Upset: 'R', Asleep: 'q'}
+	mascotInk = map[Mood]byte{Calm: 'T', Happy: 'T', Worried: 'Y', Upset: 'R', Asleep: 'q'}
 	mascotBar = map[Mood]byte{Happy: 'G', Worried: 'Y', Upset: 'R'}
 )
 
@@ -106,9 +108,17 @@ const (
 	Happy
 	Upset
 	Asleep
-	Blink   // кадр моргания: глаза закрыты, без "z"
 	Worried // тревога: что-то подходит к краю
+
+	// Blink: флаг кадра моргания поверх настроения, brand.Calm|brand.Blink; закрытые глаза не моргают.
+	Blink Mood = 1 << 4
 )
+
+// pose: настроение без флага и закрыты ли на этом кадре открытые глаза.
+func pose(m Mood) (Mood, bool) {
+	base := m &^ Blink
+	return base, m&Blink != 0 && (base == Calm || base == Worried)
+}
 
 // copyRows: рисунок для правки.
 func copyRows(rows []string) [][]byte {
@@ -136,14 +146,15 @@ func paintBar(g [][]byte, m Mood) {
 
 // smallGrid: у мелкого глаза - три ряда сегментов: рад - верхние, ошибка - нижние, сон - один нижний.
 func smallGrid(m Mood) [][]byte {
+	m, shut := pose(m)
 	g := copyRows(mascotSmall)
 	from, to := 0, 3
-	switch m {
-	case Happy:
+	switch {
+	case m == Happy:
 		to = 2
-	case Upset:
+	case m == Upset:
 		from = 1
-	case Asleep, Blink:
+	case m == Asleep, shut:
 		from = 2
 	}
 	row := 0
@@ -170,8 +181,12 @@ func smallGrid(m Mood) [][]byte {
 
 // largeGrid: у крупного на экране рисуется лицо настроения.
 func largeGrid(m Mood) [][]byte {
+	m, shut := pose(m)
 	g := copyRows(mascotLarge)
 	left := mascotFaces[m]
+	if shut {
+		left = blinkFace
+	}
 	right := left
 	if m == Worried {
 		right = make([]string, len(left))

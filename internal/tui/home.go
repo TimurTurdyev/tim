@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"math/rand/v2"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -11,6 +13,9 @@ import (
 )
 
 // Главный экран: строка поиска, недавнее и разделы, плитки состояния, одно предупреждение.
+
+// blinkShut: сколько глаза маскота закрыты при моргании.
+const blinkShut = 150 * time.Millisecond
 
 // Hit: то, что находится поиском - проект, команда, сервер, домен, недавнее.
 type Hit struct {
@@ -42,9 +47,10 @@ type HomeData struct {
 	Tiles    []TileData
 	Warning  string
 	WarnOpen func() Action
-	// Art: маскот уже с цветом, крупно - для широкого окна; зовётся при отрисовке, чтобы настроение
-	// успевало за событиями (вернулся после удачной команды - рад). nil - без картинки.
-	Art func(large bool) []string
+	// Art: маскот уже с цветом, крупно - для широкого окна, blink - кадр моргания; зовётся при
+	// отрисовке, чтобы настроение успевало за событиями (вернулся после удачной команды - рад).
+	// nil - без картинки.
+	Art func(large, blink bool) []string
 }
 
 // HomeOpts: источники главного экрана.
@@ -60,9 +66,17 @@ type home struct {
 	list  List
 	hits  []Hit
 	ready bool
+	blink bool
+	gen   int // поколение таймера моргания: повторный Init не запускает вторую цепочку
 }
 
 type homeDataMsg HomeData
+
+// blinkMsg: глаза маскота закрыть или открыть.
+type blinkMsg struct {
+	gen  int
+	shut bool
+}
 
 // NewHome создаёт главный экран.
 func NewHome(opts HomeOpts) Screen {
@@ -80,7 +94,18 @@ func NewHome(opts HomeOpts) Screen {
 }
 
 func (h *home) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, func() tea.Msg { return homeDataMsg(h.opts.Load()) })
+	h.gen++
+	return tea.Batch(textinput.Blink, func() tea.Msg { return homeDataMsg(h.opts.Load()) }, h.blinkAfter(false))
+}
+
+// blinkAfter: закрытые глаза открыть через миг, открытые - закрыть через 3-7 секунд.
+func (h *home) blinkAfter(shut bool) tea.Cmd {
+	d := blinkShut
+	if !shut {
+		d = time.Duration(3000+rand.IntN(4000)) * time.Millisecond
+	}
+	msg := blinkMsg{gen: h.gen, shut: !shut}
+	return tea.Tick(d, func(time.Time) tea.Msg { return msg })
 }
 
 func (h *home) Crumbs() []string { return nil }
@@ -164,6 +189,12 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 		h.ready = true
 		h.refill()
 		return nil
+	case blinkMsg:
+		if msg.gen != h.gen {
+			return nil
+		}
+		h.blink = msg.shut
+		return h.blinkAfter(msg.shut)
 	case tea.KeyPressMsg:
 		k := msg.String()
 		switch k {
@@ -210,7 +241,7 @@ func (h *home) View(width, height int) string {
 	// строки ставила "~" на хвост из пробелов, а в поиске картинка обрывалась на четвёртой строке.
 	var art []string
 	if width >= 90 && h.data.Art != nil {
-		art = h.data.Art(width >= 140)
+		art = h.data.Art(width >= 140, h.blink)
 	}
 	cw := width
 	if len(art) > 0 {

@@ -129,11 +129,14 @@ func (h *Home) load() tui.HomeData {
 	var health motd.Health
 	d.Tiles, d.Warning, d.WarnOpen, health = h.tiles()
 	if on, depth := ui.Colors(); on {
-		d.Art = func(large bool) []string {
+		d.Art = func(large, blink bool) []string {
 			mood := health.Mood(time.Now())
 			// Вернулся после удачной команды - рад полминуты.
 			if time.Since(time.Unix(0, h.lastOK.Load())) < 30*time.Second {
 				mood = brand.Happy
+			}
+			if blink {
+				mood |= brand.Blink
 			}
 			if large {
 				return brand.MascotLarge(mood, depth)
