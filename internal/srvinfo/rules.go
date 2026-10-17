@@ -131,7 +131,7 @@ func (f *findings) ports(listening []Listen) {
 // access: вход по ssh и защита от перебора.
 func (f *findings) access(r Report) {
 	if r.NoSudoSSHD {
-		f.add("sshd", level.Skip, "не проверено", "настройки sshd читаются только через sudo без пароля")
+		f.add("sshd", level.Skip, "не проверено", "не проверен: настройки читаются только через sudo без пароля")
 	} else {
 		if r.SSHD["permitrootlogin"] == "yes" {
 			f.add("sshd", level.Bad, "root по паролю", "PermitRootLogin yes: вход под root, в том числе по паролю")
@@ -154,7 +154,7 @@ func (f *findings) services(r Report, now time.Time) {
 	switch r.Nginx {
 	case "", "ok":
 	case "nosudo":
-		f.add("nginx", level.Skip, "не проверено", "nginx -t читает сертификаты, без sudo его не запустить")
+		f.add("nginx", level.Skip, "не проверено", "не проверен: nginx -t читает сертификаты, ему нужен sudo без пароля")
 	default:
 		f.add("nginx", level.Bad, "конфиг с ошибкой", "nginx -t: "+r.Nginx+" - следующий reload не пройдёт")
 	}

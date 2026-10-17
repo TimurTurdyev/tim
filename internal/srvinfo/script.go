@@ -11,7 +11,7 @@ echo @@df; df -kP -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev
 echo @@inodes; df -iP -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev/null
 echo @@failed; systemctl --failed --no-legend --plain 2>/dev/null
 echo @@reboot; if [ -f /var/run/reboot-required ]; then echo yes; cat /var/run/reboot-required.pkgs 2>/dev/null; fi
-echo @@updates; apt list --upgradable 2>/dev/null | grep -- '-security' | cut -d/ -f1
+echo @@updates; if command -v apt >/dev/null 2>&1; then apt list --upgradable 2>/dev/null | grep -- '-security' | cut -d/ -f1; else echo noapt; fi
 echo @@ports; ss -tlnH 2>/dev/null
 echo @@sshd; sudo -n sshd -T 2>/dev/null | grep -Ei '^(passwordauthentication|permitrootlogin) ' || echo nosudo
 echo @@firewall; sudo -n ufw status 2>/dev/null | head -1; echo "fail2ban $(systemctl is-active fail2ban 2>/dev/null)"

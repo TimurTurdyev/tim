@@ -2,6 +2,7 @@ package srvinfo
 
 import (
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,7 @@ type Report struct {
 	Reboot              bool
 	RebootPkgs          []string
 	SecurityUpdates     []string
+	NoApt               bool // обновления не проверены: не Debian и не Ubuntu
 	Listening           []Listen
 	SSHD                map[string]string
 	NoSudoSSHD          bool
@@ -86,6 +88,9 @@ func Parse(out string) Report {
 		r.RebootPkgs = uniq(rb[1:])
 	}
 	r.SecurityUpdates = uniq(s["updates"])
+	if slices.Contains(r.SecurityUpdates, "noapt") {
+		r.SecurityUpdates, r.NoApt = nil, true
+	}
 	for _, l := range s["ports"] {
 		if ln, ok := parseSS(l); ok {
 			r.Listening = append(r.Listening, ln)

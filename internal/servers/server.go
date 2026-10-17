@@ -61,13 +61,22 @@ func collect(target string, timeout time.Duration) (srvinfo.Report, error) {
 	return srvinfo.Parse(out), nil
 }
 
-func summaryLine(r srvinfo.Report) string {
+// osLine: система и сколько работает - шапка экрана, где остальное видно полосами.
+func osLine(r srvinfo.Report) string {
 	var parts []string
 	if r.OS != "" {
 		parts = append(parts, r.OS)
 	}
 	if r.Uptime > 0 {
 		parts = append(parts, "up "+ui.Duration(r.Uptime))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func summaryLine(r srvinfo.Report) string {
+	var parts []string
+	if l := osLine(r); l != "" {
+		parts = append(parts, l)
 	}
 	if r.Cores > 0 {
 		parts = append(parts, fmt.Sprintf("load %.2f, ядер %d", r.Load[1], r.Cores))

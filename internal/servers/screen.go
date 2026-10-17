@@ -2,6 +2,7 @@ package servers
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,7 +44,7 @@ func serverData(target string) tui.BoardData {
 		d.Empty = "отчёта нет"
 		return d
 	}
-	d.Status = summaryLine(r)
+	d.Status = osLine(r)
 	d.Head = serverBars(r)
 	d.Lamps = serverLamps(r)
 	for _, c := range srvinfo.Evaluate(r, time.Now()) {
@@ -79,52 +80,48 @@ func serverBars(r srvinfo.Report) []string {
 	return out
 }
 
-// serverLamps: службы, обновления, ssh, открытые порты и защита от перебора - по лампе.
+// serverLamps: что проверено и в порядке, и порты наружу; беды - строками ниже, без повтора в лампах.
 func serverLamps(r srvinfo.Report) []string {
 	var lamps []string
 	if len(r.Failed) == 0 {
 		lamps = append(lamps, level.Lamp(level.OK, "службы в порядке"))
-	} else {
-		lamps = append(lamps, level.Lamp(level.Bad, "упали: "+strings.Join(r.Failed, ", ")))
 	}
-	switch n := len(r.SecurityUpdates); {
-	case n == 0 && !r.Reboot:
+	if len(r.SecurityUpdates) == 0 && !r.Reboot && !r.NoApt {
 		lamps = append(lamps, level.Lamp(level.OK, "обновления безопасности стоят"))
-	case n == 0:
-		lamps = append(lamps, level.Lamp(level.Warn, "нужна перезагрузка"))
-	default:
-		lamps = append(lamps, level.Lamp(level.Warn, fmt.Sprintf("%d %s безопасности ждут", n, ui.Plural(n, "обновление", "обновления", "обновлений"))))
 	}
-	switch {
-	case r.NoSudoSSHD:
-		lamps = append(lamps, level.Lamp(level.Skip, "sshd не проверен: нужен sudo без пароля"))
-	case r.SSHD["permitrootlogin"] == "yes" || r.SSHD["passwordauthentication"] == "yes":
-		lamps = append(lamps, level.Lamp(level.Warn, "ssh: вход по паролю разрешён"))
-	default:
+	if !r.NoSudoSSHD && r.SSHD["permitrootlogin"] != "yes" && r.SSHD["passwordauthentication"] != "yes" {
 		lamps = append(lamps, level.Lamp(level.OK, "ssh только по ключу"))
 	}
-	var open []string
-	for _, l := range r.Listening {
-		if l.Public {
-			open = append(open, strconv.Itoa(l.Port))
-		}
-	}
-	lamps = append(lamps, level.Lamp(level.OK, "наружу ")+ui.Dim(strings.Join(open, ", ")))
 	switch {
 	case r.Fail2ban == "active":
 		lamps = append(lamps, level.Lamp(level.OK, "fail2ban работает"))
 	case r.UFW == "active":
 		lamps = append(lamps, level.Lamp(level.OK, "ufw включён"))
-	default:
-		lamps = append(lamps, level.Lamp(level.Warn, "защиты от перебора не видно"))
+	}
+	var open []int
+	for _, l := range r.Listening {
+		if l.Public {
+			open = append(open, l.Port)
+		}
+	}
+	if len(open) > 0 {
+		slices.Sort(open)
+		ports := make([]string, len(open))
+		for i, p := range open {
+			ports[i] = strconv.Itoa(p)
+		}
+		lamps = append(lamps, level.Lamp(level.OK, "наружу ")+ui.Dim(strings.Join(slices.Compact(ports), ", ")))
 	}
 	return lamps
 }
 
 // findingRow: находка строкой доски; в панели подробность и с чего начать.
 func findingRow(c health.Check, r srvinfo.Report) tui.BoardRow {
-	row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text, Sub: c.Level.String()}
-	row.Cells = ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + ui.Clip(c.Detail, 90)
+	row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text}
+	if c.Level > level.OK {
+		row.Sub = c.Level.String()
+	}
+	row.Cells = ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + c.Detail
 	row.Pane = []string{c.Detail}
 	if fix := serverFix(c, r); fix != "" {
 		row.Pane = append(row.Pane, ui.Dim("\u2192 "+fix))
@@ -134,6 +131,14 @@ func findingRow(c health.Check, r srvinfo.Report) tui.BoardRow {
 
 // serverFix: с чего начать по каждой находке - команда или место, где смотреть.
 func serverFix(c health.Check, r srvinfo.Report) string {
+	if c.Level == level.Skip {
+		switch c.Name {
+		case "sshd":
+			return "проверить руками: sudo sshd -T | grep -Ei 'passwordauthentication|permitrootlogin'"
+		case "nginx":
+			return "проверить руками: sudo nginx -t"
+		}
+	}
 	switch c.Name {
 	case "юнит":
 		return "journalctl -u " + c.Text + " -n 50, потом systemctl restart " + c.Text
