@@ -54,7 +54,29 @@ func Run(target string) (*Report, error) {
 		r.Checked = append(r.Checked, "переход с http")
 	}
 	paths := ProbePaths()
-	answers := par.Map(paths, 8, func(p string) response { return fetch(base+p, false) })
+	host := hostOf(home.url)
+	sw := ParseSoftware(home.header.Get("Server"), home.header.Get("X-Powered-By"), home.body)
+	var answers []response
+	var facts TLSFacts
+	var releases map[string][]Release
+	var open []int
+	par.All(
+		func() { answers = par.Map(paths, 8, func(p string) response { return fetch(base+p, false) }) },
+		func() {
+			if https {
+				facts = collectTLS(host)
+			}
+		},
+		func() { releases = releasesOf(sw) },
+		func() { open = openPorts(host) },
+	)
+	if https {
+		r.Findings = append(r.Findings, TLSFindings(facts, time.Now())...)
+		r.Checked = append(r.Checked, "TLS")
+	}
+	r.Findings = append(r.Findings, VersionFindings(sw, releases)...)
+	r.Findings = append(r.Findings, PortFindings(open)...)
+	r.Checked = append(r.Checked, "версии", "порты баз")
 	seen := map[string]bool{}
 	for i, a := range answers {
 		f, ok := Exposed(paths[i], a.status, a.body)
@@ -100,6 +122,14 @@ func plainHTTP(base string) (Finding, bool) {
 	}
 	return Finding{Area: "https", Level: level.Warn, Text: "по http сайт открывается без перехода на https",
 		Why: "кто набрал адрес без https, работает по открытому каналу", Fix: "в nginx на 80-м порту: return 301 https://$host$request_uri;"}, true
+}
+
+func hostOf(u string) string {
+	p, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	return p.Hostname()
 }
 
 func origin(u string) string {

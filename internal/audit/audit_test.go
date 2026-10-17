@@ -2,7 +2,9 @@ package audit
 
 import (
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/level"
 )
@@ -79,5 +81,39 @@ func TestExposedBySignature(t *testing.T) {
 	}
 	if _, ok := DebugPage("<h1>404 Not Found</h1>"); ok {
 		t.Error("обычная 404 - не отладка")
+	}
+}
+
+func TestTLSFindings(t *testing.T) {
+	now := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
+	got := TLSFindings(TLSFacts{Old: []string{"TLS 1.0"}, NoChain: true, RSABits: 1024, Expires: now.AddDate(0, 0, 5)}, now)
+	levels := map[level.Level]int{}
+	for _, f := range got {
+		levels[f.Level]++
+	}
+	// ключ 1024 и срок 5 дней - плохо; старая версия и нет цепочки - внимание
+	if levels[level.Bad] != 2 || levels[level.Warn] != 2 {
+		t.Fatalf("%+v", got)
+	}
+	if got := TLSFindings(TLSFacts{RSABits: 2048, Expires: now.AddDate(0, 2, 0)}, now); len(got) != 0 {
+		t.Errorf("здоровый TLS: %+v", got)
+	}
+}
+
+func TestVersionFindings(t *testing.T) {
+	releases, err := ParseReleases([]byte(`{"result":{"releases":[
+		{"name":"8.4","isEol":false,"eolFrom":"2028-12-31"},
+		{"name":"7.4","isEol":true,"eolFrom":"2022-11-28"}]}}`))
+	if err != nil || len(releases) != 2 {
+		t.Fatalf("%v %v", releases, err)
+	}
+	sw := ParseSoftware("nginx/1.18.0 (Ubuntu)", "PHP/7.4.33", `<meta name="generator" content="WordPress 6.4.2">`)
+	if len(sw) != 3 || !sw[0].Distro || sw[1].Distro || sw[2].Header {
+		t.Fatalf("%+v", sw)
+	}
+	got := VersionFindings(sw, map[string][]Release{"php": releases, "nginx": {{Name: "1.18", IsEol: true, EolFrom: "2021-04-20"}}})
+	// PHP 7.4 с php.net - плохо; nginx из пакетов Ubuntu - срок не сверяется; версии в заголовках - к сведению
+	if len(got) != 2 || got[0].Level != level.Bad || !strings.HasPrefix(got[0].Text, "php 7.4 ") || got[1].Level != level.Info {
+		t.Fatalf("%+v", got)
 	}
 }

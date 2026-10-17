@@ -12,8 +12,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/level"
 )
 
-// dbPorts: что не должно отвечать из интернета. 2375 - Docker API без TLS, это root на машине.
-var dbPorts = map[int]string{
+// DBPorts: что не должно отвечать из интернета. 2375 - Docker API без TLS, это root на машине.
+var DBPorts = map[int]string{
 	3306: "MySQL", 5432: "PostgreSQL", 6379: "Redis", 27017: "MongoDB", 9200: "Elasticsearch",
 	11211: "Memcached", 5984: "CouchDB", 8086: "InfluxDB", 2375: "Docker API без TLS", 2376: "Docker API",
 }
@@ -124,7 +124,7 @@ func (f *findings) ports(listening []Listen) {
 		if !l.Public {
 			continue
 		}
-		if name, ok := dbPorts[l.Port]; ok {
+		if name, ok := DBPorts[l.Port]; ok {
 			f.add("порт", level.Bad, strconv.Itoa(l.Port)+" "+name, name+" слушает на всех адресах: из интернета до него можно достучаться")
 			continue
 		}
