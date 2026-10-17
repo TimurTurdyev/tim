@@ -55,6 +55,7 @@ var examples = map[string]string{
 	"tim db":          "  tim db                     # клиент по .env проекта\n  tim db shop dump\n  tim db shop --via prod",
 	"tim status":      "  tim status\n  tim status repos versions\n  tim status --all --time",
 	"tim site":        "  tim site example.com\n  tim site https://shop.example.com --json",
+	"tim audit":       "  tim audit example.com\n  tim audit shop          # проект с адресом сайта в реестре\n  tim audit example.com --json",
 	"tim mail":        "  tim mail example.com\n  tim mail example.com --selector s2024",
 	"tim http":        "  tim http example.com\n  tim http -L http://example.com",
 	"tim each":        "  tim each                   # задачи из конфига\n  tim each deps --list\n  tim each --marker go.mod -- go mod tidy",
@@ -99,6 +100,7 @@ var overviewSections = []struct {
 	}},
 	{"Сайты", [][2]string{
 		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},
+		{"tim audit <домен|проект>", "аудит снаружи: открытые файлы, заголовки, куки"},
 		{"tim mail <домен>", "почта: SPF, DKIM, DMARC"},
 		{"tim og <url>", "превью ссылки в мессенджерах"},
 	}},

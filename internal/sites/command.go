@@ -37,7 +37,7 @@ type watchOptions struct {
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
-	return []*cobra.Command{checkCommand(env), certCommand(env), dnsCommand(), siteCommand(), domainCommand(env),
+	return []*cobra.Command{checkCommand(env), certCommand(env), dnsCommand(), siteCommand(), auditCommand(env), domainCommand(env),
 		mailCommand(env), httpCommand(), ogCommand(), corsCommand(), watchCommand()}
 }
 
@@ -102,6 +102,23 @@ func siteCommand() *cobra.Command {
 		Short: "Что за сайт: IP и где он, регистрация домена, сертификат, HTTP, CMS",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return printSite(args[0], asJSON) },
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
+	return c
+}
+
+func auditCommand(env *app.Env) *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "audit [домен|url|проект] [--json]",
+		Short: "Аудит сайта снаружи: открытые файлы, заголовки, куки, переход на https",
+		Long: `Смотрит сайт так, как его видит любой бот: главную, переход с http на https, заголовки безопасности,
+флаги кук, страницу ошибки и пути, которые не должны открываться (.env, .git, дампы базы, журналы, phpinfo,
+Telescope, панели баз). Находка - по содержимому ответа, а не по коду 200: заглушки отдают главную на любой
+путь. Проверяй свои сайты и те, что попросили проверить.`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: app.ProjectNames,
+		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(env, app.First(args), asJSON) },
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
 	return c
