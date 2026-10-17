@@ -48,6 +48,9 @@ type Report struct {
 	NoSudoSSHD          bool
 	UFW                 string
 	Fail2ban            string
+	CrowdSec            string
+	Virt                string // systemd-detect-virt: kvm, xen, none; пусто - не узнали
+	Netplan             bool
 	Nginx               string // "ok", текст ошибки, "nosudo" или пусто, если nginx нет
 	Certs               []Cert
 }
@@ -103,7 +106,15 @@ func Parse(out string) Report {
 			r.UFW = strings.TrimSpace(v)
 		} else if v, ok := strings.CutPrefix(l, "fail2ban"); ok {
 			r.Fail2ban = strings.TrimSpace(v)
+		} else if v, ok := strings.CutPrefix(l, "crowdsec"); ok {
+			r.CrowdSec = strings.TrimSpace(v)
 		}
+	}
+	for _, l := range s["host"] {
+		if v, ok := strings.CutPrefix(l, "virt"); ok {
+			r.Virt = strings.TrimSpace(v)
+		}
+		r.Netplan = r.Netplan || l == "netplan"
 	}
 	r.Nginx = nginxState(s["nginx"])
 	r.Certs = parseCerts(s["certs"])

@@ -83,19 +83,22 @@ func serverBars(r srvinfo.Report) []string {
 // serverLamps: что проверено и в порядке, и порты наружу; беды - строками ниже, без повтора в лампах.
 func serverLamps(r srvinfo.Report) []string {
 	var lamps []string
-	if len(r.Failed) == 0 {
+	if !slices.ContainsFunc(r.Failed, func(u string) bool { return srvinfo.Harmless(u, r) == "" }) {
 		lamps = append(lamps, level.Lamp(level.OK, "службы в порядке"))
 	}
 	if len(r.SecurityUpdates) == 0 && !r.Reboot && !r.NoApt {
 		lamps = append(lamps, level.Lamp(level.OK, "обновления безопасности стоят"))
 	}
-	if !r.NoSudoSSHD && r.SSHD["permitrootlogin"] != "yes" && r.SSHD["passwordauthentication"] != "yes" {
+	if !r.NoSudoSSHD && !srvinfo.PasswordLogin(r) {
 		lamps = append(lamps, level.Lamp(level.OK, "ssh только по ключу"))
 	}
-	switch {
-	case r.Fail2ban == "active":
+	if r.Fail2ban == "active" {
 		lamps = append(lamps, level.Lamp(level.OK, "fail2ban работает"))
-	case r.UFW == "active":
+	}
+	if r.CrowdSec == "active" {
+		lamps = append(lamps, level.Lamp(level.OK, "CrowdSec работает"))
+	}
+	if r.UFW == "active" {
 		lamps = append(lamps, level.Lamp(level.OK, "ufw включён"))
 	}
 	var open []int
@@ -141,6 +144,9 @@ func serverFix(c health.Check, r srvinfo.Report) string {
 	}
 	switch c.Name {
 	case "юнит":
+		if c.Level == level.Info {
+			return "убрать из списка: systemctl reset-failed; fwupd на VPS можно выключить: systemctl mask fwupd-refresh.timer"
+		}
 		return "journalctl -u " + c.Text + " -n 50, потом systemctl restart " + c.Text
 	case "обновления":
 		return "apt update && apt upgrade"
@@ -159,7 +165,7 @@ func serverFix(c health.Check, r srvinfo.Report) string {
 	case "sshd":
 		return "в /etc/ssh/sshd_config: PermitRootLogin no, PasswordAuthentication no; затем systemctl reload ssh"
 	case "защита":
-		return "apt install fail2ban; ufw allow OpenSSH && ufw enable"
+		return "apt install fail2ban - бережёт ssh сразу после установки; нужны общие чёрные списки - CrowdSec"
 	case "nginx":
 		return "nginx -t покажет строку с ошибкой"
 	case "сертификат":

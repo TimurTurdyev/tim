@@ -82,18 +82,31 @@ func (f *findings) resources(r Report) {
 
 // system: упавшие юниты, ожидание перезагрузки и обновления безопасности.
 func (f *findings) system(r Report) {
+	var harmless, reasons []string
 	for _, u := range r.Failed {
-		f.add("юнит", level.Warn, u, "systemd: "+u+" упал")
+		why := Harmless(u, r)
+		if why == "" {
+			f.add("юнит", level.Warn, u, "systemd: "+u+" упал")
+			continue
+		}
+		harmless = append(harmless, u)
+		if !slices.Contains(reasons, why) {
+			reasons = append(reasons, why)
+		}
+	}
+	if len(harmless) > 0 {
+		f.add("юнит", level.Info, strings.Join(harmless, " "),
+			"упали без последствий: "+strings.Join(harmless, ", ")+" - "+strings.Join(reasons, "; "))
 	}
 	if r.Reboot {
-		why := "нужна перезагрузка"
+		why := "после обновлений"
 		for _, p := range r.RebootPkgs {
 			if p == "libc6" || strings.HasPrefix(p, "linux-image") {
-				why = "нужна перезагрузка: обновлены ядро или libc, до неё работает старое"
+				why = "обновлены ядро или libc, до перезагрузки работает старое"
 				break
 			}
 		}
-		f.add("перезагрузка", level.Warn, "нужна", why+fmt.Sprintf("; сервер работает %d дн", int(r.Uptime.Hours()/24)))
+		f.add("перезагрузка", level.Warn, "нужна", "нужна: "+why+fmt.Sprintf("; сервер работает %d дн", int(r.Uptime.Hours()/24)))
 	}
 	if n := len(r.SecurityUpdates); n > 0 {
 		list := strings.Join(r.SecurityUpdates[:min(5, n)], ", ")
@@ -106,7 +119,7 @@ func (f *findings) system(r Report) {
 
 // ports: базы и FTP, открытые наружу, и необычные порты одной строкой.
 func (f *findings) ports(listening []Listen) {
-	var odd []string
+	var odd []int
 	for _, l := range listening {
 		if !l.Public {
 			continue
@@ -120,33 +133,57 @@ func (f *findings) ports(listening []Listen) {
 			continue
 		}
 		if !usualPorts[l.Port] {
-			odd = append(odd, strconv.Itoa(l.Port))
+			odd = append(odd, l.Port)
 		}
 	}
 	if len(odd) > 0 {
-		f.add("порт", level.Warn, strings.Join(odd, " "), "открыты наружу необычные порты "+strings.Join(odd, ", ")+": проверь, что это и нужно ли")
+		slices.Sort(odd)
+		list := make([]string, len(odd))
+		for i, p := range odd {
+			list[i] = strconv.Itoa(p)
+		}
+		f.add("порт", level.Warn, strings.Join(list, " "), "открыты наружу необычные порты "+strings.Join(list, ", ")+": проверь, что это и нужно ли")
 	}
 }
 
 // access: вход по ssh и защита от перебора.
+// ufw защитой от перебора не считается: он закрывает порты, а открытый 22 не бережёт.
 func (f *findings) access(r Report) {
+	password := PasswordLogin(r)
 	if r.NoSudoSSHD {
 		f.add("sshd", level.Skip, "не проверено", "не проверен: настройки читаются только через sudo без пароля")
 	} else {
-		if r.SSHD["permitrootlogin"] == "yes" {
-			f.add("sshd", level.Bad, "root по паролю", "PermitRootLogin yes: вход под root, в том числе по паролю")
+		if r.SSHD["permitrootlogin"] == "yes" && password {
+			f.add("sshd", level.Bad, "root по паролю", "PermitRootLogin yes и вход по паролю: пароль root можно подбирать")
 		}
-		if r.SSHD["passwordauthentication"] == "yes" {
-			f.add("sshd", level.Warn, "вход по паролю", "PasswordAuthentication yes: пароли можно перебирать")
+		if password {
+			f.add("sshd", level.Warn, "вход по паролю", "вход по паролю включён: пароли можно перебирать")
 		}
 	}
-	if r.Fail2ban != "active" && r.UFW != "active" {
-		text := "fail2ban не запущен"
-		if r.UFW == "" {
-			text += ", ufw не проверен"
-		}
-		f.add("защита", level.Warn, text, "ни fail2ban, ни ufw не видно: перебор паролей и сканирование ничем не ограничены")
+	switch {
+	case r.Fail2ban == "active" || r.CrowdSec == "active":
+	case password || r.NoSudoSSHD:
+		f.add("защита", level.Warn, "нет fail2ban и CrowdSec", "перебор паролей по ssh ничем не ограничен: нет ни fail2ban, ни CrowdSec")
+	default:
+		f.add("защита", level.Info, "вход только по ключу", "нет ни fail2ban, ни CrowdSec, но вход только по ключу: перебор не опасен, fail2ban уберёт шум из журнала")
 	}
+}
+
+// PasswordLogin: sshd пускает по паролю - напрямую или через keyboard-interactive.
+func PasswordLogin(r Report) bool {
+	return r.SSHD["passwordauthentication"] == "yes" || r.SSHD["kbdinteractiveauthentication"] == "yes"
+}
+
+// Harmless: почему падение юнита ни на что не влияет, пусто - влияет. На VPS это частый шум: fwupd
+// обновляет прошивки, которых у виртуальной машины нет; ifupdown падает, когда сетью управляет netplan.
+func Harmless(unit string, r Report) string {
+	switch {
+	case strings.HasPrefix(unit, "fwupd") && r.Virt != "" && r.Virt != "none":
+		return "на виртуальной машине прошивок нет"
+	case (unit == "networking.service" || strings.HasPrefix(unit, "ifup@")) && r.Netplan:
+		return "сетью управляет netplan, старый ifupdown не нужен"
+	}
+	return ""
 }
 
 // services: конфиг nginx и сроки сертификатов.

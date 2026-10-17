@@ -74,7 +74,7 @@ func TestEvaluateBad(t *testing.T) {
 		Cores: 2, Load: [3]float64{6, 5, 4},
 		Disks:     []Disk{{Mount: "/", Pct: 97}},
 		Listening: []Listen{{Addr: "0.0.0.0", Port: 6379, Public: true}, {Addr: "10.0.0.5", Port: 5432}},
-		SSHD:      map[string]string{"permitrootlogin": "yes", "passwordauthentication": "no"},
+		SSHD:      map[string]string{"permitrootlogin": "yes", "passwordauthentication": "yes"},
 		Fail2ban:  "active",
 		Nginx:     `nginx: [emerg] unknown directive "servr_name"`,
 	}
@@ -91,5 +91,39 @@ func TestEvaluateBad(t *testing.T) {
 	// диск 97%, нагрузка 2.5 на ядро, Redis наружу, root по паролю, nginx с ошибкой
 	if bad != 5 || got[0].Level != level.Bad {
 		t.Fatalf("плохих %d: %+v", bad, got)
+	}
+}
+
+func TestAccessAndHarmlessUnits(t *testing.T) {
+	key := map[string]string{"passwordauthentication": "no", "kbdinteractiveauthentication": "no"}
+	pass := map[string]string{"passwordauthentication": "yes"}
+	// level.OK в ожидании - находки с таким именем быть не должно.
+	cases := []struct {
+		name string
+		r    Report
+		want map[string]level.Level
+	}{
+		{"fail2ban, вход по паролю", Report{SSHD: pass, Fail2ban: "active"}, map[string]level.Level{"защита": level.OK, "sshd": level.Warn}},
+		{"CrowdSec, только ключ", Report{SSHD: key, CrowdSec: "active"}, map[string]level.Level{"защита": level.OK, "sshd": level.OK}},
+		{"только ufw, вход по паролю", Report{SSHD: pass, UFW: "active"}, map[string]level.Level{"защита": level.Warn}},
+		{"sshd не проверен", Report{NoSudoSSHD: true}, map[string]level.Level{"защита": level.Warn}},
+		{"root по ключу, без защиты", Report{SSHD: map[string]string{"passwordauthentication": "no", "permitrootlogin": "yes"}},
+			map[string]level.Level{"защита": level.Info, "sshd": level.OK}},
+		{"fwupd на виртуалке, ifup при netplan", Report{SSHD: key, Fail2ban: "active", Virt: "kvm", Netplan: true,
+			Failed: []string{"fwupd.service", "ifup@eth0.service"}}, map[string]level.Level{"юнит": level.Info}},
+		{"fwupd на железе, networking без netplan", Report{SSHD: key, Fail2ban: "active", Virt: "none",
+			Failed: []string{"fwupd.service", "networking.service"}}, map[string]level.Level{"юнит": level.Warn}},
+	}
+	for _, c := range cases {
+		got := map[string]level.Level{}
+		for _, x := range Evaluate(c.r, time.Now()) {
+			got[x.Name] = max(got[x.Name], x.Level)
+		}
+		for name, want := range c.want {
+			l, ok := got[name]
+			if want == level.OK && ok || want != level.OK && l != want {
+				t.Errorf("%s: %s = %v, ждали %v (есть: %v)", c.name, name, l, want, got)
+			}
+		}
 	}
 }
