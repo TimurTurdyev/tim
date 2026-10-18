@@ -179,24 +179,30 @@ func bestSuggestions(typed string, list []string, n int) []string {
 	return list[:min(n, len(list))]
 }
 
+// editDistance: правки по одной букве; перестановка соседних - одна правка, иначе modt далеко от motd.
 func editDistance(a, b string) int {
-	prev := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
+	ra, rb := []rune(a), []rune(b)
+	d := make([][]int, len(ra)+1)
+	for i := range d {
+		d[i] = make([]int, len(rb)+1)
+		d[i][0] = i
 	}
-	for i := 1; i <= len(a); i++ {
-		cur := make([]int, len(b)+1)
-		cur[0] = i
-		for j := 1; j <= len(b); j++ {
+	for j := range d[0] {
+		d[0][j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		for j := 1; j <= len(rb); j++ {
 			cost := 1
-			if a[i-1] == b[j-1] {
+			if ra[i-1] == rb[j-1] {
 				cost = 0
 			}
-			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
+				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
+			}
 		}
-		prev = cur
 	}
-	return prev[len(b)]
+	return d[len(ra)][len(rb)]
 }
 
 // Root: корневая команда с группами и справкой, для генератора man.
@@ -243,11 +249,10 @@ func Execute() error {
 			return nil
 		}
 		msg := err.Error()
-		unknownCmd := regexp.MustCompile(`^unknown command "([^" ]+)" for "tim"`)
-		if m := unknownCmd.FindStringSubmatch(msg); m != nil && !strings.Contains(msg, "Did you mean") {
-			root.SuggestionsMinimumDistance = 2
-			if sugg := bestSuggestions(m[1], root.SuggestionsFor(m[1]), 3); len(sugg) > 0 {
-				msg += "\n\nDid you mean this?\n\t" + strings.Join(sugg, "\n\t") + "\n"
+		if strings.HasPrefix(msg, `unknown command "`) && strings.HasSuffix(strings.SplitN(msg, "\n", 2)[0], `for "tim"`) {
+			if hint := unknownHint(os.Args[1:]); hint != "" {
+				ui.Println(ui.Bad(hint))
+				return err
 			}
 		}
 		ui.Println(ui.Bad(translateError(msg)))

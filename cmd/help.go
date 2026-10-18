@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
+	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -112,6 +113,12 @@ var overviewSections = []struct {
 		{"tim kill <имя>", "закрыть зависшее приложение"},
 		{"tim doctor", "что не так в окружении"},
 	}},
+}
+
+// renamed: прежние имена команд и нынешние замены - старая привычка не должна упираться в "нет команды".
+var renamed = []struct{ old, now string }{
+	{"vpn exclude", "direct"}, {"route add", "direct"}, {"route clear", "direct rm"}, {"vpn clear", "direct rm"},
+	{"vpn fix", "route fix"}, {"ssl", "cert"}, {"wifi", "net wifi"}, {"battery", "hw battery"}, {"stale", "ports --old"},
 }
 
 // cobraErrors компилируются только при ошибке, чтобы не тратить на это старт.
@@ -302,4 +309,92 @@ func printUtils() {
 	}
 	ui.Println()
 	ui.Println(ui.Dim("подробнее: tim <утилита> --help"))
+}
+
+// unknownHint: на неизвестную команду - куда она переехала, что это проект или на что она похожа.
+// Пусто - подсказать нечего, остаётся обычная ошибка.
+func unknownHint(args []string) string {
+	var words []string
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			words = append(words, a)
+		}
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	if hint := renamedHint(words); hint != "" {
+		return hint
+	}
+	if hint := projectHint(words[0]); hint != "" {
+		return hint
+	}
+	if sugg := similarCommands(words[0]); len(sugg) > 0 {
+		return "нет команды " + words[0] + "; может, " + strings.Join(sugg, " или ") + "?"
+	}
+	return ""
+}
+
+func renamedHint(words []string) string {
+	typed := strings.Join(words, " ")
+	for _, r := range renamed {
+		if typed == r.old || strings.HasPrefix(typed, r.old+" ") {
+			return "tim " + r.old + " теперь tim " + r.now + ", подробнее: tim " + strings.Fields(r.now)[0] + " --help"
+		}
+	}
+	return ""
+}
+
+// projectHint: вместо команды набрано имя проекта или его часть. Конфиг читается только здесь, на ошибке.
+func projectHint(name string) string {
+	cfg, err := config.Load()
+	if err != nil || len(name) < 3 {
+		return ""
+	}
+	if _, ok := cfg.Project(name); ok {
+		return name + " - это проект: tim go " + name + " - перейти, tim proj info " + name + " - карточка, tim audit " + name + " - сайт"
+	}
+	like := projectsLike(cfg, name)
+	if head, _, ok := strings.Cut(name, "-"); ok && len(like) == 0 && len(head) >= 3 {
+		like = projectsLike(cfg, head)
+	}
+	if len(like) == 0 {
+		return ""
+	}
+	if len(like) > 6 {
+		like = append(like[:6], "...")
+	}
+	return "нет команды " + name + "; похожие проекты: " + strings.Join(like, ", ") + " - tim go <проект>"
+}
+
+func projectsLike(cfg *config.Config, part string) []string {
+	var out []string
+	for _, p := range cfg.Projects {
+		if strings.Contains(p.Name, part) {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+// similarCommands: команды и псевдонимы с тем же началом или в одной-двух правках, самые близкие.
+func similarCommands(typed string) []string {
+	var names []string
+	for _, c := range root.Commands() {
+		if !c.Hidden {
+			names = append(names, c.Name())
+			names = append(names, c.Aliases...)
+		}
+	}
+	best := 3
+	for _, n := range names {
+		best = min(best, editDistance(typed, n))
+	}
+	var out []string
+	for _, n := range names {
+		if strings.HasPrefix(n, typed) || len(typed) > 1 && best <= 2 && editDistance(typed, n) == best {
+			out = append(out, n)
+		}
+	}
+	return bestSuggestions(typed, out, 3)
 }
