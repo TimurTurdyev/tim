@@ -319,7 +319,7 @@ enter ведёт разбираться. Маскот справа показы�
 - `tim hex 255`, `tim dec ff 0x1F 0b101` - системы счисления.
 - `tim b64 [-d] [--url]`, `tim jwt <токен>` (подпись не проверяется), `tim hash [md5|sha1|sha256|sha512|crc32]`.
 - `tim ts [epoch|дата] [--tz зона]`, `tim uuid [-7] [-n N]`, `tim json [-c]`.
-- `tim url encode|decode|parse`, `tim pass [-n 20] [--no-symbols] [--no-ambiguous]`.
+- `tim url encode|decode|parse`, `tim pass [-n 20] [--no-symbols] [--no-ambiguous] [--copy]`.
 - `tim qr <текст>` - QR прямо в терминале, чтобы перекинуть ссылку или пароль от wi-fi на телефон.
 - `tim cron "<выражение>" [-n 5]` - что значит выражение cron и когда сработает ближайшие разы.
 

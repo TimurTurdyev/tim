@@ -143,7 +143,7 @@ func urlCommand() *cobra.Command {
 func passCommand() *cobra.Command {
 	var o passOptions
 	c := &cobra.Command{
-		Use:   "pass [-n 20] [-c 1] [--no-symbols] [--no-ambiguous]",
+		Use:   "pass [-n 20] [-c 1] [--no-symbols] [--no-ambiguous] [--copy]",
 		Short: "Сгенерировать пароль (криптослучайный, все классы символов)",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return printPasswords(o) },
@@ -152,6 +152,7 @@ func passCommand() *cobra.Command {
 	c.Flags().IntVarP(&o.count, "count", "c", 1, "сколько паролей")
 	c.Flags().BoolVar(&o.noSymbols, "no-symbols", false, "только буквы и цифры")
 	c.Flags().BoolVar(&o.noAmbiguous, "no-ambiguous", false, "без похожих 0 O o 1 l I")
+	c.Flags().BoolVar(&o.copy, "copy", false, "сразу в буфер обмена (его история тоже запомнит пароль)")
 	return c
 }
 

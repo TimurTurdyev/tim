@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/conv"
 	"github.com/TimurTurdyev/tim/internal/cronx"
+	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -25,8 +27,8 @@ const (
 )
 
 type passOptions struct {
-	length, count          int
-	noSymbols, noAmbiguous bool
+	length, count                int
+	noSymbols, noAmbiguous, copy bool
 }
 
 func printQR(args []string, invert bool) error {
@@ -130,14 +132,25 @@ func urlParse(args []string) error {
 	return nil
 }
 
+// printPasswords: пароли строками; с copy - ещё и в буфер, а отметка об этом в stderr, чтобы не попасть в трубу.
 func printPasswords(o passOptions) error {
+	var list []string
 	for range max(o.count, 1) {
 		p, err := conv.Password(o.length, !o.noSymbols, o.noAmbiguous)
 		if err != nil {
 			return ui.Errorf("%v", err)
 		}
 		fmt.Println(p)
+		list = append(list, p)
 	}
+	if !o.copy {
+		return nil
+	}
+	if !runner.HasClipboard() {
+		return ui.Errorf("в буфер положить нечем: нужен pbcopy или xclip")
+	}
+	runner.ToClipboard(strings.Join(list, "\n"))
+	fmt.Fprintln(os.Stderr, ui.Dim("скопировано в буфер"))
 	return nil
 }
 

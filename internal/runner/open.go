@@ -20,6 +20,9 @@ func OpenBrowser(target string) error {
 	return Run("xdg-open", target)
 }
 
+// HasClipboard: есть чем положить текст в буфер обмена.
+func HasClipboard() bool { return Has("pbcopy") || Has("xclip") }
+
 // ToClipboard кладёт текст в буфер обмена: pbcopy на macOS, xclip на Linux; без них - ничего.
 func ToClipboard(s string) {
 	switch {
