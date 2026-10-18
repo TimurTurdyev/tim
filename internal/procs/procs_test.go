@@ -34,9 +34,10 @@ func TestParseEtime(t *testing.T) {
 }
 
 func TestParsePs(t *testing.T) {
-	out := " 1718 13-20:50:15 /opt/homebrew/opt/manticoresearch/bin/searchd\n52012    05:10 php artisan serve\n"
+	out := " 1718     1  20480 13-20:50:15 /opt/homebrew/opt/manticoresearch/bin/searchd\n52012 51000 102400    05:10 php artisan serve\n"
 	m := ParsePs(out)
-	if m["52012"].Command != "php artisan serve" || m["52012"].Uptime != 5*time.Minute+10*time.Second {
+	p := m["52012"]
+	if p.Command != "php artisan serve" || p.Uptime != 5*time.Minute+10*time.Second || p.PPID != "51000" || p.RSS != 100<<20 {
 		t.Errorf("ps: %+v", m)
 	}
 }

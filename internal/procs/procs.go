@@ -11,7 +11,10 @@ import (
 
 type Proc struct {
 	PID     string
+	PPID    string
 	Command string
+	Args    string // команда целиком, с аргументами
+	RSS     int64  // память, байты
 	Uptime  time.Duration
 	Cwd     string
 }
@@ -67,28 +70,37 @@ func ParseEtime(s string) (time.Duration, bool) {
 	return d, true
 }
 
-// ParsePs разбирает ps -o pid=,etime=,comm=.
+// ParsePs разбирает ps -o pid=,ppid=,rss=,etime=,comm=; rss у ps в килобайтах.
 func ParsePs(out string) map[string]Proc {
 	m := map[string]Proc{}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
-		if len(f) < 3 {
+		if len(f) < 5 {
 			continue
 		}
-		up, _ := ParseEtime(f[1])
-		m[f[0]] = Proc{PID: f[0], Uptime: up, Command: strings.Join(f[2:], " ")}
+		up, _ := ParseEtime(f[3])
+		kb, _ := strconv.ParseInt(f[2], 10, 64)
+		m[f[0]] = Proc{PID: f[0], PPID: f[1], RSS: kb * 1024, Uptime: up, Command: strings.Join(f[4:], " ")}
 	}
 	return m
 }
 
-// Info собирает сведения о процессах двумя вызовами: ps и lsof.
+// Info собирает сведения о процессах тремя вызовами: ps, ps с аргументами и lsof.
 func Info(pids []string) map[string]Proc {
 	if len(pids) == 0 {
 		return nil
 	}
 	list := strings.Join(pids, ",")
-	ps, _ := runner.Output("ps", "-o", "pid=,etime=,comm=", "-p", list)
+	ps, _ := runner.Output("ps", "-o", "pid=,ppid=,rss=,etime=,comm=", "-p", list)
 	out := ParsePs(ps)
+	if a, err := runner.Output("ps", "-o", "pid=,args=", "-p", list); err == nil {
+		for pid, args := range ParseArgs(a) {
+			if p, ok := out[pid]; ok {
+				p.Args = args
+				out[pid] = p
+			}
+		}
+	}
 	for pid, cwd := range Cwds(pids) {
 		p := out[pid]
 		p.PID, p.Cwd = pid, cwd
