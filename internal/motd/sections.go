@@ -172,7 +172,11 @@ func ports(cfg *config.Config) []string {
 		if _, ok := byProject[r.Project]; !ok {
 			names = append(names, r.Project)
 		}
-		byProject[r.Project] = append(byProject[r.Project], r.Port)
+		item := ":" + strings.Join(r.Ports, ", :")
+		if r.Kind != "" {
+			item = r.Kind + " " + item
+		}
+		byProject[r.Project] = append(byProject[r.Project], item)
 	}
 	if len(names) == 0 {
 		return nil
@@ -180,7 +184,7 @@ func ports(cfg *config.Config) []string {
 	sort.Strings(names)
 	items := make([]string, len(names))
 	for i, n := range names {
-		items[i] = n + " " + ui.Dim(strings.Join(byProject[n], ","))
+		items[i] = n + " " + ui.Dim(strings.Join(byProject[n], ", "))
 	}
 	return []string{ui.Label("запущено ") + strings.Join(items, "  ")}
 }

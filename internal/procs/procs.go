@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
@@ -85,28 +86,41 @@ func ParsePs(out string) map[string]Proc {
 	return m
 }
 
-// Info собирает сведения о процессах тремя вызовами: ps, ps с аргументами и lsof.
+// Info собирает сведения о процессах: ps, ps с командой целиком и lsof - разом.
 func Info(pids []string) map[string]Proc {
 	if len(pids) == 0 {
 		return nil
 	}
-	list := strings.Join(pids, ",")
-	ps, _ := runner.Output("ps", "-o", "pid=,ppid=,rss=,etime=,comm=", "-p", list)
+	var ps, args string
+	var cwds map[string]string
+	par.All(
+		func() { ps = psEach(pids, "pid=,ppid=,rss=,etime=,comm=") },
+		func() { args = psEach(pids, "pid=,args=") },
+		func() { cwds = Cwds(pids) },
+	)
 	out := ParsePs(ps)
-	if a, err := runner.Output("ps", "-o", "pid=,args=", "-p", list); err == nil {
-		for pid, args := range ParseArgs(a) {
-			if p, ok := out[pid]; ok {
-				p.Args = args
-				out[pid] = p
-			}
+	for pid, a := range ParseArgs(args) {
+		if p, ok := out[pid]; ok {
+			p.Args = a
+			out[pid] = p
 		}
 	}
-	for pid, cwd := range Cwds(pids) {
+	for pid, cwd := range cwds {
 		p := out[pid]
 		p.PID, p.Cwd = pid, cwd
 		out[pid] = p
 	}
 	return out
+}
+
+// psEach: ps по каждому процессу отдельно и параллельно. ps -p со списком на macOS перебирает все
+// процессы системы - около 50 мс, а с одним pid - 2 мс.
+func psEach(pids []string, format string) string {
+	outs := par.Map(pids, 8, func(pid string) string {
+		out, _ := runner.Output("ps", "-o", format, "-p", pid)
+		return out
+	})
+	return strings.Join(outs, "\n")
 }
 
 // System: процесс macOS, а не то, что запустил разработчик.

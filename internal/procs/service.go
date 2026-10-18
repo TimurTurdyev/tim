@@ -33,7 +33,7 @@ func Service(comm, args string) string {
 	}
 	// php -S, которым artisan serve поднимает сайт: по -S это просто PHP, по server.php - Laravel.
 	switch {
-	case strings.Contains(args, "Illuminate/Foundation/Resources/server.php"):
+	case strings.Contains(args, "Illuminate/Foundation") && strings.Contains(args, "server.php"):
 		return "Laravel"
 	case strings.HasPrefix(args, "next-server"):
 		return "Next.js"

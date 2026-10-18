@@ -1,7 +1,9 @@
 package machine
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -10,15 +12,25 @@ import (
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/procs"
+	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// PortRow: слушающий порт, его процесс и проект. Проект с "?" - угадан по порту из реестра.
+// stackNames: стек проекта для колонки "что это", когда сам сервер не узнан.
+var stackNames = map[string]string{"laravel": "Laravel", "node": "Node.js", "php": "PHP", "go": "Go",
+	"python": "Python", "vitepress": "VitePress"}
+
+// PortRow: процесс, который слушает порты, и чей он. Проект с "?" - угадан по порту из реестра.
 type PortRow struct {
-	netinfo.Listener
+	netinfo.Listener // Port - первый из Ports
 	procs.Proc
-	Project string
+	Ports     []string // все порты процесса по возрастанию
+	Project   string
+	Dir       string // папка проекта
+	Kind      string // что это: Vite, PostgreSQL, имя контейнера
+	Container *sysinfo.Container
 }
 
 type portsOptions struct {
@@ -26,8 +38,15 @@ type portsOptions struct {
 	hours                 float64
 }
 
-// Ports: кто слушает TCP-порты и чей это проект.
-func Ports(cfg *config.Config) []PortRow {
+// Ports: кто слушает TCP-порты и чей это проект; порты одного процесса - одной строкой, по номеру.
+// Без имён контейнеров: docker ps дорог для сводки, которая идёт в каждом новом терминале.
+func Ports(cfg *config.Config) []PortRow { return merge(listeners(cfg, false)) }
+
+// PortsFull: то же с именами контейнеров на проброшенных портах.
+func PortsFull(cfg *config.Config) []PortRow { return merge(listeners(cfg, true)) }
+
+// listeners: строка на каждый слушающий порт.
+func listeners(cfg *config.Config, containers bool) []PortRow {
 	ls := netinfo.Listening()
 	pids := make([]string, 0, len(ls))
 	for _, l := range ls {
@@ -43,7 +62,7 @@ func Ports(cfg *config.Config) []PortRow {
 		// Приложения из .app стартуют в папке, откуда их открыли, это не делает их частью проекта.
 		if r.Cwd != "" && r.Cwd != "/" && !strings.Contains(r.Proc.Command, ".app/Contents/") {
 			if p, ok := cfg.ProjectHere(r.Cwd); ok {
-				r.Project = p.Name
+				r.Project, r.Dir = p.Name, cfg.ProjectDir(p)
 			}
 		}
 		if r.Project == "" {
@@ -53,9 +72,73 @@ func Ports(cfg *config.Config) []PortRow {
 				}
 			}
 		}
+		r.Kind = kindOf(r)
 		rows = append(rows, r)
 	}
+	if containers && slices.ContainsFunc(rows, func(r PortRow) bool { return dockerish(r.Proc.Command) }) {
+		byPort := sysinfo.Containers()
+		for i := range rows {
+			port, _ := strconv.Atoi(rows[i].Port)
+			if c, ok := byPort[port]; ok {
+				rows[i].Container, rows[i].Kind = &c, c.Name
+			}
+		}
+	}
 	return rows
+}
+
+// merge: порты одного процесса - одной строкой; у Docker один процесс держит порты разных контейнеров,
+// поэтому склеиваются только порты одного контейнера. Строки - по номеру первого порта.
+func merge(rows []PortRow) []PortRow {
+	var out []PortRow
+	at := map[string]int{}
+	for _, r := range rows {
+		key := r.Listener.PID + " " + r.Kind
+		if i, ok := at[key]; ok && r.Listener.PID != "" {
+			out[i].Ports = append(out[i].Ports, r.Port)
+			continue
+		}
+		at[key] = len(out)
+		r.Ports = []string{r.Port}
+		out = append(out, r)
+	}
+	for i := range out {
+		slices.SortFunc(out[i].Ports, func(a, b string) int { return cmp.Compare(portNum(a), portNum(b)) })
+		out[i].Port = out[i].Ports[0]
+	}
+	slices.SortStableFunc(out, func(a, b PortRow) int {
+		return cmp.Or(cmp.Compare(portNum(a.Port), portNum(b.Port)), cmp.Compare(a.Listener.PID, b.Listener.PID))
+	})
+	return out
+}
+
+// kindOf: что это за процесс - известный сервер, иначе стек проекта, иначе понятное имя процесса.
+func kindOf(r PortRow) string {
+	if s := procs.Service(r.Proc.Command, r.Args); s != "" {
+		return s
+	}
+	if s := stackNames[run.Stack(r.Dir)]; s != "" && r.Dir != "" {
+		return s
+	}
+	if r.Proc.Command == "" {
+		return ""
+	}
+	return procs.Name(r.Proc.Command, r.Args)
+}
+
+// dockerish: процесс, через который Docker или OrbStack пробрасывают порты контейнеров.
+func dockerish(command string) bool {
+	for _, w := range []string{"com.docker", "OrbStack", "docker-proxy", "vpnkit"} {
+		if strings.Contains(command, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func portNum(p string) int {
+	n, _ := strconv.Atoi(p)
+	return n
 }
 
 // Forgotten: dev-серверы проектов, которые работают дольше limit: их обычно забыли остановить.
@@ -74,7 +157,7 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 		return printForgotten(cfg, o)
 	}
 	var rows []PortRow
-	for _, r := range Ports(cfg) {
+	for _, r := range PortsFull(cfg) {
 		port, _ := strconv.Atoi(r.Port)
 		if !o.all && r.Project == "" && (procs.System(r.Proc.Command) || port > 49151) {
 			continue
@@ -110,8 +193,8 @@ func portOwner(cfg *config.Config, args []string, force bool) error {
 		return ui.Errorf("порт должен быть числом: %s", port)
 	}
 	var found []PortRow
-	for _, r := range Ports(cfg) {
-		if r.Port == port {
+	for _, r := range PortsFull(cfg) {
+		if slices.Contains(r.Ports, port) {
 			found = append(found, r)
 		}
 	}
@@ -119,9 +202,13 @@ func portOwner(cfg *config.Config, args []string, force bool) error {
 		ui.Println(ui.Dim("порт " + port + " свободен"))
 		return nil
 	}
-	printRows(found)
 	if len(args) > 1 && args[1] == "kill" {
+		printRows(found)
 		killRows(found, force)
+		return nil
+	}
+	for _, r := range found {
+		printCard(r)
 	}
 	return nil
 }
@@ -132,7 +219,7 @@ func killRows(rows []PortRow, force bool) {
 		sig = "-KILL"
 	}
 	for _, r := range rows {
-		if !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", r.Proc.Command, r.Listener.PID)) {
+		if !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
 			continue
 		}
 		if err := runner.Run("kill", sig, r.Listener.PID); err != nil {
@@ -158,15 +245,31 @@ func checkPorts(addrs []string) error {
 	return nil
 }
 
+// printRows: колонки по самому длинному значению; команда целиком - в карточке tim port <n>.
 func printRows(rows []PortRow) {
-	ui.Println(ui.Dim(ui.Pad("ПОРТ", 6) + " " + ui.Pad("PID", 7) + " " + ui.Pad("РАБОТАЕТ", 12) + " " + ui.Pad("ПРОЕКТ", 18) + " КОМАНДА"))
+	table := [][]string{{"ПОРТ", "ЧТО", "ПРОЕКТ", "РАБОТАЕТ", "PID"}}
 	for _, r := range rows {
-		cmd := r.Proc.Command
-		if len([]rune(cmd)) > 60 {
-			cmd = "..." + string([]rune(cmd)[len([]rune(cmd))-57:])
+		table = append(table, []string{strings.Join(r.Ports, ", "), ui.Dash(r.Kind), ui.Dash(r.Project), uptime(r.Uptime), ui.Dash(r.Listener.PID)})
+	}
+	widths := make([]int, len(table[0]))
+	for _, t := range table {
+		for i, c := range t {
+			widths[i] = max(widths[i], ui.Width(c))
 		}
-		ui.Println(ui.Label(ui.Pad(r.Port, 6)) + " " + ui.Pad(r.Listener.PID, 7) + " " + ui.Pad(uptime(r.Uptime), 12) + " " +
-			ui.Pad(ui.Dash(r.Project), 18) + " " + ui.Dim(cmd))
+	}
+	for n, t := range table {
+		var cells []string
+		for i, c := range t {
+			if i < len(t)-1 {
+				c = ui.Pad(c, widths[i])
+			}
+			cells = append(cells, c)
+		}
+		if n == 0 {
+			ui.Println(ui.Dim(strings.Join(cells, "  ")))
+			continue
+		}
+		ui.Println(ui.Label(cells[0]) + "  " + strings.Join(cells[1:3], "  ") + "  " + ui.Dim(strings.Join(cells[3:], "  ")))
 	}
 }
 

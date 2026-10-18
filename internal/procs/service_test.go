@@ -8,7 +8,7 @@ func TestService(t *testing.T) {
 		{"node", "node /Users/dev/docs/node_modules/.bin/vitepress dev", "VitePress"},
 		{"node", "next-server (v15.1.0)", "Next.js"},
 		{"node", "node /Users/dev/app/node_modules/.bin/next dev", "Next.js"},
-		{"/opt/homebrew/Cellar/php/8.5.5_1/bin/php", "php -S 127.0.0.1:8003 /Users/dev/shop/vendor/laravel/framework/src/Illuminate/Foundation/Resources/server.php", "Laravel"},
+		{"/opt/homebrew/Cellar/php/8.5.5_1/bin/php", "php -S 127.0.0.1:8003 /Users/dev/shop/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php", "Laravel"},
 		{"php", "php -S localhost:8000 -t public", "PHP"},
 		{"Python", "/opt/homebrew/bin/python3 -m http.server 8766", "http.server"},
 		{"node", "node server.js", ""},

@@ -7,6 +7,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -115,9 +116,9 @@ func serveData() tui.BoardData {
 		age := ui.Duration(time.Since(s.Started))
 		if s.Alive() {
 			alive++
-			row.Cells = ui.OK("\u25cf ") + ui.Pad(s.Name, 18) + ui.Pad(":"+s.Port, 8) + ui.Dim(ui.Pad(s.Command, 24)+ui.Pad(age, 9)) + ui.Info("http://localhost:"+s.Port)
+			row.Cells = ui.OK("\u25cf ") + ui.Pad(s.Name, 18) + ui.Pad(":"+s.Port, 8) + ui.Dim(ui.Pad(what(s.Command), 24)+ui.Pad(age, 9)) + ui.Info("http://localhost:"+s.Port)
 		} else {
-			row.Cells = ui.Bad("\u2715 ") + ui.Pad(s.Name, 18) + ui.Pad(":"+s.Port, 8) + ui.Dim(ui.Pad(s.Command, 24)) + ui.Bad("умер") + ui.Dim("  s - запустить снова")
+			row.Cells = ui.Bad("\u2715 ") + ui.Pad(s.Name, 18) + ui.Pad(":"+s.Port, 8) + ui.Dim(ui.Pad(what(s.Command), 24)) + ui.Bad("умер") + ui.Dim("  s - запустить снова")
 		}
 		row.Pane = logTail(run.LogPath(s.Name), 6)
 		d.Rows = append(d.Rows, row)
@@ -155,4 +156,12 @@ func logTail(path string, n int) []string {
 		return []string{ui.Dim("журнал пуст")}
 	}
 	return out
+}
+
+// what: что за сервер по команде запуска - Laravel вместо php artisan serve; неизвестное - сама команда.
+func what(command string) string {
+	if kind := procs.Service("", command); kind != "" {
+		return kind
+	}
+	return command
 }
