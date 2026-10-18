@@ -267,7 +267,8 @@ func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
 // searchIndex: то, по чему ищет главный экран; собирается раз на экран, а не на каждую букву.
 type searchIndex struct {
 	cmds     []tui.CommandEntry
-	lines    []string // команда и её описание
+	cmdNames []string
+	lines    []string // команда, её описание и слова
 	names    []string
 	aliases  []string
 	domains  []string
@@ -279,7 +280,8 @@ func (h *Home) newIndex() *searchIndex {
 	cfg := h.env.Cfg
 	ix := &searchIndex{cmds: h.commands(""), aliases: sshx.Aliases(), domains: sites.Domains(cfg)}
 	for _, c := range ix.cmds {
-		ix.lines = append(ix.lines, c.Line+" "+c.Desc)
+		ix.cmdNames = append(ix.cmdNames, c.Line)
+		ix.lines = append(ix.lines, searchLine(c.Line, c.Desc))
 	}
 	for _, p := range cfg.Projects {
 		ix.names = append(ix.names, p.Name)
@@ -329,8 +331,8 @@ func exactness(q, title string) int {
 func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 	cfg := h.env.Cfg
 	groups := make([]hitGroup, 5)
-	for _, m := range fuzzy.FilterTop(q, ix.lines, 4) {
-		c := ix.cmds[m.Index]
+	for _, i := range rankCommands(q, ix.cmdNames, ix.lines, 4) {
+		c := ix.cmds[i]
 		hit := tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }}
 		if c.Template {
 			// Пример с выдуманными значениями: enter подставляет его в ":" для правки.
