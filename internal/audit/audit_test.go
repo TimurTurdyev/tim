@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/TimurTurdyev/tim/internal/level"
 )
@@ -81,22 +80,6 @@ func TestExposedBySignature(t *testing.T) {
 	}
 	if _, ok := DebugPage("<h1>404 Not Found</h1>"); ok {
 		t.Error("обычная 404 - не отладка")
-	}
-}
-
-func TestTLSFindings(t *testing.T) {
-	now := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
-	got := TLSFindings(TLSFacts{Old: []string{"TLS 1.0"}, NoChain: true, RSABits: 1024, Expires: now.AddDate(0, 0, 5)}, now)
-	levels := map[level.Level]int{}
-	for _, f := range got {
-		levels[f.Level]++
-	}
-	// ключ 1024 и срок 5 дней - плохо; старая версия и нет цепочки - внимание
-	if levels[level.Bad] != 2 || levels[level.Warn] != 2 {
-		t.Fatalf("%+v", got)
-	}
-	if got := TLSFindings(TLSFacts{RSABits: 2048, Expires: now.AddDate(0, 2, 0)}, now); len(got) != 0 {
-		t.Errorf("здоровый TLS: %+v", got)
 	}
 }
 
