@@ -50,6 +50,7 @@ tim top --by project   # сколько едят dev-серверы проект
 tim net top            # кто сейчас качает
 tim disk --system      # куда делось место: кеши, образы Docker, старые версии IDE
 tim disk --clean       # убрать node_modules и vendor заброшенных проектов в Корзину
+tim port 5173          # кто держит порт: что это, папка, кто запустил, где журнал
 tim ports --old --kill # погасить забытые dev-серверы
 tim ps qemu            # что запущено; эмулятор Android так и назовётся
 tim ps chrome          # что запущено у приложения
