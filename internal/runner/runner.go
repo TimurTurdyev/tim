@@ -185,7 +185,8 @@ func ConfirmDefault(question string, def bool) bool {
 	ui.Printf("%s %s ", question, hint)
 	var a string
 	if _, err := fmtScan(&a); err != nil {
-		ui.Println()
+		// Без терминала ответа не будет: молча выйти - и скрипт решит, что всё сделано.
+		ui.Println(ui.Dim("нет ответа - отменено; без вопроса: -y, если команда его знает"))
 		return false
 	}
 	switch a {

@@ -2,7 +2,9 @@ package machine
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,8 +36,21 @@ type PortRow struct {
 }
 
 type portsOptions struct {
-	all, old, kill, force bool
-	hours                 float64
+	all, old, kill, force, yes, json bool
+	hours                            float64
+}
+
+// portJSON: строка порта для --json - то, что видно в таблице и карточке, без внутренних полей.
+type portJSON struct {
+	Ports     []int              `json:"ports"`
+	Kind      string             `json:"kind,omitempty"`
+	Project   string             `json:"project,omitempty"`
+	PID       int                `json:"pid,omitempty"`
+	Uptime    int64              `json:"uptime_seconds,omitempty"`
+	Memory    int64              `json:"memory_bytes,omitempty"`
+	Command   string             `json:"command,omitempty"`
+	Cwd       string             `json:"cwd,omitempty"`
+	Container *sysinfo.Container `json:"container,omitempty"`
 }
 
 // Ports: кто слушает TCP-порты и чей это проект; порты одного процесса - одной строкой, по номеру.
@@ -164,6 +179,9 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 		}
 		rows = append(rows, r)
 	}
+	if o.json {
+		return printJSON(rows)
+	}
 	printRows(rows)
 	if !o.all {
 		ui.Println(ui.Dim("системные и эфемерные порты скрыты: --all"))
@@ -173,13 +191,16 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 
 func printForgotten(cfg *config.Config, o portsOptions) error {
 	rows := Forgotten(Ports(cfg), time.Duration(o.hours*float64(time.Hour)))
+	if o.json && !o.kill {
+		return printJSON(rows)
+	}
 	if len(rows) == 0 {
 		ui.Println(ui.Dim(fmt.Sprintf("процессов проектов старше %g ч нет", o.hours)))
 		return nil
 	}
 	printRows(rows)
 	if o.kill {
-		killRows(rows, o.force)
+		killRows(rows, o.force, o.yes)
 		return nil
 	}
 	ui.Println(ui.Dim("остановить: tim ports --old --kill"))
@@ -187,7 +208,7 @@ func printForgotten(cfg *config.Config, o portsOptions) error {
 }
 
 // portOwner: кто держит порт; с "kill" вторым словом - остановить его.
-func portOwner(cfg *config.Config, args []string, force bool) error {
+func portOwner(cfg *config.Config, args []string, o portsOptions) error {
 	port := args[0]
 	if _, err := strconv.Atoi(port); err != nil {
 		return ui.Errorf("порт должен быть числом: %s", port)
@@ -199,12 +220,18 @@ func portOwner(cfg *config.Config, args []string, force bool) error {
 		}
 	}
 	if len(found) == 0 {
+		if o.json {
+			return printJSON([]PortRow{})
+		}
 		ui.Println(ui.Dim("порт " + port + " свободен"))
 		return nil
 	}
+	if o.json && (len(args) < 2 || args[1] != "kill") {
+		return printJSON(found)
+	}
 	if len(args) > 1 && args[1] == "kill" {
 		printRows(found)
-		killRows(found, force)
+		killRows(found, o.force, o.yes)
 		return nil
 	}
 	for _, r := range found {
@@ -213,13 +240,13 @@ func portOwner(cfg *config.Config, args []string, force bool) error {
 	return nil
 }
 
-func killRows(rows []PortRow, force bool) {
+func killRows(rows []PortRow, force, yes bool) {
 	sig := "-TERM"
 	if force {
 		sig = "-KILL"
 	}
 	for _, r := range rows {
-		if !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
+		if !yes && !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
 			continue
 		}
 		if err := runner.Run("kill", sig, r.Listener.PID); err != nil {
@@ -243,6 +270,23 @@ func checkPorts(addrs []string) error {
 		return ui.Errorf("закрыто: %d из %d", failed, len(addrs))
 	}
 	return nil
+}
+
+// printJSON: строки портов для скриптов и агентов.
+func printJSON(rows []PortRow) error {
+	out := make([]portJSON, 0, len(rows))
+	for _, r := range rows {
+		j := portJSON{Kind: r.Kind, Project: r.Project, Uptime: int64(r.Uptime.Seconds()), Memory: r.RSS,
+			Command: cmp.Or(r.Args, r.Proc.Command), Cwd: r.Cwd, Container: r.Container}
+		j.PID, _ = strconv.Atoi(r.Listener.PID)
+		for _, p := range r.Ports {
+			j.Ports = append(j.Ports, portNum(p))
+		}
+		out = append(out, j)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 // printRows: колонки по самому длинному значению; команда целиком - в карточке tim port <n>.

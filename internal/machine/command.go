@@ -107,22 +107,26 @@ func portsCommand(env *app.Env) *cobra.Command {
 	c.Flags().Float64Var(&o.hours, "hours", 8, "сколько часов считать долгим")
 	c.Flags().BoolVar(&o.kill, "kill", false, "с --old: предложить остановить каждый")
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
+	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "с --kill: не спрашивать, для скриптов и агентов")
+	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	return c
 }
 
 func portCommand(env *app.Env) *cobra.Command {
-	var force bool
+	var o portsOptions
 	c := &cobra.Command{
-		Use:   "port <n> [kill] | port check <host:port...>",
+		Use:   "port <n> [kill [-y]] [--json] | port check <host:port...>",
 		Short: "Кто держит порт, остановить его; проверка чужих портов",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
 			}
-			return portOwner(env.Cfg, args, force)
+			return portOwner(env.Cfg, args, o)
 		},
 	}
-	c.Flags().BoolVar(&force, "force", false, "SIGKILL вместо SIGTERM")
+	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
+	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "kill без вопроса, для скриптов и агентов")
+	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "check <host:port...>",
 		Short: "Открыт ли TCP-порт и за сколько",
