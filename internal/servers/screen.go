@@ -27,6 +27,9 @@ func Screen(env *app.Env, target string) tui.Screen {
 				return tui.Action{Exit: func() { env.After([]string{"ssh", target}) }}
 			}},
 			{Key: "enter", Label: "отчёт целиком", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"server", target}) }},
+			{Key: "a", Label: "кто ломится", Free: true, Do: func(*tui.BoardRow) tui.Action {
+				return tui.Action{Push: AttacksScreen(target, 24*time.Hour)}
+			}},
 		},
 	})
 }

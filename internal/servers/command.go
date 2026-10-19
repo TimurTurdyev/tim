@@ -46,16 +46,31 @@ func sshCommand(env *app.Env) *cobra.Command {
 }
 
 func serverCommand(env *app.Env) *cobra.Command {
-	var asJSON bool
+	var asJSON, attacks bool
+	var since string
 	c := &cobra.Command{
-		Use:   "server <алиас|проект|user@host> [--json]",
+		Use:   "server <алиас|проект|user@host> [--attacks [--since 24h]] [--json]",
 		Short: "Состояние Linux-сервера по ssh: место, память, юниты, обновления, порты наружу, sshd",
 		Long: `Один заход по ssh, только чтение: скрипт уходит через stdin и ничего не ставит и не меняет.
 То, что требует root (sshd -T, nginx -t, сертификаты), идёт через sudo -n: без пароля он не спрашивает,
-а отказывает, и такие проверки помечаются "не проверено".`,
+а отказывает, и такие проверки помечаются "не проверено".
+--attacks читает журналы: удачные входы по ssh (вход с адреса, который перебирал пароли, - красный),
+перебор, пробы сайта (.env, .git, wp-login), файрвол, баны fail2ban и CrowdSec, владельцев сетей.
+Журналы ssh и ядра читают root и группы adm и systemd-journal; журналы сайта панели держат в папке
+пользователя - их tim находит сам.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := Target(env.Cfg, args[0])
+			if attacks {
+				window, err := parseSince(since)
+				if err != nil {
+					return err
+				}
+				if app.Interactive() && !asJSON {
+					return env.Open(AttacksScreen(target, window))
+				}
+				return printAttacks(target, window, asJSON)
+			}
 			if app.Interactive() && !asJSON {
 				return env.Open(Screen(env, target))
 			}
@@ -63,6 +78,8 @@ func serverCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "отчёт в JSON")
+	c.Flags().BoolVar(&attacks, "attacks", false, "кто ломится: перебор ssh, удачные входы, пробы сайта, баны - по журналам")
+	c.Flags().StringVar(&since, "since", "24h", "окно для --attacks: 24h, 3d, 1w")
 	return c
 }
 
