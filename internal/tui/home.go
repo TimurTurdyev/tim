@@ -17,6 +17,9 @@ import (
 // blinkShut: сколько глаза маскота закрыты при моргании.
 const blinkShut = 150 * time.Millisecond
 
+// recentW: ширина колонки недавнего на главном экране.
+const recentW = 52
+
 // Hit: то, что находится поиском - проект, команда, сервер, домен, недавнее.
 type Hit struct {
 	Kind  string // заголовок группы: Команды, Проекты, Серверы...
@@ -129,6 +132,11 @@ func (h *home) refill() {
 	}
 	h.list.Rows = nil
 	lastKind := ""
+	// Колонка имени - по самому длинному имени, но подсказке справа остаётся место.
+	titleW := 0
+	for _, e := range h.hits {
+		titleW = max(titleW, lipgloss.Width(e.Title)+2)
+	}
 	for _, e := range h.hits {
 		e := e
 		kind := e.Kind
@@ -140,10 +148,7 @@ func (h *home) refill() {
 			}})
 		}
 		h.list.Rows = append(h.list.Rows, Row{Text: e.Title, Render: func(sel bool, w int) string {
-			tw := 32
-			if w < 70 {
-				tw = 18
-			}
+			tw := min(titleW, 34, max(12, w-3-24))
 			rest := w - 3 - tw - lipgloss.Width(e.Note)
 			body := ui.Fit(styleBold.Render(e.Title), tw) + ui.Fit(styleDim.Render(e.Hint), max(8, rest-1)) + e.Note
 			return SelRow(sel, w, body)
@@ -233,38 +238,53 @@ func (h *home) View(width, height int) string {
 	var out []string
 	head := []string{
 		"",
-		"  " + styleTitle.Render("Что сделать?") + "  " + styleHint.Render("проект, команда, домен, порт - начни печатать"),
+		"  " + styleTitle.Render("Что сделать?"),
 		"  " + h.input.View(),
 		"",
 	}
-	// Картинка справа сверху. Всё, что рядом с ней, собирается сразу шириной cw: обрезка готовой
-	// строки ставила "~" на хвост из пробелов, а в поиске картинка обрывалась на четвёртой строке.
+	typing := h.Typing()
+	var secs []string
+	secW := 0
+	for _, sc := range h.data.Sections {
+		line := styleKeyCap.Render(" "+sc.Key+" ") + " " + ui.Fit(styleText.Render(sc.Title), 13) + styleDim.Render(sc.Hint)
+		secs = append(secs, line)
+		secW = max(secW, ui.Width(line))
+	}
+	// Недавнее и разделы рядом - только когда разделы влезают целиком, иначе друг под другом.
+	wide := len(secs) > 0 && width >= recentW+secW+2
+	need := max(recentW, secW+2)
+	if wide {
+		need = recentW + secW + 2
+	}
+	// Картинка справа сверху - только если ничего не срезает. Всё, что рядом с ней, собирается сразу
+	// шириной cw: обрезка готовой строки ставила "~" на хвост из пробелов.
 	var art []string
-	if width >= 90 && h.data.Art != nil {
-		art = h.data.Art(width >= 140, h.blink)
+	if h.data.Art != nil && width >= 90 {
+		for _, large := range []bool{true, false} {
+			if a := h.data.Art(large, h.blink); len(a) > 0 && need+ui.Width(a[0])+2 <= width && (!large || width >= 140) {
+				art = a
+				break
+			}
+		}
 	}
 	cw := width
 	if len(art) > 0 {
 		cw = width - ui.Width(art[0]) - 2
 	}
 	out = append(out, head...)
-	typing := h.Typing()
-	wide := width >= 90 && len(h.data.Sections) > 0
-	var secs []string
-	for _, sc := range h.data.Sections {
-		secs = append(secs, styleKeyCap.Render(" "+sc.Key+" ")+" "+ui.Fit(styleText.Render(sc.Title), 13)+styleDim.Render(sc.Hint))
-	}
 	switch {
 	case !typing && wide:
 		// Недавнее слева, разделы справа; заголовок группы у недавнего уже есть в списке.
-		left := h.list.View(52, len(h.list.Rows))
+		left := h.list.View(recentW, len(h.list.Rows))
 		if len(left) == 0 {
-			left = []string{"  " + styleHead.Render("НЕДАВНЕЕ"), "  " + styleHint.Render("проекты, в которые заходил, появятся здесь")}
+			left = []string{"  " + styleHead.Render("НЕДАВНЕЕ"), "  " + styleHint.Render("проекты и команды, которые открывал, появятся здесь")}
 		}
 		right := append([]string{styleHead.Render("РАЗДЕЛЫ")}, secs...)
-		out = append(out, Beside(left, 52, right, cw)...)
+		out = append(out, Beside(left, recentW, right, cw)...)
 	case !typing:
-		out = append(out, h.list.View(cw, len(h.list.Rows))...)
+		// Друг под другом экран выше: недавнего столько, чтобы плитки и предупреждение остались видны.
+		fit := height - len(head) - (len(secs) + 2) - 9
+		out = append(out, h.list.View(cw, min(max(3, fit), len(h.list.Rows)))...)
 		out = append(out, "", "  "+styleHead.Render("РАЗДЕЛЫ"))
 		for _, sc := range secs {
 			out = append(out, "  "+sc)

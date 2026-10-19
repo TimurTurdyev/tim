@@ -244,7 +244,8 @@ func Execute() error {
 	if needsHelp(os.Args[1:]) {
 		applyHelp()
 	}
-	if err := root.Execute(); err != nil {
+	c, err := root.ExecuteC()
+	if err != nil {
 		if errors.Is(err, app.ErrCanceled) {
 			return nil
 		}
@@ -258,5 +259,6 @@ func Execute() error {
 		ui.Println(ui.Bad(translateError(msg)))
 		return err
 	}
+	home.Remember(c, os.Args[1:], utilCmds)
 	return nil
 }

@@ -4,6 +4,7 @@ package home
 import (
 	"errors"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -20,7 +21,12 @@ import (
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/visits"
 )
+
+// notRemembered: команды, которые не предлагать в недавнем: справка, служебные, шим, сводка терминала.
+var notRemembered = map[string]bool{"help": true, "completion": true, "__complete": true, "__completeNoDesc": true,
+	"version": true, "init": true, "status": true, "go": true, "ui": true}
 
 // Home: главный экран и строка ":". Команды выполняются тем же деревом cobra, что и из терминала.
 type Home struct {
@@ -113,10 +119,42 @@ func (h *Home) result(args []string) tui.Action {
 		out, err := h.inside(args)
 		if err == nil {
 			h.lastOK.Store(time.Now().UnixNano())
+			if c, _, ferr := h.root.Find(args); ferr == nil {
+				remember(c, args, h.utils)
+			}
 		}
 		return out, err
 	},
 		tui.ResultOpts{Copy: runner.ToClipboard, Next: nextAfter(args)})}
+}
+
+// Remember: команда, набранная руками в терминале, - в недавнее главного экрана. Скрипты и агенты
+// без терминала не записываются, чтобы не вытеснять то, что набирал человек.
+func Remember(c *cobra.Command, args, utils []string) {
+	if tui.Available() {
+		remember(c, args, utils)
+	}
+}
+
+// remember: у утилит аргументы не пишутся - там бывают токены и пароли; длинные строки не пишутся вовсе.
+func remember(c *cobra.Command, args, utils []string) {
+	if c == nil || !c.HasParent() || c.Hidden {
+		return
+	}
+	top := c
+	for top.Parent().HasParent() {
+		top = top.Parent()
+	}
+	if notRemembered[top.Name()] {
+		return
+	}
+	line := strings.Join(args, " ")
+	if slices.Contains(utils, top.Name()) {
+		line = strings.TrimPrefix(c.CommandPath(), c.Root().Name()+" ")
+	}
+	if line != "" && len([]rune(line)) <= 80 {
+		visits.RecordCommand(line, time.Now())
+	}
 }
 
 // inside выполняет команду tim внутри экрана: вывод собирается, вопросы не задаются.

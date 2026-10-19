@@ -30,6 +30,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
+// recentRows: строк недавнего - столько же, сколько разделов рядом.
+const recentRows = 7
+
 // layoutKeys: буквы разделов в русской раскладке.
 var layoutKeys = map[string]string{"з": "p", "в": "d", "ь": "m", "т": "n", "ы": "s", "ц": "w", "г": "u"}
 
@@ -231,24 +234,34 @@ func serversTile() tui.TileData {
 }
 
 // recent: проекты, в которые заходили недавно.
+// recent: проекты, куда заходил, и команды, которые набирал, - вперемешку по времени. Команда по enter
+// встаёт в строку ":", а не выполняется: среди них бывают и меняющие систему.
 func (h *Home) recent() []tui.Hit {
-	cfg := h.env.Cfg
-	names := make([]string, len(cfg.Projects))
-	for i, p := range cfg.Projects {
-		names[i] = p.Name
+	type item struct {
+		hit  tui.Hit
+		last time.Time
 	}
+	cfg := h.env.Cfg
+	var items []item
 	v := visits.Load()
+	for i := range cfg.Projects {
+		p := &cfg.Projects[i]
+		if e, ok := v[p.Name]; ok {
+			hit := h.projectHit(p, "проект, "+ui.Ago(e.Last))
+			items = append(items, item{hit, e.Last})
+		}
+	}
+	for line, e := range visits.Commands() {
+		hit := tui.Hit{Title: "tim " + line, Hint: "команда, " + ui.Ago(e.Last), Open: func() tui.Action { return tui.Action{Command: line} }}
+		items = append(items, item{hit, e.Last})
+	}
+	slices.SortStableFunc(items, func(a, b item) int {
+		return cmp.Or(b.last.Compare(a.last), cmp.Compare(a.hit.Title, b.hit.Title))
+	})
 	var out []tui.Hit
-	for _, i := range visits.Order(names, v, time.Now()) {
-		e, ok := v[names[i]]
-		if !ok {
-			continue
-		}
-		hit := h.projectHit(&cfg.Projects[i], "проект, "+ui.Ago(e.Last))
-		hit.Kind = "недавнее"
-		if out = append(out, hit); len(out) == 4 {
-			break
-		}
+	for _, it := range items[:min(recentRows, len(items))] {
+		it.hit.Kind = "недавнее"
+		out = append(out, it.hit)
 	}
 	return out
 }

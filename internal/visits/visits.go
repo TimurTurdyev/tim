@@ -1,4 +1,5 @@
-// Package visits: куда переходили и как давно - чтобы пикер ставил нужное сверху.
+// Package visits: куда переходили и как давно - чтобы пикер ставил нужное сверху; и какие команды
+// набирали руками - для недавнего на главном экране.
 package visits
 
 import (
@@ -11,6 +12,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
+
+// keepCommands: сколько последних команд помнить - больше в недавнее всё равно не влезает.
+const keepCommands = 30
 
 // Entry: сколько раз переходили и когда последний.
 type Entry struct {
@@ -38,15 +42,28 @@ func path() string {
 	return paths.State("visits.json")
 }
 
+func commandsPath() string {
+	return paths.State("commands.json")
+}
+
 // Load читает журнал; без файла или с битым файлом - пустой.
 func Load() map[string]Entry {
-	m, _ := load()
+	m, _ := load(path())
 	return m
 }
 
-func load() (map[string]Entry, error) {
+// Commands: команды tim, набранные руками, - строка без tim и когда.
+func Commands() map[string]Entry {
+	m, _ := load(commandsPath())
+	return m
+}
+
+// RecordCommand отмечает набранную команду; помнит keepCommands последних.
+func RecordCommand(line string, now time.Time) { record(commandsPath(), line, now, keepCommands) }
+
+func load(file string) (map[string]Entry, error) {
 	m := map[string]Entry{}
-	data, err := os.ReadFile(path())
+	data, err := os.ReadFile(file)
 	if errors.Is(err, os.ErrNotExist) {
 		return m, nil
 	}
@@ -58,8 +75,11 @@ func load() (map[string]Entry, error) {
 
 // Record отмечает переход. Ошибки записи молча проглатываются: журнал - удобство, не данные.
 // Нечитаемый журнал не перезаписывается: одна запись вместо всей истории хуже, чем ни одной.
-func Record(name string, now time.Time) {
-	m, err := load()
+func Record(name string, now time.Time) { record(path(), name, now, 0) }
+
+// record: keep больше нуля - лишние самые давние выбрасываются.
+func record(file, name string, now time.Time, keep int) {
+	m, err := load(file)
 	if err != nil {
 		return
 	}
@@ -67,11 +87,20 @@ func Record(name string, now time.Time) {
 	e.Count++
 	e.Last = now
 	m[name] = e
+	for keep > 0 && len(m) > keep {
+		oldest := ""
+		for k, v := range m {
+			if oldest == "" || v.Last.Before(m[oldest].Last) {
+				oldest = k
+			}
+		}
+		delete(m, oldest)
+	}
 	data, err := json.Marshal(m)
 	if err != nil {
 		return
 	}
-	_ = runner.WriteAtomic(path(), data, 0o600)
+	_ = runner.WriteAtomic(file, data, 0o600)
 }
 
 // Order: индексы names по убыванию счёта; кого не посещали - в исходном порядке после остальных.
