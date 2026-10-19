@@ -1,0 +1,38 @@
+@@sshsrc
+journal
+@@sshfail
+    412 203.0.113.9
+     35 198.51.100.4
+total 2
+@@sshfailtotal
+447
+@@sshusers
+    210 root
+     90 admin
+@@sshok
+2026-10-27T09:12:44+0300 web sshd[2101]: Accepted publickey for deploy from 192.0.2.10 port 51234 ssh2: ED25519 SHA256:abc
+2026-10-27T10:40:02+0300 web sshd[2240]: Accepted password for admin from 203.0.113.9 port 40022 ssh2
+@@probes
+file /var/www/shop/data/logs/shop.example.com-frontend.access.log
+/var/www/shop/data/logs/shop.example.com-frontend.access.log 198.51.100.4 - - [27/Oct/2026:03:10:01 +0300] "GET /.env HTTP/1.1" 404 162 "-" "curl/8.0"
+/var/www/shop/data/logs/shop.example.com-backend.access.log 198.51.100.4 - - [27/Oct/2026:03:10:01 +0300] "GET /.env HTTP/1.1" 404 162 "-" "curl/8.0"
+/var/www/shop/data/logs/shop.example.com-frontend.access.log 198.51.100.7 - - [27/Oct/2026:04:00:00 +0300] "GET /wp-login.php?x=1 HTTP/1.1" 200 5120 "-" "Mozilla/5.0"
+/var/www/shop/data/logs/shop.example.com-frontend.access.log 192.0.2.50 - - [27/Oct/2026:05:00:00 +0300] "GET /.git/config HTTP/2.0" 404 3302 "-" "Mozilla/5.0 (Macintosh) tim-audit"
+/var/www/shop/data/logs/shop.example.com-frontend.access.log 198.51.100.8 - - [20/Oct/2026:05:00:00 +0300] "GET /.env HTTP/1.1" 404 162 "-" "curl/8.0"
+@@ufw
+total 120
+src 80 203.0.113.77
+dpt 60 23
+dpt 40 3389
+@@f2b
+jail sshd
+   |- Currently banned:	3
+   |- Total banned:	57
+   `- Banned IP list:	203.0.113.9 198.51.100.4 203.0.113.77
+@@cscli
+none
+@@prot
+fail2ban inactive
+crowdsec inactive
+passwordauthentication yes
+@@end

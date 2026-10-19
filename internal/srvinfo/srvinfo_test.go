@@ -127,3 +127,25 @@ func TestAccessAndHarmlessUnits(t *testing.T) {
 		}
 	}
 }
+
+func TestAttacks(t *testing.T) {
+	data, err := os.ReadFile("testdata/attacks.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.FixedZone("MSK", 3*3600))
+	a := ParseAttacks(string(data), now, 24*time.Hour)
+	// Повтор во frontend и backend - одна проба; свой tim audit и проба старше суток не считаются.
+	if a.SSHFailed != 447 || a.SSHIPs != 2 || len(a.Logins) != 2 || len(a.Probes) != 2 || a.Probes[1].Path != "/wp-login.php" ||
+		a.UFWBlocked != 120 || len(a.Jails) != 1 || a.Jails[0].Banned != 3 || a.Password != "yes" {
+		t.Fatalf("%+v", a)
+	}
+	got := map[string]level.Level{}
+	for _, c := range EvaluateAttacks(a) {
+		got[c.Name] = max(got[c.Name], c.Level)
+	}
+	// admin вошёл по паролю с адреса, который перебирал пароли, - плохо; перебор без защиты - внимание.
+	if got["вход"] != level.Bad || got["ssh"] != level.Warn || got["сайт"] != level.Warn {
+		t.Fatalf("%v", got)
+	}
+}
