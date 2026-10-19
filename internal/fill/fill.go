@@ -3,12 +3,16 @@ package fill
 
 import (
 	"net/url"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/envfile"
 )
+
+var domainRe = regexp.MustCompile(`^([a-z0-9-]+\.)+[a-z]{2,}$`)
 
 // Found: что удалось узнать о проекте.
 type Found struct {
@@ -17,7 +21,6 @@ type Found struct {
 	DB   string
 }
 
-// local: адрес не указывает на сайт в интернете.
 // Local: адрес живёт только на этой машине, в реестр и во внешние проверки он не годится.
 func Local(host string) bool {
 	switch host {
@@ -25,6 +28,15 @@ func Local(host string) bool {
 		return true
 	}
 	return strings.HasSuffix(host, ".test") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".localhost")
+}
+
+// DomainOfPath: папка сайта на сервере названа доменом - панели хостинга кладут сайт в .../www/<домен>.
+func DomainOfPath(remote string) string {
+	last := strings.ToLower(path.Base(strings.TrimRight(remote, "/")))
+	if remote != "" && domainRe.MatchString(last) {
+		return last
+	}
+	return ""
 }
 
 // FromEnv достаёт адрес сайта, порт и базу из .env проекта.

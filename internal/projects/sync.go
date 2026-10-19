@@ -1,9 +1,12 @@
 package projects
 
 import (
+	"context"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
@@ -130,6 +133,9 @@ func (s *syncing) fill(p *config.Project) {
 			f.URL = "https://" + d
 		}
 	}
+	if d := fill.DomainOfPath(p.Remote); f.URL == "" && d != "" && resolves(d) {
+		f.URL = "https://" + d
+	}
 	s.set(p, "url", &p.URL, f.URL)
 	s.set(p, "db", &p.DB, f.DB)
 	if f.Port > 0 && (p.Port == 0 || s.o.force) && p.Port != f.Port {
@@ -153,6 +159,14 @@ func (s *syncing) set(p *config.Project, field string, cur *string, val string) 
 	}
 	s.out = append(s.out, change{p.Name, field, *cur, val})
 	*cur = val
+}
+
+// resolves: у домена есть адрес - папка названа живым доменом, а не просто с точкой в имени.
+func resolves(host string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+	return err == nil && len(addrs) > 0
 }
 
 // aliasOf: ssh-алиас, чей адрес совпадает с адресом сайта.
