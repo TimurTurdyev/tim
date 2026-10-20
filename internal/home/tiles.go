@@ -1,0 +1,198 @@
+package home
+
+import (
+	"fmt"
+	"os"
+	"runtime"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/TimurTurdyev/tim/internal/bypass"
+	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/gitx"
+	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/motd"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/run"
+	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/sysinfo"
+	"github.com/TimurTurdyev/tim/internal/tui"
+	"github.com/TimurTurdyev/tim/internal/ui"
+)
+
+// Плитки главного экрана: состояние машины, обхода VPN, проекта и служб - и общее предупреждение.
+
+func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Action, health motd.Health) {
+	if data, ok := sysinfo.DataDisk(); ok {
+		pct := data.Percent()
+		health.DiskPct, health.DiskFree = pct, int64(data.Avail)
+		tiles = append(tiles, tui.TileData{Title: "диск", Width: 22, Rows: []string{
+			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
+			ui.Dim("свободно " + ui.Bytes(int64(data.Avail))),
+		}})
+	}
+	if used, total := sysinfo.Memory(); total > 0 {
+		pct := int(used * 100 / total)
+		tiles = append(tiles, tui.TileData{Title: "память", Width: 22, Rows: []string{
+			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
+			ui.Dim(fmt.Sprintf("%.0f из %.0f GB", float64(used)/(1<<30), float64(total)/(1<<30))),
+		}})
+	}
+	health.SwapShort = machine.SwapShort()
+	tiles = append(tiles, machineTile())
+	if len(h.env.Cfg.Hosts) > 0 {
+		tiles = append(tiles, vpnTile(h.env.Cfg, &health))
+	}
+	if t, ok := h.projectTile(); ok {
+		tiles = append(tiles, t)
+	}
+	tiles = append(tiles, serversTile())
+	if t, ok := servicesTile(); ok {
+		tiles = append(tiles, t)
+	}
+	if ws := health.Warnings(); len(ws) > 0 {
+		warning, open = ws[0].Text, h.troubleScreen(ws[0].Kind)
+	}
+	return tiles, warning, open, health
+}
+
+// troubleScreen: куда вести по enter из предупреждения.
+func (h *Home) troubleScreen(kind motd.Trouble) func() tui.Action {
+	return func() tui.Action {
+		switch kind {
+		case motd.DiskFull:
+			return tui.Action{Push: diskScreen(h.env, nil)}
+		case motd.Swap:
+			return tui.Action{Push: machine.HWScreen()}
+		}
+		return tui.Action{Push: bypass.Screen(h.env)}
+	}
+}
+
+// machineTile: нагрузка в долях ядер и батарея; без батареи - сколько работает.
+func machineTile() tui.TileData {
+	rows := []string{ui.Dim("нагрузка -"), ""}
+	if load := sysinfo.Load(); len(load) == 3 {
+		rows[0] = "нагрузка " + ui.Percent(int(load[0]*100/float64(runtime.NumCPU())+0.5))
+	}
+	if out, err := runner.Output("pmset", "-g", "batt"); err == nil {
+		if b, ok := sysinfo.ParsePmset(out); ok {
+			text := fmt.Sprintf("батарея %d%%", b.Percent)
+			switch {
+			case b.Percent <= 20 && !b.AC:
+				text = ui.Warn(text + ", не заряжается")
+			case b.State == "charging":
+				text += ", заряжается"
+			}
+			rows[1] = ui.Dim(text)
+		}
+	}
+	if rows[1] == "" {
+		if boot, ok := sysinfo.Boot(); ok {
+			rows[1] = ui.Dim("работает " + ui.Duration(time.Since(boot)))
+		}
+	}
+	return tui.TileData{Title: "машина", Width: 26, Rows: rows}
+}
+
+func vpnTile(cfg *config.Config, health *motd.Health) tui.TileData {
+	ok, total := bypass.BypassCount(cfg)
+	health.BypassOK, health.BypassAll = ok, total
+	guard := ui.Dim("страж не установлен")
+	if bypass.GuardAlive() {
+		guard = ui.Dim("страж работает")
+	} else {
+		health.GuardMissing = true
+	}
+	lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))
+	if ok < total {
+		lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", ok, total))
+	}
+	return tui.TileData{Title: "vpn", Width: 24, Rows: []string{lamp, guard}}
+}
+
+func serversTile() tui.TileData {
+	var names []string
+	for _, s := range run.ListStates() {
+		if s.Alive() {
+			names = append(names, s.Name+" :"+s.Port)
+		}
+	}
+	rows := []string{ui.Dim("\u25cb нет запущенных"), ui.Dim("tim serve <проект> -d")}
+	if len(names) > 0 {
+		rows = []string{ui.OK("\u25cf " + ui.Plural(len(names), "работает", "работают", "работают")), ui.Dim(strings.Join(names, ", "))}
+	}
+	return tui.TileData{Title: "dev-серверы", Width: 26, Rows: rows}
+}
+
+// projectTile: проект, в папке которого открыт терминал, - ветка, изменения и порт.
+func (h *Home) projectTile() (tui.TileData, bool) {
+	cwd, _ := os.Getwd()
+	p, ok := h.env.Cfg.ProjectHere(cwd)
+	if !ok {
+		return tui.TileData{}, false
+	}
+	dir := h.env.Cfg.ProjectDir(p)
+	rows := []string{p.Name, ""}
+	if g, ok := gitx.Status(dir); ok {
+		rows[0] += ui.Dim("  " + g.Line())
+	}
+	if port := run.ProjectPort(p, dir); port != "" {
+		if l, busy := netinfo.PortBusy(port); busy {
+			rows[1] = ui.OK("\u25cf порт " + port + " занят " + l.Command)
+		} else {
+			rows[1] = ui.Dim("порт " + port + " свободен")
+		}
+	}
+	return tui.TileData{Title: "проект", Width: 30, Rows: rows}, true
+}
+
+// fitNames: имена через запятую, сколько влезает в width, остальные - "+N".
+func fitNames(names []string, width int) string {
+	out := ""
+	for i, n := range names {
+		next := n
+		if out != "" {
+			next = out + ", " + n
+		}
+		if ui.Width(next)+4 > width && i > 0 {
+			return out + fmt.Sprintf(" +%d", len(names)-i)
+		}
+		out = next
+	}
+	return out
+}
+
+// servicesTile: службы brew или systemd - сколько работает и что упало.
+func servicesTile() (tui.TileData, bool) {
+	if runtime.GOOS == "linux" {
+		failed := sysinfo.FailedUnits()
+		if len(failed) == 0 {
+			return tui.TileData{}, false
+		}
+		return tui.TileData{Title: "службы", Width: 26, Rows: []string{ui.Bad("\u2715 упали: " + strings.Join(failed, ", ")), ui.Dim("tim svc")}}, true
+	}
+	out, err := runner.Output("launchctl", "list")
+	if err != nil {
+		return tui.TileData{}, false
+	}
+	var up, bad []string
+	for _, a := range sysinfo.ParseLaunchctl(out) {
+		switch {
+		case a.Running():
+			up = append(up, a.Name)
+		case a.Status != 0:
+			bad = append(bad, a.Name)
+		}
+	}
+	if len(up) == 0 && len(bad) == 0 {
+		return tui.TileData{}, false
+	}
+	slices.Sort(up)
+	rows := []string{ui.OK("\u25cf " + ui.Count(len(up), "служба", "службы", "служб")), ui.Dim(fitNames(up, 26))}
+	if len(bad) > 0 {
+		rows[0] = ui.Bad("\u2715 упали: " + strings.Join(bad, ", "))
+	}
+	return tui.TileData{Title: "службы", Width: 26, Rows: rows}, true
+}

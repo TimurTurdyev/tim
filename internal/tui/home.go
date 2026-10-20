@@ -85,7 +85,8 @@ type blinkMsg struct {
 func NewHome(opts HomeOpts) Screen {
 	in := textinput.New()
 	in.Prompt = symPointer + " "
-	in.Placeholder = "проект, команда, домен, порт - начни печатать"
+	// Пробел первым: курсор стоит на нём, а не закрывает первую букву подсказки.
+	in.Placeholder = " проект, команда, домен, порт - начни печатать"
 	in.SetWidth(56)
 	st := in.Styles()
 	st.Focused.Prompt = stylePrompt
@@ -271,6 +272,8 @@ func (h *home) View(width, height int) string {
 	if len(art) > 0 {
 		cw = width - ui.Width(art[0]) - 2
 	}
+	// На низком терминале вторая строка плиток вытеснила бы предупреждение - остаётся одна.
+	tileLines := tileRows(h.data.Tiles, cw, height >= 30)
 	out = append(out, head...)
 	switch {
 	case !typing && wide:
@@ -283,7 +286,7 @@ func (h *home) View(width, height int) string {
 		out = append(out, Beside(left, recentW, right, cw)...)
 	case !typing:
 		// Друг под другом экран выше: недавнего столько, чтобы плитки и предупреждение остались видны.
-		fit := height - len(head) - (len(secs) + 2) - 9
+		fit := height - len(head) - (len(secs) + 2) - len(tileLines) - 5
 		out = append(out, h.list.View(cw, min(max(3, fit), len(h.list.Rows)))...)
 		out = append(out, "", "  "+styleHead.Render("РАЗДЕЛЫ"))
 		for _, sc := range secs {
@@ -294,24 +297,7 @@ func (h *home) View(width, height int) string {
 	}
 	if !typing {
 		out = append(out, "")
-		var tiles [][]string
-		total := 2
-		for _, t := range h.data.Tiles {
-			if total+t.Width+1 > cw {
-				break
-			}
-			tiles = append(tiles, Tile(t.Title, t.Rows, t.Width))
-			total += t.Width + 1
-		}
-		if len(tiles) > 0 {
-			for i := 0; i < len(tiles[0]); i++ {
-				line := "  "
-				for _, t := range tiles {
-					line += t[i] + " "
-				}
-				out = append(out, line)
-			}
-		}
+		out = append(out, tileLines...)
 		if h.data.Warning != "" {
 			warn, hint := styleAmber.Render(symWarn+" "+h.data.Warning), styleDim.Render("   enter - разобраться")
 			if ui.Width(warn+hint)+2 > width {
@@ -330,4 +316,36 @@ func (h *home) View(width, height int) string {
 		out[i] = ui.Fit(out[i], cw) + a
 	}
 	return strings.Join(out, "\n")
+}
+
+// tileRows: плитки в строку, пока влезают; остальные - на следующую, если wrap, иначе не рисуются.
+func tileRows(tiles []TileData, width int, wrap bool) []string {
+	var out []string
+	var row [][]string
+	total := 2
+	flush := func() {
+		for i := 0; len(row) > 0 && i < len(row[0]); i++ {
+			line := "  "
+			for _, t := range row {
+				line += t[i] + " "
+			}
+			out = append(out, line)
+		}
+		row, total = nil, 2
+	}
+	for _, t := range tiles {
+		if total+t.Width+1 > width && len(row) > 0 {
+			if !wrap {
+				break
+			}
+			flush()
+		}
+		if total+t.Width+1 > width {
+			continue
+		}
+		row = append(row, Tile(t.Title, t.Rows, t.Width))
+		total += t.Width + 1
+	}
+	flush()
+	return out
 }

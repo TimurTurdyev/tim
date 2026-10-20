@@ -2,7 +2,6 @@ package home
 
 import (
 	"cmp"
-	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -24,7 +23,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/sshx"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/visits"
@@ -167,73 +165,6 @@ func (h *Home) sections() []tui.Section {
 }
 
 // tiles: плитки состояния, самое важное предупреждение - что открыть по нему, и признаки беды для маскота.
-func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Action, health motd.Health) {
-	warn := func(text string, screen func() tui.Screen) {
-		if warning == "" {
-			warning, open = text, func() tui.Action { return tui.Action{Push: screen()} }
-		}
-	}
-	if data, ok := sysinfo.DataDisk(); ok {
-		pct := data.Percent()
-		health.DiskPct = pct
-		tiles = append(tiles, tui.TileData{Title: "диск", Width: 22, Rows: []string{
-			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
-			ui.Dim("свободно " + ui.Bytes(int64(data.Avail))),
-		}})
-		if pct >= 85 {
-			warn(fmt.Sprintf("диск занят на %d%%, свободно %s", pct, ui.Bytes(int64(data.Avail))), func() tui.Screen { return diskScreen(h.env, nil) })
-		}
-	}
-	if used, total := sysinfo.Memory(); total > 0 {
-		pct := int(used * 100 / total)
-		tiles = append(tiles, tui.TileData{Title: "память", Width: 22, Rows: []string{
-			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
-			ui.Dim(fmt.Sprintf("%.0f из %.0f GB", float64(used)/(1<<30), float64(total)/(1<<30))),
-		}})
-	}
-	if health.SwapShort = machine.SwapShort(); health.SwapShort {
-		warn("памяти не хватает: своп занят больше чем наполовину", machine.HWScreen)
-	}
-	if len(h.env.Cfg.Hosts) > 0 {
-		tiles = append(tiles, h.vpnTile(warn, &health))
-	}
-	return append(tiles, serversTile()), warning, open, health
-}
-
-func (h *Home) vpnTile(warn func(string, func() tui.Screen), health *motd.Health) tui.TileData {
-	vpn := func() tui.Screen { return bypass.Screen(h.env) }
-	ok, total := bypass.BypassCount(h.env.Cfg)
-	health.BypassOK, health.BypassAll = ok, total
-	guard := ui.Dim("страж не установлен")
-	if bypass.GuardAlive() {
-		guard = ui.Dim("страж работает")
-	} else {
-		health.GuardMissing = true
-		warn("страж маршрутов не установлен: после смены сети обход сломается", vpn)
-	}
-	lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))
-	if ok < total {
-		lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", ok, total))
-		warn(ui.Count(total-ok, "адрес", "адреса", "адресов")+" через VPN вместо обхода", vpn)
-	}
-	return tui.TileData{Title: "vpn", Width: 24, Rows: []string{lamp, guard}}
-}
-
-func serversTile() tui.TileData {
-	var names []string
-	for _, s := range run.ListStates() {
-		if s.Alive() {
-			names = append(names, s.Name+" :"+s.Port)
-		}
-	}
-	rows := []string{ui.Dim("\u25cb нет запущенных"), ui.Dim("tim serve <проект> -d")}
-	if len(names) > 0 {
-		rows = []string{ui.OK("\u25cf " + ui.Plural(len(names), "работает", "работают", "работают")), ui.Dim(strings.Join(names, ", "))}
-	}
-	return tui.TileData{Title: "dev-серверы", Width: 26, Rows: rows}
-}
-
-// recent: проекты, в которые заходили недавно.
 // recent: проекты, куда заходил, и команды, которые набирал, - вперемешку по времени. Команда по enter
 // встаёт в строку ":", а не выполняется: среди них бывают и меняющие систему.
 func (h *Home) recent() []tui.Hit {
