@@ -6,6 +6,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/sshx"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // exposeOptions: куда показать локальный порт - frps, свой сервер по ssh или cloudflared.
@@ -61,6 +62,9 @@ func serverCommand(env *app.Env) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := Target(env.Cfg, args[0])
+			if cmd.Flags().Changed("since") && !attacks {
+				return ui.Errorf("--since работает вместе с --attacks")
+			}
 			if attacks {
 				window, err := parseSince(since)
 				if err != nil {

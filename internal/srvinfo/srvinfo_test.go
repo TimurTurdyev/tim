@@ -21,7 +21,7 @@ func TestParseUbuntu(t *testing.T) {
 	if len(r.Disks) != 1 || r.Disks[0].Mount != "/" || r.Disks[0].Pct != 50 || r.Inodes[0].Pct != 8 {
 		t.Fatalf("диски %+v %+v", r.Disks, r.Inodes)
 	}
-	if !r.Reboot || len(r.Failed) != 2 || !r.NoSudoSSHD || r.Nginx != "nosudo" || r.Fail2ban != "inactive" {
+	if !r.Reboot || len(r.Failed) != 2 || !r.NoSudoSSHD || r.Nginx != "nosudo" || r.Fail2ban {
 		t.Fatalf("%+v", r)
 	}
 	// Пакеты в reboot-required повторяются; ядро и libc должны остаться по одному разу.
@@ -75,7 +75,7 @@ func TestEvaluateBad(t *testing.T) {
 		Disks:     []Disk{{Mount: "/", Pct: 97}},
 		Listening: []Listen{{Addr: "0.0.0.0", Port: 6379, Public: true}, {Addr: "10.0.0.5", Port: 5432}},
 		SSHD:      map[string]string{"permitrootlogin": "yes", "passwordauthentication": "yes"},
-		Fail2ban:  "active",
+		Fail2ban:  true,
 		Nginx:     `nginx: [emerg] unknown directive "servr_name"`,
 	}
 	got := Evaluate(r, time.Now())
@@ -103,15 +103,15 @@ func TestAccessAndHarmlessUnits(t *testing.T) {
 		r    Report
 		want map[string]level.Level
 	}{
-		{"fail2ban, вход по паролю", Report{SSHD: pass, Fail2ban: "active"}, map[string]level.Level{"защита": level.OK, "sshd": level.Warn}},
-		{"CrowdSec, только ключ", Report{SSHD: key, CrowdSec: "active"}, map[string]level.Level{"защита": level.OK, "sshd": level.OK}},
+		{"fail2ban, вход по паролю", Report{SSHD: pass, Fail2ban: true}, map[string]level.Level{"защита": level.OK, "sshd": level.Warn}},
+		{"CrowdSec, только ключ", Report{SSHD: key, CrowdSec: true}, map[string]level.Level{"защита": level.OK, "sshd": level.OK}},
 		{"только ufw, вход по паролю", Report{SSHD: pass, UFW: "active"}, map[string]level.Level{"защита": level.Warn}},
 		{"sshd не проверен", Report{NoSudoSSHD: true}, map[string]level.Level{"защита": level.Warn}},
 		{"root по ключу, без защиты", Report{SSHD: map[string]string{"passwordauthentication": "no", "permitrootlogin": "yes"}},
 			map[string]level.Level{"защита": level.Info, "sshd": level.OK}},
-		{"fwupd на виртуалке, ifup при netplan", Report{SSHD: key, Fail2ban: "active", Virt: "kvm", Netplan: true,
+		{"fwupd на виртуалке, ifup при netplan", Report{SSHD: key, Fail2ban: true, Virt: "kvm", Netplan: true,
 			Failed: []string{"fwupd.service", "ifup@eth0.service"}}, map[string]level.Level{"юнит": level.Info}},
-		{"fwupd на железе, networking без netplan", Report{SSHD: key, Fail2ban: "active", Virt: "none",
+		{"fwupd на железе, networking без netplan", Report{SSHD: key, Fail2ban: true, Virt: "none",
 			Failed: []string{"fwupd.service", "networking.service"}}, map[string]level.Level{"юнит": level.Warn}},
 	}
 	for _, c := range cases {
@@ -137,15 +137,16 @@ func TestAttacks(t *testing.T) {
 	a := ParseAttacks(string(data), now, 24*time.Hour)
 	// Повтор во frontend и backend - одна проба; свой tim audit и проба старше суток не считаются.
 	if a.SSHFailed != 447 || a.SSHIPs != 2 || len(a.Logins) != 2 || len(a.Probes) != 2 || a.Probes[1].Path != "/wp-login.php" ||
-		a.UFWBlocked != 120 || len(a.Jails) != 1 || a.Jails[0].Banned != 3 || a.Password != "yes" {
+		a.UFWBlocked != 120 || len(a.Jails) != 1 || a.Jails[0].Banned != 3 || a.Password != PasswordOn {
 		t.Fatalf("%+v", a)
 	}
 	got := map[string]level.Level{}
 	for _, c := range EvaluateAttacks(a) {
 		got[c.Name] = max(got[c.Name], c.Level)
 	}
-	// admin вошёл по паролю с адреса, который перебирал пароли, - плохо; перебор без защиты - внимание.
-	if got["вход"] != level.Bad || got["ssh"] != level.Warn || got["сайт"] != level.Warn {
+	// admin вошёл по паролю с адреса, который перебирал пароли, - плохо; перебор без защиты - внимание;
+	// 200 на wp-login - перебор входа, к сведению, а не открытый файл.
+	if got["вход"] != level.Bad || got["ssh"] != level.Warn || got["сайт"] != level.Info {
 		t.Fatalf("%v", got)
 	}
 }

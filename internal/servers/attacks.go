@@ -1,22 +1,20 @@
 package servers
 
 import (
-	"cmp"
-	"encoding/json"
 	"fmt"
-	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/health"
-	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
+
+// attacksTimeout: сколько ждать скрипт журналов.
+const attacksTimeout = 3 * time.Minute
 
 // attackReport: журналы сервера, находки и владельцы сетей, откуда стучались.
 type attackReport struct {
@@ -27,7 +25,8 @@ type attackReport struct {
 
 // collectAttacks: один заход по ssh со скриптом журналов, потом владельцы самых активных адресов.
 func collectAttacks(target string, since time.Duration) (*attackReport, error) {
-	out, err := runner.OutputStdin(srvinfo.AttacksScript(since), "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", target, "sh -s")
+	// Журналы за неделю на нагруженном сервере читаются дольше минуты - предел шире, чем у Output.
+	out, err := runner.OutputStdinWithin(attacksTimeout, srvinfo.AttacksScript(since), "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", target, "sh -s")
 	if !strings.Contains(out, "@@end") {
 		if err == nil {
 			err = fmt.Errorf("скрипт не дошёл до конца")
@@ -36,7 +35,7 @@ func collectAttacks(target string, since time.Duration) (*attackReport, error) {
 	}
 	a := srvinfo.ParseAttacks(out, time.Now(), since)
 	r := &attackReport{Attacks: a, Findings: srvinfo.EvaluateAttacks(a)}
-	counts := attackers(a)
+	counts := srvinfo.Attackers(a)
 	if len(counts) > 0 {
 		ips := make([]string, len(counts))
 		for i, c := range counts {
@@ -54,14 +53,10 @@ func printAttacks(target string, since time.Duration, asJSON bool) error {
 		return ui.Errorf("%s: %v; маршрут и вход проверит tim ssh %s", target, err, target)
 	}
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(r)
+		return ui.JSON(r)
 	}
 	ui.Println(ui.Label(target) + "  " + ui.Dim("за "+window(since)+": "+sources(r.Attacks)))
-	for _, c := range r.Findings {
-		ui.Println("  " + level.Lamp(c.Level, ui.Pad(c.Name, 10)+c.Detail))
-	}
+	printFindings(r.Findings)
 	if len(r.Findings) == 0 {
 		ui.Println("  " + ui.Label("в журналах ничего тревожного"))
 	}
@@ -74,38 +69,24 @@ func printAttacks(target string, since time.Duration, asJSON bool) error {
 	if len(r.Attacks.Logins) > 0 {
 		ui.Println(ui.Info("удачные входы:"))
 		for _, l := range r.Attacks.Logins[max(0, len(r.Attacks.Logins)-10):] {
-			ui.Println("  " + ui.Dim(l.Time.Local().Format("01-02 15:04")) + "  " + ui.Pad(l.User, 12) + ui.Pad(l.IP, 18) + ui.Dim(methodText(l.Method)))
+			when := "    -      "
+			if !l.Time.IsZero() {
+				when = l.Time.Local().Format("01-02 15:04")
+			}
+			ui.Println("  " + ui.Dim(when) + "  " + ui.Pad(l.User, 12) + ui.Pad(l.IP, 18) + ui.Dim(methodText(l.Method)))
 		}
 	}
 	return nil
 }
 
-// attackers: адреса со всех источников и сколько с каждого пришло, самые активные первыми.
-func attackers(a srvinfo.Attacks) []srvinfo.Count {
-	byIP := map[string]int{}
-	for _, c := range a.SSHByIP {
-		byIP[c.Key] += c.N
-	}
-	for _, c := range a.UFWByIP {
-		byIP[c.Key] += c.N
-	}
-	for _, p := range a.Probes {
-		byIP[p.IP]++
-	}
-	var out []srvinfo.Count
-	for ip, n := range byIP {
-		out = append(out, srvinfo.Count{Key: ip, N: n})
-	}
-	slices.SortFunc(out, func(x, y srvinfo.Count) int { return cmp.Or(cmp.Compare(y.N, x.N), cmp.Compare(x.Key, y.Key)) })
-	return out[:min(50, len(out))]
-}
-
 // sources: какие журналы удалось прочитать - чтобы "ничего тревожного" не путали с "ничего не видно".
 func sources(a srvinfo.Attacks) string {
 	var parts []string
-	switch a.SSHSource {
-	case "none", "":
+	switch {
+	case a.SSH != srvinfo.Read:
 		parts = append(parts, "журнал ssh не прочитан")
+	case a.SSHVia == "auth.log":
+		parts = append(parts, "auth.log за время файла")
 	default:
 		parts = append(parts, "журнал ssh")
 	}
@@ -114,7 +95,7 @@ func sources(a srvinfo.Attacks) string {
 	} else {
 		parts = append(parts, "журналов nginx не видно")
 	}
-	if a.UFWState != "none" {
+	if a.UFW == srvinfo.Read {
 		parts = append(parts, "ufw")
 	}
 	return strings.Join(parts, ", ")
@@ -122,13 +103,16 @@ func sources(a srvinfo.Attacks) string {
 
 // parseSince: окно отчёта - 24h, 3d, 1w; дни и недели time.ParseDuration не знает.
 func parseSince(s string) (time.Duration, error) {
-	for suffix, unit := range map[string]time.Duration{"d": 24 * time.Hour, "w": 7 * 24 * time.Hour} {
-		if n, ok := strings.CutSuffix(s, suffix); ok {
+	for _, u := range []struct {
+		suffix string
+		unit   time.Duration
+	}{{"d", 24 * time.Hour}, {"w", 7 * 24 * time.Hour}} {
+		if n, ok := strings.CutSuffix(s, u.suffix); ok {
 			v, err := strconv.Atoi(n)
 			if err != nil || v <= 0 {
 				return 0, ui.Errorf("окно %s: нужно вроде 24h, 3d или 1w", s)
 			}
-			return time.Duration(v) * unit, nil
+			return time.Duration(v) * u.unit, nil
 		}
 	}
 	d, err := time.ParseDuration(s)

@@ -14,13 +14,40 @@ var (
 	queryRe    = regexp.MustCompile(`[?#].*$`)
 )
 
+// sourceNames: метки скрипта и слова для JSON.
+var sourceNames = map[Source]string{Missing: "missing", Read: "read", NoSudo: "nosudo"}
+
+// Source: удалось ли прочитать источник на сервере.
+type Source int
+
+const (
+	Missing Source = iota // источника нет: не стоит, не включён, нет файла
+	Read
+	NoSudo // есть, но читает только root
+)
+
+func (s Source) MarshalText() ([]byte, error) { return []byte(sourceNames[s]), nil }
+
+// Password: пускает ли sshd по паролю; неизвестно - настройки не прочитаны.
+type Password int
+
+const (
+	PasswordUnknown Password = iota
+	PasswordOn
+	PasswordOff
+)
+
+func (p Password) MarshalText() ([]byte, error) {
+	return []byte([...]string{"unknown", "on", "off"}[p]), nil
+}
+
 // Count: сколько раз встретилось значение - адрес, имя, порт.
 type Count struct {
 	Key string `json:"key"`
 	N   int    `json:"n"`
 }
 
-// Login: удачный вход по ssh.
+// Login: удачный вход по ssh. Time нулевое у старого формата журнала без года.
 type Login struct {
 	Time   time.Time `json:"time"`
 	User   string    `json:"user"`
@@ -52,11 +79,11 @@ type Decision struct {
 	Duration string `json:"duration"`
 }
 
-// Attacks: что видно в журналах сервера за окно. Состояния источников: пусто - прочитан, none - нет
-// источника, nosudo - есть, но без прав.
+// Attacks: что видно в журналах сервера за окно.
 type Attacks struct {
 	Since      time.Duration `json:"since"`
-	SSHSource  string        `json:"ssh_source"`
+	SSH        Source        `json:"ssh"`
+	SSHVia     string        `json:"ssh_via,omitempty"` // journal или auth.log; у auth.log окно - весь файл
 	SSHFailed  int           `json:"ssh_failed"`
 	SSHIPs     int           `json:"ssh_ips"`
 	SSHByIP    []Count       `json:"ssh_by_ip,omitempty"`
@@ -64,24 +91,25 @@ type Attacks struct {
 	Logins     []Login       `json:"logins,omitempty"`
 	Probes     []Probe       `json:"probes,omitempty"`
 	NginxFiles []string      `json:"nginx_files,omitempty"`
-	UFWState   string        `json:"ufw_state,omitempty"`
+	UFW        Source        `json:"ufw"`
 	UFWBlocked int           `json:"ufw_blocked"`
 	UFWByIP    []Count       `json:"ufw_by_ip,omitempty"`
 	UFWByPort  []Count       `json:"ufw_by_port,omitempty"`
-	F2BState   string        `json:"fail2ban_state,omitempty"`
+	F2B        Source        `json:"fail2ban"`
 	Jails      []Jail        `json:"jails,omitempty"`
-	CSState    string        `json:"crowdsec_state,omitempty"`
+	CS         Source        `json:"crowdsec"`
 	Decisions  []Decision    `json:"decisions,omitempty"`
 	Fail2ban   bool          `json:"fail2ban_active"`
 	CrowdSec   bool          `json:"crowdsec_active"`
-	Password   string        `json:"password_login"` // yes, no или пусто - не проверено
+	Password   Password      `json:"password_login"`
 }
 
-// ParseAttacks собирает Attacks из вывода AttacksScript. Пробы старше окна и запросы самого tim audit
-// отбрасываются: своя проверка - не атака.
+// ParseAttacks собирает Attacks из вывода AttacksScript. Пробы и входы старше окна и запросы самого
+// tim audit отбрасываются: своя проверка - не атака.
 func ParseAttacks(out string, now time.Time, since time.Duration) Attacks {
 	s := Sections(out)
-	a := Attacks{Since: since, SSHSource: first(s["sshsrc"])}
+	a := Attacks{Since: since}
+	a.SSH, a.SSHVia = sshSource(first(s["sshsrc"]))
 	for _, l := range s["sshfail"] {
 		if v, ok := strings.CutPrefix(l, "total "); ok {
 			a.SSHIPs, _ = strconv.Atoi(strings.TrimSpace(v))
@@ -95,27 +123,54 @@ func ParseAttacks(out string, now time.Time, since time.Duration) Attacks {
 			a.SSHUsers = append(a.SSHUsers, c)
 		}
 	}
+	from := now.Add(-since)
 	for _, l := range s["sshok"] {
-		if m := acceptedRe.FindStringSubmatch(l); m != nil {
-			a.Logins = append(a.Logins, Login{Time: logTime(strings.Fields(l)[0]), Method: m[1], User: m[2], IP: m[3]})
+		m := acceptedRe.FindStringSubmatch(l)
+		if m == nil {
+			continue
 		}
+		t := logTime(strings.Fields(l)[0])
+		if !t.IsZero() && t.Before(from) {
+			continue
+		}
+		a.Logins = append(a.Logins, Login{Time: t, Method: m[1], User: m[2], IP: m[3]})
 	}
-	a.Probes, a.NginxFiles = parseProbes(s["probes"], now.Add(-since))
-	a.UFWState, a.UFWBlocked, a.UFWByIP, a.UFWByPort = parseUFW(s["ufw"])
-	a.F2BState, a.Jails = parseJails(s["f2b"])
-	a.CSState, a.Decisions = parseDecisions(s["cscli"])
+	a.Probes, a.NginxFiles = parseProbes(s["probes"], from)
+	a.UFW, a.UFWBlocked, a.UFWByIP, a.UFWByPort = parseUFW(s["ufw"])
+	a.F2B, a.Jails = parseJails(s["f2b"])
+	a.CS, a.Decisions = parseDecisions(s["cscli"])
 	for _, l := range s["prot"] {
 		f := strings.Fields(strings.ToLower(l))
-		switch {
-		case len(f) == 2 && f[0] == "fail2ban":
+		if len(f) != 2 {
+			continue
+		}
+		switch f[0] {
+		case "fail2ban":
 			a.Fail2ban = f[1] == "active"
-		case len(f) == 2 && f[0] == "crowdsec":
+		case "crowdsec":
 			a.CrowdSec = f[1] == "active"
-		case len(f) == 2 && (f[0] == "passwordauthentication" || f[0] == "kbdinteractiveauthentication") && a.Password != "yes":
-			a.Password = f[1]
+		case "passwordauthentication", "kbdinteractiveauthentication":
+			// Любой из двух способов "yes" - по паролю пускает.
+			if f[1] == "yes" || a.Password == PasswordUnknown {
+				a.Password = PasswordOff
+				if f[1] == "yes" {
+					a.Password = PasswordOn
+				}
+			}
 		}
 	}
 	return a
+}
+
+// sshSource: метка скрипта - journal, journal-sudo, authlog, authlog-sudo или none.
+func sshSource(mark string) (Source, string) {
+	switch {
+	case mark == "none", mark == "":
+		return Missing, ""
+	case strings.HasPrefix(mark, "authlog"):
+		return Read, "auth.log"
+	}
+	return Read, "journal"
 }
 
 func parseProbes(lines []string, from time.Time) ([]Probe, []string) {
@@ -147,12 +202,13 @@ func parseProbes(lines []string, from time.Time) ([]Probe, []string) {
 	return probes, files
 }
 
-func parseUFW(lines []string) (state string, total int, byIP, byPort []Count) {
+func parseUFW(lines []string) (state Source, total int, byIP, byPort []Count) {
+	if first(lines) == "none" {
+		return Missing, 0, nil, nil
+	}
 	for _, l := range lines {
 		f := strings.Fields(l)
 		switch {
-		case len(f) == 1 && f[0] == "none":
-			return "none", 0, nil, nil
 		case len(f) == 2 && f[0] == "total":
 			total, _ = strconv.Atoi(f[1])
 		case len(f) == 3 && (f[0] == "src" || f[0] == "dpt"):
@@ -164,13 +220,13 @@ func parseUFW(lines []string) (state string, total int, byIP, byPort []Count) {
 			}
 		}
 	}
-	return "", total, byIP, byPort
+	return Read, total, byIP, byPort
 }
 
 // parseJails разбирает fail2ban-client status по клеткам: Currently banned, Total banned, Banned IP list.
-func parseJails(lines []string) (string, []Jail) {
-	if s := first(lines); s == "none" || s == "nosudo" {
-		return s, nil
+func parseJails(lines []string) (Source, []Jail) {
+	if src, ok := sourceMark(first(lines)); ok {
+		return src, nil
 	}
 	var jails []Jail
 	for _, l := range lines {
@@ -195,13 +251,13 @@ func parseJails(lines []string) (string, []Jail) {
 			j.IPs = strings.Fields(v)
 		}
 	}
-	return "", jails
+	return Read, jails
 }
 
 // parseDecisions разбирает cscli decisions list -o json: список тревог, у каждой - решения о бане.
-func parseDecisions(lines []string) (string, []Decision) {
-	if s := first(lines); s == "none" || s == "nosudo" {
-		return s, nil
+func parseDecisions(lines []string) (Source, []Decision) {
+	if src, ok := sourceMark(first(lines)); ok {
+		return src, nil
 	}
 	var alerts []struct {
 		Decisions []struct {
@@ -211,7 +267,7 @@ func parseDecisions(lines []string) (string, []Decision) {
 		} `json:"decisions"`
 	}
 	if err := json.Unmarshal([]byte(strings.Join(lines, "\n")), &alerts); err != nil {
-		return "", nil
+		return Read, nil
 	}
 	var out []Decision
 	for _, al := range alerts {
@@ -219,7 +275,18 @@ func parseDecisions(lines []string) (string, []Decision) {
 			out = append(out, Decision{IP: d.Value, Scenario: d.Scenario, Duration: d.Duration})
 		}
 	}
-	return "", out
+	return Read, out
+}
+
+// sourceMark: первая строка раздела - метка none или nosudo, а не данные.
+func sourceMark(line string) (Source, bool) {
+	switch line {
+	case "none", "":
+		return Missing, true
+	case "nosudo":
+		return NoSudo, true
+	}
+	return Read, false
 }
 
 // parseCount: строка uniq -c - "  123 значение".

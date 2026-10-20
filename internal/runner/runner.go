@@ -69,6 +69,11 @@ func OutputStdin(stdin, name string, args ...string) (string, error) {
 	return output(time.Minute, strings.NewReader(stdin), name, args...)
 }
 
+// OutputStdinWithin как OutputStdin со своим пределом времени.
+func OutputStdinWithin(limit time.Duration, stdin, name string, args ...string) (string, error) {
+	return output(limit, strings.NewReader(stdin), name, args...)
+}
+
 func output(limit time.Duration, stdin io.Reader, name string, args ...string) (string, error) {
 	ctx := context.Background()
 	if limit > 0 {

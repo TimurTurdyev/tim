@@ -10,12 +10,14 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Check: одна проверка. Text идёт в колонку таблицы, Detail - в разбор проблем под ней.
+// Check: одна проверка. Text идёт в колонку таблицы, Detail - в разбор проблем под ней, Fix - с чего
+// начать: команда или место, где смотреть. Решает правило, экран и команда только печатают.
 type Check struct {
 	Name   string
 	Level  level.Level
 	Text   string
 	Detail string
+	Fix    string `json:",omitempty"`
 }
 
 // Row: все проверки одного проекта.

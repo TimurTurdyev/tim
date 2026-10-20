@@ -51,24 +51,8 @@ func attackRow(c health.Check) tui.BoardRow {
 	}
 	row.Cells = ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + c.Detail
 	row.Pane = []string{c.Detail}
-	if fix := attackFix(c); fix != "" {
-		row.Pane = append(row.Pane, ui.Dim("\u2192 "+fix))
+	if c.Fix != "" {
+		row.Pane = append(row.Pane, ui.Dim("\u2192 "+c.Fix))
 	}
 	return row
-}
-
-func attackFix(c health.Check) string {
-	switch {
-	case c.Name == "вход" && c.Level == level.Bad:
-		return "проверь, твой ли это вход: last -i; если нет - смени пароль, выключи вход по паролю и поставь fail2ban"
-	case c.Name == "вход":
-		return "вход по ключу надёжнее: ssh-copy-id, затем PasswordAuthentication no"
-	case c.Name == "ssh" && c.Level == level.Warn:
-		return "apt install fail2ban - банит перебор сразу; общие чёрные списки - CrowdSec"
-	case c.Level == level.Skip:
-		return "sudo usermod -aG adm,systemd-journal <пользователь> или смотреть под root"
-	case c.Name == "сайт" && c.Level == level.Warn:
-		return "tim audit <домен> проверит, файл это или заглушка"
-	}
-	return ""
 }

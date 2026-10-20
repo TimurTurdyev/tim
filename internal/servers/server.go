@@ -34,17 +34,7 @@ func printServer(target string, asJSON bool) error {
 		ui.Println("  " + ui.Label("замечаний нет"))
 		return nil
 	}
-	for _, c := range findings {
-		text := ui.Pad(c.Name, 14) + c.Detail
-		switch c.Level {
-		case level.Bad:
-			ui.Println("  " + ui.Bad(text))
-		case level.Warn:
-			ui.Println("  " + ui.Warn(text))
-		default:
-			ui.Println("  " + ui.Dim(text))
-		}
-	}
+	printFindings(findings)
 	return nil
 }
 
@@ -71,6 +61,24 @@ func osLine(r srvinfo.Report) string {
 		parts = append(parts, "up "+ui.Duration(r.Uptime))
 	}
 	return strings.Join(parts, "  ")
+}
+
+// printFindings: находки строками, у настоящих бед - с чего начать.
+func printFindings(findings []health.Check) {
+	for _, c := range findings {
+		text := ui.Pad(c.Name, 14) + c.Detail
+		switch c.Level {
+		case level.Bad:
+			ui.Println("  " + ui.Bad(text))
+		case level.Warn:
+			ui.Println("  " + ui.Warn(text))
+		default:
+			ui.Println("  " + ui.Dim(text))
+		}
+		if c.Fix != "" && c.Level >= level.Warn {
+			ui.Println(ui.Dim("    \u2192 " + c.Fix))
+		}
+	}
 }
 
 func summaryLine(r srvinfo.Report) string {

@@ -47,8 +47,8 @@ type Report struct {
 	SSHD                map[string]string
 	NoSudoSSHD          bool
 	UFW                 string
-	Fail2ban            string
-	CrowdSec            string
+	Fail2ban            bool
+	CrowdSec            bool
 	Virt                string // systemd-detect-virt: kvm, xen, none; пусто - не узнали
 	Netplan             bool
 	Nginx               string // "ok", текст ошибки, "nosudo" или пусто, если nginx нет
@@ -105,9 +105,9 @@ func Parse(out string) Report {
 		if v, ok := strings.CutPrefix(l, "Status:"); ok {
 			r.UFW = strings.TrimSpace(v)
 		} else if v, ok := strings.CutPrefix(l, "fail2ban"); ok {
-			r.Fail2ban = strings.TrimSpace(v)
+			r.Fail2ban = strings.TrimSpace(v) == "active"
 		} else if v, ok := strings.CutPrefix(l, "crowdsec"); ok {
-			r.CrowdSec = strings.TrimSpace(v)
+			r.CrowdSec = strings.TrimSpace(v) == "active"
 		}
 	}
 	for _, l := range s["host"] {

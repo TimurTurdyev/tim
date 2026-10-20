@@ -13,8 +13,8 @@ echo @@failed; systemctl --failed --no-legend --plain 2>/dev/null
 echo @@reboot; if [ -f /var/run/reboot-required ]; then echo yes; cat /var/run/reboot-required.pkgs 2>/dev/null; fi
 echo @@updates; if command -v apt >/dev/null 2>&1; then apt list --upgradable 2>/dev/null | grep -- '-security' | cut -d/ -f1; else echo noapt; fi
 echo @@ports; ss -tlnH 2>/dev/null
-echo @@sshd; sudo -n sshd -T 2>/dev/null | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) ' || echo nosudo
-echo @@firewall; sudo -n ufw status 2>/dev/null | head -1; echo "fail2ban $(systemctl is-active fail2ban 2>/dev/null)"; echo "crowdsec $(systemctl is-active crowdsec 2>/dev/null)"
+echo @@sshd; ` + protSSHD + `
+echo @@firewall; sudo -n ufw status 2>/dev/null | head -1; ` + protGuards + `
 echo @@host; echo "virt $(systemd-detect-virt 2>/dev/null)"; [ -d /etc/netplan ] && echo netplan
 echo @@nginx; if command -v nginx >/dev/null 2>&1; then sudo -n nginx -t 2>&1 | tail -1 || echo nosudo; fi
 echo @@certs; sudo -n sh -c 'for f in /etc/letsencrypt/live/*/cert.pem; do [ -f "$f" ] && echo "$f $(openssl x509 -enddate -noout -in "$f")"; done' 2>/dev/null

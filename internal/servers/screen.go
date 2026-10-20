@@ -51,7 +51,7 @@ func serverData(target string) tui.BoardData {
 	d.Head = serverBars(r)
 	d.Lamps = serverLamps(r)
 	for _, c := range srvinfo.Evaluate(r, time.Now()) {
-		d.Rows = append(d.Rows, findingRow(c, r))
+		d.Rows = append(d.Rows, findingRow(c))
 	}
 	d.Empty = "замечаний нет"
 	return d
@@ -95,10 +95,10 @@ func serverLamps(r srvinfo.Report) []string {
 	if !r.NoSudoSSHD && !srvinfo.PasswordLogin(r) {
 		lamps = append(lamps, level.Lamp(level.OK, "ssh только по ключу"))
 	}
-	if r.Fail2ban == "active" {
+	if r.Fail2ban {
 		lamps = append(lamps, level.Lamp(level.OK, "fail2ban работает"))
 	}
-	if r.CrowdSec == "active" {
+	if r.CrowdSec {
 		lamps = append(lamps, level.Lamp(level.OK, "CrowdSec работает"))
 	}
 	if r.UFW == "active" {
@@ -122,57 +122,15 @@ func serverLamps(r srvinfo.Report) []string {
 }
 
 // findingRow: находка строкой доски; в панели подробность и с чего начать.
-func findingRow(c health.Check, r srvinfo.Report) tui.BoardRow {
+func findingRow(c health.Check) tui.BoardRow {
 	row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text}
 	if c.Level > level.OK {
 		row.Sub = c.Level.String()
 	}
 	row.Cells = ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + c.Detail
 	row.Pane = []string{c.Detail}
-	if fix := serverFix(c, r); fix != "" {
-		row.Pane = append(row.Pane, ui.Dim("\u2192 "+fix))
+	if c.Fix != "" {
+		row.Pane = append(row.Pane, ui.Dim("\u2192 "+c.Fix))
 	}
 	return row
-}
-
-// serverFix: с чего начать по каждой находке - команда или место, где смотреть.
-func serverFix(c health.Check, r srvinfo.Report) string {
-	if c.Level == level.Skip {
-		switch c.Name {
-		case "sshd":
-			return "проверить руками: sudo sshd -T | grep -Ei 'passwordauthentication|permitrootlogin'"
-		case "nginx":
-			return "проверить руками: sudo nginx -t"
-		}
-	}
-	switch c.Name {
-	case "юнит":
-		if c.Level == level.Info {
-			return "убрать из списка: systemctl reset-failed; fwupd на VPS можно выключить: systemctl mask fwupd-refresh.timer"
-		}
-		return "journalctl -u " + c.Text + " -n 50, потом systemctl restart " + c.Text
-	case "обновления":
-		return "apt update && apt upgrade"
-	case "перезагрузка":
-		return "reboot в тихое время; до неё работает старое ядро или libc"
-	case "диск":
-		return "du -xh --max-depth=2 " + strings.Fields(c.Text)[0] + " | sort -h | tail; journalctl --vacuum-size=500M; docker system prune"
-	case "inode":
-		return "чаще всего это кэш сессий или почта в очереди: find / -xdev -type d -size +1M"
-	case "память", "swap":
-		return "ps aux --sort=-rss | head; лишнее - остановить, иначе добавить память"
-	case "нагрузка":
-		return "top -o %CPU; долгая нагрузка - очереди, cron или сканеры в логах nginx"
-	case "порт":
-		return "слушать на 127.0.0.1 или закрыть ufw: ufw deny " + strings.Fields(c.Text)[0]
-	case "sshd":
-		return "в /etc/ssh/sshd_config: PermitRootLogin no, PasswordAuthentication no; затем systemctl reload ssh"
-	case "защита":
-		return "apt install fail2ban - бережёт ssh сразу после установки; нужны общие чёрные списки - CrowdSec"
-	case "nginx":
-		return "nginx -t покажет строку с ошибкой"
-	case "сертификат":
-		return "certbot renew --dry-run; проверь таймер: systemctl status certbot.timer"
-	}
-	return ""
 }
