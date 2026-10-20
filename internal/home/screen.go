@@ -15,7 +15,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/disk"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/machine"
-	"github.com/TimurTurdyev/tim/internal/motd"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -127,11 +126,14 @@ func (h *Home) load() tui.HomeData {
 	d := tui.HomeData{Status: host + " \u00b7 " + time.Now().Format("15:04")}
 	d.Recent = h.recent()
 	d.Sections = h.sections()
-	var health motd.Health
-	d.Tiles, d.Warning, d.WarnOpen, health = h.tiles()
+	tiles, machine := h.tiles()
+	d.Tiles = tiles
+	if ws := machine.Warnings(); len(ws) > 0 {
+		d.Warning, d.WarnOpen = ws[0].Text, h.troubleScreen(ws[0].Kind)
+	}
 	if on, depth := ui.Colors(); on {
 		d.Art = func(large, blink bool) []string {
-			mood := health.Mood(time.Now())
+			mood := machine.Mood(time.Now())
 			// Вернулся после удачной команды - рад полминуты.
 			if time.Since(time.Unix(0, h.lastOK.Load())) < 30*time.Second {
 				mood = brand.Happy
@@ -164,7 +166,6 @@ func (h *Home) sections() []tui.Section {
 	}
 }
 
-// tiles: плитки состояния, самое важное предупреждение - что открыть по нему, и признаки беды для маскота.
 // recent: проекты, куда заходил, и команды, которые набирал, - вперемешку по времени. Команда по enter
 // встаёт в строку ":", а не выполняется: среди них бывают и меняющие систему.
 func (h *Home) recent() []tui.Hit {

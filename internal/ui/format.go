@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -50,6 +51,13 @@ func Short(d time.Duration) string {
 		return fmt.Sprintf("%d дн", int(d.Hours()/24))
 	}
 	return fmt.Sprintf("%d мес", int(d.Hours()/24/30))
+}
+
+// JSON печатает значение в stdout с отступами - для --json у команд.
+func JSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }
 
 // DateShort: "вт 27 окт, 01:28".

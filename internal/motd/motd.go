@@ -10,6 +10,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -67,7 +68,7 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 		}
 	}
 	g.Wait()
-	h := health(cfg)
+	h := troubles(cfg)
 	var out []string
 	for i, s := range sections {
 		if !chosen[s.name] {
@@ -101,9 +102,10 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 	return nil
 }
 
-// health: признаки беды для маскота - диск, своп, страж; обход - если его посчитал раздел сети.
-func health(cfg *config.Config) Health {
-	h := Health{SwapShort: machine.SwapShort()}
+// troubles: признаки беды для маскота и предупреждений - диск, своп, страж; обход - если его посчитал
+// раздел сети.
+func troubles(cfg *config.Config) health.Machine {
+	h := health.Machine{SwapShort: machine.SwapShort()}
 	if d, ok := sysinfo.DataDisk(); ok {
 		h.DiskPct, h.DiskFree = d.Percent(), int64(d.Avail)
 	}

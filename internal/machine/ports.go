@@ -2,9 +2,7 @@ package machine
 
 import (
 	"cmp"
-	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,16 +18,16 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// stackNames: стек проекта для колонки "что это", когда сам сервер не узнан.
-var stackNames = map[string]string{"laravel": "Laravel", "node": "Node.js", "php": "PHP", "go": "Go",
-	"python": "Python", "vitepress": "VitePress"}
+// ForgottenAfter: dev-сервер, который работает дольше, обычно забыли остановить.
+const ForgottenAfter = 8 * time.Hour
 
-// PortRow: процесс, который слушает порты, и чей он. Проект с "?" - угадан по порту из реестра.
+// PortRow: процесс, который слушает порты, и чей он.
 type PortRow struct {
 	netinfo.Listener // Port - первый из Ports
 	procs.Proc
 	Ports     []string // все порты процесса по возрастанию
 	Project   string
+	Guessed   bool   // проект угадан по порту из реестра, а не по папке процесса
 	Dir       string // папка проекта
 	Kind      string // что это: Vite, PostgreSQL, имя контейнера
 	Container *sysinfo.Container
@@ -63,9 +61,12 @@ func PortsFull(cfg *config.Config) []PortRow { return merge(listeners(cfg, true)
 // listeners: строка на каждый слушающий порт.
 func listeners(cfg *config.Config, containers bool) []PortRow {
 	ls := netinfo.Listening()
-	pids := make([]string, 0, len(ls))
+	// Один процесс слушает несколько портов, чужие - без pid: ps и lsof зовутся по уникальным.
+	var pids []string
 	for _, l := range ls {
-		pids = append(pids, l.PID)
+		if l.PID != "" && !slices.Contains(pids, l.PID) {
+			pids = append(pids, l.PID)
+		}
 	}
 	info := procs.Info(pids)
 	rows := make([]PortRow, 0, len(ls))
@@ -83,14 +84,14 @@ func listeners(cfg *config.Config, containers bool) []PortRow {
 		if r.Project == "" {
 			for _, p := range cfg.Projects {
 				if strconv.Itoa(p.Port) == l.Port {
-					r.Project = p.Name + "?"
+					r.Project, r.Guessed = p.Name, true
 				}
 			}
 		}
 		r.Kind = kindOf(r)
 		rows = append(rows, r)
 	}
-	if containers && slices.ContainsFunc(rows, func(r PortRow) bool { return dockerish(r.Proc.Command) }) {
+	if containers && slices.ContainsFunc(rows, func(r PortRow) bool { return sysinfo.DockerProxy(r.Proc.Command) }) {
 		byPort := sysinfo.Containers()
 		for i := range rows {
 			port, _ := strconv.Atoi(rows[i].Port)
@@ -132,23 +133,15 @@ func kindOf(r PortRow) string {
 	if s := procs.Service(r.Proc.Command, r.Args); s != "" {
 		return s
 	}
-	if s := stackNames[run.Stack(r.Dir)]; s != "" && r.Dir != "" {
-		return s
+	if r.Dir != "" {
+		if s := run.StackName(r.Dir); s != "" {
+			return s
+		}
 	}
 	if r.Proc.Command == "" {
 		return ""
 	}
 	return procs.Name(r.Proc.Command, r.Args)
-}
-
-// dockerish: процесс, через который Docker или OrbStack пробрасывают порты контейнеров.
-func dockerish(command string) bool {
-	for _, w := range []string{"com.docker", "OrbStack", "docker-proxy", "vpnkit"} {
-		if strings.Contains(command, w) {
-			return true
-		}
-	}
-	return false
 }
 
 func portNum(p string) int {
@@ -160,7 +153,7 @@ func portNum(p string) int {
 func Forgotten(rows []PortRow, limit time.Duration) []PortRow {
 	var out []PortRow
 	for _, r := range rows {
-		if r.Project != "" && !strings.HasSuffix(r.Project, "?") && r.Uptime >= limit {
+		if r.Project != "" && !r.Guessed && r.Uptime >= limit {
 			out = append(out, r)
 		}
 	}
@@ -240,6 +233,7 @@ func portOwner(cfg *config.Config, args []string, o portsOptions) error {
 	return nil
 }
 
+// killRows: процессу - сигнал; порту контейнера - docker stop, иначе лёг бы весь движок Docker.
 func killRows(rows []PortRow, force, yes bool) {
 	sig := "-TERM"
 	if force {
@@ -249,7 +243,13 @@ func killRows(rows []PortRow, force, yes bool) {
 		if !yes && !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
 			continue
 		}
-		if err := runner.Run("kill", sig, r.Listener.PID); err != nil {
+		var err error
+		if r.Container != nil {
+			err = runner.Run("docker", "stop", r.Container.Name)
+		} else {
+			err = runner.Run("kill", sig, r.Listener.PID)
+		}
+		if err != nil {
 			ui.Println(ui.Bad("не вышло: " + err.Error()))
 		}
 	}
@@ -284,16 +284,18 @@ func printJSON(rows []PortRow) error {
 		}
 		out = append(out, j)
 	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return ui.JSON(out)
 }
 
 // printRows: колонки по самому длинному значению; команда целиком - в карточке tim port <n>.
 func printRows(rows []PortRow) {
 	table := [][]string{{"ПОРТ", "ЧТО", "ПРОЕКТ", "РАБОТАЕТ", "PID"}}
 	for _, r := range rows {
-		table = append(table, []string{strings.Join(r.Ports, ", "), ui.Dash(r.Kind), ui.Dash(r.Project), uptime(r.Uptime), ui.Dash(r.Listener.PID)})
+		project := ui.Dash(r.Project)
+		if r.Guessed {
+			project += "?"
+		}
+		table = append(table, []string{strings.Join(r.Ports, ", "), ui.Dash(r.Kind), project, uptime(r.Uptime), ui.Dash(r.Listener.PID)})
 	}
 	widths := make([]int, len(table[0]))
 	for _, t := range table {

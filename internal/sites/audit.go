@@ -1,9 +1,7 @@
 package sites
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/app"
@@ -30,9 +28,7 @@ func runAudit(env *app.Env, arg string, asJSON bool) error {
 		return ui.Errorf("%s: %v", target, err)
 	}
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(r)
+		return ui.JSON(r)
 	}
 	printAudit(r)
 	return nil
@@ -56,12 +52,7 @@ func auditTarget(env *app.Env, arg string) (string, error) {
 	if strings.Contains(arg, ".") {
 		return "https://" + arg, nil
 	}
-	var like []string
-	for _, p := range env.Cfg.Projects {
-		if strings.Contains(p.Name, arg) {
-			like = append(like, p.Name)
-		}
-	}
+	like := env.Cfg.ProjectsLike(arg)
 	if len(like) == 1 {
 		p, _ := env.Cfg.Project(like[0])
 		return projectURL(p)

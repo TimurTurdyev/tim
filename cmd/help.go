@@ -354,9 +354,9 @@ func projectHint(name string) string {
 	if _, ok := cfg.Project(name); ok {
 		return name + " - это проект: tim go " + name + " - перейти, tim proj info " + name + " - карточка, tim audit " + name + " - сайт"
 	}
-	like := projectsLike(cfg, name)
+	like := cfg.ProjectsLike(name)
 	if head, _, ok := strings.Cut(name, "-"); ok && len(like) == 0 && len(head) >= 3 {
-		like = projectsLike(cfg, head)
+		like = cfg.ProjectsLike(head)
 	}
 	if len(like) == 0 {
 		return ""
@@ -365,16 +365,6 @@ func projectHint(name string) string {
 		like = append(like[:6], "...")
 	}
 	return "нет команды " + name + "; похожие проекты: " + strings.Join(like, ", ") + " - tim go <проект>"
-}
-
-func projectsLike(cfg *config.Config, part string) []string {
-	var out []string
-	for _, p := range cfg.Projects {
-		if strings.Contains(p.Name, part) {
-			out = append(out, p.Name)
-		}
-	}
-	return out
 }
 
 // similarCommands: команды и псевдонимы с тем же началом или в одной-двух правках, самые близкие.

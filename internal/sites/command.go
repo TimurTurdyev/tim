@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -51,7 +52,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 	f := c.Flags()
 	f.BoolVar(&o.local, "local", false, "только локальные проверки, без сети")
 	f.BoolVar(&o.net, "net", false, "только сетевые проверки")
-	f.Float64Var(&o.hours, "hours", 8, "с какого возраста dev-сервер считается забытым")
+	f.Float64Var(&o.hours, "hours", machine.ForgottenAfter.Hours(), "с какого возраста dev-сервер считается забытым")
 	f.BoolVar(&o.install, "install", false, "обходить каждый день и присылать уведомление, если что-то плохо")
 	f.BoolVar(&o.uninstall, "uninstall", false, "убрать ежедневный обход")
 	f.BoolVar(&o.notify, "notify", false, "уведомление системы, если есть плохие строки")

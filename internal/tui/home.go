@@ -324,10 +324,18 @@ func tileRows(tiles []TileData, width int, wrap bool) []string {
 	var row [][]string
 	total := 2
 	flush := func() {
-		for i := 0; len(row) > 0 && i < len(row[0]); i++ {
+		rows := 0
+		for _, t := range row {
+			rows = max(rows, len(t))
+		}
+		for i := range rows {
 			line := "  "
 			for _, t := range row {
-				line += t[i] + " "
+				cell := strings.Repeat(" ", lipgloss.Width(t[0]))
+				if i < len(t) {
+					cell = t[i]
+				}
+				line += cell + " "
 			}
 			out = append(out, line)
 		}

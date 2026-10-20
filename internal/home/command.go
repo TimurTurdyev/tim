@@ -28,6 +28,9 @@ import (
 var notRemembered = map[string]bool{"help": true, "completion": true, "__complete": true, "__completeNoDesc": true,
 	"version": true, "init": true, "status": true, "go": true, "ui": true}
 
+// argsHidden: команды, чьи аргументы не пишутся в недавнее - в них бывают токены, заголовки и чужие команды.
+var argsHidden = map[string]bool{"http": true, "ssh": true, "each": true, "hook": true}
+
 // Home: главный экран и строка ":". Команды выполняются тем же деревом cobra, что и из терминала.
 type Home struct {
 	env       *app.Env
@@ -136,9 +139,10 @@ func Remember(c *cobra.Command, args, utils []string) {
 	}
 }
 
-// remember: у утилит аргументы не пишутся - там бывают токены и пароли; длинные строки не пишутся вовсе.
+// remember: у утилит и команд с чужими строками аргументы не пишутся - там бывают токены и пароли; длинные
+// строки не пишутся вовсе; прогон с --dry-run - не действие.
 func remember(c *cobra.Command, args, utils []string) {
-	if c == nil || !c.HasParent() || c.Hidden {
+	if c == nil || !c.HasParent() || c.Hidden || runner.DryRun {
 		return
 	}
 	top := c
@@ -149,7 +153,7 @@ func remember(c *cobra.Command, args, utils []string) {
 		return
 	}
 	line := strings.Join(args, " ")
-	if slices.Contains(utils, top.Name()) {
+	if slices.Contains(utils, top.Name()) || argsHidden[top.Name()] {
 		line = strings.TrimPrefix(c.CommandPath(), c.Root().Name()+" ")
 	}
 	if line != "" && len([]rune(line)) <= 80 {

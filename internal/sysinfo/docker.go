@@ -7,6 +7,19 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
+// proxyMarks: процессы, через которые Docker Desktop и OrbStack пробрасывают порты контейнеров.
+var proxyMarks = []string{"com.docker", "OrbStack", "docker-proxy", "vpnkit"}
+
+// DockerProxy: процесс держит порт не сам, а за контейнер.
+func DockerProxy(command string) bool {
+	for _, w := range proxyMarks {
+		if strings.Contains(command, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // Container: контейнер, который пробросил порт на машину.
 type Container struct {
 	Name  string `json:"name"`

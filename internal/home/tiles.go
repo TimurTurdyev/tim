@@ -3,30 +3,31 @@ package home
 import (
 	"fmt"
 	"os"
-	"runtime"
-	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/bypass"
-	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/gitx"
+	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
-	"github.com/TimurTurdyev/tim/internal/motd"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/run"
-	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Плитки главного экрана: состояние машины, обхода VPN, проекта и служб - и общее предупреждение.
+// Плитки главного экрана: состояние машины, обхода VPN, проекта и служб. Данные о машине считает
+// sysinfo, беды - health: те же, что в сводке tim status.
 
-func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Action, health motd.Health) {
+// tiles: плитки по порядку важности и признаки беды для предупреждения и маскота.
+func (h *Home) tiles() ([]tui.TileData, health.Machine) {
+	var tiles []tui.TileData
+	var m health.Machine
 	if data, ok := sysinfo.DataDisk(); ok {
 		pct := data.Percent()
-		health.DiskPct, health.DiskFree = pct, int64(data.Avail)
+		m.DiskPct, m.DiskFree = pct, int64(data.Avail)
 		tiles = append(tiles, tui.TileData{Title: "диск", Width: 22, Rows: []string{
 			tui.Bar(float64(pct)/100, 10) + " " + ui.Percent(pct),
 			ui.Dim("свободно " + ui.Bytes(int64(data.Avail))),
@@ -39,10 +40,12 @@ func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Ac
 			ui.Dim(fmt.Sprintf("%.0f из %.0f GB", float64(used)/(1<<30), float64(total)/(1<<30))),
 		}})
 	}
-	health.SwapShort = machine.SwapShort()
+	m.SwapShort = machine.SwapShort()
 	tiles = append(tiles, machineTile())
 	if len(h.env.Cfg.Hosts) > 0 {
-		tiles = append(tiles, vpnTile(h.env.Cfg, &health))
+		m.BypassOK, m.BypassAll = bypass.BypassCount(h.env.Cfg)
+		m.GuardMissing = !bypass.GuardAlive()
+		tiles = append(tiles, vpnTile(m))
 	}
 	if t, ok := h.projectTile(); ok {
 		tiles = append(tiles, t)
@@ -51,19 +54,16 @@ func (h *Home) tiles() (tiles []tui.TileData, warning string, open func() tui.Ac
 	if t, ok := servicesTile(); ok {
 		tiles = append(tiles, t)
 	}
-	if ws := health.Warnings(); len(ws) > 0 {
-		warning, open = ws[0].Text, h.troubleScreen(ws[0].Kind)
-	}
-	return tiles, warning, open, health
+	return tiles, m
 }
 
 // troubleScreen: куда вести по enter из предупреждения.
-func (h *Home) troubleScreen(kind motd.Trouble) func() tui.Action {
+func (h *Home) troubleScreen(kind health.Trouble) func() tui.Action {
 	return func() tui.Action {
 		switch kind {
-		case motd.DiskFull:
+		case health.DiskFull:
 			return tui.Action{Push: diskScreen(h.env, nil)}
-		case motd.Swap:
+		case health.Swap:
 			return tui.Action{Push: machine.HWScreen()}
 		}
 		return tui.Action{Push: bypass.Screen(h.env)}
@@ -73,41 +73,32 @@ func (h *Home) troubleScreen(kind motd.Trouble) func() tui.Action {
 // machineTile: нагрузка в долях ядер и батарея; без батареи - сколько работает.
 func machineTile() tui.TileData {
 	rows := []string{ui.Dim("нагрузка -"), ""}
-	if load := sysinfo.Load(); len(load) == 3 {
-		rows[0] = "нагрузка " + ui.Percent(int(load[0]*100/float64(runtime.NumCPU())+0.5))
+	if pct, ok := sysinfo.LoadPercent(); ok {
+		rows[0] = "нагрузка " + ui.Percent(pct)
 	}
-	if out, err := runner.Output("pmset", "-g", "batt"); err == nil {
-		if b, ok := sysinfo.ParsePmset(out); ok {
-			text := fmt.Sprintf("батарея %d%%", b.Percent)
-			switch {
-			case b.Percent <= 20 && !b.AC:
-				text = ui.Warn(text + ", не заряжается")
-			case b.State == "charging":
-				text += ", заряжается"
-			}
-			rows[1] = ui.Dim(text)
+	if b, ok := sysinfo.BatteryNow(); ok {
+		text := "батарея " + strconv.Itoa(b.Percent) + "%"
+		if note := b.Note(); note != "" {
+			text += ", " + note
 		}
-	}
-	if rows[1] == "" {
-		if boot, ok := sysinfo.Boot(); ok {
-			rows[1] = ui.Dim("работает " + ui.Duration(time.Since(boot)))
+		rows[1] = ui.Dim(text)
+		if b.Low() {
+			rows[1] = ui.Warn(text)
 		}
+	} else if boot, ok := sysinfo.Boot(); ok {
+		rows[1] = ui.Dim("работает " + ui.Duration(time.Since(boot)))
 	}
 	return tui.TileData{Title: "машина", Width: 26, Rows: rows}
 }
 
-func vpnTile(cfg *config.Config, health *motd.Health) tui.TileData {
-	ok, total := bypass.BypassCount(cfg)
-	health.BypassOK, health.BypassAll = ok, total
-	guard := ui.Dim("страж не установлен")
-	if bypass.GuardAlive() {
-		guard = ui.Dim("страж работает")
-	} else {
-		health.GuardMissing = true
+func vpnTile(m health.Machine) tui.TileData {
+	guard := ui.Dim("страж работает")
+	if m.GuardMissing {
+		guard = ui.Dim("страж не установлен")
 	}
-	lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", ok, total))
-	if ok < total {
-		lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", ok, total))
+	lamp := ui.OK(fmt.Sprintf("\u25cf обход %d/%d", m.BypassOK, m.BypassAll))
+	if m.BypassOK < m.BypassAll {
+		lamp = ui.Warn(fmt.Sprintf("\u25b2 обход %d/%d", m.BypassOK, m.BypassAll))
 	}
 	return tui.TileData{Title: "vpn", Width: 24, Rows: []string{lamp, guard}}
 }
@@ -148,6 +139,19 @@ func (h *Home) projectTile() (tui.TileData, bool) {
 	return tui.TileData{Title: "проект", Width: 30, Rows: rows}, true
 }
 
+// servicesTile: службы - сколько работает и что упало.
+func servicesTile() (tui.TileData, bool) {
+	up, bad, ok := sysinfo.Services()
+	if !ok || len(up) == 0 && len(bad) == 0 {
+		return tui.TileData{}, false
+	}
+	rows := []string{ui.OK("\u25cf " + ui.Count(len(up), "служба", "службы", "служб")), ui.Dim(fitNames(up, 26))}
+	if len(bad) > 0 {
+		rows = []string{ui.Bad("\u2715 упали: " + fitNames(bad, 26)), ui.Dim(fitNames(up, 26))}
+	}
+	return tui.TileData{Title: "службы", Width: 26, Rows: rows}, true
+}
+
 // fitNames: имена через запятую, сколько влезает в width, остальные - "+N".
 func fitNames(names []string, width int) string {
 	out := ""
@@ -162,37 +166,4 @@ func fitNames(names []string, width int) string {
 		out = next
 	}
 	return out
-}
-
-// servicesTile: службы brew или systemd - сколько работает и что упало.
-func servicesTile() (tui.TileData, bool) {
-	if runtime.GOOS == "linux" {
-		failed := sysinfo.FailedUnits()
-		if len(failed) == 0 {
-			return tui.TileData{}, false
-		}
-		return tui.TileData{Title: "службы", Width: 26, Rows: []string{ui.Bad("\u2715 упали: " + strings.Join(failed, ", ")), ui.Dim("tim svc")}}, true
-	}
-	out, err := runner.Output("launchctl", "list")
-	if err != nil {
-		return tui.TileData{}, false
-	}
-	var up, bad []string
-	for _, a := range sysinfo.ParseLaunchctl(out) {
-		switch {
-		case a.Running():
-			up = append(up, a.Name)
-		case a.Status != 0:
-			bad = append(bad, a.Name)
-		}
-	}
-	if len(up) == 0 && len(bad) == 0 {
-		return tui.TileData{}, false
-	}
-	slices.Sort(up)
-	rows := []string{ui.OK("\u25cf " + ui.Count(len(up), "служба", "службы", "служб")), ui.Dim(fitNames(up, 26))}
-	if len(bad) > 0 {
-		rows[0] = ui.Bad("\u2715 упали: " + strings.Join(bad, ", "))
-	}
-	return tui.TileData{Title: "службы", Width: 26, Rows: rows}, true
 }

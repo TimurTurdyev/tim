@@ -104,7 +104,7 @@ func portsCommand(env *app.Env) *cobra.Command {
 	}
 	c.Flags().BoolVar(&o.all, "all", false, "показать и системные процессы")
 	c.Flags().BoolVar(&o.old, "old", false, "dev-серверы проектов, которые работают дольше --hours")
-	c.Flags().Float64Var(&o.hours, "hours", 8, "сколько часов считать долгим")
+	c.Flags().Float64Var(&o.hours, "hours", ForgottenAfter.Hours(), "сколько часов считать долгим")
 	c.Flags().BoolVar(&o.kill, "kill", false, "с --old: предложить остановить каждый")
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
 	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "с --kill: не спрашивать, для скриптов и агентов")

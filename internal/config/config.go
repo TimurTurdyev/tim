@@ -267,6 +267,17 @@ func (c *Config) Project(name string) (*Project, bool) {
 	return nil, false
 }
 
+// ProjectsLike: имена проектов, в которых встречается part - для подсказок, когда набрали не то.
+func (c *Config) ProjectsLike(part string) []string {
+	var out []string
+	for i := range c.Projects {
+		if strings.Contains(c.Projects[i].Name, part) {
+			out = append(out, c.Projects[i].Name)
+		}
+	}
+	return out
+}
+
 // ProjectDir: абсолютный путь к клону проекта.
 func (c *Config) ProjectDir(p *Project) string {
 	if filepath.IsAbs(p.Path) {

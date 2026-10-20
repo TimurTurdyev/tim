@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	osuser "os/user"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,21 +27,23 @@ func gb(b uint64) string { return fmt.Sprintf("%.0f", float64(b)/(1<<30)) }
 
 func system(*config.Config) []string {
 	var (
-		osName, batt, ip, docker string
-		boot                     time.Time
-		booted                   bool
-		load                     []float64
-		memUsed, memTotal        uint64
-		disk                     sysinfo.Disk
-		diskOK                   bool
+		osName, ip, docker string
+		boot               time.Time
+		booted, loadOK     bool
+		loadPct            int
+		memUsed, memTotal  uint64
+		disk               sysinfo.Disk
+		diskOK             bool
+		batt               sysinfo.Battery
+		battOK             bool
 	)
 	par.All(
 		func() { osName = sysinfo.OS() },
 		func() { boot, booted = sysinfo.Boot() },
-		func() { load = sysinfo.Load() },
+		func() { loadPct, loadOK = sysinfo.LoadPercent() },
 		func() { memUsed, memTotal = sysinfo.Memory() },
 		func() { disk, diskOK = sysinfo.DataDisk() },
-		func() { batt, _ = runner.Output("pmset", "-g", "batt") },
+		func() { batt, battOK = sysinfo.BatteryNow() },
 		func() {
 			if phys, ok := netinfo.PhysIface(); ok {
 				ip = netinfo.IfaceIPv4(phys.Device)
@@ -61,9 +62,8 @@ func system(*config.Config) []string {
 		line1 += ui.Dim("  работает " + ui.Duration(time.Since(boot)))
 	}
 	var parts []string
-	if len(load) == 3 {
-		// Нагрузка в долях ядер: 2.1 при 14 ядрах - это 15%, а не беда.
-		parts = append(parts, ui.Dim("нагрузка ")+ui.Percent(int(load[0]*100/float64(runtime.NumCPU())+0.5)))
+	if loadOK {
+		parts = append(parts, ui.Dim("нагрузка ")+ui.Percent(loadPct))
 	}
 	if memUsed > 0 && memTotal > 0 {
 		parts = append(parts, ui.Dim("память ")+gb(memUsed)+" из "+gb(memTotal)+" GB")
@@ -71,13 +71,13 @@ func system(*config.Config) []string {
 	if d, ok := disk, diskOK; ok {
 		parts = append(parts, ui.Dim("диск ")+ui.Percent(d.Percent())+ui.Dim(", свободно "+ui.Bytes(int64(d.Avail))))
 	}
-	if b, ok := sysinfo.ParsePmset(batt); ok {
-		text := strconv.Itoa(b.Percent) + "%"
-		switch {
-		case b.Percent <= 20 && !b.AC:
-			text = ui.Warn(text + " и не заряжается")
-		case b.State == "charging":
-			text += ", заряжается"
+	if battOK {
+		text := strconv.Itoa(batt.Percent) + "%"
+		if note := batt.Note(); note != "" {
+			text += ", " + note
+		}
+		if batt.Low() {
+			text = ui.Warn(text)
 		}
 		parts = append(parts, ui.Dim("батарея ")+text)
 	}
@@ -163,7 +163,7 @@ func ports(cfg *config.Config) []string {
 	byProject := map[string][]string{}
 	var names []string
 	for _, r := range machine.Ports(cfg) {
-		if r.Project == "" || strings.HasSuffix(r.Project, "?") {
+		if r.Project == "" || r.Guessed {
 			continue
 		}
 		if _, ok := byProject[r.Project]; !ok {
@@ -174,7 +174,7 @@ func ports(cfg *config.Config) []string {
 			item = r.Kind + " " + item
 		}
 		// Вторые сутки на порту - скорее всего забыли: tim ports --old.
-		if r.Uptime >= 8*time.Hour {
+		if r.Uptime >= machine.ForgottenAfter {
 			item += ui.Warn(fmt.Sprintf(" (%d ч)", int(r.Uptime.Hours())))
 		}
 		byProject[r.Project] = append(byProject[r.Project], item)
@@ -191,32 +191,13 @@ func ports(cfg *config.Config) []string {
 }
 
 func services(*config.Config) []string {
-	if runtime.GOOS == "linux" {
-		if failed := sysinfo.FailedUnits(); len(failed) > 0 {
-			return []string{ui.Label("службы   ") + ui.Bad("упали: "+strings.Join(failed, ", ")) + ui.Dim("  (tim svc)")}
-		}
+	up, bad, ok := sysinfo.Services()
+	if !ok || len(up) == 0 && len(bad) == 0 {
 		return nil
 	}
-	out, err := runner.Output("launchctl", "list")
-	if err != nil {
-		return nil
-	}
-	var up, bad []string
-	for _, a := range sysinfo.ParseLaunchctl(out) {
-		switch {
-		case a.Running():
-			up = append(up, a.Name)
-		case a.Status != 0:
-			bad = append(bad, a.Name+" ("+strconv.Itoa(a.Status)+")")
-		}
-	}
-	if len(up) == 0 && len(bad) == 0 {
-		return nil
-	}
-	sort.Strings(up)
 	line := ui.Label("службы   ") + strings.Join(up, ", ")
 	if len(bad) > 0 {
-		line += "  " + ui.Bad("упали: "+strings.Join(bad, " "))
+		line += "  " + ui.Bad("упали: "+strings.Join(bad, ", ")) + ui.Dim("  (tim svc)")
 	}
 	return []string{line}
 }
