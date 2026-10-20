@@ -234,6 +234,8 @@ func portOwner(cfg *config.Config, args []string, o portsOptions) error {
 }
 
 // killRows: процессу - сигнал; порту контейнера - docker stop, иначе лёг бы весь движок Docker.
+// Если сервер тут же поднялся заново, его перезапускает родитель (php artisan serve следит за своим
+// php -S) - тогда останавливается и родитель.
 func killRows(rows []PortRow, force, yes bool) {
 	sig := "-TERM"
 	if force {
@@ -243,16 +245,35 @@ func killRows(rows []PortRow, force, yes bool) {
 		if !yes && !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
 			continue
 		}
-		var err error
 		if r.Container != nil {
-			err = runner.Run("docker", "stop", r.Container.Name)
-		} else {
-			err = runner.Run("kill", sig, r.Listener.PID)
+			if err := runner.Run("docker", "stop", r.Container.Name); err != nil {
+				ui.Println(ui.Bad("не вышло: " + err.Error()))
+			}
+			continue
 		}
-		if err != nil {
+		if err := runner.Run("kill", sig, r.Listener.PID); err != nil {
 			ui.Println(ui.Bad("не вышло: " + err.Error()))
+			continue
+		}
+		if again, ok := respawned(r.Port, r.Listener.PID, 2*time.Second); ok {
+			parent := procs.Info([]string{again.PPID})[again.PPID]
+			ui.Println(ui.Warn("порт " + r.Port + " поднят заново: " + shortCommand(parent) + " (pid " + again.PPID + ") перезапускает сервер, останавливаю и его"))
+			_ = runner.Run("kill", sig, again.PPID)
+			_ = runner.Run("kill", sig, again.PID)
 		}
 	}
+}
+
+// respawned: на порту за wait появился новый процесс вместо остановленного. Опрос каждые 300 мс.
+func respawned(port, oldPID string, wait time.Duration) (procs.Proc, bool) {
+	for end := time.Now().Add(wait); time.Now().Before(end); time.Sleep(300 * time.Millisecond) {
+		if l, busy := netinfo.PortBusy(port); busy && l.PID != "" && l.PID != oldPID {
+			if p, ok := procs.Info([]string{l.PID})[l.PID]; ok {
+				return p, true
+			}
+		}
+	}
+	return procs.Proc{}, false
 }
 
 func checkPorts(addrs []string) error {
