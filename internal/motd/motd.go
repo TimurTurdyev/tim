@@ -67,12 +67,19 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 		}
 	}
 	g.Wait()
+	h := health(cfg)
 	var out []string
 	for i, s := range sections {
 		if !chosen[s.name] {
 			continue
 		}
 		out = append(out, results[i].lines...)
+		// Беды - сразу под машиной, те же, что на главном экране.
+		if s.name == "system" {
+			for _, w := range h.Warnings() {
+				out = append(out, ui.Warn("\u25b2 "+w.Text))
+			}
+		}
 		if timing {
 			note := fmt.Sprintf("%s %d мс", s.name, results[i].took.Milliseconds())
 			if results[i].late {
@@ -86,7 +93,7 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 	}
 	// Рядом с одной-двумя строками шесть строк картинки лишние.
 	if len(out) >= 3 {
-		out = withArt(out, health(cfg).Mood(time.Now()))
+		out = withArt(out, h.Mood(time.Now()))
 	}
 	for _, l := range out {
 		ui.Println(l)
@@ -98,7 +105,7 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 func health(cfg *config.Config) Health {
 	h := Health{SwapShort: machine.SwapShort()}
 	if d, ok := sysinfo.DataDisk(); ok {
-		h.DiskPct = d.Percent()
+		h.DiskPct, h.DiskFree = d.Percent(), int64(d.Avail)
 	}
 	if len(cfg.Hosts) > 0 {
 		h.GuardMissing = !bypass.GuardAlive()

@@ -10,6 +10,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// weekdays и months: коротко и по-русски, для дат в сводке и списках.
+var (
+	weekdays = []string{"вс", "пн", "вт", "ср", "чт", "пт", "сб"}
+	months   = []string{"", "янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"}
+)
+
 // Форматирование чисел и дат одинаково во всех командах.
 
 // Bytes: размер по-человечески - знак после запятой только у чисел меньше десяти: "4.2 GB", "37 GB".
@@ -44,6 +50,11 @@ func Short(d time.Duration) string {
 		return fmt.Sprintf("%d дн", int(d.Hours()/24))
 	}
 	return fmt.Sprintf("%d мес", int(d.Hours()/24/30))
+}
+
+// DateShort: "вт 27 окт, 01:28".
+func DateShort(t time.Time) string {
+	return fmt.Sprintf("%s %d %s, %s", weekdays[t.Weekday()], t.Day(), months[t.Month()], t.Format("15:04"))
 }
 
 // Ago: давность для подписи - "только что", "5 мин назад", "3 дн назад"; нулевое время - "только что".

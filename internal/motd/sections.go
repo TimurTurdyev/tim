@@ -56,41 +56,38 @@ func system(*config.Config) []string {
 	}
 	host, _ := os.Hostname()
 	host, _, _ = strings.Cut(host, ".")
-	line1 := ui.Label(user+"@"+host) + "  " + osName + "  " + time.Now().Format("Mon 02 Jan, 15:04")
+	line1 := ui.Label(user+"@"+host) + "  " + osName + "  " + ui.DateShort(time.Now())
 	if booted {
-		line1 += ui.Dim("  up " + ui.Duration(time.Since(boot)))
+		line1 += ui.Dim("  работает " + ui.Duration(time.Since(boot)))
 	}
 	var parts []string
-	if l := load; len(l) == 3 {
-		parts = append(parts, ui.Label("load ")+fmt.Sprintf("%.2f %.2f %.2f", l[0], l[1], l[2]))
+	if len(load) == 3 {
+		// Нагрузка в долях ядер: 2.1 при 14 ядрах - это 15%, а не беда.
+		parts = append(parts, ui.Dim("нагрузка ")+ui.Percent(int(load[0]*100/float64(runtime.NumCPU())+0.5)))
 	}
 	if memUsed > 0 && memTotal > 0 {
-		parts = append(parts, ui.Label("mem ")+gb(memUsed)+"/"+gb(memTotal)+" GB")
+		parts = append(parts, ui.Dim("память ")+gb(memUsed)+" из "+gb(memTotal)+" GB")
 	}
 	if d, ok := disk, diskOK; ok {
-		text := gb(d.Used) + "/" + gb(d.Size) + " GB (" + strconv.Itoa(d.Percent()) + "%)"
-		if d.Percent() >= 90 {
-			text = ui.Bad(text)
-		}
-		parts = append(parts, ui.Label("disk ")+text)
+		parts = append(parts, ui.Dim("диск ")+ui.Percent(d.Percent())+ui.Dim(", свободно "+ui.Bytes(int64(d.Avail))))
 	}
 	if b, ok := sysinfo.ParsePmset(batt); ok {
-		text := strconv.Itoa(b.Percent) + "% " + b.State
-		if b.Remaining != "" && b.Remaining != "0:00" {
-			text += " " + b.Remaining
+		text := strconv.Itoa(b.Percent) + "%"
+		switch {
+		case b.Percent <= 20 && !b.AC:
+			text = ui.Warn(text + " и не заряжается")
+		case b.State == "charging":
+			text += ", заряжается"
 		}
-		if b.Percent <= 20 && !b.AC {
-			text = ui.Warn(text)
-		}
-		parts = append(parts, ui.Label("batt ")+text)
+		parts = append(parts, ui.Dim("батарея ")+text)
 	}
-	line2 := strings.Join(parts, "   ")
 	if ip != "" {
-		line2 += "   " + ui.Label("ip ") + ip
+		parts = append(parts, ui.Dim("ip ")+ip)
 	}
 	if docker != "" {
-		line2 += "   " + ui.Dim(docker)
+		parts = append(parts, ui.Dim(docker))
 	}
+	line2 := ui.Label("машина   ") + strings.Join(parts, "  ")
 	// Пожиратели CPU - сюда же: про них и надо узнать при открытии терминала, а не через три дня.
 	return append([]string{line1, line2}, machine.HogLines("")...)
 }
@@ -136,7 +133,7 @@ func network(cfg *config.Config) []string {
 	line := ui.Label("сеть     ") + name + ui.Dim(" шлюз "+gw)
 	inet := netinfo.InternetIface()
 	if netinfo.IsTunnelIface(inet) {
-		line += "  " + ui.Warn("интернет через "+inet)
+		line += "  " + ui.Warn("интернет через VPN "+inet)
 	}
 	var tun []string
 	for _, t := range sshx.Known() {
@@ -176,6 +173,10 @@ func ports(cfg *config.Config) []string {
 		if r.Kind != "" {
 			item = r.Kind + " " + item
 		}
+		// Вторые сутки на порту - скорее всего забыли: tim ports --old.
+		if r.Uptime >= 8*time.Hour {
+			item += ui.Warn(fmt.Sprintf(" (%d ч)", int(r.Uptime.Hours())))
+		}
 		byProject[r.Project] = append(byProject[r.Project], item)
 	}
 	if len(names) == 0 {
@@ -184,7 +185,7 @@ func ports(cfg *config.Config) []string {
 	sort.Strings(names)
 	items := make([]string, len(names))
 	for i, n := range names {
-		items[i] = n + " " + ui.Dim(strings.Join(byProject[n], ", "))
+		items[i] = n + ": " + ui.Dim(strings.Join(byProject[n], ", "))
 	}
 	return []string{ui.Label("запущено ") + strings.Join(items, "  ")}
 }
@@ -192,7 +193,7 @@ func ports(cfg *config.Config) []string {
 func services(*config.Config) []string {
 	if runtime.GOOS == "linux" {
 		if failed := sysinfo.FailedUnits(); len(failed) > 0 {
-			return []string{ui.Label("сервисы  ") + ui.Bad("упали: "+strings.Join(failed, " ")) + ui.Dim("  (tim svc)")}
+			return []string{ui.Label("службы   ") + ui.Bad("упали: "+strings.Join(failed, ", ")) + ui.Dim("  (tim svc)")}
 		}
 		return nil
 	}
@@ -213,7 +214,7 @@ func services(*config.Config) []string {
 		return nil
 	}
 	sort.Strings(up)
-	line := ui.Label("сервисы  ") + strings.Join(up, " ")
+	line := ui.Label("службы   ") + strings.Join(up, ", ")
 	if len(bad) > 0 {
 		line += "  " + ui.Bad("упали: "+strings.Join(bad, " "))
 	}
