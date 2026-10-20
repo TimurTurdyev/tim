@@ -60,10 +60,10 @@ func TLSFindings(t TLSFacts, now time.Time) []Finding {
 
 // collectTLS: одно рукопожатие без проверки - чтобы увидеть сертификаты даже у сломанной цепочки, и по
 // одному на каждую устаревшую версию.
-func collectTLS(host string) TLSFacts {
+func collectTLS(host, port string) TLSFacts {
 	var t TLSFacts
 	dialer := &net.Dialer{Timeout: tlsTimeout}
-	addr := net.JoinHostPort(host, "443")
+	addr := net.JoinHostPort(host, port)
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host, InsecureSkipVerify: true})
 	if err != nil {
 		return t

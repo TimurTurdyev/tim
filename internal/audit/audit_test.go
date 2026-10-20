@@ -90,12 +90,16 @@ func TestVersionFindings(t *testing.T) {
 	if err != nil || len(releases) != 2 {
 		t.Fatalf("%v %v", releases, err)
 	}
-	sw := ParseSoftware("nginx/1.18.0 (Ubuntu)", "PHP/7.4.33", `<meta name="generator" content="WordPress 6.4.2">`)
-	if len(sw) != 3 || !sw[0].Distro || sw[1].Distro || sw[2].Header {
+	sw := ParseSoftware("nginx/1.18.0", "PHP/7.4.33", `<meta name="generator" content="WordPress 6.4.2">`)
+	if len(sw) != 3 || sw[0].Distro || sw[1].Distro || sw[2].Header {
 		t.Fatalf("%+v", sw)
 	}
-	got := VersionFindings(sw, map[string][]Release{"php": releases, "nginx": {{Name: "1.18", IsEol: true, EolFrom: "2021-04-20"}}})
-	// PHP 7.4 с php.net - плохо; nginx из пакетов Ubuntu - срок не сверяется; версии в заголовках - к сведению
+	// Сервер из пакетов Ubuntu - и PHP рядом считается пакетом дистрибутива.
+	if ubuntu := ParseSoftware("nginx/1.18.0 (Ubuntu)", "PHP/7.4.33", ""); !ubuntu[1].Distro {
+		t.Errorf("%+v", ubuntu)
+	}
+	got := VersionFindings(sw, map[string][]Release{"php": releases})
+	// PHP 7.4 с php.net - плохо; версии в заголовках - к сведению
 	if len(got) != 2 || got[0].Level != level.Bad || !strings.HasPrefix(got[0].Text, "php 7.4 ") || got[1].Level != level.Info {
 		t.Fatalf("%+v", got)
 	}

@@ -70,6 +70,10 @@ var probes = []probe{
 		"корень сайта - public/", func(b string) bool { return strings.Contains(b, `"require"`) }},
 }
 
+// botPaths: что боты ищут помимо путей аудита - по содержимому их не проверить, но в журналах сервера
+// это те же пробы: входы в CMS, облачные ключи, старые дыры.
+var botPaths = []string{"/wp-login.php", "/xmlrpc.php", "/.aws/credentials", "/actuator", "/cgi-bin/", "eval-stdin.php"}
+
 // debugMarks: признаки отладочной страницы ошибки у разных движков.
 var debugMarks = []string{
 	"You're seeing this error because you have <code>DEBUG = True</code>",
@@ -95,6 +99,16 @@ func ProbePaths() []string {
 		out = append(out, p.paths...)
 	}
 	return out
+}
+
+// ProbePattern: все пробы одним регулярным выражением (POSIX ERE) для grep по журналу сервера.
+func ProbePattern() string {
+	paths := append(ProbePaths(), botPaths...)
+	parts := make([]string, len(paths))
+	for i, p := range paths {
+		parts[i] = regexp.QuoteMeta(p)
+	}
+	return strings.Join(parts, "|")
 }
 
 // Exposed: путь открылся и отдал то, что не должен. Не 200 - не находка.

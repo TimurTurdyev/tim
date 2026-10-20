@@ -4,19 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/level"
-	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
-	"github.com/TimurTurdyev/tim/internal/srvinfo"
 )
 
 const releasesTTL = 24 * time.Hour
@@ -49,9 +45,12 @@ type Release struct {
 // ParseSoftware: версии из Server, X-Powered-By и meta generator.
 func ParseSoftware(server, poweredBy, html string) []Software {
 	var out []Software
+	// Debian и Ubuntu держат номер версии, а заплатки шлют сами: если сервер из их пакетов, то и PHP
+	// рядом скорее всего оттуда же.
+	distro := distroRe.MatchString(server)
 	scan := func(s string, header bool) {
 		for _, m := range productRe.FindAllStringSubmatch(s, -1) {
-			out = append(out, Software{Product: strings.ToLower(m[1]), Version: m[2], Header: header, Distro: distroRe.MatchString(s)})
+			out = append(out, Software{Product: strings.ToLower(m[1]), Version: m[2], Header: header, Distro: distro || distroRe.MatchString(s)})
 		}
 	}
 	scan(server, true)
@@ -108,17 +107,6 @@ func VersionFindings(sw []Software, releases map[string][]Release) []Finding {
 	return findings
 }
 
-// PortFindings: порты баз, которые отвечают из интернета.
-func PortFindings(open []int) []Finding {
-	var out []Finding
-	for _, p := range open {
-		out = append(out, Finding{Area: "порты", Level: level.Bad, Text: fmt.Sprintf("наружу отвечает %s (%d)", srvinfo.DBPorts[p], p),
-			Why: "базу перебирают и ломают из интернета; Docker API без TLS - это root на сервере",
-			Fix: "слушать на 127.0.0.1, снаружи ходить через ssh-туннель: tim tunnel db"})
-	}
-	return out
-}
-
 // cycle: ветка, к которой относится версия, - самое длинное совпадение по точкам: 1.18.0 -> 1.18.
 func cycle(list []Release, version string) (Release, bool) {
 	var best Release
@@ -163,39 +151,4 @@ func fetchReleases(slug string) ([]Release, error) {
 		return nil, err
 	}
 	return ParseReleases(data)
-}
-
-// openPorts: какие порты баз отвечают на адресе сайта.
-func openPorts(host string) []int {
-	ips, err := net.LookupIP(host)
-	if err != nil || len(ips) == 0 {
-		return nil
-	}
-	ip := ips[0]
-	for _, x := range ips {
-		if x.To4() != nil {
-			ip = x
-			break
-		}
-	}
-	var ports []int
-	for p := range srvinfo.DBPorts {
-		ports = append(ports, p)
-	}
-	slices.Sort(ports)
-	alive := par.Map(ports, len(ports), func(p int) bool {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort(ip.String(), strconv.Itoa(p)), 2*time.Second)
-		if err != nil {
-			return false
-		}
-		_ = c.Close()
-		return true
-	})
-	var open []int
-	for i, ok := range alive {
-		if ok {
-			open = append(open, ports[i])
-		}
-	}
-	return open
 }
