@@ -61,9 +61,9 @@ echo @@prot
 echo @@end
 `
 
-// logLoop: обход журналов запросов - из конфигов nginx, стандартный и в папке пользователя, куда их
-// кладут панели. Читается хвост в __LINES__ строк, чужие журналы - через sudo -n.
-const logLoop = `( grep -rhoE '^[[:space:]]*access_log[[:space:]]+[^ ;]+' /etc/nginx 2>/dev/null | awk '{print $2}'; echo /var/log/nginx/access.log; find "$HOME" -maxdepth 3 -name '*access.log' -type f 2>/dev/null ) | grep -v -e '\$' -e '^off$' | sort -u | while IFS= read -r f; do
+// logLoop: обход журналов запросов - из конфигов nginx и apache, стандартные пути и папка пользователя,
+// куда их кладут панели. Читается хвост в __LINES__ строк, чужие журналы - через sudo -n.
+const logLoop = `( grep -rhoE '^[[:space:]]*access_log[[:space:]]+[^ ;]+' /etc/nginx 2>/dev/null | awk '{print $2}'; grep -rhoE '^[[:space:]]*CustomLog[[:space:]]+"?[^ "]+' /etc/apache2 /etc/httpd 2>/dev/null | awk '{print $2}' | tr -d '"' | sed "s|^\${APACHE_LOG_DIR}|/var/log/apache2|"; echo /var/log/nginx/access.log; echo /var/log/apache2/access.log; echo /var/log/apache2/other_vhosts_access.log; echo /var/log/httpd/access_log; find "$HOME" -maxdepth 3 \( -name '*access.log' -o -name '*access_log' \) -type f 2>/dev/null ) | grep -v -e '\$' -e '^off$' -e '^|' | sort -u | while IFS= read -r f; do
   if [ -r "$f" ]; then R="tail -n __LINES__"; elif sudo -n test -r "$f" 2>/dev/null; then R="sudo -n tail -n __LINES__"; else continue; fi
 `
 

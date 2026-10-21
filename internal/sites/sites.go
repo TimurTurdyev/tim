@@ -18,6 +18,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
+	"github.com/TimurTurdyev/tim/internal/sshx"
 )
 
 // EnvGit: два вопроса к git про .env; ответ "нет" при любой ошибке, чтобы не шуметь.
@@ -70,11 +71,19 @@ func CheckRow(p *config.Project, dir string, local, net, servers bool, shared *D
 	}
 	if servers && !local && p.SSH != "" {
 		checks = append(checks, func() health.Check {
-			return shared.server.Get(p.SSH, func() health.Check { return srvinfo.CheckServer(p.SSH) })
+			return shared.server.Get(serverKey(p.SSH), func() health.Check { return srvinfo.CheckServer(p.SSH) })
 		})
 	}
 	run := func(check func() health.Check) health.Check { return check() }
 	return health.Row{Name: p.Name, Checks: par.Map(checks, len(checks), run)}
+}
+
+// serverKey: один хост под разными алиасами проверяется один раз.
+func serverKey(alias string) string {
+	if t := sshx.Resolve(alias); t.Host != "" {
+		return t.Host + ":" + t.Port
+	}
+	return alias
 }
 
 // Report: что за сайт - адреса, регистрация, сертификат, ответ HTTP.

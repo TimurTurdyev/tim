@@ -11,8 +11,9 @@ import (
 )
 
 // Collect: один заход по ssh за отчётом; скрипт уходит через stdin, на сервере ничего не остаётся.
+// timeout - на соединение; сам скрипт (apt, nginx -t через sudo) на слабом VPS идёт дольше.
 func Collect(target string, timeout time.Duration) (Report, error) {
-	out, err := remote(target, Script, timeout, timeout)
+	out, err := remote(target, Script, timeout, time.Minute)
 	if err != nil {
 		return Report{}, err
 	}

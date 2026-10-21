@@ -24,8 +24,12 @@ var (
 done
 echo @@end
 `
-	hitRe   = regexp.MustCompile(`^(\S+) .*\[(\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4})\] "([A-Z]+) (\S+)[^"]*" (\d{3}) (\d+|-)(.*)$`)
-	tailRe  = regexp.MustCompile(`"([^"]*)"\s*(\d+\.\d+)?\s*$`)
+	// Строка журнала: у apache vhost_combined перед адресом стоит "host:port"; запрос берётся целиком -
+	// в нём бывает мусор без метода. Хвост: referer и UA первыми кавычками, время ответа - первое число
+	// после них (request_time nginx, до трёх знаков), что бы ни шло дальше.
+	hitRe   = regexp.MustCompile(`^(?:\S+:\d+ )?(\S+) .*?\[(\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4})\] "([^"]*)" (\d{3}) (\d+|-)(.*)$`)
+	tailRe  = regexp.MustCompile(`^\s*"[^"]*"\s+"([^"]*)"(.*)$`)
+	tookRe  = regexp.MustCompile(`(?:^|\s)(\d+\.\d{1,3})(?:\s|$)`)
 	botRe   = regexp.MustCompile(`(?i)bot|crawl|spider|slurp|curl|wget|python|go-http|java/|libwww|scan`)
 	logName = []string{"-frontend.access.log", "-backend.access.log", ".access.log", "_access.log", "-access.log", "access.log", ".log"}
 )
@@ -47,8 +51,8 @@ type SiteTraffic struct {
 	File     string        `json:"file"`
 	Name     string        `json:"name"`
 	Requests int           `json:"requests"`
-	From     time.Time     `json:"from,omitempty"`
-	Partial  bool          `json:"partial"` // хвост журнала короче окна: цифры за его часть
+	From     time.Time     `json:"from,omitzero"`
+	Partial  bool          `json:"partial"` // журнал начинается позже окна: цифры и минуты - с From
 	Classes  [6]int        `json:"classes"` // ответы по классам, индекс - первая цифра кода
 	Bytes    int64         `json:"bytes"`
 	IPs      int           `json:"ips"`
@@ -122,21 +126,23 @@ func siteTraffic(file string, lines []string, start, now time.Time) SiteTraffic 
 		}
 		hits = append(hits, h)
 	}
-	st.Partial = len(lines) >= trafficLines && oldest.After(start)
 	if len(hits) == 0 {
 		return st
 	}
-	st.From = oldest
-	if st.From.Before(start) {
-		st.From = start
+	// Хвост короче окна или журнал ротирован: честно считать только с первой строки.
+	st.From, st.Partial = start, oldest.After(start)
+	if st.Partial {
+		st.From = oldest.Truncate(time.Minute)
 	}
 	st.Requests = len(hits)
-	st.Minutes = make([]int, int(now.Sub(start).Minutes())+1)
+	st.Minutes = make([]int, int(now.Sub(st.From).Minutes())+1)
 	ips, paths, errors, missing := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	var took []time.Duration
 	byPath := map[string]*Timing{}
 	for _, h := range hits {
-		st.Classes[h.status/100]++
+		if k := h.status / 100; k < len(st.Classes) {
+			st.Classes[k]++
+		}
 		st.Bytes += h.bytes
 		if h.bot {
 			st.Bots++
@@ -149,7 +155,7 @@ func siteTraffic(file string, lines []string, start, now time.Time) SiteTraffic 
 		case h.status == 404:
 			missing[h.path]++
 		}
-		if m := int(h.at.Sub(start).Minutes()); m >= 0 && m < len(st.Minutes) {
+		if m := int(h.at.Sub(st.From).Minutes()); m >= 0 && m < len(st.Minutes) {
 			st.Minutes[m]++
 		}
 		if h.timed {
@@ -190,15 +196,19 @@ func parseHit(line string) (hit, bool) {
 	if err != nil {
 		return hit{}, false
 	}
-	h := hit{at: at, ip: m[1], path: queryRe.ReplaceAllString(m[4], "")}
-	h.status, _ = strconv.Atoi(m[5])
-	h.bytes, _ = strconv.ParseInt(m[6], 10, 64)
-	if tail := tailRe.FindStringSubmatch(m[7]); tail != nil {
-		h.bot = botRe.MatchString(tail[1])
-		if tail[2] != "" {
-			sec, _ := strconv.ParseFloat(tail[2], 64)
-			h.took, h.timed = time.Duration(sec*float64(time.Second)), true
-		}
+	h := hit{at: at, ip: m[1], path: "-"}
+	if req := strings.Fields(m[3]); len(req) >= 2 {
+		h.path = queryRe.ReplaceAllString(req[1], "")
+	}
+	h.status, _ = strconv.Atoi(m[4])
+	h.bytes, _ = strconv.ParseInt(m[5], 10, 64)
+	rest := m[6]
+	if tail := tailRe.FindStringSubmatch(rest); tail != nil {
+		h.bot, rest = botRe.MatchString(tail[1]), tail[2]
+	}
+	if t := tookRe.FindStringSubmatch(rest); t != nil {
+		sec, _ := strconv.ParseFloat(t[1], 64)
+		h.took, h.timed = time.Duration(sec*float64(time.Second)), true
 	}
 	return h, true
 }
@@ -241,7 +251,7 @@ func Share(part, whole int) int {
 	return part * 100 / whole
 }
 
-// PerMinute: запросов в минуту за окно, с десятыми при редком трафике.
+// PerMinute: запросов в минуту за ту часть окна, что есть в журнале; с десятыми при редком трафике.
 func (s SiteTraffic) PerMinute() string {
 	minutes := max(len(s.Minutes), 1)
 	v := float64(s.Requests) / float64(minutes)

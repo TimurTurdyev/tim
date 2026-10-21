@@ -178,6 +178,31 @@ func TestTraffic(t *testing.T) {
 	if !nginx.Timed || nginx.P95 < 3*time.Second || nginx.P50 > 200*time.Millisecond || nginx.Slow[0].Path != "/api/report" || nginx.Slow[0].N != 5 {
 		t.Fatalf("время ответа: p50 %v p95 %v %+v", nginx.P50, nginx.P95, nginx.Slow)
 	}
+	// Формат main: после UA идёт x-forwarded-for; код 999 вне классов, но в счёте; запрос без метода.
+	if nginx.Requests != 34 || nginx.Bots != 2 || nginx.Classes[4] != 1 || nginx.Classes[2] != 32 {
+		t.Fatalf("nginx: запросов %d, ботов %d, классы %v", nginx.Requests, nginx.Bots, nginx.Classes)
+	}
+	hits := map[string]hit{}
+	for _, line := range []string{
+		`shop.example.com:443 192.0.2.97 - - [27/Oct/2026:05:43:00 +0300] "GET /vhost HTTP/1.1" 200 10 "-" "Mozilla/5.0" 0.250 0.200`,
+		`66.249.70.9 - - [27/Oct/2026:05:40:00 +0300] "GET /robots.txt HTTP/1.1" 200 100 "-" "Mozilla/5.0 (compatible; Googlebot/2.1)" "-"`,
+		`192.0.2.98 - - [27/Oct/2026:05:42:00 +0300] "-" 400 0 "-" "-"`,
+	} {
+		h, ok := parseHit(line)
+		if !ok {
+			t.Fatalf("не разобрана: %s", line)
+		}
+		hits[h.ip] = h
+	}
+	if h := hits["192.0.2.97"]; h.path != "/vhost" || !h.timed || h.took != 250*time.Millisecond {
+		t.Errorf("vhost_combined: %+v", h)
+	}
+	if h := hits["66.249.70.9"]; !h.bot || h.timed {
+		t.Errorf("main с x-forwarded-for: %+v", h)
+	}
+	if h := hits["192.0.2.98"]; h.status != 400 || h.path != "-" {
+		t.Errorf("запрос без метода: %+v", h)
+	}
 	got := map[string]level.Level{}
 	for _, c := range EvaluateTraffic(tr) {
 		got[c.Name] = c.Level

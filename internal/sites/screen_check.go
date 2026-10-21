@@ -60,7 +60,6 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 	})
 }
 
-// checkAll: все проекты реестра, как tim check без аргументов.
 // loadingText: что проверяется; с серверами обход заметно дольше.
 func loadingText(o checkOptions) string {
 	if o.servers {
@@ -69,6 +68,7 @@ func loadingText(o checkOptions) string {
 	return "обхожу проекты: git, сайт, сертификат, почта, домен - несколько секунд"
 }
 
+// checkAll: все проекты реестра, как tim check без аргументов.
 func checkAll(cfg *config.Config, o checkOptions) []health.Row {
 	projects, err := projectsOrDomains(cfg, nil)
 	if err != nil {

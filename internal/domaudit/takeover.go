@@ -101,18 +101,20 @@ func MatchTakeover(target string, resolves bool, body string) (Takeover, bool) {
 	return Takeover{}, false
 }
 
-// CNAME: куда ведёт имя; пусто - прямая запись или имени нет.
+// CNAME: куда в итоге ведёт имя - конец цепочки, если резолвер её раскрыл; пусто - прямая запись
+// или имени нет.
 func CNAME(name string) string {
 	a, err := dnsq.Query(name, dnsmessage.TypeCNAME)
 	if err != nil {
 		return ""
 	}
+	target := ""
 	for _, r := range a.Records {
 		if c, ok := r.Body.(*dnsmessage.CNAMEResource); ok {
-			return strings.TrimSuffix(c.CNAME.String(), ".")
+			target = strings.TrimSuffix(c.CNAME.String(), ".")
 		}
 	}
-	return ""
+	return target
 }
 
 // Takeovers: имена домена, которые можно захватить. Быстрый путь для аудита: имена из кэша логов

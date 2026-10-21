@@ -53,7 +53,7 @@ func printTraffic(target string, since time.Duration, asJSON bool) error {
 	printFindings(r.Findings)
 	for _, s := range r.Traffic.Sites {
 		ui.Println("")
-		ui.Println(siteLine(s))
+		ui.Println(siteLine(s, since))
 		for _, l := range siteDetails(s, r.Owners) {
 			ui.Println("  " + l)
 		}
@@ -75,7 +75,7 @@ func trafficSources(t srvinfo.Traffic) string {
 }
 
 // siteLine: сайт, сколько запросов и как они легли по минутам.
-func siteLine(s srvinfo.SiteTraffic) string {
+func siteLine(s srvinfo.SiteTraffic, since time.Duration) string {
 	line := ui.Label(ui.Pad(s.Name, 22))
 	if s.Requests == 0 {
 		return line + ui.Dim("запросов нет")
@@ -86,7 +86,11 @@ func siteLine(s srvinfo.SiteTraffic) string {
 	}
 	line += fmt.Sprintf("%d %s, %s в мин  ", s.Requests, ui.Plural(s.Requests, "запрос", "запроса", "запросов"), s.PerMinute()) + stats.Bars(vals, sparkWidth)
 	if s.Partial {
-		line += ui.Dim("  хвост журнала с " + s.From.Local().Format("15:04"))
+		format := "15:04"
+		if since > 24*time.Hour {
+			format = "02.01 15:04"
+		}
+		line += ui.Dim("  журнал с " + s.From.Local().Format(format))
 	}
 	return line
 }

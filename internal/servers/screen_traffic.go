@@ -34,7 +34,7 @@ func trafficData(target string, since time.Duration) tui.BoardData {
 	}
 	for _, s := range r.Traffic.Sites {
 		d.Rows = append(d.Rows, tui.BoardRow{ID: "site " + s.File, Title: s.Name, Sub: s.File,
-			Cells: "  " + siteLine(s), Pane: siteDetails(s, r.Owners)})
+			Cells: "  " + siteLine(s, since), Pane: siteDetails(s, r.Owners)})
 	}
 	d.Empty = "журналов запросов не видно"
 	return d
