@@ -25,7 +25,7 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 	)
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs:  []string{"Проекты", "Проверка"},
-		Loading: "обхожу проекты: git, сайт, сертификат, почта, домен - несколько секунд",
+		Loading: loadingText(o),
 		Command: func(row *tui.BoardRow) string {
 			if row != nil {
 				return "tim check " + row.ID
@@ -61,6 +61,14 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 }
 
 // checkAll: все проекты реестра, как tim check без аргументов.
+// loadingText: что проверяется; с серверами обход заметно дольше.
+func loadingText(o checkOptions) string {
+	if o.servers {
+		return "обхожу проекты и их серверы по ssh: git, сайт, сертификат, почта, домен, сервер - около минуты"
+	}
+	return "обхожу проекты: git, сайт, сертификат, почта, домен - несколько секунд"
+}
+
 func checkAll(cfg *config.Config, o checkOptions) []health.Row {
 	projects, err := projectsOrDomains(cfg, nil)
 	if err != nil {

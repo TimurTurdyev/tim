@@ -31,13 +31,14 @@ var checkCols = []struct {
 	{"сертификат", 14},
 	{"почта", 8},
 	{"домен", 10},
+	{"сервер", 16},
 }
 
 // check: обход проектов. В терминале без аргументов - экран, иначе таблица и замечания о машине.
 func check(env *app.Env, args []string, o checkOptions) error {
 	switch {
 	case o.install:
-		return installCheck(o.at)
+		return installCheck(o.at, o.servers)
 	case o.uninstall:
 		if err := schedule.Uninstall(checkLabel, "tim-check", false); err != nil {
 			return err
@@ -80,7 +81,7 @@ func check(env *app.Env, args []string, o checkOptions) error {
 func checkRows(cfg *config.Config, projects []*config.Project, o checkOptions) []health.Row {
 	var shared DomainChecks
 	rows := par.Map(projects, par.Limit, func(p *config.Project) health.Row {
-		return CheckRow(p, cfg.ProjectDir(p), o.local, o.net, &shared)
+		return CheckRow(p, cfg.ProjectDir(p), o.local, o.net, o.servers, &shared)
 	})
 	kept := rows[:0]
 	for _, r := range rows {
@@ -211,7 +212,7 @@ func firstBad(r health.Row) string {
 	return r.Name
 }
 
-func installCheck(at string) error {
+func installCheck(at string, servers bool) error {
 	self, err := schedule.SelfPath()
 	if err != nil {
 		return err
@@ -220,7 +221,11 @@ func installCheck(at string) error {
 	if err != nil {
 		return ui.Errorf("%v", err)
 	}
-	job := schedule.Job{Label: checkLabel, Args: []string{self, "check", "--notify"}, Hour: h, Minute: m,
+	args := []string{self, "check", "--notify"}
+	if servers {
+		args = append(args, "--servers")
+	}
+	job := schedule.Job{Label: checkLabel, Args: args, Hour: h, Minute: m,
 		Log: filepath.Join(filepath.Dir(run.StateDir()), "check.log"), Env: schedule.JobEnv()}
 	if err := schedule.Install(job, "tim-check"); err != nil {
 		return err

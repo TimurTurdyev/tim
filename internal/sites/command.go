@@ -12,9 +12,9 @@ import (
 
 // checkOptions: что проверять и как часто обходить по расписанию.
 type checkOptions struct {
-	local, net, install, uninstall, notify bool
-	hours                                  float64
-	at                                     string
+	local, net, servers, install, uninstall, notify bool
+	hours                                           float64
+	at                                              string
 }
 
 // domainOptions: сколько собирать о домене и куда выводить.
@@ -52,6 +52,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 	f := c.Flags()
 	f.BoolVar(&o.local, "local", false, "только локальные проверки, без сети")
 	f.BoolVar(&o.net, "net", false, "только сетевые проверки")
+	f.BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh: место, юниты, обновления, sshd - только чтение")
 	f.Float64Var(&o.hours, "hours", machine.ForgottenAfter.Hours(), "с какого возраста dev-сервер считается забытым")
 	f.BoolVar(&o.install, "install", false, "обходить каждый день и присылать уведомление, если что-то плохо")
 	f.BoolVar(&o.uninstall, "uninstall", false, "убрать ежедневный обход")

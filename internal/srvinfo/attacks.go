@@ -37,9 +37,7 @@ if [ "$SRC" != none ]; then
 fi
 echo @@probes
 P='__PROBES__'
-( grep -rhoE '^[[:space:]]*access_log[[:space:]]+[^ ;]+' /etc/nginx 2>/dev/null | awk '{print $2}'; echo /var/log/nginx/access.log; find "$HOME" -maxdepth 3 -name '*access.log' -type f 2>/dev/null ) | grep -v -e '\$' -e '^off$' | sort -u | while IFS= read -r f; do
-  if [ -r "$f" ]; then R="tail -n 200000"; elif sudo -n test -r "$f" 2>/dev/null; then R="sudo -n tail -n 200000"; else continue; fi
-  echo "file $f"
+` + logLoop + `  echo "file $f"
   $R "$f" | grep -E "\"[A-Z]+ [^\"]*($P)" | tail -n 3000 | sed "s|^|$f |"
 done
 echo @@ufw
@@ -63,7 +61,14 @@ echo @@prot
 echo @@end
 `
 
+// logLoop: обход журналов запросов - из конфигов nginx, стандартный и в папке пользователя, куда их
+// кладут панели. Читается хвост в __LINES__ строк, чужие журналы - через sudo -n.
+const logLoop = `( grep -rhoE '^[[:space:]]*access_log[[:space:]]+[^ ;]+' /etc/nginx 2>/dev/null | awk '{print $2}'; echo /var/log/nginx/access.log; find "$HOME" -maxdepth 3 -name '*access.log' -type f 2>/dev/null ) | grep -v -e '\$' -e '^off$' | sort -u | while IFS= read -r f; do
+  if [ -r "$f" ]; then R="tail -n __LINES__"; elif sudo -n test -r "$f" 2>/dev/null; then R="sudo -n tail -n __LINES__"; else continue; fi
+`
+
 // AttacksScript: скрипт журналов за окно since. Пути ботов - те же, что ищет tim audit.
 func AttacksScript(since time.Duration) string {
-	return fmt.Sprintf("SINCE=%d\n", int(since.Seconds())) + strings.Replace(attacksScript, "__PROBES__", audit.ProbePattern(), 1)
+	s := strings.Replace(attacksScript, "__PROBES__", audit.ProbePattern(), 1)
+	return fmt.Sprintf("SINCE=%d\n", int(since.Seconds())) + strings.ReplaceAll(s, "__LINES__", "200000")
 }

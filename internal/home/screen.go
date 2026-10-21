@@ -78,6 +78,8 @@ func (h *Home) screenFor(args []string) tui.Screen {
 		}
 	case args[0] == "server" && len(args) == 2:
 		return servers.Screen(env, servers.Target(env.Cfg, args[1]))
+	case args[0] == "servers" && one:
+		return servers.ServersScreen(env, servers.Targets(env, nil, false))
 	case args[0] == "top" && one:
 		return machine.ProcsScreen("")
 	case (args[0] == "ps" || args[0] == "kill") && len(args) == 2:

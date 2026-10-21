@@ -2,10 +2,10 @@ package machine
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/stats"
@@ -115,31 +115,14 @@ func printStats(name string, list []stats.Sample) {
 	}
 }
 
-// forecastLine: человеческая строка прогноза свободного места.
+// forecastLine: прогноз свободного места, а пока замеров мало - как их завести.
 func forecastLine(list []stats.Sample) string {
-	perDay, left, ok := stats.Forecast(list)
-	switch {
-	case !ok:
+	text, lvl, ok := stats.ForecastLine(list)
+	if !ok {
 		if !schedule.Installed(statsLabel, "tim-stats", false) {
 			return ui.Dim("для прогноза нужны замеры хотя бы за сутки, а ежечасный замер не стоит: tim stats --install")
 		}
 		return ui.Dim("для прогноза нужны замеры хотя бы за сутки")
-	case math.IsInf(left, 1) || perDay > -float64(100<<20):
-		return "место не убывает" + ui.Dim("  "+signedBytes(perDay)+" в сутки")
 	}
-	line := fmt.Sprintf("уходит %s в сутки, кончится через %.0f дн", ui.Bytes(int64(-perDay)), left)
-	switch {
-	case left < 14:
-		return ui.Bad(line)
-	case left < 60:
-		return ui.Warn(line)
-	}
-	return line
-}
-
-func signedBytes(v float64) string {
-	if v < 0 {
-		return "-" + ui.Bytes(int64(-v))
-	}
-	return "+" + ui.Bytes(int64(v))
+	return level.Paint(lvl, text)
 }

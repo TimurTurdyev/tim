@@ -150,3 +150,45 @@ func TestAttacks(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestTraffic(t *testing.T) {
+	data, err := os.ReadFile("testdata/traffic.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 27, 6, 0, 0, 0, time.FixedZone("MSK", 3*3600))
+	tr := ParseTraffic(string(data), now, time.Hour)
+	// Журнал бэкенда за фронтендом - те же запросы, его быть не должно.
+	if len(tr.Sites) != 3 {
+		t.Fatalf("сайтов %d: %+v", len(tr.Sites), tr.Sites)
+	}
+	quiet, nginx, shop := tr.Sites[0], tr.Sites[1], tr.Sites[2]
+	if quiet.Name != "quiet.example.com" || quiet.Requests != 0 || nginx.Name != "nginx" || shop.Name != "shop.example.com" {
+		t.Fatalf("имена и счёт: %s %d, %s, %s", quiet.Name, quiet.Requests, nginx.Name, shop.Name)
+	}
+	if shop.Requests != 120 || shop.Classes[5] != 6 || shop.Classes[4] != 10 || shop.Bots != 15 || shop.IPs != 71 || shop.Partial {
+		t.Fatalf("shop: %+v", shop)
+	}
+	if shop.ByIP[0].Key != "198.51.100.4" || shop.ByIP[0].N != 50 || shop.Missing[0].Key != "/old-page" || shop.Errors[0].Key != "/api/pay" || shop.ByPath[0].Key != "/catalog" {
+		t.Fatalf("топы: %+v %+v %+v %+v", shop.ByIP, shop.Missing, shop.Errors, shop.ByPath)
+	}
+	if len(shop.Minutes) != 61 || shop.PerMinute() != "2.0" {
+		t.Fatalf("минуты %d, в минуту %s", len(shop.Minutes), shop.PerMinute())
+	}
+	if !nginx.Timed || nginx.P95 < 3*time.Second || nginx.P50 > 200*time.Millisecond || nginx.Slow[0].Path != "/api/report" || nginx.Slow[0].N != 5 {
+		t.Fatalf("время ответа: p50 %v p95 %v %+v", nginx.P50, nginx.P95, nginx.Slow)
+	}
+	got := map[string]level.Level{}
+	for _, c := range EvaluateTraffic(tr) {
+		got[c.Name] = c.Level
+	}
+	want := map[string]level.Level{"5xx": level.Warn, "один адрес": level.Warn, "медленно": level.Warn, "тишина": level.Info}
+	for name, l := range want {
+		if got[name] != l {
+			t.Errorf("%s: %v, ждали %v; всё: %v", name, got[name], l, got)
+		}
+	}
+	if _, ok := got["4xx"]; ok {
+		t.Errorf("4xx при 8%% - не находка: %v", got)
+	}
+}

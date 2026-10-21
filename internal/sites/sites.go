@@ -17,6 +17,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/srvinfo"
 )
 
 // EnvGit: два вопроса к git про .env; ответ "нет" при любой ошибке, чтобы не шуметь.
@@ -44,12 +45,13 @@ func GitCheck(dir string) health.Check {
 // DomainChecks: почта и регистрация домена на один обход - у проектов на поддоменах домен общий,
 // и спрашивать его DNS и whois по разу на проект незачем.
 type DomainChecks struct {
-	mail, reg par.Memo[string, health.Check]
+	mail, reg, server par.Memo[string, health.Check]
 }
 
 // CheckRow: все проверки одного проекта. Сетевые идут параллельно; local и net оставляют только
-// локальные или только сетевые.
-func CheckRow(p *config.Project, dir string, local, net bool, shared *DomainChecks) health.Row {
+// локальные или только сетевые. servers - ещё и сервер проекта по ssh: один заход на хост, сколько бы
+// проектов на нём ни жило.
+func CheckRow(p *config.Project, dir string, local, net, servers bool, shared *DomainChecks) health.Row {
 	var checks []func() health.Check
 	if !net {
 		checks = append(checks, func() health.Check { return GitCheck(dir) })
@@ -65,6 +67,11 @@ func CheckRow(p *config.Project, dir string, local, net bool, shared *DomainChec
 			func() health.Check { return shared.mail.Get(base, mail) },
 			func() health.Check { return shared.reg.Get(base, reg) },
 		)
+	}
+	if servers && !local && p.SSH != "" {
+		checks = append(checks, func() health.Check {
+			return shared.server.Get(p.SSH, func() health.Check { return srvinfo.CheckServer(p.SSH) })
+		})
 	}
 	run := func(check func() health.Check) health.Check { return check() }
 	return health.Row{Name: p.Name, Checks: par.Map(checks, len(checks), run)}

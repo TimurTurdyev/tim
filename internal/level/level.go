@@ -52,3 +52,14 @@ func Lamp(l Level, text string) string {
 	}
 	return ui.Dim("- " + text)
 }
+
+// Paint: текст цветом уровня, без значка - для ячеек таблиц и строк прогноза.
+func Paint(l Level, text string) string {
+	switch l {
+	case Bad:
+		return ui.Bad(text)
+	case Warn:
+		return ui.Warn(text)
+	}
+	return text
+}

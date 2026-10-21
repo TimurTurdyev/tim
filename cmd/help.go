@@ -71,7 +71,9 @@ var examples = map[string]string{
 	"tim today":       "  tim today                  # свои коммиты за сегодня\n  tim today --week\n  tim today shop --since 2025-10-01 --md",
 	"tim link":        "  tim link shop              # shop.test: hosts, сертификат, url\n  tim serve shop --https     # https://shop.test:8443\n  tim unlink shop",
 	"tim setup":       "  tim setup shop             # доделать склонированный проект\n  tim setup git@github.com:me/shop.git\n  tim setup shop --dry-run   # посмотреть, что будет сделано",
-	"tim check":       "  tim check                  # все проекты реестра\n  tim check shop             # один проект\n  tim check example.com      # домен не из реестра\n  tim check --local          # без сети",
+	"tim check":       "  tim check                  # все проекты реестра\n  tim check shop             # один проект\n  tim check example.com      # домен не из реестра\n  tim check --local          # без сети\n  tim check --servers        # и серверы проектов по ssh",
+	"tim server":      "  tim server prod            # алиас из ~/.ssh/config или проект\n  tim server prod --attacks  # кто ломится, за сутки\n  tim server prod --traffic  # кто ходит на сайты, за час\n  tim server prod --traffic --since 1d",
+	"tim servers":     "  tim servers                # серверы проектов из реестра\n  tim servers --all          # все алиасы ~/.ssh/config\n  tim servers --install      # замер раз в 6 часов для прогноза диска",
 	"tim sync":        "  tim sync                   # порт и база из .env\n  tim sync --remote          # боевые домены из nginx на серверах\n  tim sync shop --force",
 	"tim ports":       "  tim ports\n  tim port 5173          # карточка: что это, папка, кто запустил\n  tim port 8000 kill\n  tim ports --old --hours 4",
 	"tim php":         "  tim php\n  tim php use 8.3\n  tim php exec 8.1 composer install",
@@ -98,6 +100,7 @@ var overviewSections = []struct {
 		{"tim direct <сайт|приложение>", "пустить мимо VPN целиком"},
 		{"tim tunnel all <сервер>", "весь трафик через ssh"},
 		{"tim server <алиас>", "что с сервером: место, порты, sshd"},
+		{"tim servers", "все серверы одной таблицей"},
 	}},
 	{"Сайты", [][2]string{
 		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},

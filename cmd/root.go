@@ -63,7 +63,7 @@ var groups = []struct {
 }{
 	{"proj", "Проекты:", []string{"proj", "new", "go", "db", "each", "sync", "config", "init"}},
 	{"machine", "Машина:", []string{"status", "hw", "top", "ps", "kill", "disk", "stats"}},
-	{"net", "Сервер и сеть:", []string{"ssh", "tunnel", "direct", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "audit", "domain", "mail", "http"}},
+	{"net", "Сервер и сеть:", []string{"ssh", "server", "servers", "tunnel", "direct", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "audit", "domain", "mail", "http"}},
 	{"run", "Локальный запуск:", []string{"serve", "env", "logs", "open", "svc", "php"}},
 	{"util", "Утилиты:", utilCmds},
 	{"self", "Сам tim:", []string{"doctor", "version", "self-update"}},

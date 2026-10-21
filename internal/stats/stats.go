@@ -4,14 +4,17 @@ package stats
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Sample: один замер. Нули - "не измерено", а не "ноль".
@@ -137,16 +140,47 @@ func Forecast(list []Sample) (perDay float64, daysLeft float64, ok bool) {
 	return perDay, last / -perDay, true
 }
 
+// ForecastLine: прогноз словами и насколько он тревожен; ok = false, если замеров мало.
+func ForecastLine(list []Sample) (text string, lvl level.Level, ok bool) {
+	perDay, left, ok := Forecast(list)
+	switch {
+	case !ok:
+		return "", level.OK, false
+	case math.IsInf(left, 1) || perDay > -float64(100<<20):
+		return "место не убывает, " + signedBytes(perDay) + " в сутки", level.OK, true
+	}
+	text = fmt.Sprintf("уходит %s в сутки, кончится через %.0f дн", ui.Bytes(int64(-perDay)), left)
+	switch {
+	case left < 14:
+		return text, level.Bad, true
+	case left < 60:
+		return text, level.Warn, true
+	}
+	return text, level.OK, true
+}
+
+func signedBytes(v float64) string {
+	if v < 0 {
+		return "-" + ui.Bytes(int64(-v))
+	}
+	return "+" + ui.Bytes(int64(v))
+}
+
 // Sparkline: строка из столбиков разной высоты (U+2581-U+2588) шириной width по значениям. Пустые значения
-// (нули) пропускаются, остальное усредняется по корзинам.
+// (нули) пропускаются - это "не измерено", остальное усредняется по корзинам.
 func Sparkline(values []float64, width int) string {
-	bars := []rune{'\u2581', '\u2582', '\u2583', '\u2584', '\u2585', '\u2586', '\u2587', '\u2588'}
 	var vals []float64
 	for _, v := range values {
 		if v > 0 {
 			vals = append(vals, v)
 		}
 	}
+	return Bars(vals, width)
+}
+
+// Bars: то же, но нули - настоящие нули: минуты без запросов рисуются провалом.
+func Bars(vals []float64, width int) string {
+	bars := []rune{'\u2581', '\u2582', '\u2583', '\u2584', '\u2585', '\u2586', '\u2587', '\u2588'}
 	if len(vals) == 0 || width <= 0 {
 		return ""
 	}

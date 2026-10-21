@@ -3,7 +3,6 @@ package servers
 import (
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -31,7 +30,7 @@ func attacksData(target string, since time.Duration) tui.BoardData {
 	d.Status = "за " + window(since)
 	d.Head = []string{ui.Dim(sources(r.Attacks))}
 	for _, c := range r.Findings {
-		d.Rows = append(d.Rows, attackRow(c))
+		d.Rows = append(d.Rows, findingRow(c))
 	}
 	for _, o := range r.Owners[:min(8, len(r.Owners))] {
 		name := ownerName(o)
@@ -41,18 +40,4 @@ func attacksData(target string, since time.Duration) tui.BoardData {
 	}
 	d.Empty = "в журналах ничего тревожного"
 	return d
-}
-
-// attackRow: находка строкой; в панели подробность и с чего начать.
-func attackRow(c health.Check) tui.BoardRow {
-	row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text}
-	if c.Level > level.OK {
-		row.Sub = c.Level.String()
-	}
-	row.Cells = ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16) + c.Detail
-	row.Pane = []string{c.Detail}
-	if c.Fix != "" {
-		row.Pane = append(row.Pane, ui.Dim("\u2192 "+c.Fix))
-	}
-	return row
 }

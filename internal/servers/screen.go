@@ -36,21 +36,20 @@ func Screen(env *app.Env, target string) tui.Screen {
 
 func serverData(target string) tui.BoardData {
 	var d tui.BoardData
-	r, err := collect(target, 15*time.Second)
+	r, err := srvinfo.Collect(target, serverTimeout)
 	if err != nil {
 		d.Status = "не достучался"
-		why := err.Error()
-		if strings.Contains(why, "255") {
-			why = "ssh не подключился: имя не резолвится, порт закрыт или ключ не подходит"
-		}
-		d.Head = []string{level.Lamp(level.Bad, target+": "+why), ui.Dim("маршрут и вход проверит tim ssh " + target + "; s - зайти по ssh")}
+		d.Head = []string{level.Lamp(level.Bad, target+": "+sshError(err)), ui.Dim("маршрут и вход проверит tim ssh " + target + "; s - зайти по ssh")}
 		d.Empty = "отчёта нет"
 		return d
 	}
 	d.Status = osLine(r)
 	d.Head = serverBars(r)
+	if text, lvl, ok := forecast(target); ok && lvl == level.OK {
+		d.Head = append(d.Head, ui.Pad("прогноз", 10)+text)
+	}
 	d.Lamps = serverLamps(r)
-	for _, c := range srvinfo.Evaluate(r, time.Now()) {
+	for _, c := range evaluate(target, r) {
 		d.Rows = append(d.Rows, findingRow(c))
 	}
 	d.Empty = "замечаний нет"
@@ -63,10 +62,8 @@ func serverBars(r srvinfo.Report) []string {
 		return ui.Pad(label, 10) + tui.Bar(float64(pct)/100, 30) + "  " + ui.Percent(pct) + ui.Dim("  "+tail)
 	}
 	var out []string
-	for _, disk := range r.Disks {
-		if disk.Mount == "/" {
-			out = append(out, bar("диск", disk.Pct, ui.Bytes(disk.Used)+" из "+ui.Bytes(disk.Size)))
-		}
+	if disk, ok := r.Root(); ok {
+		out = append(out, bar("диск", disk.Pct, ui.Bytes(disk.Used)+" из "+ui.Bytes(disk.Size)))
 	}
 	if r.MemTotal > 0 {
 		used := r.MemTotal - r.MemAvail

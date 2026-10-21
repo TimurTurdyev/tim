@@ -2,6 +2,8 @@
 package servers
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
@@ -24,7 +26,7 @@ type hookOptions struct {
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
-	return []*cobra.Command{sshCommand(env), serverCommand(env), tunnelCommand(env), dbCommand(env), hookCommand(env)}
+	return []*cobra.Command{sshCommand(env), serverCommand(env), serversCommand(env), tunnelCommand(env), dbCommand(env), hookCommand(env)}
 }
 
 func sshCommand(env *app.Env) *cobra.Command {
@@ -47,35 +49,45 @@ func sshCommand(env *app.Env) *cobra.Command {
 }
 
 func serverCommand(env *app.Env) *cobra.Command {
-	var asJSON, attacks bool
+	var asJSON, attacks, traffic bool
 	var since string
 	c := &cobra.Command{
-		Use:   "server <алиас|проект|user@host> [--attacks [--since 24h]] [--json]",
+		Use:   "server <алиас|проект|user@host> [--attacks | --traffic] [--since 24h] [--json]",
 		Short: "Состояние Linux-сервера по ssh: место, память, юниты, обновления, порты наружу, sshd",
 		Long: `Один заход по ssh, только чтение: скрипт уходит через stdin и ничего не ставит и не меняет.
 То, что требует root (sshd -T, nginx -t, сертификаты), идёт через sudo -n: без пароля он не спрашивает,
 а отказывает, и такие проверки помечаются "не проверено".
 --attacks читает журналы: удачные входы по ssh (вход с адреса, который перебирал пароли, - красный),
 перебор, пробы сайта (.env, .git, wp-login), файрвол, баны fail2ban и CrowdSec, владельцев сетей.
+--traffic читает журналы запросов nginx или apache: сколько запросов и в минуту, доли ответов,
+кто ходит и куда, ошибки 5xx, пути в пустоту, время ответа, если журнал его пишет.
 Журналы ssh и ядра читают root и группы adm и systemd-journal; журналы сайта панели держат в папке
 пользователя - их tim находит сам.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := Target(env.Cfg, args[0])
-			if cmd.Flags().Changed("since") && !attacks {
-				return ui.Errorf("--since работает вместе с --attacks")
+			if attacks && traffic {
+				return ui.Errorf("--attacks и --traffic - два разных отчёта, по одному за раз")
 			}
-			if attacks {
-				window, err := parseSince(since)
-				if err != nil {
-					return err
-				}
-				if app.Interactive() && !asJSON {
-					return env.Open(AttacksScreen(target, window))
-				}
-				return printAttacks(target, window, asJSON)
+			if cmd.Flags().Changed("since") && !attacks && !traffic {
+				return ui.Errorf("--since работает вместе с --attacks или --traffic")
 			}
-			if app.Interactive() && !asJSON {
+			switch {
+			case attacks:
+				return withWindow(since, 24*time.Hour, func(w time.Duration) error {
+					if app.Interactive() && !asJSON {
+						return env.Open(AttacksScreen(target, w))
+					}
+					return printAttacks(target, w, asJSON)
+				})
+			case traffic:
+				return withWindow(since, time.Hour, func(w time.Duration) error {
+					if app.Interactive() && !asJSON {
+						return env.Open(TrafficScreen(target, w))
+					}
+					return printTraffic(target, w, asJSON)
+				})
+			case app.Interactive() && !asJSON:
 				return env.Open(Screen(env, target))
 			}
 			return printServer(target, asJSON)
@@ -83,7 +95,43 @@ func serverCommand(env *app.Env) *cobra.Command {
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "отчёт в JSON")
 	c.Flags().BoolVar(&attacks, "attacks", false, "кто ломится: перебор ssh, удачные входы, пробы сайта, баны - по журналам")
-	c.Flags().StringVar(&since, "since", "24h", "окно для --attacks: 24h, 3d, 1w")
+	c.Flags().BoolVar(&traffic, "traffic", false, "кто ходит: запросы, ошибки, адреса, пути и время ответа - по журналам nginx")
+	c.Flags().StringVar(&since, "since", "", "окно: 24h, 3d, 1w; у --attacks по умолчанию 24h, у --traffic 1h")
+	return c
+}
+
+// withWindow: окно из флага или по умолчанию для отчёта.
+func withWindow(since string, def time.Duration, run func(time.Duration) error) error {
+	w := def
+	if since != "" {
+		var err error
+		if w, err = parseSince(since); err != nil {
+			return err
+		}
+	}
+	return run(w)
+}
+
+func serversCommand(env *app.Env) *cobra.Command {
+	var o serversOptions
+	c := &cobra.Command{
+		Use:   "servers [алиас...] [--all] [--json] [--record | --install | --uninstall]",
+		Short: "Все серверы одной таблицей: состояние, uptime, нагрузка, память, диск",
+		Long: `Те же отчёты, что tim server, по всем серверам сразу: без аргументов - по ssh проектов из реестра,
+--all - по всем алиасам ~/.ssh/config. По 6 серверов за раз, каждому 15 секунд, только чтение.
+--record дописывает замер в журнал каждого сервера, по нему tim server показывает, с какой скоростью
+уходит место и когда кончится. --install ставит такой замер раз в 6 часов (launchd, на Linux - systemd).`,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return sshx.Aliases(), cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(cmd *cobra.Command, args []string) error { return runServers(env, args, o) },
+	}
+	f := c.Flags()
+	f.BoolVar(&o.all, "all", false, "все алиасы ~/.ssh/config, а не только серверы проектов")
+	f.BoolVar(&o.json, "json", false, "отчёты в JSON")
+	f.BoolVar(&o.record, "record", false, "записать замер каждого сервера в журнал")
+	f.BoolVar(&o.install, "install", false, "замер каждые 6 часов по расписанию")
+	f.BoolVar(&o.uninstall, "uninstall", false, "убрать замер по расписанию")
 	return c
 }
 
