@@ -109,20 +109,26 @@ func siteCommand() *cobra.Command {
 }
 
 func auditCommand(env *app.Env) *cobra.Command {
-	var asJSON bool
+	var o auditOptions
 	c := &cobra.Command{
-		Use:   "audit [домен|url|проект] [--json]",
+		Use:   "audit [домен|url|проект] [--json] [--md|--html [--out файл]]",
 		Short: "Аудит сайта снаружи: открытые файлы, заголовки, куки, переход на https",
 		Long: `Смотрит сайт так, как его видит любой бот: главную, переход с http на https, заголовки безопасности,
 флаги кук, страницу ошибки и пути, которые не должны открываться (.env, .git, дампы базы, журналы, phpinfo,
 Telescope, панели баз). Ещё - версии TLS и цепочку сертификата, версии nginx, PHP и CMS без поддержки
-(endoflife.date, кэш на сутки) и порты баз, открытые наружу. Находка - по содержимому ответа, а не по коду
-200: заглушки отдают главную на любой путь. Проверяй свои сайты и те, что попросили проверить.`,
+(endoflife.date, кэш на сутки), порты баз наружу, robots и sitemap, мягкую 404, www и без www, разметку
+главной (title, description, lang, h1, favicon, смешанное содержимое), битые ссылки с главной, сжатие,
+HTTP/2 и кэш статики, скорость первого байта, CAA, DNSSEC и разнесённость NS. Находка - по содержимому
+ответа, а не по коду 200: заглушки отдают главную на любой путь. --md и --html пишут отчёт для клиента:
+у каждой находки почему это важно и что сделать. Проверяй свои сайты и те, что попросили проверить.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(env, app.First(args), asJSON) },
+		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(env, app.First(args), o) },
 	}
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
+	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
+	c.Flags().BoolVar(&o.md, "md", false, "отчёт для клиента в Markdown: audit-<сайт>-<дата>.md")
+	c.Flags().BoolVar(&o.html, "html", false, "отчёт для клиента одной HTML-страницей")
+	c.Flags().StringVar(&o.out, "out", "", "куда записать отчёт")
 	return c
 }
 

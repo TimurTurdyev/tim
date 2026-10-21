@@ -36,7 +36,14 @@ var checks = []check{
 	}},
 	{"порты баз", false, func(s *site) []Finding { return PortFindings(openPorts(s.host)) }},
 	{strconv.Itoa(len(ProbePaths())) + " путей", false, exposedFiles},
-	{"страница ошибки", false, func(s *site) []Finding { return one(DebugPage(s.get(s.base + "/" + missingPath()).body)) }},
+	{"страница ошибки", false, errorPage},
+	{"индексация", false, indexing},
+	{"www", false, canonicalHost},
+	{"разметка", false, func(s *site) []Finding { return PageFindings(s.page) }},
+	{"ссылки", false, brokenLinks},
+	{"доставка", false, delivery},
+	{"скорость", false, speed},
+	{"dns", false, dns},
 }
 
 // check: одна проверка аудита; https - только для сайтов на https.
@@ -52,12 +59,14 @@ type site struct {
 	target, base, host, port string
 	https, insecure          bool
 	home                     response
+	page                     Page
 }
 
 // response: что ответил сайт на один запрос.
 type response struct {
 	url    string
 	status int
+	proto  string
 	header http.Header
 	body   string
 	err    error
@@ -112,6 +121,9 @@ func open(target string) (*site, error) {
 	}
 	s.base, s.host, s.port = origin(s.home.url), hostOf(s.home.url), portOf(s.home.url)
 	s.https = strings.HasPrefix(s.home.url, "https://")
+	if u, err := url.Parse(s.home.url); err == nil {
+		s.page = ParsePage(s.home.body, u)
+	}
 	return s, nil
 }
 
@@ -119,7 +131,7 @@ func open(target string) (*site, error) {
 func (s *site) get(u string, follow ...bool) response {
 	client := &http.Client{Timeout: timeout}
 	if s.insecure {
-		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // сертификат уже признан битым, идём смотреть остальное
+		client.Transport = insecureTransport()
 	}
 	if len(follow) == 0 || !follow[0] {
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -135,7 +147,25 @@ func (s *site) get(u string, follow ...bool) response {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
-	return response{url: resp.Request.URL.String(), status: resp.StatusCode, header: resp.Header, body: string(body)}
+	return response{url: resp.Request.URL.String(), status: resp.StatusCode, proto: resp.Proto, header: resp.Header, body: string(body)}
+}
+
+// insecureTransport: без проверки сертификата - он уже признан битым, идём смотреть остальное.
+func insecureTransport() *http.Transport {
+	return &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // осознанно, см. выше
+}
+
+// errorPage: несуществующий путь должен отвечать 404 без отладки; 200 на всё - "мягкая 404", поисковик
+// индексирует мусор, а битые ссылки не видны.
+func errorPage(s *site) []Finding {
+	a := s.get(s.base + "/" + missingPath())
+	out := one(DebugPage(a.body))
+	if a.status == 200 {
+		out = append(out, Finding{Area: "индексация", Level: level.Warn, Text: "несуществующая страница отвечает 200",
+			Why: "поисковик считает мусорные адреса страницами, а битые ссылки не отличить от живых",
+			Fix: "отдавать 404 с кодом, а не только с текстом; у SPA - на сервере, а не в роутере"})
+	}
+	return out
 }
 
 // exposedFiles: пути из списка параллельно; одна находка на вид файла, даже если открылись оба пути.

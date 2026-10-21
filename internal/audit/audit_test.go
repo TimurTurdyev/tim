@@ -2,6 +2,7 @@ package audit
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -102,5 +103,25 @@ func TestVersionFindings(t *testing.T) {
 	// PHP 7.4 с php.net - плохо; версии в заголовках - к сведению
 	if len(got) != 2 || got[0].Level != level.Bad || !strings.HasPrefix(got[0].Text, "php 7.4 ") || got[1].Level != level.Info {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestParseRobotsAndPage(t *testing.T) {
+	closed, maps := ParseRobots("User-agent: *\nDisallow: /\nSitemap: https://example.com/sitemap.xml\n")
+	if !closed || len(maps) != 1 {
+		t.Errorf("robots: %v %v", closed, maps)
+	}
+	// Запрет для одного робота - сайт не закрыт.
+	if closed, _ := ParseRobots("User-agent: Yandex\nDisallow: /\n\nUser-agent: *\nDisallow: /admin\n"); closed {
+		t.Error("закрыт только для Yandex")
+	}
+	base, _ := url.Parse("https://example.com/")
+	p := ParsePage(`<html lang="ru"><head><title>Shop</title><link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/app.css"><script src="http://cdn.example.net/a.js"></script></head>
+<body><h1>Hi</h1><a href="/about">about</a><a href="/about#top">dup</a><a href="mailto:a@b.c">m</a>
+<a href="https://other.example.org/x">ext</a><img src="http://example.com/i.png"></body></html>`, base)
+	if p.Title != "Shop" || p.Lang != "ru" || !p.Favicon || p.H1 != 1 || len(p.Mixed) != 2 ||
+		len(p.Links) != 1 || p.Links[0] != "https://example.com/about" || len(p.Assets) != 1 {
+		t.Errorf("%+v", p)
 	}
 }

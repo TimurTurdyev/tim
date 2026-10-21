@@ -2,7 +2,9 @@ package sites
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/audit"
@@ -14,23 +16,51 @@ import (
 // noURLHint: у проектов редко заполнен адрес сайта - в .env обычно локальный APP_URL.
 const noURLHint = "tim sync --remote найдёт домены в конфигах nginx серверов, или tim audit <домен>"
 
+// auditOptions: как отдать отчёт - на экран, JSON, файлом для клиента.
+type auditOptions struct {
+	json, md, html bool
+	out            string
+}
+
 // runAudit: проверка сайта снаружи; цель - домен, url или проект, без цели - проект текущей папки.
-func runAudit(env *app.Env, arg string, asJSON bool) error {
+func runAudit(env *app.Env, arg string, o auditOptions) error {
 	target, err := auditTarget(env, arg)
 	if err != nil {
 		return err
 	}
-	if !asJSON {
-		ui.Println(ui.Dim("проверяю " + target + ": главная, заголовки, куки и " + fmt.Sprint(len(audit.ProbePaths())) + " путей"))
+	if !o.json {
+		ui.Println(ui.Dim("проверяю " + target + ": главная, заголовки, куки, " + fmt.Sprint(len(audit.ProbePaths())) + " путей, разметка, dns"))
 	}
 	r, err := audit.Run(target)
 	if err != nil {
 		return ui.Errorf("%s: %v", target, err)
 	}
-	if asJSON {
+	if o.json {
 		return ui.JSON(r)
 	}
 	printAudit(r)
+	if o.md || o.html {
+		return writeReport(r, o)
+	}
+	return nil
+}
+
+// writeReport: отчёт для клиента файлом рядом, имя - сайт и дата, если не задано --out.
+func writeReport(r *audit.Report, o auditOptions) error {
+	now := time.Now()
+	ext, text := "md", r.Markdown(now)
+	if o.html {
+		ext, text = "html", r.HTML(now)
+	}
+	path := o.out
+	if path == "" {
+		host := strings.NewReplacer("https://", "", "http://", "", "/", "_", ":", "_").Replace(r.Final)
+		path = "audit-" + strings.TrimRight(host, "_") + "-" + now.Format("2006-01-02") + "." + ext
+	}
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		return ui.Errorf("отчёт не записан: %v", err)
+	}
+	ui.Println(ui.Label("отчёт: ") + path)
 	return nil
 }
 
