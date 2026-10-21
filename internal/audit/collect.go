@@ -44,6 +44,7 @@ var checks = []check{
 	{"доставка", false, delivery},
 	{"скорость", false, speed},
 	{"dns", false, dns},
+	{"поддомены", false, takeovers},
 }
 
 // check: одна проверка аудита; https - только для сайтов на https.

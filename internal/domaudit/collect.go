@@ -42,6 +42,9 @@ type Host struct {
 	Title  string   `json:"title,omitempty"`
 	Final  string   `json:"final,omitempty"`
 	Source string   `json:"source"`
+	// CNAME: куда ведёт имя; Takeover - его можно захватить: цель у чужого сервиса никем не занята.
+	CNAME    string    `json:"cname,omitempty"`
+	Takeover *Takeover `json:"takeover,omitempty"`
 
 	trackers []Tracker // только у главной страницы
 }
@@ -145,11 +148,13 @@ func (r *Report) resolve(names map[string]string, known map[string][]string) {
 		}
 		return lookup(name)
 	})
+	// Имя без адресов, но с CNAME, остаётся: запись ведёт в никуда, это надо видеть.
+	cnames := par.Map(all, 16, CNAME)
 	for i, ips := range resolved {
-		if len(ips) == 0 {
+		if len(ips) == 0 && cnames[i] == "" {
 			continue
 		}
-		r.Hosts = append(r.Hosts, Host{Name: all[i], IPs: ips, Source: names[all[i]]})
+		r.Hosts = append(r.Hosts, Host{Name: all[i], IPs: ips, CNAME: cnames[i], Source: names[all[i]]})
 		for _, ip := range ips {
 			byIP[ip] = append(byIP[ip], all[i])
 		}
@@ -385,12 +390,20 @@ func probe(h *Host, home bool) {
 		if home {
 			h.trackers = Trackers(string(body))
 		}
+		if t, ok := MatchTakeover(h.CNAME, true, string(body)); ok {
+			h.Takeover = &t
+		}
 		// Редирект отмечаем, только если ушли на другой адрес, а не просто на "/" того же имени.
 		u := resp.Request.URL
 		if u.Host != h.Name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
 			h.Final = u.String()
 		}
 		return
+	}
+	if len(h.IPs) == 0 {
+		if t, ok := MatchTakeover(h.CNAME, false, ""); ok {
+			h.Takeover = &t
+		}
 	}
 }
 

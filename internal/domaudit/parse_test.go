@@ -41,3 +41,26 @@ func TestParseHostSearch(t *testing.T) {
 		t.Error("quota error should be reported")
 	}
 }
+
+func TestMatchTakeover(t *testing.T) {
+	cases := []struct {
+		target   string
+		resolves bool
+		body     string
+		want     string // сервис; пусто - захвата нет
+	}{
+		{"user.github.io", true, "<h1>There isn't a GitHub Pages site here.</h1>", "GitHub Pages"},
+		{"user.github.io", true, "<h1>My project</h1>", ""},
+		{"app-1234.herokuapp.com", false, "", "Heroku"},
+		{"shop.azurewebsites.net", false, "", "Azure"},
+		{"shop.azurewebsites.net", true, "<html>ok</html>", ""},
+		{"cdn.example-hosting.com", false, "", ""},
+		{"", false, "", ""},
+	}
+	for _, c := range cases {
+		got, ok := MatchTakeover(c.target, c.resolves, c.body)
+		if ok != (c.want != "") || got.Service != c.want {
+			t.Errorf("%s resolves=%v: %+v %v, ждали %q", c.target, c.resolves, got, ok, c.want)
+		}
+	}
+}

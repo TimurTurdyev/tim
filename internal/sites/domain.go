@@ -173,6 +173,12 @@ func printDomainNotes(rep *domaudit.Report) {
 	if !rep.CRTCached.IsZero() {
 		ui.Println(ui.Dim("список имён из кэша от " + rep.CRTCached.Format("02.01 15:04") + ", обновить: --fresh"))
 	}
+	for _, h := range rep.Hosts {
+		if h.Takeover != nil {
+			ui.Println(ui.Bad("! "+h.Name+" можно захватить через "+h.Takeover.Service+": "+h.Takeover.Why) +
+				ui.Dim("  убрать CNAME в DNS или привязать имя в "+h.Takeover.Service))
+		}
+	}
 	if len(rep.Related) > 0 {
 		ui.Println(ui.Label("в тех же сертификатах: ") + strings.Join(cut(rep.Related, 10), " "))
 	}
@@ -193,6 +199,12 @@ func hostLine(rep *domaudit.Report, name string) string {
 	for _, h := range rep.Hosts {
 		if h.Name != name {
 			continue
+		}
+		if h.Takeover != nil {
+			return ui.Pad(name, 34) + " " + ui.Bad("захват! ") + ui.Dim("CNAME "+h.Takeover.Target+", "+h.Takeover.Why)
+		}
+		if h.Status == 0 && len(h.IPs) == 0 {
+			return ui.Pad(name, 34) + " " + ui.Warn("CNAME в никуда ") + ui.Dim(h.CNAME+" не резолвится  "+h.Source)
 		}
 		if h.Status == 0 {
 			return ui.Pad(name, 34) + " " + ui.Dim("не отвечает по HTTP  "+h.Source)

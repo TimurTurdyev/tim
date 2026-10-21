@@ -156,7 +156,13 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	if len(about) > 0 {
 		row.Pane = append(row.Pane, ui.Dim(strings.Join(about, "  ")))
 	}
-	if h.Status == 0 {
+	switch {
+	case h.Takeover != nil:
+		row.Pane = append(row.Pane, ui.Bad("можно захватить через "+h.Takeover.Service+": CNAME "+h.Takeover.Target+", "+h.Takeover.Why),
+			ui.Dim("\u2192 убрать CNAME в DNS или привязать имя в "+h.Takeover.Service))
+	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
+		row.Pane = append(row.Pane, ui.Warn("CNAME на "+h.CNAME+", а такого имени нет: запись устарела"))
+	case h.Status == 0:
 		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"))
 	}
 	return row
@@ -191,6 +197,10 @@ func asName(name, country string) string {
 // hostStatus: ответ сайта лампой; у молчащих и сломанных сразу и заметка.
 func hostStatus(h domaudit.Host) (status, note string) {
 	switch {
+	case h.Takeover != nil:
+		return level.Lamp(level.Bad, "захват"), "CNAME " + h.Takeover.Target + ": " + h.Takeover.Why
+	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
+		return level.Lamp(level.Warn, "в никуда"), "CNAME " + h.CNAME + " не резолвится"
 	case h.Status == 0:
 		return level.Lamp(level.Bad, "молчит"), "не отвечает по HTTP"
 	case h.Status >= 500:
@@ -206,6 +216,8 @@ func sortHosts(rep *domaudit.Report) []domaudit.Host {
 	hosts := append([]domaudit.Host(nil), rep.Hosts...)
 	rank := func(h domaudit.Host) int {
 		switch {
+		case h.Takeover != nil:
+			return 4
 		case h.Name == rep.Domain:
 			return 3
 		case h.Status == 0 || h.Status >= 500:

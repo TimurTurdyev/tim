@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
+	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
 )
@@ -152,4 +153,19 @@ func nsNetworks(zone string) []string {
 		}
 	}
 	return nets
+}
+
+// takeovers: поддомены, чей CNAME ведёт на чужой сервис, где имя никто не занял. Имена - из кэша логов
+// сертификатов и перебора частых, без похода в crt.sh: аудит должен оставаться быстрым.
+func takeovers(s *site) []Finding {
+	if isIP(s.host) || !strings.Contains(s.host, ".") {
+		return nil
+	}
+	var out []Finding
+	for _, h := range domaudit.Takeovers(inspect.Registrable(s.host)) {
+		out = append(out, Finding{Area: "поддомены", Level: level.Bad, Text: h.Name + " можно захватить через " + h.Takeover.Service,
+			Why: "имя ведёт через CNAME на " + h.Takeover.Target + ", " + h.Takeover.Why + "; кто займёт его у сервиса, получит сайт на вашем поддомене",
+			Fix: "убрать запись CNAME " + h.Name + " в DNS или привязать имя в " + h.Takeover.Service})
+	}
+	return out
 }
