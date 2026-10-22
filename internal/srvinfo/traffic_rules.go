@@ -20,7 +20,7 @@ const (
 )
 
 // EvaluateTraffic: что в трафике не так - ошибки сервера, один адрес вместо посетителей, медленные
-// ответы, запросы в пустоту. Тихий сайт без запросов - к сведению: журнал может писаться не сюда.
+// ответы, запросы в пустоту. Пустые журналы - не находка: у панели их полдюжины на сервер.
 func EvaluateTraffic(t Traffic) []health.Check {
 	var f findings
 	for _, s := range t.Sites {
@@ -32,10 +32,6 @@ func EvaluateTraffic(t Traffic) []health.Check {
 
 func (f *findings) site(s SiteTraffic) {
 	name := s.Name
-	if s.Requests == 0 {
-		f.add("тишина", level.Info, name, name+": за окно ни одного запроса", "")
-		return
-	}
 	if s.Requests < minHits {
 		return
 	}

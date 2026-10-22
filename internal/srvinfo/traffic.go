@@ -82,6 +82,7 @@ type hit struct {
 	status int
 	bytes  int64
 	bot    bool
+	own    bool // запрос самого tim: audit, domain - не трафик
 	took   time.Duration
 	timed  bool
 }
@@ -115,7 +116,7 @@ func siteTraffic(file string, lines []string, start, now time.Time) SiteTraffic 
 	var oldest time.Time
 	for _, l := range lines {
 		h, ok := parseHit(l)
-		if !ok {
+		if !ok || h.own {
 			continue
 		}
 		if oldest.IsZero() || h.at.Before(oldest) {
@@ -205,6 +206,7 @@ func parseHit(line string) (hit, bool) {
 	rest := m[6]
 	if tail := tailRe.FindStringSubmatch(rest); tail != nil {
 		h.bot, rest = botRe.MatchString(tail[1]), tail[2]
+		h.own = strings.HasSuffix(tail[1], " tim") || strings.Contains(tail[1], "tim-audit")
 	}
 	if t := tookRe.FindStringSubmatch(rest); t != nil {
 		sec, _ := strconv.ParseFloat(t[1], 64)

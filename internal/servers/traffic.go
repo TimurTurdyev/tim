@@ -51,12 +51,21 @@ func printTraffic(target string, since time.Duration, asJSON bool) error {
 	}
 	ui.Println(ui.Label(target) + "  " + ui.Dim("за "+window(since)+": "+trafficSources(r.Traffic)))
 	printFindings(r.Findings)
+	var quiet []string
 	for _, s := range r.Traffic.Sites {
+		if s.Requests == 0 {
+			quiet = append(quiet, s.Name)
+			continue
+		}
 		ui.Println("")
 		ui.Println(siteLine(s, since))
 		for _, l := range siteDetails(s, r.Owners) {
 			ui.Println("  " + l)
 		}
+	}
+	if len(quiet) > 0 {
+		ui.Println("")
+		ui.Println(ui.Dim("без запросов: " + strings.Join(quiet, ", ")))
 	}
 	return nil
 }
@@ -123,7 +132,7 @@ func siteDetails(s srvinfo.SiteTraffic, owners map[string]asn.ASInfo) []string {
 		}
 		part := fmt.Sprintf("%s %d%%", c.Key, srvinfo.Share(c.N, s.Requests))
 		if o, ok := owners[c.Key]; ok && o.Name != "" {
-			part += ui.Dim(" " + ui.Clip(o.Name, 20))
+			part += ui.Dim(" " + ui.Clip(ownerShort(o.Name), 22))
 		}
 		ips = append(ips, part)
 	}
@@ -155,4 +164,15 @@ func counts(list []srvinfo.Count) string {
 		parts = append(parts, fmt.Sprintf("%s x%d", ui.Clip(c.Key, 28), c.N))
 	}
 	return strings.Join(parts, "  ")
+}
+
+// ownerShort: имя сети без кода AS-объекта: "AMAZON-AES - Amazon.com, Inc., US" - это Amazon.com, Inc.
+func ownerShort(name string) string {
+	if _, org, ok := strings.Cut(name, " - "); ok {
+		name = org
+	}
+	if i := strings.LastIndex(name, ", "); i > 0 && len(name)-i == 4 {
+		name = name[:i]
+	}
+	return name
 }

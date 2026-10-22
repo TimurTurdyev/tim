@@ -67,7 +67,7 @@ func CheckServer(target string) health.Check {
 		return c
 	}
 	worst := findings[0]
-	c.Level, c.Text, c.Detail, c.Fix = worst.Level, worst.Name+" "+worst.Text, target+": "+worst.Detail, worst.Fix
+	c.Level, c.Text, c.Detail, c.Fix = worst.Level, worst.Name+" "+worst.Text, target+": "+worst.Name+" "+worst.Detail, worst.Fix
 	more := 0
 	for _, f := range findings[1:] {
 		if f.Level >= level.Warn {

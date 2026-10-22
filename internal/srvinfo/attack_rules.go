@@ -141,11 +141,16 @@ func (f *findings) bruteforce(a Attacks) {
 	}
 }
 
-// probes: пробы, на которые ответили 200, - по пути; перебор входа в CMS - отдельно, на входе 200 законно;
+// probes: пробы, на которые ответили 200, - по сайту одной строкой: заглушка панели отдаёт 200 на любой
+// путь, и по пути на находку выходит сотня строк; перебор входа в CMS - отдельно, на входе 200 законно;
 // остальные одной строкой.
 func (f *findings) probes(list []Probe) {
-	open := map[string]int{}
-	var paths []string
+	type opened struct {
+		n     int
+		paths map[string]int
+	}
+	bySite := map[string]*opened{}
+	var sites []string
 	ips := map[string]bool{}
 	logins, blocked := 0, 0
 	for _, p := range list {
@@ -154,17 +159,25 @@ func (f *findings) probes(list []Probe) {
 		case slices.Contains(loginPaths, p.Path):
 			logins++
 		case p.Status == 200:
-			if open[p.Path] == 0 {
-				paths = append(paths, p.Path)
+			site := siteName(p.File)
+			o := bySite[site]
+			if o == nil {
+				o = &opened{paths: map[string]int{}}
+				bySite[site] = o
+				sites = append(sites, site)
 			}
-			open[p.Path]++
+			o.n++
+			o.paths[p.Path]++
 		default:
 			blocked++
 		}
 	}
-	for _, p := range paths {
-		f.add("сайт", level.Warn, "200 на "+p, fmt.Sprintf("на %s ответили 200 (%d раз): проверь, что там не файл, а заглушка", p, open[p]),
-			"tim audit <домен> проверит, файл это или заглушка")
+	for _, site := range sites {
+		o := bySite[site]
+		f.add("сайт", level.Warn, fmt.Sprintf("%s: 200 на %d %s", site, len(o.paths), ui.Plural(len(o.paths), "путь", "пути", "путей")),
+			fmt.Sprintf("%s: на пробы ответили 200 %d %s, %s - заглушка, отдающая главную на любой адрес, или файлы наружу",
+				site, o.n, ui.Plural(o.n, "раз", "раза", "раз"), countText(top(o.paths))),
+			"tim audit "+auditTarget(site)+" проверит по содержимому, файл это или заглушка")
 	}
 	if logins > 0 {
 		f.add("сайт", level.Info, fmt.Sprintf("%d к форме входа", logins), fmt.Sprintf("перебор входа в CMS: %d %s к wp-login и xmlrpc", logins, ui.Plural(logins, "запрос", "запроса", "запросов")), fixCMSLogin)
@@ -211,4 +224,12 @@ func keys(list []Count, n int) string {
 		out = append(out, c.Key)
 	}
 	return strings.Join(out, ", ")
+}
+
+// auditTarget: сайт для tim audit; у общего журнала панели (parking, nginx) домена нет.
+func auditTarget(site string) string {
+	if strings.Contains(site, ".") {
+		return site
+	}
+	return "<домен>"
 }

@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/level"
@@ -32,9 +33,17 @@ func trafficData(target string, since time.Duration) tui.BoardData {
 	for _, c := range r.Findings {
 		d.Rows = append(d.Rows, findingRow(c))
 	}
+	var quiet []string
 	for _, s := range r.Traffic.Sites {
+		if s.Requests == 0 {
+			quiet = append(quiet, s.Name)
+			continue
+		}
 		d.Rows = append(d.Rows, tui.BoardRow{ID: "site " + s.File, Title: s.Name, Sub: s.File,
 			Cells: "  " + siteLine(s, since), Pane: siteDetails(s, r.Owners)})
+	}
+	if len(quiet) > 0 {
+		d.Foot = []string{ui.Dim("без запросов: " + strings.Join(quiet, ", "))}
 	}
 	d.Empty = "журналов запросов не видно"
 	return d

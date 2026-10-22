@@ -73,7 +73,7 @@ func printAttacks(target string, since time.Duration, asJSON bool) error {
 			if !l.Time.IsZero() {
 				when = l.Time.Local().Format("01-02 15:04")
 			}
-			ui.Println("  " + ui.Dim(when) + "  " + ui.Pad(l.User, 12) + ui.Pad(l.IP, 18) + ui.Dim(methodText(l.Method)))
+			ui.Println("  " + ui.Dim(when) + "  " + ui.Pad(l.User, 16) + " " + ui.Pad(l.IP, 17) + ui.Dim(methodText(l.Method)))
 		}
 	}
 	return nil

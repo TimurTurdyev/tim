@@ -207,7 +207,7 @@ func TestTraffic(t *testing.T) {
 	for _, c := range EvaluateTraffic(tr) {
 		got[c.Name] = c.Level
 	}
-	want := map[string]level.Level{"5xx": level.Warn, "один адрес": level.Warn, "медленно": level.Warn, "тишина": level.Info}
+	want := map[string]level.Level{"5xx": level.Warn, "один адрес": level.Warn, "медленно": level.Warn}
 	for name, l := range want {
 		if got[name] != l {
 			t.Errorf("%s: %v, ждали %v; всё: %v", name, got[name], l, got)
