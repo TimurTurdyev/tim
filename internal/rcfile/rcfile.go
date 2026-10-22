@@ -89,7 +89,8 @@ func Script(shell string, sh config.Shell) (string, error) {
 	}
 	switch {
 	case sh.Motd:
-		b.WriteString("command tim status\n")
+		// Один раз на окно: вложенные оболочки наследуют переменную и сводку не повторяют.
+		b.WriteString("if [[ -z \"$TIM_MOTD_SHOWN\" ]]; then export TIM_MOTD_SHOWN=1; command tim status; fi\n")
 		if sh.CdInfoOn() {
 			b.WriteString("_TIM_PROJECT=$(command tim hook cd --quiet)\n")
 		}

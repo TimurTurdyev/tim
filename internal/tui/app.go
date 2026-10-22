@@ -32,6 +32,13 @@ type Screen interface {
 	View(width, height int) string
 }
 
+// cursored: экран со строкой ввода, которой нужен настоящий курсор терминала. Без него курсор
+// остаётся там, где закончилась последняя перерисовка, и подсветка строки курсора в iTerm ложится,
+// например, на моргнувшего маскота.
+type cursored interface {
+	Cursor() *tea.Cursor
+}
+
 // Typer: экран, который прямо сейчас принимает набираемый текст (поиск). Тогда буквы и знаки
 // идут ему, а не каркасу; esc всё равно остаётся за каркасом.
 type Typer interface {
@@ -359,6 +366,12 @@ func (a *App) View() tea.View {
 	}
 	v := tea.NewView(top + "\n" + strings.Join(lines, "\n") + "\n" + bottom)
 	v.AltScreen = true
+	if c, ok := s.(cursored); ok && a.overlay == nil {
+		if cur := c.Cursor(); cur != nil {
+			cur.Y++ // верхняя полоса
+			v.Cursor = cur
+		}
+	}
 	return v
 }
 

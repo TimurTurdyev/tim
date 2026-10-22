@@ -86,8 +86,20 @@ func NewHome(opts HomeOpts) Screen {
 	st.Focused.Placeholder = styleHint
 	st.Cursor.Color = colAccent
 	in.SetStyles(st)
+	in.SetVirtualCursor(false)
 	in.Focus()
 	return &home{opts: opts, input: in}
+}
+
+// Cursor: настоящий курсор в строке ввода - её место в View известно: третья строка, отступ в два.
+func (h *home) Cursor() *tea.Cursor {
+	c := h.input.Cursor()
+	if c == nil {
+		return nil
+	}
+	c.X += 2
+	c.Y += 2
+	return c
 }
 
 func (h *home) Init() tea.Cmd {
