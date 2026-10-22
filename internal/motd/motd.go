@@ -92,6 +92,8 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 	for _, l := range out {
 		ui.Println(l)
 	}
+	// Пустая строка после карточки: иначе приглашение оболочки прилипает к маскоту.
+	ui.Println()
 	return nil
 }
 
