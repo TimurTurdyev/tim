@@ -12,7 +12,7 @@ import (
 // execPHP: команда с нужной версией PHP первой в PATH.
 func execPHP(args []string) error {
 	if len(args) < 2 {
-		return ui.Errorf("tim php exec 8.3 composer install")
+		return ui.Errorf("нужны версия и команда: tim php exec 8.3 composer install")
 	}
 	i, err := phpver.Find(args[0])
 	if err != nil {

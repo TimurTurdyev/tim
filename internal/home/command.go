@@ -184,8 +184,10 @@ func (h *Home) inside(args []string) (string, error) {
 	return out, err
 }
 
-// after выполняет команду уже в терминале, после закрытия экрана.
+// after выполняет команду уже в терминале, после закрытия экрана; строка с "$" - чтобы было видно,
+// что экран закрылся ради неё, а не упал.
 func (h *Home) after(args []string) {
+	ui.Println(ui.Dim("$ tim " + strings.Join(args, " ")))
 	h.resetFlags(args)
 	h.root.SetArgs(args)
 	if err := h.root.Execute(); err != nil {
@@ -252,7 +254,8 @@ func (h *Home) collectCommands() []tui.CommandEntry {
 			line := strings.TrimSpace(path + " " + sub.Name())
 			if !seen[line] {
 				seen[line] = true
-				out = append(out, tui.CommandEntry{Line: line, Desc: sub.Short})
+				// Команда с обязательным аргументом - шаблон: подставляется в строку для правки, а не запускается.
+				out = append(out, tui.CommandEntry{Line: line, Desc: sub.Short, Template: strings.Contains(sub.Use, "<")})
 			}
 			walk(sub, line)
 		}
