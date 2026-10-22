@@ -1,17 +1,20 @@
+// Package motd: сводка при открытии терминала и tim status - карточка машины с маскотом. Те же строки
+// показывает главный экран.
 package motd
 
 import (
 	"fmt"
+	"os"
+	osuser "os/user"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
-	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -35,9 +38,6 @@ var defaultSections = []string{"system", "project", "net", "ports", "services"}
 // artGap: отступ сводки от маскота.
 const artGap = "   "
 
-// seenBypass: обход, посчитанный разделом сети, - маскоту не считать его второй раз.
-var seenBypass atomic.Pointer[[2]int]
-
 // section: раздел сводки и сколько его ждать.
 type section struct {
 	name    string
@@ -52,45 +52,38 @@ type result struct {
 	late  bool
 }
 
-// show: выбранные разделы, собранные разом; timing - сколько занял каждый.
+// show: шапка, карточка по выбранным разделам, предупреждения и маскот; timing - сколько занял каждый.
 func show(cfg *config.Config, want []string, all, timing bool) error {
 	chosen, err := choose(cfg, want, all)
 	if err != nil {
 		return err
 	}
 	start := time.Now()
-	seenBypass.Store(nil)
-	results := make([]result, len(sections))
-	g := par.NewGroup(len(sections))
-	for i, s := range sections {
-		if chosen[s.name] {
-			g.Go(func() { results[i] = collect(cfg, s) })
-		}
-	}
-	g.Wait()
-	h := troubles(cfg)
-	var out []string
-	for i, s := range sections {
-		if !chosen[s.name] {
-			continue
-		}
-		out = append(out, results[i].lines...)
-		// Беды - сразу под машиной, те же, что на главном экране.
-		if s.name == "system" {
-			for _, w := range h.Warnings() {
-				out = append(out, ui.Warn("\u25b2 "+w.Text))
-			}
-		}
-		if timing {
-			note := fmt.Sprintf("%s %d мс", s.name, results[i].took.Milliseconds())
-			if results[i].late {
-				note += ", не успел"
-			}
-			out = append(out, ui.Dim("  "+note))
-		}
+	var head string
+	var rows []string
+	var h health.Machine
+	var results []result
+	par.All(
+		func() { head = header() },
+		func() { rows, h, results = collectAll(cfg, chosen) },
+	)
+	out := append([]string{head}, rows...)
+	for _, w := range h.Warnings() {
+		out = append(out, ui.Warn("\u25b2 "+w.Text))
 	}
 	if timing {
-		out = append(out, ui.Dim(fmt.Sprintf("всего %d мс", time.Since(start).Milliseconds())))
+		var notes []string
+		for i, s := range sections {
+			if !chosen[s.name] {
+				continue
+			}
+			note := fmt.Sprintf("%s %d мс", s.name, results[i].took.Milliseconds())
+			if results[i].late {
+				note += " (не успел)"
+			}
+			notes = append(notes, note)
+		}
+		out = append(out, ui.Dim(strings.Join(notes, ", ")+fmt.Sprintf("; всего %d мс", time.Since(start).Milliseconds())))
 	}
 	// Рядом с одной-двумя строками шесть строк картинки лишние.
 	if len(out) >= 3 {
@@ -102,19 +95,81 @@ func show(cfg *config.Config, want []string, all, timing bool) error {
 	return nil
 }
 
-// troubles: признаки беды для маскота и предупреждений - диск, своп, страж; обход - если его посчитал
-// раздел сети.
+// Rows: строки карточки машины по разделам (nil - из конфига или по умолчанию) и признаки беды -
+// то же, что в сводке, для главного экрана.
+func Rows(cfg *config.Config, want []string) ([]string, health.Machine) {
+	chosen, err := choose(cfg, want, false)
+	if err != nil {
+		return nil, health.Machine{}
+	}
+	rows, h, _ := collectAll(cfg, chosen)
+	return rows, h
+}
+
+// collectAll: разделы параллельно, каждый в свой срок; беды считаются тут же.
+func collectAll(cfg *config.Config, chosen map[string]bool) ([]string, health.Machine, []result) {
+	results := make([]result, len(sections))
+	var h health.Machine
+	g := par.NewGroup(len(sections) + 1)
+	g.Go(func() { h = troubles(cfg) })
+	for i, s := range sections {
+		if chosen[s.name] {
+			g.Go(func() { results[i] = collect(cfg, s) })
+		}
+	}
+	g.Wait()
+	var rows []string
+	for i, s := range sections {
+		if chosen[s.name] {
+			rows = append(rows, results[i].lines...)
+		}
+	}
+	return rows, h, results
+}
+
+// header: кто и где - пользователь, машина, система, дата и сколько работает.
+func header() string {
+	var osName string
+	var boot time.Time
+	var booted bool
+	par.All(
+		func() { osName = sysinfo.OS() },
+		func() { boot, booted = sysinfo.Boot() },
+	)
+	user := os.Getenv("USER")
+	if u, err := osuser.Current(); err == nil {
+		user = u.Username
+	}
+	host, _ := os.Hostname()
+	host, _, _ = strings.Cut(host, ".")
+	line := ui.Label(user+"@"+host) + "  " + osName + "  " + ui.DateShort(time.Now())
+	if booted {
+		line += ui.Dim("  работает " + ui.Duration(time.Since(boot)))
+	}
+	return line
+}
+
+// troubles: признаки беды для маскота и предупреждений - диск, память, страж, обход. Обход - по
+// последней проверке стража: резолвить сотни целей при каждом старте терминала слишком долго.
 func troubles(cfg *config.Config) health.Machine {
-	h := health.Machine{SwapShort: machine.SwapShort()}
-	if d, ok := sysinfo.DataDisk(); ok {
-		h.DiskPct, h.DiskFree = d.Percent(), int64(d.Avail)
-	}
-	if len(cfg.Hosts) > 0 {
-		h.GuardMissing = !bypass.GuardAlive()
-	}
-	if b := seenBypass.Load(); b != nil {
-		h.BypassOK, h.BypassAll = b[0], b[1]
-	}
+	var h health.Machine
+	par.All(
+		func() {
+			if d, ok := sysinfo.DataDisk(); ok {
+				h.DiskPct, h.DiskFree = d.Percent(), int64(d.Avail)
+			}
+		},
+		func() { h.MemFree, _ = sysinfo.MemFree() },
+		func() {
+			if len(cfg.Hosts) == 0 {
+				return
+			}
+			h.GuardMissing = !bypass.GuardAlive()
+			if netinfo.IsTunnelIface(netinfo.InternetIface()) {
+				h.BypassOK, h.BypassAll, _ = bypass.QuickCount()
+			}
+		},
+	)
 	return h
 }
 

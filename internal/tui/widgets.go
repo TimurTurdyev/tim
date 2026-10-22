@@ -57,11 +57,6 @@ func Pane(title, sub string, rows []string, width int, sections ...PaneSection) 
 	return out
 }
 
-// Tile: маленькая панель состояния для главного экрана.
-func Tile(title string, rows []string, width int) []string {
-	return Pane(title, "", rows, width)
-}
-
 // Beside ставит панель справа от строк списка, строка к строке.
 func Beside(left []string, leftW int, right []string, width int) []string {
 	n := max(len(left), len(right))

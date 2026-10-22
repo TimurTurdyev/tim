@@ -35,19 +35,12 @@ type Section struct {
 	Open             func() Action
 }
 
-// TileData: плитка состояния; строки уже с цветом.
-type TileData struct {
-	Title string
-	Rows  []string
-	Width int
-}
-
 // HomeData: что показывает главный экран; всё считается в разделе home и обновляется по r.
 type HomeData struct {
 	Status   string
 	Recent   []Hit
 	Sections []Section
-	Tiles    []TileData
+	Machine  []string // карточка машины: строки уже с цветом
 	Warning  string
 	WarnOpen func() Action
 	// Art: маскот уже с цветом, крупно - для широкого окна, blink - кадр моргания; зовётся при
@@ -272,13 +265,20 @@ func (h *home) View(width, height int) string {
 	if len(art) > 0 {
 		cw = width - ui.Width(art[0]) - 2
 	}
-	// На низком терминале вторая строка плиток вытеснила бы предупреждение - остаётся одна.
-	tileLines := tileRows(h.data.Tiles, cw, height >= 30)
+	var card []string
+	if len(h.data.Machine) > 0 {
+		card = append(card, "", "  "+styleHead.Render("МАШИНА"))
+		for _, r := range h.data.Machine {
+			card = append(card, "  "+ui.Clip(r, cw-2))
+		}
+	}
 	out = append(out, head...)
 	switch {
 	case !typing && wide:
-		// Недавнее слева, разделы справа; заголовок группы у недавнего уже есть в списке.
-		left := h.list.View(recentW, len(h.list.Rows))
+		// Недавнее слева, разделы справа; заголовок группы у недавнего уже есть в списке. Строк недавнего -
+		// сколько влезает над карточкой, но не меньше, чем разделов рядом.
+		avail := height - len(head) - len(card) - 5
+		left := h.list.View(recentW, min(len(h.list.Rows), max(len(secs)+1, avail)))
 		if len(left) == 0 {
 			left = []string{"  " + styleHead.Render("НЕДАВНЕЕ"), "  " + styleHint.Render("проекты и команды, которые открывал, появятся здесь")}
 		}
@@ -286,7 +286,7 @@ func (h *home) View(width, height int) string {
 		out = append(out, Beside(left, recentW, right, cw)...)
 	case !typing:
 		// Друг под другом экран выше: недавнего столько, чтобы плитки и предупреждение остались видны.
-		fit := height - len(head) - (len(secs) + 2) - len(tileLines) - 5
+		fit := height - len(head) - (len(secs) + 2) - len(card) - 4
 		out = append(out, h.list.View(cw, min(max(3, fit), len(h.list.Rows)))...)
 		out = append(out, "", "  "+styleHead.Render("РАЗДЕЛЫ"))
 		for _, sc := range secs {
@@ -296,9 +296,9 @@ func (h *home) View(width, height int) string {
 		out = append(out, h.list.View(cw, max(3, height-len(head)-2))...)
 	}
 	if !typing {
-		out = append(out, "")
-		out = append(out, tileLines...)
+		out = append(out, card...)
 		if h.data.Warning != "" {
+			out = append(out, "")
 			warn, hint := styleAmber.Render(symWarn+" "+h.data.Warning), styleDim.Render("   enter - разобраться")
 			if ui.Width(warn+hint)+2 > width {
 				hint = ""
@@ -316,44 +316,4 @@ func (h *home) View(width, height int) string {
 		out[i] = ui.Fit(out[i], cw) + a
 	}
 	return strings.Join(out, "\n")
-}
-
-// tileRows: плитки в строку, пока влезают; остальные - на следующую, если wrap, иначе не рисуются.
-func tileRows(tiles []TileData, width int, wrap bool) []string {
-	var out []string
-	var row [][]string
-	total := 2
-	flush := func() {
-		rows := 0
-		for _, t := range row {
-			rows = max(rows, len(t))
-		}
-		for i := range rows {
-			line := "  "
-			for _, t := range row {
-				cell := strings.Repeat(" ", lipgloss.Width(t[0]))
-				if i < len(t) {
-					cell = t[i]
-				}
-				line += cell + " "
-			}
-			out = append(out, line)
-		}
-		row, total = nil, 2
-	}
-	for _, t := range tiles {
-		if total+t.Width+1 > width && len(row) > 0 {
-			if !wrap {
-				break
-			}
-			flush()
-		}
-		if total+t.Width+1 > width {
-			continue
-		}
-		row = append(row, Tile(t.Title, t.Rows, t.Width))
-		total += t.Width + 1
-	}
-	flush()
-	return out
 }

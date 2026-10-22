@@ -140,9 +140,9 @@ func Remember(c *cobra.Command, args, utils []string) {
 }
 
 // remember: у утилит и команд с чужими строками аргументы не пишутся - там бывают токены и пароли; длинные
-// строки не пишутся вовсе; прогон с --dry-run - не действие.
+// строки не пишутся вовсе; прогон с --dry-run и просмотр справки - не действия.
 func remember(c *cobra.Command, args, utils []string) {
-	if c == nil || !c.HasParent() || c.Hidden || runner.DryRun {
+	if c == nil || !c.HasParent() || c.Hidden || runner.DryRun || c.Name() == "help" || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
 		return
 	}
 	top := c

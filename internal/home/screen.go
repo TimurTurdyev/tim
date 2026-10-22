@@ -14,7 +14,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/disk"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/motd"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -27,8 +29,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
-// recentRows: строк недавнего - столько же, сколько разделов рядом.
-const recentRows = 7
+// recentRows: сколько недавнего держать в списке; сколько показать, решает экран по своей высоте.
+const recentRows = 15
 
 // layoutKeys: буквы разделов в русской раскладке.
 var layoutKeys = map[string]string{"з": "p", "в": "d", "ь": "m", "т": "n", "ы": "s", "ц": "w", "г": "u"}
@@ -128,8 +130,8 @@ func (h *Home) load() tui.HomeData {
 	d := tui.HomeData{Status: host + " \u00b7 " + time.Now().Format("15:04")}
 	d.Recent = h.recent()
 	d.Sections = h.sections()
-	tiles, machine := h.tiles()
-	d.Tiles = tiles
+	rows, machine := motd.Rows(h.env.Cfg, nil)
+	d.Machine = rows
 	if ws := machine.Warnings(); len(ws) > 0 {
 		d.Warning, d.WarnOpen = ws[0].Text, h.troubleScreen(ws[0].Kind)
 	}
@@ -150,6 +152,19 @@ func (h *Home) load() tui.HomeData {
 		}
 	}
 	return d
+}
+
+// troubleScreen: куда вести по enter из предупреждения.
+func (h *Home) troubleScreen(kind health.Trouble) func() tui.Action {
+	return func() tui.Action {
+		switch kind {
+		case health.DiskFull:
+			return tui.Action{Push: diskScreen(h.env, nil)}
+		case health.Memory:
+			return tui.Action{Push: machine.HWScreen()}
+		}
+		return tui.Action{Push: bypass.Screen(h.env)}
+	}
 }
 
 // sections: разделы главного экрана; по ним же ищет строка поиска.
@@ -181,12 +196,12 @@ func (h *Home) recent() []tui.Hit {
 	for i := range cfg.Projects {
 		p := &cfg.Projects[i]
 		if e, ok := v[p.Name]; ok {
-			hit := h.projectHit(p, "проект, "+ui.Ago(e.Last))
+			hit := h.projectHit(p, "проект \u00b7 "+ui.Ago(e.Last))
 			items = append(items, item{hit, e.Last})
 		}
 	}
 	for line, e := range visits.Commands() {
-		hit := tui.Hit{Title: "tim " + line, Hint: "команда, " + ui.Ago(e.Last), Open: func() tui.Action { return tui.Action{Command: line} }}
+		hit := tui.Hit{Title: "tim " + line, Hint: ui.Ago(e.Last), Open: func() tui.Action { return tui.Action{Command: line} }}
 		items = append(items, item{hit, e.Last})
 	}
 	slices.SortStableFunc(items, func(a, b item) int {

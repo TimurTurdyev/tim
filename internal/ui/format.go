@@ -180,16 +180,20 @@ func Percent(pct int) string {
 	return s
 }
 
-// Bar: полоска загрузки в фирменных цветах: спокойно, внимание, плохо.
-func Bar(pct, width int) string {
+// Bar: полоска загрузки в фирменных цветах: спокойно, внимание от 60, плохо от 85 - для процессора
+// и памяти в работе.
+func Bar(pct, width int) string { return BarAt(pct, width, 60, 85) }
+
+// BarAt: та же полоска со своими порогами внимания и беды - у диска они 85 и 95, как у находок.
+func BarAt(pct, width, warn, bad int) string {
 	pct = max(0, min(100, pct))
 	full := pct * width / 100
 	head := strings.Repeat("\u2588", full)
 	var b string
 	switch {
-	case pct >= 85:
+	case pct >= bad:
 		b = Bad(head) + Dim(strings.Repeat("\u2591", width-full))
-	case pct >= 60:
+	case pct >= warn:
 		b = Warn(head) + Dim(strings.Repeat("\u2591", width-full))
 	default:
 		b = OK(head) + Dim(strings.Repeat("\u2591", width-full))

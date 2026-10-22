@@ -44,6 +44,16 @@ func GuardAlive() bool {
 	return ok && time.Since(st.LastCheck) < 10*time.Minute
 }
 
+// QuickCount: обход по последней проверке стража - без DNS и таблицы маршрутов, для сводки при старте
+// терминала и главного экрана; known = false, если страж не работает.
+func QuickCount() (ok, total int, known bool) {
+	st, alive := GuardStatus()
+	if !alive || time.Since(st.LastCheck) >= 10*time.Minute {
+		return 0, 0, false
+	}
+	return st.OK, st.Want, true
+}
+
 func GuardInstalled() bool {
 	path := GuardPlist()
 	if runtime.GOOS == "linux" {

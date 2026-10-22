@@ -1,8 +1,11 @@
 package sysinfo
 
 import (
+	"os"
 	"runtime"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
@@ -16,6 +19,25 @@ func LoadPercent() (int, bool) {
 		return 0, false
 	}
 	return int(load[0]*100/float64(runtime.NumCPU()) + 0.5), true
+}
+
+// MemFree: сколько памяти системе доступно, в процентах. На macOS это kern.memorystatus_level - по нему
+// система сама судит о нехватке; своп тут не показатель, он растёт по мере надобности.
+func MemFree() (int, bool) {
+	if runtime.GOOS == "linux" {
+		data, _ := os.ReadFile("/proc/meminfo")
+		used, total := ParseMeminfo(string(data))
+		if total == 0 {
+			return 0, false
+		}
+		return int((total - used) * 100 / total), true
+	}
+	out, err := runner.Output("sysctl", "-n", "kern.memorystatus_level")
+	if err != nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	return n, err == nil
 }
 
 // BatteryNow: заряд и состояние батареи; на машинах без неё - false.

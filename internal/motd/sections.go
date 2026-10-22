@@ -3,11 +3,10 @@ package motd
 import (
 	"fmt"
 	"os"
-	osuser "os/user"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
@@ -23,84 +22,61 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
+// Карточка машины: метка в labelW колонок, память и диск полосами, остальное словами; цифры полосы
+// занимают cellW, дальше вторая колонка. Полосы краснеют по порогам находок, а не по 60%: занятые
+// две трети диска - это норма, а не повод для жёлтого.
+const (
+	labelW = 9
+	barW   = 15
+	cellW  = 36
+)
+
 func gb(b uint64) string { return fmt.Sprintf("%.0f", float64(b)/(1<<30)) }
+
+func row(label, text string) string { return ui.Label(ui.Pad(label, labelW)) + text }
 
 func system(*config.Config) []string {
 	var (
-		osName, ip, docker string
-		boot               time.Time
-		booted, loadOK     bool
-		loadPct            int
-		memUsed, memTotal  uint64
-		disk               sysinfo.Disk
-		diskOK             bool
-		batt               sysinfo.Battery
-		battOK             bool
+		loadOK, diskOK, battOK bool
+		loadPct                int
+		memUsed, memTotal      uint64
+		disk                   sysinfo.Disk
+		batt                   sysinfo.Battery
 	)
 	par.All(
-		func() { osName = sysinfo.OS() },
-		func() { boot, booted = sysinfo.Boot() },
 		func() { loadPct, loadOK = sysinfo.LoadPercent() },
 		func() { memUsed, memTotal = sysinfo.Memory() },
 		func() { disk, diskOK = sysinfo.DataDisk() },
 		func() { batt, battOK = sysinfo.BatteryNow() },
-		func() {
-			if phys, ok := netinfo.PhysIface(); ok {
-				ip = netinfo.IfaceIPv4(phys.Device)
-			}
-		},
-		func() { docker = dockerLine() },
 	)
-	user := os.Getenv("USER")
-	if u, err := osuser.Current(); err == nil {
-		user = u.Username
-	}
-	host, _ := os.Hostname()
-	host, _, _ = strings.Cut(host, ".")
-	line1 := ui.Label(user+"@"+host) + "  " + osName + "  " + ui.DateShort(time.Now())
-	if booted {
-		line1 += ui.Dim("  работает " + ui.Duration(time.Since(boot)))
-	}
-	var parts []string
-	if loadOK {
-		parts = append(parts, ui.Dim("нагрузка ")+ui.Percent(loadPct))
-	}
-	if memUsed > 0 && memTotal > 0 {
-		parts = append(parts, ui.Dim("память ")+gb(memUsed)+" из "+gb(memTotal)+" GB")
-	}
-	if d, ok := disk, diskOK; ok {
-		parts = append(parts, ui.Dim("диск ")+ui.Percent(d.Percent())+ui.Dim(", свободно "+ui.Bytes(int64(d.Avail))))
-	}
-	if battOK {
-		text := strconv.Itoa(batt.Percent) + "%"
-		if note := batt.Note(); note != "" {
-			text += ", " + note
+	var out []string
+	if memTotal > 0 {
+		cell := ui.BarAt(int(memUsed*100/memTotal), barW, 85, 95) + ui.Dim(gb(memUsed)+" из "+gb(memTotal)+" GB")
+		var tail []string
+		if loadOK {
+			tail = append(tail, ui.Dim("нагрузка ")+ui.Percent(loadPct))
 		}
-		if batt.Low() {
-			text = ui.Warn(text)
+		if battOK {
+			tail = append(tail, ui.Dim("батарея ")+batteryText(batt))
 		}
-		parts = append(parts, ui.Dim("батарея ")+text)
+		out = append(out, row("память", ui.Pad(cell, cellW)+strings.Join(tail, "  ")))
 	}
-	if ip != "" {
-		parts = append(parts, ui.Dim("ip ")+ip)
+	if diskOK {
+		out = append(out, row("диск", ui.BarAt(disk.Percent(), barW, 85, 95)+ui.Dim("свободно "+ui.Bytes(int64(disk.Avail)))))
 	}
-	if docker != "" {
-		parts = append(parts, ui.Dim(docker))
-	}
-	line2 := ui.Label("машина   ") + strings.Join(parts, "  ")
 	// Пожиратели CPU - сюда же: про них и надо узнать при открытии терминала, а не через три дня.
-	return append([]string{line1, line2}, machine.HogLines("")...)
+	return append(out, machine.HogLines("")...)
 }
 
-func dockerLine() string {
-	if !runner.Has("docker") || !sysinfo.DockerUp() {
-		return ""
+func batteryText(b sysinfo.Battery) string {
+	text := strconv.Itoa(b.Percent) + "%"
+	if note := b.Note(); note != "" {
+		text += ", " + note
 	}
-	out, err := runner.Output("docker", "ps", "-q")
-	if err != nil {
-		return "docker запущен"
+	if b.Low() {
+		return ui.Warn(text)
 	}
-	return "docker " + strconv.Itoa(len(strings.Fields(out))) + " конт."
+	return text
 }
 
 func project(cfg *config.Config) []string {
@@ -110,7 +86,7 @@ func project(cfg *config.Config) []string {
 		return nil
 	}
 	dir := cfg.ProjectDir(p)
-	line := ui.Label("проект   ") + p.Name + ui.Dim("  "+run.Stack(dir))
+	line := p.Name + ui.Dim("  "+run.Stack(dir))
 	if g, ok := gitx.Status(dir); ok {
 		line += "  " + g.Line()
 	}
@@ -118,22 +94,35 @@ func project(cfg *config.Config) []string {
 	if l, busy := netinfo.PortBusy(port); busy {
 		line += "  " + ui.Info("порт "+port+" занят "+l.Command)
 	}
-	return []string{line}
+	return []string{row("проект", line)}
 }
 
+// network: интерфейс и адрес; VPN и обход, если включён; живые туннели. Шлюз покажет tim net.
 func network(cfg *config.Config) []string {
-	phys, gw := netinfo.Physical()
+	phys, _ := netinfo.Physical()
 	if phys.Device == "" {
-		return []string{ui.Bad("сеть     ") + "активного интерфейса нет"}
+		return []string{row("сеть", ui.Bad("активного интерфейса нет"))}
 	}
 	name := phys.Name
 	if name != phys.Device {
 		name += ui.Dim(" " + phys.Device)
 	}
-	line := ui.Label("сеть     ") + name + ui.Dim(" шлюз "+gw)
+	parts := []string{name}
+	if ip := netinfo.IfaceIPv4(phys.Device); ip != "" {
+		parts = append(parts, ip)
+	}
 	inet := netinfo.InternetIface()
 	if netinfo.IsTunnelIface(inet) {
-		line += "  " + ui.Warn("интернет через VPN "+inet)
+		parts = append(parts, ui.Warn("VPN "+inet))
+		if len(cfg.Hosts) > 0 {
+			if ok, total, known := bypass.QuickCount(); known {
+				state := fmt.Sprintf("обход %d/%d", ok, total)
+				if ok < total {
+					state = ui.Warn(state + " (tim route fix)")
+				}
+				parts = append(parts, state)
+			}
+		}
 	}
 	var tun []string
 	for _, t := range sshx.Known() {
@@ -145,18 +134,9 @@ func network(cfg *config.Config) []string {
 		tun = append(tun, "all")
 	}
 	if len(tun) > 0 {
-		line += "  " + ui.Info("туннели: "+strings.Join(tun, " "))
+		parts = append(parts, ui.Info("туннели: "+strings.Join(tun, " ")))
 	}
-	if len(cfg.Hosts) > 0 && netinfo.IsTunnelIface(inet) {
-		ok, total := bypass.BypassCount(cfg)
-		seenBypass.Store(&[2]int{ok, total})
-		state := fmt.Sprintf("обход %d/%d", ok, total)
-		if ok < total {
-			state = ui.Warn(state + " (tim route fix)")
-		}
-		line += "  " + state
-	}
-	return []string{line}
+	return []string{row("сеть", strings.Join(parts, "  "))}
 }
 
 func ports(cfg *config.Config) []string {
@@ -187,23 +167,43 @@ func ports(cfg *config.Config) []string {
 	for i, n := range names {
 		items[i] = n + ": " + ui.Dim(strings.Join(byProject[n], ", "))
 	}
-	return []string{ui.Label("запущено ") + strings.Join(items, "  ")}
+	return []string{row("запущено", strings.Join(items, "  "))}
 }
 
+// services: службы brew и упавшие; контейнеры docker - тут же, это те же базы и очереди.
 func services(*config.Config) []string {
-	up, bad, ok := sysinfo.Services()
-	if !ok || len(up) == 0 && len(bad) == 0 {
+	var up, bad []string
+	var ok bool
+	var containers map[int]sysinfo.Container
+	par.All(
+		func() { up, bad, ok = sysinfo.Services() },
+		func() { containers = sysinfo.Containers() },
+	)
+	var parts []string
+	if ok && len(up) > 0 {
+		parts = append(parts, strings.Join(up, "  "))
+	}
+	if len(bad) > 0 {
+		parts = append(parts, ui.Bad("упали: "+strings.Join(bad, ", "))+ui.Dim("  (tim svc)"))
+	}
+	if len(containers) > 0 {
+		var names []string
+		for _, c := range containers {
+			if !slices.Contains(names, c.Name) {
+				names = append(names, c.Name)
+			}
+		}
+		sort.Strings(names)
+		parts = append(parts, ui.Dim("docker: ")+strings.Join(names, ", "))
+	}
+	if len(parts) == 0 {
 		return nil
 	}
-	line := ui.Label("службы   ") + strings.Join(up, ", ")
-	if len(bad) > 0 {
-		line += "  " + ui.Bad("упали: "+strings.Join(bad, ", ")) + ui.Dim("  (tim svc)")
-	}
-	return []string{line}
+	return []string{row("службы", strings.Join(parts, "  "))}
 }
 
 func repos(cfg *config.Config) []string {
-	type row struct {
+	type repoRow struct {
 		name string
 		g    gitx.State
 	}
@@ -213,21 +213,21 @@ func repos(cfg *config.Config) []string {
 			clones = append(clones, &cfg.Projects[i])
 		}
 	}
-	states := par.Map(clones, par.Limit, func(p *config.Project) row {
+	states := par.Map(clones, par.Limit, func(p *config.Project) repoRow {
 		g, _ := gitx.Status(cfg.ProjectDir(p))
-		return row{p.Name, g}
+		return repoRow{p.Name, g}
 	})
-	var rows []row
+	var rows []repoRow
 	for _, r := range states {
 		if r.g.Changes > 0 || r.g.Ahead > 0 {
 			rows = append(rows, r)
 		}
 	}
 	if len(rows) == 0 {
-		return []string{ui.Label("репо     ") + ui.Dim("всё закоммичено и отправлено")}
+		return []string{row("репо", ui.Dim("всё закоммичено и отправлено"))}
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
-	out := []string{ui.Label("репо     ") + strconv.Itoa(len(rows)) + ui.Dim(" с изменениями или неотправленным")}
+	out := []string{row("репо", strconv.Itoa(len(rows))+ui.Dim(" с изменениями или неотправленным"))}
 	for i, r := range rows {
 		if i == 6 {
 			out = append(out, ui.Dim(fmt.Sprintf("         и ещё %d", len(rows)-6)))
@@ -248,7 +248,7 @@ func hogs(*config.Config) []string {
 	for _, p := range list[:min(3, len(list))] {
 		items = append(items, fmt.Sprintf("%s %.0f%%", procs.Name(p.Comm, p.Args), p.CPU))
 	}
-	return []string{ui.Label("cpu      ") + strings.Join(items, "  ")}
+	return []string{row("cpu", strings.Join(items, "  "))}
 }
 
 func versions(*config.Config) []string {
@@ -278,5 +278,5 @@ func versions(*config.Config) []string {
 			items = append(items, v)
 		}
 	}
-	return []string{ui.Label("версии   ") + strings.Join(items, "  ")}
+	return []string{row("версии", strings.Join(items, "  "))}
 }
