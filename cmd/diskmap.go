@@ -58,7 +58,7 @@ func mapCachePath() string { return paths.State("disk-map.json") }
 
 // measureMap: дерево размеров. Свежий замер домашней папки идёт десятки секунд, поэтому
 // результат живёт 15 минут: сразу после краткого обзора --all не пересчитывает заново.
-func measureMap(roots []string, fresh bool) (diskuse.Tree, time.Time) {
+func measureMap(roots []string, fresh bool, progress func(done, total int, root string)) (diskuse.Tree, time.Time) {
 	if !fresh {
 		if data, err := os.ReadFile(mapCachePath()); err == nil {
 			var c mapCache
@@ -68,20 +68,15 @@ func measureMap(roots []string, fresh bool) (diskuse.Tree, time.Time) {
 		}
 	}
 	skip := map[string]bool{"/proc": true, "/sys": true, "/dev": true, "/run": true}
-	tty := stdoutTerminal()
 	t := diskuse.Tree{}
 	for _, r := range roots {
-		progress := func(done, total int) {
-			if tty {
-				fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("считаю %s: %d из %d"), showPath(r), done, total)
+		for k, v := range diskuse.Measure(r, 8, skip, func(done, total int) {
+			if progress != nil {
+				progress(done, total, r)
 			}
-		}
-		for k, v := range diskuse.Measure(r, 8, skip, progress) {
+		}) {
 			t[k] = v
 		}
-	}
-	if tty {
-		fmt.Fprint(os.Stderr, "\r\033[2K")
 	}
 	pruned := t.Prune(50 << 20)
 	if data, err := json.Marshal(mapCache{At: time.Now(), Roots: roots, Tree: pruned}); err == nil {
@@ -89,6 +84,19 @@ func measureMap(roots []string, fresh bool) (diskuse.Tree, time.Time) {
 		_ = os.WriteFile(mapCachePath(), data, 0o600)
 	}
 	return pruned, time.Now()
+}
+
+// cliProgress: ход замера в stderr, пока команда идёт в терминале.
+func cliProgress() func(done, total int, root string) {
+	if !stdoutTerminal() {
+		return nil
+	}
+	return func(done, total int, root string) {
+		fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("считаю %s: %d из %d"), showPath(root), done, total)
+		if done == total {
+			fmt.Fprint(os.Stderr, "\r\033[2K")
+		}
+	}
 }
 
 func stdoutTerminal() bool {
@@ -128,7 +136,7 @@ func diskMap(args []string) error {
 	if diskAll {
 		min = 100 << 20
 	}
-	tree, at := measureMap(roots, diskFresh)
+	tree, at := measureMap(roots, diskFresh, cliProgress())
 	home := paths.Home()
 	stop := func(p string) bool {
 		l, _, ok := diskuse.LabelOf(p, home)

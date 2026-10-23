@@ -1,20 +1,14 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/TimurTurdyev/tim/internal/diskuse"
-	"github.com/TimurTurdyev/tim/internal/paths"
-	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
-	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 var diskBrowse bool
@@ -22,145 +16,14 @@ var diskBrowse bool
 // diskBrowseRun: обозреватель по папкам. Корень - весь занятый диск: домашняя папка, программы,
 // тома и то, что не разобрать, так что сумма сходится с df и видно, куда копать.
 func diskBrowseRun(args []string) error {
-	roots := mapRoots()
-	if len(args) > 0 {
-		r, err := filepath.Abs(filepathExpand(args[0]))
-		if err != nil {
-			return err
-		}
-		roots = []string{r}
+	st, err := newDiskState(args)
+	if err != nil {
+		return err
 	}
-	tree, _ := measureMap(roots, diskFresh)
-	var mu sync.Mutex
-	home := paths.Home()
-	entry := func(p string, size int64) tui.Entry {
-		e := tui.Entry{Name: filepath.Base(p), Path: p, Size: size, Dir: true}
-		if l, _, ok := diskuse.LabelOf(p, home); ok {
-			e.Hint = l.Name
-			if l.Hint != "" {
-				e.Hint += " \u2192 " + l.Hint
-			}
-		}
-		return e
-	}
-	var vols []mapRow
-	if len(args) == 0 {
-		vols = volumeRows()
-	}
-	// build: корень и верхний уровень заново из дерева - после уборки размеры другие.
-	var top []tui.Entry
-	var used int64
-	build := func() tui.Entry {
-		rootEntry := tui.Entry{Name: "диск", Dir: true}
-		top = nil
-		for _, r := range roots {
-			e := entry(r, tree[r])
-			e.Name = showPath(r)
-			top = append(top, e)
-			rootEntry.Size += tree[r]
-		}
-		if len(args) > 0 {
-			rootEntry = entry(roots[0], tree[roots[0]])
-			rootEntry.Name = showPath(roots[0])
-			return rootEntry
-		}
-		for _, v := range vols {
-			top = append(top, tui.Entry{Name: v.name, Size: v.size, Hint: v.hint})
-			rootEntry.Size += v.size
-		}
-		if d, ok := sysinfo.DataDisk(); ok {
-			used = int64(d.Size - d.Avail)
-			if rest := used - rootEntry.Size; rest > 1<<30 {
-				top = append(top, tui.Entry{Name: "не разобрано", Size: rest, Hint: "без прав не прочитать, снимки Time Machine, копии Chrome"})
-			}
-			rootEntry.Size = max(used, rootEntry.Size)
-		}
-		return rootEntry
-	}
-	kids := func(p string) []tui.Entry {
-		if p == "" {
-			return sortEntries(top)
-		}
-		mu.Lock()
-		size := tree[p]
-		var list []tui.Entry
-		var sum int64
-		for k, v := range tree {
-			if filepath.Dir(k) == p && k != p {
-				list = append(list, entry(k, v))
-				sum += v
-			}
-		}
-		mu.Unlock()
-		// В кэше только папки от 50 MB и до глубины замера: если внутри большой папки ничего
-		// не видно, меряем её саму на уровень вглубь.
-		if len(list) == 0 && size > 100<<20 {
-			out, _ := runner.Output("du", "-xk", "-d", "1", p)
-			fresh := diskuse.ParseDuAbs(out)
-			mu.Lock()
-			list, sum = nil, 0
-			for k, v := range fresh {
-				if filepath.Dir(k) == p && k != p {
-					tree[k] = v
-					list = append(list, entry(k, v))
-					sum += v
-				}
-			}
-			mu.Unlock()
-		}
-		if rest := size - sum; rest > 1<<20 {
-			list = append(list, tui.Entry{Name: "файлы в этой папке и мелкие папки", Size: rest})
-		}
-		return sortEntries(list)
-	}
-	open := func(p string) {
-		if runtime.GOOS == "darwin" {
-			_, _ = runner.Output("open", "-R", p)
-			return
-		}
-		_, _ = runner.Output("xdg-open", filepath.Dir(p))
-	}
-	var at []string
-	for {
-		marked, trash, where, err := tui.Browse(tui.BrowseOpts{Root: build(), Kids: kids, Open: open, Total: used, Start: at})
-		if err != nil || !trash || len(marked) == 0 {
-			return err
-		}
-		at = where
-		marked = tui.Outermost(marked)
-		sort.Slice(marked, func(i, j int) bool { return marked[i].Size > marked[j].Size })
-		var sum int64
-		for _, e := range marked {
-			ui.Println(ui.Label(ui.Pad(fmtBytes(e.Size), 10)) + showPath(e.Path))
-			sum += e.Size
-		}
-		if !runner.ConfirmDefault("убрать это в Корзину ("+fmtBytes(sum)+")?", false) {
-			continue
-		}
-		var freed int64
-		for _, e := range marked {
-			var err error
-			if strings.HasPrefix(e.Path, home+"/") {
-				err = moveToTrash(e.Path)
-			} else {
-				err = runner.Sudo("mv", e.Path, filepath.Join(home, ".Trash")+"/")
-			}
-			if err != nil {
-				ui.Println(ui.Bad(e.Path + ": " + err.Error()))
-				continue
-			}
-			freed += e.Size
-			mu.Lock()
-			moveInTree(tree, e.Path, filepath.Join(home, ".Trash"))
-			mu.Unlock()
-		}
-		// Сохранённый замер устарел: следующий обзор посчитает заново.
-		_ = os.Remove(mapCachePath())
-		ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину; возвращаюсь к папкам"))
-		if !runner.DryRun {
-			time.Sleep(1500 * time.Millisecond)
-		}
-	}
+	// Замер до экрана: ход печатается в stderr, пока терминал ещё не занят.
+	st.ensure(false, cliLine)
+	fmt.Fprint(os.Stderr, "\r\033[2K")
+	return runScreen(browseScreen(st))
 }
 
 // moveInTree: папка уехала в Корзину - её размер уходит от прежних родителей и приходит к Корзине.
