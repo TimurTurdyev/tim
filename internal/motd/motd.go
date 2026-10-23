@@ -181,12 +181,12 @@ func withArt(lines []string, mood brand.Mood) []string {
 	if !on {
 		return lines
 	}
-	art := brand.Mascot(mood, depth)
+	art := brand.MascotCompact(mood, depth)
 	widest := 0
 	for _, l := range lines {
 		widest = max(widest, ui.Width(l))
 	}
-	if len(art) == 0 || ui.Cols() < brand.MascotWidth+len(artGap)+widest {
+	if len(art) == 0 || ui.Cols() < brand.MascotCompactWidth+len(artGap)+widest {
 		return lines
 	}
 	// Верхняя строка картинки пустая - место для "z" во сне; у короткой сводки без неё куб вровень с текстом.
@@ -195,7 +195,7 @@ func withArt(lines []string, mood brand.Mood) []string {
 	}
 	out := make([]string, max(len(art), len(lines)))
 	for i := range out {
-		left := strings.Repeat(" ", brand.MascotWidth)
+		left := strings.Repeat(" ", brand.MascotCompactWidth)
 		if i < len(art) {
 			left = art[i]
 		}

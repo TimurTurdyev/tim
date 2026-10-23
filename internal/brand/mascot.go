@@ -43,6 +43,20 @@ var mascotSmall = []string{
 
 // mascotLarge: полублоки - пиксель почти квадратный; крыша и бок со скосом, уголки контейнера,
 // экран E 16x10 со строки 8 и колонки 4, полоса k.
+// mascotCompact: значок для сводки и главного экрана - 10 колонок на 5 строк; глаза 2x2.
+var mascotCompact = []string{
+	"....................",
+	"...UUUUUUUUUUUUUU...",
+	"..uuuuuuuuuuuuuuuu..",
+	".NNNNNNNNNNNNNNNNnm.",
+	".NEEEEEEEEEEEEEENnm.",
+	".NEEeeEEEEEEeeEENnm.",
+	".NEEeeEEEEEEeeEENnm.",
+	".NEEEEEEEEEEEEEENnm.",
+	".NkkkkkkkkkkkkkkN...",
+	".NNNNNNNNNNNNNNNN...",
+}
+
 var mascotLarge = []string{
 	"..........................",
 	"..........................",
@@ -96,8 +110,9 @@ const (
 
 // MascotWidth и MascotLargeWidth: ширина мелкой и крупной картинки в колонках терминала.
 const (
-	MascotWidth      = 14
-	MascotLargeWidth = 26
+	MascotWidth        = 14
+	MascotCompactWidth = 10
+	MascotLargeWidth   = 26
 )
 
 // Mood: выражение лица.
@@ -146,16 +161,26 @@ func paintBar(g [][]byte, m Mood) {
 
 // smallGrid: у мелкого глаза - три ряда сегментов: рад - верхние, ошибка - нижние, сон - один нижний.
 func smallGrid(m Mood) [][]byte {
+	return eyeRows(mascotSmall, m, 3)
+}
+
+// compactGrid: у значка два ряда: рад - верхний, ошибка и сон - нижний, цвет по настроению.
+func compactGrid(m Mood) [][]byte {
+	return eyeRows(mascotCompact, m, 2)
+}
+
+// eyeRows: глаза из rows рядов сегментов "e": какие горят, решает настроение.
+func eyeRows(src []string, m Mood, rows int) [][]byte {
 	m, shut := pose(m)
-	g := copyRows(mascotSmall)
-	from, to := 0, 3
+	g := copyRows(src)
+	from, to := 0, rows
 	switch {
 	case m == Happy:
-		to = 2
+		to = rows - 1
 	case m == Upset:
 		from = 1
 	case m == Asleep, shut:
-		from = 2
+		from = rows - 1
 	}
 	row := 0
 	for _, r := range g {
@@ -174,7 +199,7 @@ func smallGrid(m Mood) [][]byte {
 	}
 	paintBar(g, m)
 	if m == Asleep {
-		g[0][26], g[1][27] = 'Z', 'Z'
+		g[0][len(g[0])-2], g[1][len(g[1])-1] = 'Z', 'Z'
 	}
 	return g
 }
@@ -226,7 +251,11 @@ func Mascot(m Mood, d Depth) []string {
 	if d == Basic {
 		return nil
 	}
-	g := smallGrid(m)
+	return quadLines(smallGrid(m), d)
+}
+
+// quadLines: сетка пикселей четвертинками, два пикселя на клетку по обеим осям.
+func quadLines(g [][]byte, d Depth) []string {
 	var lines []string
 	for y := 0; y+1 < len(g); y += 2 {
 		var b strings.Builder
@@ -237,6 +266,14 @@ func Mascot(m Mood, d Depth) []string {
 		lines = append(lines, b.String())
 	}
 	return lines
+}
+
+// MascotCompact: значок - 10 колонок на 5 строк, для сводки и угла главного экрана.
+func MascotCompact(m Mood, d Depth) []string {
+	if d == Basic {
+		return nil
+	}
+	return quadLines(compactGrid(m), d)
 }
 
 // MascotLarge: крупная картинка - полублоками, два пикселя на клетку по высоте. Без 256 цветов - пусто.

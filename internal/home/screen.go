@@ -145,10 +145,9 @@ func (h *Home) load() tui.HomeData {
 			if blink {
 				mood |= brand.Blink
 			}
-			if large {
-				return brand.MascotLarge(mood, depth)
-			}
-			return brand.Mascot(mood, depth)
+			// Крупный маскот на широком окне занимал полэкрана; значок одного размера везде.
+			_ = large
+			return brand.MascotCompact(mood, depth)
 		}
 	}
 	return d
