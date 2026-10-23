@@ -211,7 +211,7 @@ func diskMap(args []string) error {
 	if len(notes) > 0 {
 		ui.Println(ui.Dim(strings.Join(notes, "  \u2022  ")))
 	}
-	ui.Println(ui.Dim("подробнее: --system кеши  \u2022  --deps зависимости проектов  \u2022  --leftovers хвосты удалённых программ"))
+	ui.Println(ui.Dim("копать по папкам: ") + "tim disk -b" + ui.Dim("  \u2022  --system кеши  \u2022  --deps зависимости  \u2022  --leftovers хвосты программ"))
 	if n := chromeClones(); n > 0 && len(args) == 0 {
 		ui.Println(ui.Warn("Chrome хранит "+strconv.Itoa(n)+" "+ui.Plural(n, "копию", "копии", "копий")+" самого себя") +
 			ui.Dim(" - известная ошибка. Закрой Chrome и: trash /private/var/folders/*/*/X/com.google.Chrome.code_sign_clone"))

@@ -376,6 +376,7 @@ var diskCmd = &cobra.Command{
 домашней папки идёт полминуты, дальше 15 минут берётся из кэша (--fresh - заново).
 --all - все места от 100 MB, а не только крупнейшие. --system - кеши программ по именам.
 --deps [папка] - node_modules, vendor, venv и сборки по проектам; --clean - убрать заброшенные в Корзину.
+-b (--browse) - обозреватель по папкам, как у чистильщиков: от всего диска вглубь, отметить и убрать.
 --leftovers - что осталось от удалённых программ: папки в ~/Library, агенты автозапуска без своей
 программы и процессы, чей файл уже удалён.
 tim сам ничего не удаляет, кроме --clean, и то в Корзину и с вопросом.`,
@@ -386,6 +387,9 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 		}
 		if diskLeft {
 			return leftovers()
+		}
+		if diskBrowse {
+			return diskBrowseRun(args)
 		}
 		if !diskDeps && !diskClean {
 			return diskMap(args)
@@ -450,6 +454,7 @@ func init() {
 	diskCmd.Flags().BoolVarP(&diskAll, "all", "a", false, "все места от 100 MB, а не только крупнейшие")
 	diskCmd.Flags().BoolVar(&diskFresh, "fresh", false, "померить заново, а не из кэша")
 	diskCmd.Flags().BoolVar(&diskDeps, "deps", false, "зависимости и сборки по проектам")
+	diskCmd.Flags().BoolVarP(&diskBrowse, "browse", "b", false, "разобрать по папкам: заходить внутрь, отмечать и убирать в Корзину")
 	diskCmd.Flags().BoolVar(&diskLeft, "leftovers", false, "хвосты удалённых программ: папки в Library, агенты автозапуска, процессы")
 	root.AddCommand(diskCmd)
 }
