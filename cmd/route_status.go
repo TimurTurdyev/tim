@@ -90,9 +90,6 @@ var routeStatusCmd = &cobra.Command{
 		default:
 			ui.Println(ui.Bad("служба установлена, но не работает") + ui.Dim("  журнал "+routesLog()))
 		}
-		if oldDaemonPresent() {
-			ui.Println(ui.Warn("стоит и демон vpn-help: два стража спорят за маршруты") + ui.Dim("  sudo tim route install предложит его снять"))
-		}
 		st, ok := guardStatus()
 		if !ok {
 			ui.Println(ui.Dim("отчёта стража нет"))
