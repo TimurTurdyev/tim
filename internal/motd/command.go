@@ -10,16 +10,19 @@ import (
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
-	var all, timing bool
+	var all, full, timing bool
 	c := &cobra.Command{
-		Use:       "status [раздел...] [--all] [--time]",
+		Use:       "status [раздел...] [--full] [--all] [--time]",
 		Aliases:   []string{"motd"},
 		Short:     "Сводка: машина, проект, сеть, порты, сервисы, репозитории, процессы, версии",
-		Long:      "Разделы: system, project, net, ports, services, repos, procs, versions. По умолчанию ключ motd в конфиге или system project net ports services.",
+		Long:      "Разделы: system, project, net, ports, services, repos, procs, versions. По умолчанию ключ motd в конфиге или system net ports; --full добавляет службы.",
 		ValidArgs: names(),
-		RunE:      func(cmd *cobra.Command, args []string) error { return show(env.Cfg, args, all, timing) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return show(env.Cfg, env.Build(), args, all, full, timing)
+		},
 	}
 	c.Flags().BoolVarP(&all, "all", "a", false, "все разделы")
+	c.Flags().BoolVar(&full, "full", false, "со службами и пустой строкой под лок-апом")
 	c.Flags().BoolVar(&timing, "time", false, "сколько занял каждый раздел")
 	return []*cobra.Command{c}
 }

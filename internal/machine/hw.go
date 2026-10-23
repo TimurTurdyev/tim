@@ -219,13 +219,26 @@ func Title(s Snapshot) string {
 	return s.Model + " \u00b7 " + strconv.Itoa(s.Cores) + " ядер \u00b7 " + ui.Bytes(s.MemTotal)
 }
 
-// SwapShort: своп занят больше чем наполовину - памяти не хватает постоянно, а не изредка. Правило
-// то же, что у tim hw и экрана железа; без sysctl (не macOS) - false.
-func SwapShort() bool {
+// SwapNow: занятый своп; без sysctl (не macOS) - false.
+func SwapNow() (hwinfo.Swap, bool) {
 	out, err := runner.Output("sysctl", "-n", "vm.swapusage")
 	if err != nil {
-		return false
+		return hwinfo.Swap{}, false
 	}
-	s, ok := hwinfo.ParseSwap(out)
-	return ok && s.Total > 0 && s.Used*2 > s.Total
+	return hwinfo.ParseSwap(out)
+}
+
+// MemHolder: приложение, которое держит больше всех памяти; без замера CPU, поэтому быстро.
+func MemHolder() string {
+	out, err := runner.Output("ps", procs.PsAll("pid=,ppid=,uid=,rss=,pcpu=,etime=,state=,comm=")...)
+	if err != nil {
+		return ""
+	}
+	top := procs.App{}
+	for _, g := range procs.Groups(procs.ParseFull(out)) {
+		if g.RSS > top.RSS {
+			top = g
+		}
+	}
+	return top.Name
 }

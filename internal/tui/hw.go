@@ -168,7 +168,7 @@ func (h *hw) View(width, height int) string {
 	barW := min(40, max(16, rest*11/20))
 	sparkW := min(30, rest-barW-3)
 	row := func(label string, pct int, hist []float64, tail string) string {
-		line := "  " + styleDim.Render(ui.Fit(label, 11)) + Bar(float64(pct)/100, barW) + "  " + pctLevel(pct).Render(fmt.Sprintf("%3d%%", pct))
+		line := "  " + styleDim.Render(ui.Fit(label, 11)) + ui.Bar(pct, barW)
 		if hist != nil && sparkW >= 8 {
 			line += "   " + spark(hist, sparkW, pct)
 		}

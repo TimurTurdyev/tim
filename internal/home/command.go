@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -41,7 +40,6 @@ type Home struct {
 	prepare   func(args []string)
 	utils     []string
 	entries   func() []tui.CommandEntry
-	lastOK    atomic.Int64 // когда последняя команда из экрана прошла без ошибки - маскот рад
 }
 
 // Options: что экранному режиму нужно от корня.
@@ -121,7 +119,6 @@ func (h *Home) result(args []string) tui.Action {
 	return tui.Action{Push: tui.NewResult(title, func() (string, error) {
 		out, err := h.inside(args)
 		if err == nil {
-			h.lastOK.Store(time.Now().UnixNano())
 			if c, _, ferr := h.root.Find(args); ferr == nil {
 				remember(c, args, h.utils)
 			}

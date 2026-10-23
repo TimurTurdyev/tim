@@ -161,7 +161,7 @@ func Run(root Screen, opts Options) (dir string, err error) {
 	return a.Dir, nil
 }
 
-// Spinner: текущий кадр работы ▖▘▝▗.
+// Spinner: текущий кадр работы - четвертинка клетки.
 func Spinner() string { return spinFrames[animFrame%len(spinFrames)] }
 
 func (a *App) cur() Screen { return a.top().s }
@@ -293,7 +293,7 @@ func (a *App) deliver(id int, msg tea.Msg) tea.Cmd {
 }
 
 // key: порядок разбора клавиши - наложение, ctrl+c, ? : q (если не набор), esc, экран.
-// Строка состояния клавиш не перехватывает: ✕ и ▲ гаснут, а клавиша идёт дальше.
+// Строка состояния клавиш не перехватывает: ошибка и предупреждение гаснут, а клавиша идёт дальше.
 func (a *App) key(msg tea.KeyPressMsg) tea.Cmd {
 	if a.say.text != "" && a.say.lvl != level.OK && !a.say.plain {
 		a.say = sayState{id: a.say.id + 1}

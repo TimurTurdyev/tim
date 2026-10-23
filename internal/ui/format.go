@@ -65,6 +65,11 @@ func DateShort(t time.Time) string {
 	return fmt.Sprintf("%s %d %s, %s", weekdays[t.Weekday()], t.Day(), months[t.Month()], t.Format("15:04"))
 }
 
+// DateLong: "27 окт 2026".
+func DateLong(t time.Time) string {
+	return fmt.Sprintf("%d %s %d", t.Day(), months[t.Month()], t.Year())
+}
+
 // Ago: давность для подписи - "только что", "5 мин назад", "3 дн назад"; нулевое время - "только что".
 func Ago(t time.Time) string {
 	d := time.Since(t)
@@ -168,7 +173,7 @@ func Terminal() bool {
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
-// Percent: проценты загрузки цветом по тем же порогам, что и Bar: от 60 - внимание, от 85 - плохо.
+// Percent: загрузка процессора и машины в процентах: от 60 - внимание, от 85 - плохо.
 func Percent(pct int) string {
 	s := strconv.Itoa(pct) + "%"
 	switch {
@@ -180,25 +185,39 @@ func Percent(pct int) string {
 	return s
 }
 
-// Bar: полоска загрузки в фирменных цветах: спокойно, внимание от 60, плохо от 85 - для процессора
-// и памяти в работе.
-func Bar(pct, width int) string { return BarAt(pct, width, 60, 85) }
-
-// BarAt: та же полоска со своими порогами внимания и беды - у диска они 85 и 95, как у находок.
-func BarAt(pct, width, warn, bad int) string {
+// Bar: полоса доли на width клеток и процент за ней. Заливка нижней половиной клетки по порогу - до 85%
+// зелёная, до 95% янтарная, выше красная; рельс тусклый. Верх клетки пуст, поэтому полосы в соседних строках не
+// сливаются в лесенку.
+func Bar(pct, width int) string {
 	pct = max(0, min(100, pct))
-	full := pct * width / 100
-	head := strings.Repeat("\u2588", full)
-	var b string
-	switch {
-	case pct >= bad:
-		b = Bad(head) + Dim(strings.Repeat("\u2591", width-full))
-	case pct >= warn:
-		b = Warn(head) + Dim(strings.Repeat("\u2591", width-full))
-	default:
-		b = OK(head) + Dim(strings.Repeat("\u2591", width-full))
+	full := (pct*width + 50) / 100
+	if pct > 0 && full == 0 {
+		full = 1
 	}
-	return b + " " + Pad(strconv.Itoa(pct)+"%", 5)
+	paint := OK
+	switch {
+	case pct >= 95:
+		paint = Bad
+	case pct >= 85:
+		paint = Warn
+	}
+	label := fmt.Sprintf("%2d%%", pct)
+	if pct >= 85 {
+		label = paint(label)
+	}
+	return paint(strings.Repeat("\u2584", full)) + ghost(strings.Repeat("\u2582", width-full)) + " " + label
+}
+
+// Progress: полоса хода работы - бирюзовая, без порогов. frac < 0 - доля неизвестна: по рельсу
+// бежит бегунок из четырёх клеток, frame - кадр общего тикера.
+func Progress(frac float64, width, frame int) string {
+	if frac < 0 {
+		at := frame % max(1, width-3)
+		return ghost(strings.Repeat("\u2582", at)) + Label(strings.Repeat("\u2584", 4)) +
+			ghost(strings.Repeat("\u2582", max(0, width-at-4)))
+	}
+	full := max(0, min(width, int(frac*float64(width)+0.5)))
+	return Label(strings.Repeat("\u2584", full)) + ghost(strings.Repeat("\u2582", width-full))
 }
 
 // Pairs: строки по две в ряд, каждая в своей половине width; не влезает пара - по одной.

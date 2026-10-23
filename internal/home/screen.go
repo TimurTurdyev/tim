@@ -2,14 +2,13 @@ package home
 
 import (
 	"cmp"
-	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
-	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/disk"
@@ -40,9 +39,13 @@ var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": 
 	"disk": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
 	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true}
 
+// changingWords: слова, после которых команда меняет систему.
+var changingWords = map[string]bool{"kill": true, "rm": true, "stop": true, "fix": true, "add": true,
+	"--clean": true, "clean": true, "-y": true, "--yes": true}
+
 func (h *Home) screen() tui.Screen {
 	index := sync.OnceValue(h.newIndex)
-	return tui.NewHome(tui.HomeOpts{Load: h.load, Search: func(q string) []tui.Hit { return h.search(index(), q) }})
+	return tui.NewHome(tui.HomeOpts{Load: h.load, Machine: h.machine, Search: func(q string) []tui.Hit { return h.search(index(), q) }})
 }
 
 // runLine: набранная в ":" команда. Экраны открываются экранами, остальное - результатом или после выхода.
@@ -125,45 +128,74 @@ func nextAfter(args []string) []tui.CommandEntry {
 }
 
 func (h *Home) load() tui.HomeData {
-	host, _ := os.Hostname()
-	host, _, _ = strings.Cut(host, ".")
-	d := tui.HomeData{Status: host + " \u00b7 " + time.Now().Format("15:04")}
-	d.Recent = h.recent()
-	d.Sections = h.sections()
-	rows, machine := motd.Rows(h.env.Cfg, nil)
-	d.Machine = rows
-	if ws := machine.Warnings(); len(ws) > 0 {
-		d.Warning, d.WarnOpen = ws[0].Text, h.troubleScreen(ws[0].Kind)
+	return tui.HomeData{
+		Header:   motd.Lockup(h.env.Cfg, h.env.Build(), false),
+		Recent:   h.recent(),
+		Sections: h.sections(),
 	}
-	if on, depth := ui.Colors(); on {
-		d.Art = func(large, blink bool) []string {
-			mood := machine.Mood(time.Now())
-			// Вернулся после удачной команды - рад полминуты.
-			if time.Since(time.Unix(0, h.lastOK.Load())) < 30*time.Second {
-				mood = brand.Happy
-			}
-			if blink {
-				mood |= brand.Blink
-			}
-			// Крупный маскот на широком окне занимал полэкрана; значок одного размера везде.
-			_ = large
-			return brand.MascotCompact(mood, depth)
-		}
-	}
-	return d
 }
 
-// troubleScreen: куда вести по enter из предупреждения.
-func (h *Home) troubleScreen(kind health.Trouble) func() tui.Action {
-	return func() tui.Action {
-		switch kind {
-		case health.DiskFull:
-			return tui.Action{Push: diskScreen(h.env, nil)}
-		case health.Memory:
-			return tui.Action{Push: machine.HWScreen()}
-		}
-		return tui.Action{Push: bypass.Screen(h.env)}
+// machine: беды, строки машины и бейджи разделов - то, что считается дольше остального.
+func (h *Home) machine() tui.HomeMachine {
+	rows, m := motd.Rows(h.env.Cfg, nil)
+	out := tui.HomeMachine{Mood: m.Mood(time.Now()), Badges: map[string]string{}}
+	counts := map[string][2]int{}
+	for _, w := range m.Warnings() {
+		dest, key, open := h.trouble(w.Kind)
+		out.Attention = append(out.Attention, tui.Hit{Kind: tui.KindAttention, Title: ui.Warn("\u25b2 " + w.Text), Hint: dest, Open: open})
+		c := counts[key]
+		c[1]++
+		counts[key] = c
 	}
+	for key, c := range counts {
+		out.Badges[key] = badge(c[0], c[1])
+	}
+	for _, r := range rows {
+		if r.Label == "" {
+			continue
+		}
+		dest, open := h.lineDest(r.Dest)
+		out.Machine = append(out.Machine, tui.Hit{Kind: tui.KindMachine, Title: r.Label, Note: r.Value, Hint: dest, Open: open})
+	}
+	return out
+}
+
+// badge: число бед раздела лампами, сначала ошибки, потом предупреждения.
+func badge(bad, warn int) string {
+	var parts []string
+	if bad > 0 {
+		parts = append(parts, ui.Bad("\u2715 "+strconv.Itoa(bad)))
+	}
+	if warn > 0 {
+		parts = append(parts, ui.Warn("\u25b2 "+strconv.Itoa(warn)))
+	}
+	return strings.Join(parts, " ")
+}
+
+// trouble: куда ведёт беда машины - подпись, буква раздела для бейджа и переход.
+func (h *Home) trouble(kind health.Trouble) (string, string, func() tui.Action) {
+	switch kind {
+	case health.DiskFull:
+		return "Диск", "d", func() tui.Action { return tui.Action{Push: diskScreen(h.env, nil)} }
+	case health.Memory:
+		return "Процессы", "m", func() tui.Action { return tui.Action{Push: machine.ProcsScreen("")} }
+	}
+	return "Сеть", "n", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
+}
+
+// lineDest: куда ведёт строка машины.
+func (h *Home) lineDest(d motd.Dest) (string, func() tui.Action) {
+	switch d {
+	case motd.ToProcs:
+		return "Процессы по памяти", func() tui.Action { return tui.Action{Push: machine.ProcsScreen("")} }
+	case motd.ToDisk:
+		return "Диск", func() tui.Action { return tui.Action{Push: diskScreen(h.env, nil)} }
+	case motd.ToNet:
+		return "Сеть", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
+	case motd.ToRunning:
+		return "Проекты " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: serve.Screen(h.env)} }
+	}
+	return "", nil
 }
 
 // sections: разделы главного экрана; по ним же ищет строка поиска.
@@ -172,12 +204,14 @@ func (h *Home) sections() []tui.Section {
 		return func() tui.Action { return tui.Action{Push: screen()} }
 	}
 	return []tui.Section{
-		{Key: "p", Title: "Проекты", Hint: "go, serve, db, check", Open: push(func() tui.Screen { return projects.Screen(h.env, "") })},
-		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
-		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(machine.HWScreen)},
-		{Key: "n", Title: "Сеть и VPN", Hint: "обход, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
-		{Key: "s", Title: "Dev-серверы", Hint: "фоновые, журналы", Open: push(func() tui.Screen { return serve.Screen(h.env) })},
+		{Key: "p", Title: "Проекты", Hint: "go, serve, запущенные, проверка", Open: push(func() tui.Screen { return projects.Screen(h.env, "") })},
+		{Key: "s", Title: "Серверы", Hint: "состояние, кто ломится, ssh", Open: push(func() tui.Screen {
+			return servers.ServersScreen(h.env, servers.Targets(h.env, nil, false))
+		})},
 		{Key: "w", Title: "Сайты", Hint: "ответ, сертификат, почта, домен", Open: push(func() tui.Screen { return sites.SitesScreen(h.env) })},
+		{Key: "n", Title: "Сеть", Hint: "обход VPN, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(machine.HWScreen)},
+		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: push(h.utilsScreen)},
 	}
 }
@@ -195,12 +229,17 @@ func (h *Home) recent() []tui.Hit {
 	for i := range cfg.Projects {
 		p := &cfg.Projects[i]
 		if e, ok := v[p.Name]; ok {
-			hit := h.projectHit(p, "проект \u00b7 "+ui.Ago(e.Last))
+			hit := h.projectHit(p, age(e.Last)+" \u00b7 проект")
 			items = append(items, item{hit, e.Last})
 		}
 	}
 	for line, e := range visits.Commands() {
-		hit := tui.Hit{Title: "tim " + line, Hint: ui.Ago(e.Last), Open: func() tui.Action { return tui.Action{Command: line} }}
+		hit := tui.Hit{Title: line, Hint: age(e.Last), Open: func() tui.Action { return h.runLine(line) }}
+		// Меняющая команда не выполняется с одного enter: она встаёт в ":" для правки.
+		if changing(line) {
+			hit.Edit = true
+			hit.Open = func() tui.Action { return tui.Action{Command: line} }
+		}
 		items = append(items, item{hit, e.Last})
 	}
 	slices.SortStableFunc(items, func(a, b item) int {
@@ -208,17 +247,42 @@ func (h *Home) recent() []tui.Hit {
 	})
 	var out []tui.Hit
 	for _, it := range items[:min(recentRows, len(items))] {
-		it.hit.Kind = "недавнее"
+		it.hit.Kind = tui.KindRecent
 		out = append(out, it.hit)
 	}
 	return out
+}
+
+// age: давность одной единицей и без "назад" - "5 ч", "2 дн", "только что".
+func age(t time.Time) string {
+	if time.Since(t) < time.Minute {
+		return "только что"
+	}
+	return ui.Short(time.Since(t))
+}
+
+// changing: команда меняет систему или забирает терминал - её не выполнять с одного enter.
+func changing(line string) bool {
+	f := strings.Fields(line)
+	if len(f) == 0 {
+		return false
+	}
+	if exitCmds[f[0]] {
+		return true
+	}
+	for _, w := range f[1:] {
+		if changingWords[w] {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
 	name := p.Name
 	note := ""
 	if st, ok := run.LoadState(name); ok && st.Alive() {
-		note = ui.OK("\u25cf работает :" + st.Port)
+		note = ui.OK("\u25cf :" + st.Port)
 	}
 	return tui.Hit{Kind: "проекты", Title: name, Hint: hint, Note: note, Open: func() tui.Action {
 		return tui.Action{Push: projects.Screen(h.env, name)}

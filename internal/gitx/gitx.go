@@ -57,9 +57,17 @@ func ParseStatus(out string) State {
 
 // Line: ветка и расхождения одной строкой для терминала.
 func (g State) Line() string {
-	parts := []string{g.Branch}
+	if d := g.Delta(); d != "" {
+		return g.Branch + " " + d
+	}
+	return g.Branch
+}
+
+// Delta: изменённые файлы и расхождение с удалённой веткой; пусто - всё чисто и отправлено.
+func (g State) Delta() string {
+	var parts []string
 	if g.Changes > 0 {
-		parts = append(parts, ui.Warn(strconv.Itoa(g.Changes)+" изм."))
+		parts = append(parts, ui.Warn(ui.Count(g.Changes, "изменён", "изменено", "изменено")))
 	}
 	if g.Ahead > 0 {
 		parts = append(parts, ui.Info("+"+strconv.Itoa(g.Ahead)+" не отправлено"))
@@ -67,7 +75,7 @@ func (g State) Line() string {
 	if g.Behind > 0 {
 		parts = append(parts, ui.Warn("-"+strconv.Itoa(g.Behind)+" отстаёт"))
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(parts, ui.Dim(" \u00b7 "))
 }
 
 // IsRepo: в папке свой клон.

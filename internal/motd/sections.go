@@ -11,6 +11,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/gitx"
+	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
@@ -22,103 +23,91 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Карточка машины: метка в labelW колонок, память и диск полосами, остальное словами; цифры полосы
-// занимают cellW, дальше вторая колонка. Полосы краснеют по порогам находок, а не по 60%: занятые
-// две трети диска - это норма, а не повод для жёлтого.
-const (
-	labelW = 9
-	barW   = 15
-	cellW  = 36
-)
+// Карточка машины: подпись Teal, память и диск полосами, остальное словами. Полосы краснеют по
+// порогам находок, а не по 60%: занятые две трети диска - это норма, а не повод для жёлтого.
+const barW = 15
 
 func gb(b uint64) string { return fmt.Sprintf("%.0f", float64(b)/(1<<30)) }
 
-func row(label, text string) string { return ui.Label(ui.Pad(label, labelW)) + text }
+// tail: расшифровка после полосы - через два пробела, части через точку.
+func tail(parts ...string) string { return "  " + strings.Join(parts, ui.Dim(" \u00b7 ")) }
 
-func system(*config.Config) []string {
+func system(*config.Config) []Line {
 	var (
-		loadOK, diskOK, battOK bool
-		loadPct                int
-		memUsed, memTotal      uint64
-		disk                   sysinfo.Disk
-		batt                   sysinfo.Battery
+		loadOK, diskOK    bool
+		loadPct           int
+		memUsed, memTotal uint64
+		disk              sysinfo.Disk
+		h                 health.Machine
 	)
 	par.All(
 		func() { loadPct, loadOK = sysinfo.LoadPercent() },
 		func() { memUsed, memTotal = sysinfo.Memory() },
 		func() { disk, diskOK = sysinfo.DataDisk() },
-		func() { batt, battOK = sysinfo.BatteryNow() },
+		func() {
+			h.MemFree, _ = sysinfo.MemFree()
+			if sw, ok := machine.SwapNow(); ok {
+				h.SwapUsed, h.SwapTotal = sw.Used, sw.Total
+			}
+		},
 	)
-	var out []string
+	var out []Line
 	if memTotal > 0 {
-		cell := ui.BarAt(int(memUsed*100/memTotal), barW, 85, 95) + ui.Dim(gb(memUsed)+" из "+gb(memTotal)+" GB")
-		var tail []string
-		if loadOK {
-			tail = append(tail, ui.Dim("нагрузка ")+ui.Percent(loadPct))
+		parts := []string{ui.Dim(gb(memUsed) + " из " + gb(memTotal) + " GB")}
+		switch {
+		case h.SwapShort():
+			parts = append(parts, ui.Warn("swap "+ui.Bytes(h.SwapUsed)))
+		case loadOK:
+			parts = append(parts, ui.Dim("нагрузка ")+ui.Percent(loadPct))
 		}
-		if battOK {
-			tail = append(tail, ui.Dim("батарея ")+batteryText(batt))
-		}
-		out = append(out, row("память", ui.Pad(cell, cellW)+strings.Join(tail, "  ")))
+		out = append(out, Line{"память", ui.Bar(int(memUsed*100/memTotal), barW) + tail(parts...), ToProcs})
 	}
 	if diskOK {
-		out = append(out, row("диск", ui.BarAt(disk.Percent(), barW, 85, 95)+ui.Dim("свободно "+ui.Bytes(int64(disk.Avail)))))
+		out = append(out, Line{"диск", ui.Bar(disk.Percent(), barW) + tail(ui.Dim("свободно "+ui.Bytes(int64(disk.Avail)))), ToDisk})
 	}
-	// Пожиратели CPU - сюда же: про них и надо узнать при открытии терминала, а не через три дня.
-	return append(out, machine.HogLines("")...)
+	return out
 }
 
-func batteryText(b sysinfo.Battery) string {
-	text := strconv.Itoa(b.Percent) + "%"
-	if note := b.Note(); note != "" {
-		text += ", " + note
-	}
-	if b.Low() {
-		return ui.Warn(text)
-	}
-	return text
-}
-
-func project(cfg *config.Config) []string {
+func project(cfg *config.Config) []Line {
 	cwd, _ := os.Getwd()
 	p, ok := cfg.ProjectHere(cwd)
 	if !ok {
 		return nil
 	}
 	dir := cfg.ProjectDir(p)
-	line := p.Name + ui.Dim("  "+run.Stack(dir))
+	parts := []string{p.Name, ui.Dim(run.Stack(dir))}
 	if g, ok := gitx.Status(dir); ok {
-		line += "  " + g.Line()
+		parts = append(parts, g.Line())
 	}
 	port := run.ProjectPort(p, dir)
 	if l, busy := netinfo.PortBusy(port); busy {
-		line += "  " + ui.Info("порт "+port+" занят "+l.Command)
+		parts = append(parts, ui.Info("порт "+port+" занят "+l.Command))
 	}
-	return []string{row("проект", line)}
+	return []Line{{Label: "проект", Value: strings.Join(parts, ui.Dim(" \u00b7 "))}}
 }
 
 // network: интерфейс и адрес; VPN и обход, если включён; живые туннели. Шлюз покажет tim net.
-func network(cfg *config.Config) []string {
+func network(cfg *config.Config) []Line {
 	phys, _ := netinfo.Physical()
 	if phys.Device == "" {
-		return []string{row("сеть", ui.Bad("активного интерфейса нет"))}
+		return []Line{{"сеть", ui.Bad("\u2715 активного интерфейса нет"), ToNet}}
 	}
 	name := phys.Name
 	if name != phys.Device {
 		name += ui.Dim(" " + phys.Device)
 	}
-	parts := []string{name}
 	if ip := netinfo.IfaceIPv4(phys.Device); ip != "" {
-		parts = append(parts, ip)
+		name += "  " + ip
 	}
+	parts := []string{name}
 	inet := netinfo.InternetIface()
 	if netinfo.IsTunnelIface(inet) {
 		parts = append(parts, ui.Warn("VPN "+inet))
 		if len(cfg.Hosts) > 0 {
 			if ok, total, known := bypass.QuickCount(); known {
-				state := fmt.Sprintf("обход %d/%d", ok, total)
+				state := fmt.Sprintf("обход %d из %d", ok, total)
 				if ok < total {
-					state = ui.Warn(state + " (tim route fix)")
+					state = ui.Warn(state)
 				}
 				parts = append(parts, state)
 			}
@@ -136,10 +125,10 @@ func network(cfg *config.Config) []string {
 	if len(tun) > 0 {
 		parts = append(parts, ui.Info("туннели: "+strings.Join(tun, " ")))
 	}
-	return []string{row("сеть", strings.Join(parts, "  "))}
+	return []Line{{"сеть", strings.Join(parts, ui.Dim(" \u00b7 ")), ToNet}}
 }
 
-func ports(cfg *config.Config) []string {
+func ports(cfg *config.Config) []Line {
 	byProject := map[string][]string{}
 	var names []string
 	for _, r := range machine.Ports(cfg) {
@@ -153,9 +142,9 @@ func ports(cfg *config.Config) []string {
 		if r.Kind != "" {
 			item = r.Kind + " " + item
 		}
-		// Вторые сутки на порту - скорее всего забыли: tim ports --old.
+		// Давно на порту - скорее всего забыли: tim ports --old.
 		if r.Uptime >= machine.ForgottenAfter {
-			item += ui.Warn(fmt.Sprintf(" (%d ч)", int(r.Uptime.Hours())))
+			item += ui.Warn(" " + ui.Short(r.Uptime))
 		}
 		byProject[r.Project] = append(byProject[r.Project], item)
 	}
@@ -165,13 +154,13 @@ func ports(cfg *config.Config) []string {
 	sort.Strings(names)
 	items := make([]string, len(names))
 	for i, n := range names {
-		items[i] = n + ": " + ui.Dim(strings.Join(byProject[n], ", "))
+		items[i] = n + "  " + ui.Dim(strings.Join(byProject[n], ", "))
 	}
-	return []string{row("запущено", strings.Join(items, "  "))}
+	return []Line{{"запущено", strings.Join(items, ui.Dim(" \u00b7 ")), ToRunning}}
 }
 
 // services: службы brew и упавшие; контейнеры docker - тут же, это те же базы и очереди.
-func services(*config.Config) []string {
+func services(*config.Config) []Line {
 	var up, bad []string
 	var ok bool
 	var containers map[int]sysinfo.Container
@@ -199,10 +188,10 @@ func services(*config.Config) []string {
 	if len(parts) == 0 {
 		return nil
 	}
-	return []string{row("службы", strings.Join(parts, "  "))}
+	return []Line{{Label: "службы", Value: strings.Join(parts, "  ")}}
 }
 
-func repos(cfg *config.Config) []string {
+func repos(cfg *config.Config) []Line {
 	type repoRow struct {
 		name string
 		g    gitx.State
@@ -224,21 +213,21 @@ func repos(cfg *config.Config) []string {
 		}
 	}
 	if len(rows) == 0 {
-		return []string{row("репо", ui.Dim("всё закоммичено и отправлено"))}
+		return []Line{{Label: "репо", Value: ui.Dim("всё закоммичено и отправлено")}}
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
-	out := []string{row("репо", strconv.Itoa(len(rows))+ui.Dim(" с изменениями или неотправленным"))}
+	out := []Line{{Label: "репо", Value: strconv.Itoa(len(rows)) + ui.Dim(" с изменениями или неотправленным")}}
 	for i, r := range rows {
 		if i == 6 {
-			out = append(out, ui.Dim(fmt.Sprintf("         и ещё %d", len(rows)-6)))
+			out = append(out, Line{Value: ui.Dim(fmt.Sprintf("и ещё %d", len(rows)-6))})
 			break
 		}
-		out = append(out, "         "+ui.Pad(r.name, 22)+" "+r.g.Line())
+		out = append(out, Line{Value: ui.Pad(r.name, 22) + " " + r.g.Line()})
 	}
 	return out
 }
 
-func hogs(*config.Config) []string {
+func hogs(*config.Config) []Line {
 	list, err := procs.All()
 	if err != nil {
 		return nil
@@ -248,10 +237,10 @@ func hogs(*config.Config) []string {
 	for _, p := range list[:min(3, len(list))] {
 		items = append(items, fmt.Sprintf("%s %.0f%%", procs.Name(p.Comm, p.Args), p.CPU))
 	}
-	return []string{row("cpu", strings.Join(items, "  "))}
+	return []Line{{Label: "cpu", Value: strings.Join(items, "  ")}}
 }
 
-func versions(*config.Config) []string {
+func versions(*config.Config) []Line {
 	type probe struct {
 		name string
 		args []string
@@ -278,5 +267,5 @@ func versions(*config.Config) []string {
 			items = append(items, v)
 		}
 	}
-	return []string{row("версии", strings.Join(items, "  "))}
+	return []Line{{Label: "версии", Value: strings.Join(items, "  ")}}
 }

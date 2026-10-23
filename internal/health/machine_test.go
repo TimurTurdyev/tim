@@ -19,6 +19,7 @@ func TestMachineMood(t *testing.T) {
 		{"пара адресов мимо обхода", Machine{BypassOK: 725, BypassAll: 729, MemFree: 80}, brand.Worried, 1},
 		{"четверть целей в VPN", Machine{BypassOK: 500, BypassAll: 729}, brand.Upset, 1},
 		{"своп не показатель, память по системе", Machine{MemFree: 12}, brand.Worried, 1},
+		{"своп занят больше половины", Machine{MemFree: 50, SwapUsed: 44 << 27, SwapTotal: 6 << 30}, brand.Worried, 1},
 		{"диск полон", Machine{DiskPct: 96, DiskFree: 1 << 30}, brand.Upset, 1},
 		{"память неизвестна", Machine{MemFree: 0}, brand.Calm, 0},
 	}

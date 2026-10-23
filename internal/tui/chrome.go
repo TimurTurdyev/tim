@@ -34,7 +34,7 @@ func keySlot(k string) int {
 
 func quietKey(k string) bool { return k == "?" || k == "esc" || k == ":" }
 
-// screenKeys: клавиши экрана по слотам и общие в конце. "↑↓ выбор" не пишется: стрелки знают все.
+// screenKeys: клавиши экрана по слотам и общие в конце. стрелки не пишутся: их знают все.
 func (a *App) screenKeys(s Screen) []Key {
 	esc := "назад"
 	if len(a.stack) == 1 {
@@ -52,7 +52,7 @@ func (a *App) screenKeys(s Screen) []Key {
 	}
 	slices.SortStableFunc(keys, func(x, y Key) int { return keySlot(x.K) - keySlot(y.K) })
 	if !a.typing() {
-		if len(a.stack) == 1 && a.opts.RunCommand != nil {
+		if len(a.stack) == 1 && a.opts.RunCommand != nil && a.width >= 100 {
 			keys = append(keys, Key{":", "команда"})
 		}
 		keys = append(keys, Key{"?", "клавиши"})

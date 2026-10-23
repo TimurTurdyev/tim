@@ -80,6 +80,7 @@ func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 		r.done = true
 		r.err = msg.err
 		r.lines = strings.Split(strings.TrimRight(msg.out, "\n"), "\n")
+		markOutcome(msg.err == nil)
 		if msg.err != nil {
 			r.lines = append(r.lines, "", styleBad.Render(symCross+" "+msg.err.Error()))
 		}

@@ -266,8 +266,7 @@ func (d *disk) View(width, height int) string {
 			"  "+styleDim.Render("Можно не ждать: esc - назад, замер досчитается в фоне, пока tim открыт."))
 		return strings.Join(out, "\n")
 	}
-	frac := float64(d.data.UsedPct) / 100
-	out = append(out, "  "+Bar(frac, min(60, width-40))+"  "+pctStyle(d.data.UsedPct)+
+	out = append(out, "  "+ui.Bar(d.data.UsedPct, 20)+
 		styleDim.Render("  замер "+ui.Ago(d.data.MeasuredAt)+", r - заново"))
 	out = append(out, "")
 	out = append(out, "  "+d.tabs(width-2), "")
@@ -346,15 +345,4 @@ func (d *disk) tabs(width int) string {
 		return full
 	}
 	return render(true)
-}
-
-func pctStyle(pct int) string {
-	s := itoa(pct) + "%"
-	switch {
-	case pct >= 85:
-		return styleBad.Render(s)
-	case pct >= 60:
-		return styleAmber.Render(s)
-	}
-	return styleText.Render(s)
 }

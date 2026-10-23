@@ -28,6 +28,23 @@ type Env struct {
 	Home   func() tui.Screen // главный экран: туда уходит мастер первого запуска
 }
 
+// Build: сборка для лок-апа - "сборка e3642b7" до первого тега, у релиза его версия. Версия go install
+// вида v0.0.0-20251022162241-8c6e20c7cc4a+dirty длинная и ничего не говорит человеку.
+func (e *Env) Build() string {
+	v := e.Version
+	if i := strings.LastIndex(v, "-"); i > 0 && strings.HasPrefix(v, "v0.0.0-") {
+		c := strings.TrimSuffix(v[i+1:], "+dirty")
+		if len(c) > 7 {
+			c = c[:7]
+		}
+		return "сборка " + c
+	}
+	if v == "" || v == "dev" {
+		return "сборка dev"
+	}
+	return v
+}
+
 // Save записывает конфиг. В dry-run только говорит об этом; комментарии TOML при записи теряются,
 // и об этом стоит предупредить один раз - прежний файл остаётся в .bak.
 func (e *Env) Save() error {

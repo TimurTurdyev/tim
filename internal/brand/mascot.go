@@ -4,8 +4,8 @@ import "strings"
 
 // Маскот - импульсный контейнер: куб в три четверти, на крыше и боку рёбра, на передней грани экран
 // с глазами и полоса готовности. Рисунков два, под клетку терминала около 1:2.4 (JetBrains Mono с
-// интервалом 1.1; Menlo - 1:2), чтобы передняя грань была квадратной: мелкий - четвертинками клетки,
-// 14 колонок на 6 строк; крупный - полублоками, 26 на 11, с экраном 16x10, на котором видно настроение.
+// интервалом 1.1; Menlo - 1:2), чтобы передняя грань была квадратной: значок - четвертинками клетки,
+// 10 колонок на 5 строк; крупный - полублоками, 26 на 11, с экраном 16x10, на котором видно настроение.
 var mascotPal = map[byte]RGB{
 	'U': {168, 176, 196}, // крыша
 	'u': {132, 140, 160}, // её рёбра
@@ -19,31 +19,22 @@ var mascotPal = map[byte]RGB{
 	'T': {52, 196, 184},  // глаза: ярче фирменного бирюзового, на тёмном экране светятся
 	'W': {220, 255, 250}, // блик в глазу
 	'q': {24, 100, 95},   // глаза во сне
-	'G': Dark[Green],     // готово
-	'Y': Dark[Amber],     // тревога
-	'R': Dark[Red],       // ошибка
+	'G': Dark[Green],     // полоса: готово
+	'y': Dark[Amber],     // полоса: тревога
+	'r': Dark[Red],       // полоса: ошибка
+	'Y': Dark[Amber],     // глаза в тревоге: на тёмном экране яркие в любой теме
+	'R': Dark[Red],       // глаза при ошибке
 	'Z': {140, 170, 255}, // z во сне
 }
 
-// mascotSmall: четвертинки - в клетке две краски, поэтому глаза e и полоса k не делят клетку с корпусом.
-var mascotSmall = []string{
-	"............................",
-	"............................",
-	"....UUUUUUUUUUUUUUUUUUUUUU..",
-	"....uuuuuuuuuuuuuuuuuuuuuu..",
-	"..NNNNNNNNNNNNNNNNNNNNNNnm..",
-	"..NNEEEEEEEEEEEEEEEEEENNnm..",
-	"..NNEEEEeeEEEEEEeeEEEENNnm..",
-	"..NNEEEEeeEEEEEEeeEEEENNnm..",
-	"..NNEEEEeeEEEEEEeeEEEENNnm..",
-	"..NNEEEEEEEEEEEEEEEEEENNnm..",
-	"..NNkkkkkkkkkkkkkkkkkkNN....",
-	"..NNNNNNNNNNNNNNNNNNNNNN....",
+// mascotLight: корпус для светлого фона - на белом светлая крыша пропадала.
+var mascotLight = map[byte]RGB{
+	'U': {118, 126, 148}, 'u': {94, 102, 122}, 'h': {92, 100, 118}, 'N': {82, 90, 108},
+	'n': {58, 64, 78}, 'm': {46, 50, 62}, 'c': {60, 66, 80},
+	'G': Light[Green], 'y': Light[Amber], 'r': Light[Red],
 }
 
-// mascotLarge: полублоки - пиксель почти квадратный; крыша и бок со скосом, уголки контейнера,
-// экран E 16x10 со строки 8 и колонки 4, полоса k.
-// mascotCompact: значок для сводки и главного экрана - 10 колонок на 5 строк; глаза 2x2.
+// mascotCompact: значок для лок-апа - 10 колонок на 5 строк; глаза 2x2.
 var mascotCompact = []string{
 	"....................",
 	"...UUUUUUUUUUUUUU...",
@@ -57,6 +48,8 @@ var mascotCompact = []string{
 	".NNNNNNNNNNNNNNNN...",
 }
 
+// mascotLarge: полублоки - пиксель почти квадратный; крыша и бок со скосом, уголки контейнера,
+// экран E 16x10 со строки 8 и колонки 4, полоса k.
 var mascotLarge = []string{
 	"..........................",
 	"..........................",
@@ -97,7 +90,7 @@ var blinkFace = []string{"....", "....", "....", "####", "...."}
 // mascotInk и mascotBar: цвет глаз и полосы по настроению; полосы нет - пустая.
 var (
 	mascotInk = map[Mood]byte{Calm: 'T', Happy: 'T', Worried: 'Y', Upset: 'R', Asleep: 'q'}
-	mascotBar = map[Mood]byte{Happy: 'G', Worried: 'Y', Upset: 'R'}
+	mascotBar = map[Mood]byte{Happy: 'G', Worried: 'y', Upset: 'r'}
 )
 
 // Четвертинки по битам: левый верх, правый верх, левый низ, правый низ.
@@ -108,9 +101,8 @@ const (
 	halfDown = "\u2584"
 )
 
-// MascotWidth и MascotLargeWidth: ширина мелкой и крупной картинки в колонках терминала.
+// MascotCompactWidth и MascotLargeWidth: ширина значка и крупной картинки в колонках терминала.
 const (
-	MascotWidth        = 14
 	MascotCompactWidth = 10
 	MascotLargeWidth   = 26
 )
@@ -128,6 +120,12 @@ const (
 	// Blink: флаг кадра моргания поверх настроения, brand.Calm|brand.Blink; закрытые глаза не моргают.
 	Blink Mood = 1 << 4
 )
+
+// Look: каким нарисовать маскота.
+type Look struct {
+	Mood  Mood // с флагом Blink на кадре моргания
+	Light bool // корпус для светлого фона
+}
 
 // pose: настроение без флага и закрыты ли на этом кадре открытые глаза.
 func pose(m Mood) (Mood, bool) {
@@ -159,14 +157,9 @@ func paintBar(g [][]byte, m Mood) {
 	}
 }
 
-// smallGrid: у мелкого глаза - три ряда сегментов: рад - верхние, ошибка - нижние, сон - один нижний.
-func smallGrid(m Mood) [][]byte {
-	return eyeRows(mascotSmall, m, 3)
-}
-
 // compactGrid: у значка два ряда: рад - верхний, ошибка и сон - нижний, цвет по настроению.
-func compactGrid(m Mood) [][]byte {
-	return eyeRows(mascotCompact, m, 2)
+func compactGrid(l Look) [][]byte {
+	return eyeRows(mascotCompact, l.Mood, 2)
 }
 
 // eyeRows: глаза из rows рядов сегментов "e": какие горят, решает настроение.
@@ -179,7 +172,9 @@ func eyeRows(src []string, m Mood, rows int) [][]byte {
 		to = rows - 1
 	case m == Upset:
 		from = 1
-	case m == Asleep, shut:
+	case shut:
+		from = rows
+	case m == Asleep:
 		from = rows - 1
 	}
 	row := 0
@@ -246,21 +241,28 @@ func largeGrid(m Mood) [][]byte {
 	return g
 }
 
-// Mascot: мелкая картинка для терминала. Без хотя бы 256 цветов рисовать нечем - пусто.
-func Mascot(m Mood, d Depth) []string {
-	if d == Basic {
-		return nil
+// palette: краски маскота под фон; экран, глаза и бегунок одинаковые в обеих темах.
+func palette(light bool) map[byte]RGB {
+	if !light {
+		return mascotPal
 	}
-	return quadLines(smallGrid(m), d)
+	p := make(map[byte]RGB, len(mascotPal))
+	for k, v := range mascotPal {
+		p[k] = v
+	}
+	for k, v := range mascotLight {
+		p[k] = v
+	}
+	return p
 }
 
 // quadLines: сетка пикселей четвертинками, два пикселя на клетку по обеим осям.
-func quadLines(g [][]byte, d Depth) []string {
+func quadLines(g [][]byte, pal map[byte]RGB, d Depth) []string {
 	var lines []string
 	for y := 0; y+1 < len(g); y += 2 {
 		var b strings.Builder
 		for x := 0; x+1 < len(g[y]); x += 2 {
-			b.WriteString(quadCell([4]byte{g[y][x], g[y][x+1], g[y+1][x], g[y+1][x+1]}, d))
+			b.WriteString(quadCell([4]byte{g[y][x], g[y][x+1], g[y+1][x], g[y+1][x+1]}, pal, d))
 		}
 		b.WriteString("\x1b[0m")
 		lines = append(lines, b.String())
@@ -268,25 +270,27 @@ func quadLines(g [][]byte, d Depth) []string {
 	return lines
 }
 
-// MascotCompact: значок - 10 колонок на 5 строк, для сводки и угла главного экрана.
-func MascotCompact(m Mood, d Depth) []string {
+// MascotCompact: значок - 10 колонок на 5 строк, для лок-апа. Без хотя бы 256 цветов рисовать
+// нечем - пусто.
+func MascotCompact(l Look, d Depth) []string {
 	if d == Basic {
 		return nil
 	}
-	return quadLines(compactGrid(m), d)
+	return quadLines(compactGrid(l), palette(l.Light), d)
 }
 
 // MascotLarge: крупная картинка - полублоками, два пикселя на клетку по высоте. Без 256 цветов - пусто.
-func MascotLarge(m Mood, d Depth) []string {
+func MascotLarge(l Look, d Depth) []string {
 	if d == Basic {
 		return nil
 	}
-	g := largeGrid(m)
+	g := largeGrid(l.Mood)
+	pal := palette(l.Light)
 	var lines []string
 	for y := 0; y+1 < len(g); y += 2 {
 		var b strings.Builder
 		for x := range g[y] {
-			b.WriteString(halfCell(g[y][x], g[y+1][x], d))
+			b.WriteString(halfCell(g[y][x], g[y+1][x], pal, d))
 		}
 		b.WriteString("\x1b[0m")
 		lines = append(lines, b.String())
@@ -295,22 +299,22 @@ func MascotLarge(m Mood, d Depth) []string {
 }
 
 // halfCell: верхний пиксель символом, нижний фоном; одинаковые - пробел цветом фона, без символа.
-func halfCell(top, bot byte, d Depth) string {
+func halfCell(top, bot byte, pal map[byte]RGB, d Depth) string {
 	switch {
 	case top == '.' && bot == '.':
 		return "\x1b[0m "
 	case top == bot:
-		return "\x1b[0m\x1b[" + mascotPal[top].BG(d) + "m "
+		return "\x1b[0m\x1b[" + pal[top].BG(d) + "m "
 	case bot == '.':
-		return "\x1b[0m\x1b[" + mascotPal[top].FG(d, "") + "m" + halfUp
+		return "\x1b[0m\x1b[" + pal[top].FG(d, "") + "m" + halfUp
 	case top == '.':
-		return "\x1b[0m\x1b[" + mascotPal[bot].FG(d, "") + "m" + halfDown
+		return "\x1b[0m\x1b[" + pal[bot].FG(d, "") + "m" + halfDown
 	}
-	return "\x1b[" + mascotPal[top].FG(d, "") + ";" + mascotPal[bot].BG(d) + "m" + halfUp
+	return "\x1b[" + pal[top].FG(d, "") + ";" + pal[bot].BG(d) + "m" + halfUp
 }
 
 // quadCell: клетка из четырёх пикселей - самая частая краска символом, вторая фоном.
-func quadCell(px [4]byte, d Depth) string {
+func quadCell(px [4]byte, pal map[byte]RGB, d Depth) string {
 	var fg, bg byte
 	count := map[byte]int{}
 	for _, c := range px {
@@ -337,7 +341,7 @@ func quadCell(px [4]byte, d Depth) string {
 	}
 	glyph := string([]rune(quads)[bits])
 	if bg == 0 {
-		return "\x1b[0m\x1b[" + mascotPal[fg].FG(d, "") + "m" + glyph
+		return "\x1b[0m\x1b[" + pal[fg].FG(d, "") + "m" + glyph
 	}
-	return "\x1b[" + mascotPal[fg].FG(d, "") + ";" + mascotPal[bg].BG(d) + "m" + glyph
+	return "\x1b[" + pal[fg].FG(d, "") + ";" + pal[bg].BG(d) + "m" + glyph
 }

@@ -6,13 +6,23 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Строка состояния - последняя строка тела на всех экранах. Одна грамматика: "✓ <объект>: <итог> ·
-// <время>", "✕ <объект>: <текст>", "▲ <объект>: <что>", "▖ <что делаю> · <секунды>". Та же строка
+// Строка состояния - последняя строка тела на всех экранах. Одна грамматика: знак, "<объект>: <итог>"
+// и время; у работы - "<что делаю>" и идущие секунды. Та же строка
 // показывает фоновую работу, даже если экран, который её начал, уже закрыт.
+
+// moodAfter: сколько маскот помнит исход действия.
+const moodAfter = 30 * time.Second
+
+// outcome: исход последнего действия сессии - маскот полминуты рад или расстроен.
+var outcome struct {
+	ok bool
+	at time.Time
+}
 
 // JobDone: фоновая работа закончилась. Приходит экрану, который её запустил, если он ещё открыт;
 // исход уже написан в строке состояния.
@@ -44,11 +54,31 @@ type job struct {
 	start     time.Time
 }
 
-// Say пишет в строку состояния: ✓ гаснет через 5 с, ▲ через 8 с или от клавиши, ✕ висит до
+// markOutcome запоминает исход действия для настроения маскота.
+func markOutcome(ok bool) {
+	outcome.ok, outcome.at = ok, time.Now()
+}
+
+// sessionMood: настроение машины, а сразу после действия - его исход.
+func sessionMood(base brand.Mood) brand.Mood {
+	switch {
+	case time.Since(outcome.at) >= moodAfter:
+		return base
+	case outcome.ok:
+		return brand.Happy
+	}
+	return brand.Upset
+}
+
+// Say пишет в строку состояния: успех гаснет через 5 с, предупреждение через 8 с или от клавиши, ошибка висит до
 // следующей клавиши и её не съедает. Грамматика текста: "<объект>: <итог>".
 func (a *App) Say(l level.Level, text string) tea.Cmd {
-	if l == level.Bad {
+	switch l {
+	case level.Bad:
 		a.lastErr = text
+		markOutcome(false)
+	case level.OK:
+		markOutcome(true)
 	}
 	a.say = sayState{text: text, lvl: l, id: a.say.id + 1}
 	switch l {
@@ -75,7 +105,7 @@ func (a *App) expire(d time.Duration) tea.Cmd {
 func (a *App) LastError() string { return a.lastErr }
 
 // Job запускает работу в фоне. Пока она идёт, строка состояния показывает what с идущими
-// секундами, клавиши экрана стоят; исход - там же, "✓ <текст>" или "✕ <ошибка>". Экран получает
+// секундами, клавиши экрана стоят; исход - там же, текст или ошибка. Экран получает
 // JobDone, если ещё открыт; закрытый экран работу не отменяет.
 func (a *App) Job(what string, fn func() (string, error)) tea.Cmd {
 	a.lastJob++

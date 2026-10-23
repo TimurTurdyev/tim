@@ -45,16 +45,6 @@ var (
 	}
 )
 
-// Title: слово tim крупными буквами, по строке на цвет градиента.
-var Title = []string{
-	"\u2588\u2580\u2588\u2580\u2588 \u2588 \u2588\u2580\u2584\u2580\u2588",
-	"  \u2588   \u2588 \u2588 \u2580 \u2588",
-	"  \u2580   \u2580 \u2580   \u2580",
-}
-
-// TitleGradient: зелёный - бирюзовый - синий.
-var TitleGradient = []Color{Green, Teal, Blue}
-
 // Color: роль цвета в палитре.
 type Color int
 

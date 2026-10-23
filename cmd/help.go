@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -223,38 +222,14 @@ func setupHelp() {
 	walk(root)
 }
 
-// splash: маскот и логотип рядом; без цветов - просто имя.
+// splash: лок-ап, как у --version; в трубе - две первые строки без значка.
 func splash() {
-	on, depth := ui.Colors()
-	mascot := []string(nil)
-	if on {
-		mascot = brand.Mascot(brand.Calm, depth)
+	lines := versionLines()
+	if on, _ := ui.Colors(); !on {
+		lines = lines[:2]
 	}
-	side := []string{""}
-	for i, line := range brand.Title {
-		if on {
-			side = append(side, "\x1b[1;"+ui.Palette()[brand.TitleGradient[i]].FG(depth, "36")+"m"+line+"\x1b[0m")
-		} else {
-			side = append(side, line)
-		}
-	}
-	side = append(side, ui.Dim("помощник в терминале  "+shortVersion()))
-	if mascot == nil {
-		for _, l := range side[1:] {
-			ui.Println("  " + l)
-		}
-		return
-	}
-	for i := 0; i < max(len(mascot), len(side)); i++ {
-		left := strings.Repeat(" ", brand.MascotWidth)
-		if i < len(mascot) {
-			left = mascot[i]
-		}
-		right := ""
-		if i < len(side) {
-			right = side[i]
-		}
-		ui.Println("  " + left + "   " + right)
+	for _, l := range lockup(lines) {
+		ui.Println(l)
 	}
 }
 

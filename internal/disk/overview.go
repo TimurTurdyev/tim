@@ -75,7 +75,7 @@ func printOverview(cfg *config.Config, args []string, all, fresh, asJSON bool) e
 		return ui.JSON(out)
 	}
 	if haveDisk && len(args) == 0 {
-		ui.Println(ui.Title("Диск") + "  " + ui.Bar(d.Percent(), 30) + ui.Dim("свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
+		ui.Println(ui.Title("Диск") + "  " + ui.Bar(d.Percent(), 20) + ui.Dim("  свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
 		unknown = int64(d.Size-d.Avail) - measured - volumes
 	}
 	shown := shortList(rows, all)

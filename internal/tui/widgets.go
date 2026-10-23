@@ -10,19 +10,6 @@ import (
 
 // Общие детали экранов: полоса, панель в рамке, плитка.
 
-// Bar: полоса на n клеток; цвет по порогу - до 60% спокойный, до 85% внимание, выше плохо.
-func Bar(frac float64, n int) string {
-	f := max(0, min(n, int(frac*float64(n)+0.5)))
-	st := styleAccent
-	switch {
-	case frac >= 0.85:
-		st = styleBad
-	case frac >= 0.6:
-		st = styleAmber
-	}
-	return st.Render(strings.Repeat(symBlock, f)) + styleGhost.Render(strings.Repeat(symBlock, n-f))
-}
-
 // PaneSection: часть панели под перегородкой с подписью.
 type PaneSection struct {
 	Label string

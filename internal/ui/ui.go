@@ -105,9 +105,13 @@ func Dim(s string) string   { return paint(s, "", brand.Gray, "90") }
 func Warn(s string) string  { return paint(s, "", brand.Amber, "33") }
 func Bad(s string) string   { return paint(s, "", brand.Red, "31") }
 func Info(s string) string  { return paint(s, "", brand.Blue, "34") }
+func ghost(s string) string { return paint(s, "", brand.Ghost, "90") }
 
 // Title: заголовок раздела - жирный фирменный.
 func Title(s string) string { return paint(s, "1;", brand.Teal, "36") }
+
+// Strong: главное слово строки - основным цветом жирным.
+func Strong(s string) string { return paint(s, "1;", brand.Text, "39") }
 
 // Colors: цвета включены и сколько их; для картинок вроде маскота.
 func Colors() (bool, brand.Depth) { return enabled.Load(), depth }
@@ -134,6 +138,7 @@ func (proxy) Write(p []byte) (int, error) { return writer().Write(p) }
 
 func Printf(format string, a ...any) { _, _ = fmt.Fprintf(writer(), format, a...) }
 func Println(a ...any)               { _, _ = fmt.Fprintln(writer(), a...) }
+func Print(a ...any)                 { _, _ = fmt.Fprint(writer(), a...) }
 
 func writer() io.Writer {
 	outMu.Lock()

@@ -59,7 +59,7 @@ func serverData(target string) tui.BoardData {
 // serverBars: диск, память и нагрузка полосами.
 func serverBars(r srvinfo.Report) []string {
 	bar := func(label string, pct int, tail string) string {
-		return ui.Pad(label, 10) + tui.Bar(float64(pct)/100, 30) + "  " + ui.Percent(pct) + ui.Dim("  "+tail)
+		return ui.Pad(label, 10) + ui.Bar(pct, 20) + ui.Dim("  "+tail)
 	}
 	var out []string
 	if disk, ok := r.Root(); ok {
