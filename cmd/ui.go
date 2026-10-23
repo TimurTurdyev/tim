@@ -66,8 +66,8 @@ func openUI() error {
 }
 
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
-var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "kill": true, "serve": true, "php": true,
-	"hw": true, "disk": true, "check": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
+var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true,
+	"disk": true, "check": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
 	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true, "server": true}
 
 // runLine: набранная в ":" команда. Экраны открываются экранами, остальное - результатом или после выхода.
@@ -81,6 +81,16 @@ func runLine(line string) tui.Action {
 		return tui.Action{Push: projectsScreen("")}
 	case "ui":
 		return tui.Action{}
+	case "hw":
+		return tui.Action{Push: hwScreen()}
+	case "top":
+		if len(args) == 1 {
+			return tui.Action{Push: procsScreen("")}
+		}
+	case "ps", "kill":
+		if len(args) == 2 {
+			return tui.Action{Push: procsScreen(args[1])}
+		}
 	case "disk":
 		if len(args) == 1 {
 			if s, err := diskScreen(nil); err == nil {
@@ -224,7 +234,7 @@ func loadHome() tui.HomeData {
 			}
 			return tui.Action{Push: s}
 		}},
-		{Key: "m", Title: "Машина", Hint: "процессы, железо, службы", Open: func() tui.Action { return resultAction([]string{"hw"}) }},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: func() tui.Action { return tui.Action{Push: hwScreen()} }},
 		{Key: "n", Title: "Сеть и VPN", Hint: "обход, туннели, порты", Open: func() tui.Action { return resultAction([]string{"vpn"}) }},
 		{Key: "w", Title: "Сайты", Hint: "домен, почта, сертификат", Open: func() tui.Action { return tui.Action{Exit: func() { runAfter([]string{"check"}) }} }},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: func() tui.Action { return resultAction([]string{"help", "utils"}) }},

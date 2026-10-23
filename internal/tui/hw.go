@@ -2,25 +2,25 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-
-	"github.com/TimurTurdyev/tim/internal/brand"
 )
+
+// Живой экран железа: полосы с историей за минуту, самые занятые приложения, вывод словами.
 
 // HWSample: один замер для живого экрана.
 type HWSample struct {
-	CPU, GPU, Mem       int // проценты
+	Title               string // паспорт: модель, ядра, память
+	CPU, GPU, Mem       int    // проценты
 	GPUValid            bool
 	VRAM                int64
 	MemUsed, MemTotal   int64
 	SwapUsed, SwapTotal int64
 	Load                []float64
+	Disk                int // процент занятого
 	Top                 []TopRow
 }
 
@@ -31,236 +31,220 @@ type TopRow struct {
 	RSS  int64
 }
 
+// HWOpts: источники живого экрана.
+type HWOpts struct {
+	Sample func() HWSample // длится около секунды и задаёт такт
+	Procs  func() Screen   // tab
+}
+
 const histLen = 60 // минута истории при замере раз в секунду
 
-type hwModel struct {
-	title   string
-	sample  func() HWSample
-	last    HWSample
-	have    bool
-	cpuH    []float64
-	gpuH    []float64
-	memH    []float64
-	paused  bool
-	busy    bool // замер идёт: второй не запускаем, иначе пауза плодит циклы
-	blink   bool
-	width   int
-	started time.Time
+type hw struct {
+	opts   HWOpts
+	last   HWSample
+	have   bool
+	paused bool
+	busy   bool // замер идёт: второй не запускаем, иначе пауза плодит циклы
+	cpuH   []float64
+	gpuH   []float64
+	memH   []float64
 }
 
-type (
-	sampleMsg HWSample
-	blinkMsg  bool
-)
+type hwSampleMsg HWSample
 
-func (m *hwModel) fetch() tea.Cmd {
-	if m.busy {
+// NewHW создаёт живой экран железа.
+func NewHW(o HWOpts) Screen { return &hw{opts: o} }
+
+func (h *hw) Init() tea.Cmd { return h.fetch() }
+
+func (h *hw) fetch() tea.Cmd {
+	if h.busy {
 		return nil
 	}
-	m.busy = true
-	return func() tea.Msg { return sampleMsg(m.sample()) }
+	h.busy = true
+	return func() tea.Msg { return hwSampleMsg(h.opts.Sample()) }
 }
 
-// nextBlink: моргает раз в несколько секунд, на долю секунды - иначе это не живой, а мигающий.
-func nextBlink(closed bool) tea.Cmd {
-	wait := 4*time.Second + time.Duration(time.Now().UnixNano()%2500)*time.Millisecond
-	if closed {
-		wait = 160 * time.Millisecond
+func (h *hw) Crumbs() []string { return []string{"Машина", "Железо"} }
+
+func (h *hw) Status() string {
+	switch {
+	case !h.have:
+		return "первый замер..."
+	case h.paused:
+		return h.last.Title + " " + symDot + " пауза"
 	}
-	return tea.Tick(wait, func(time.Time) tea.Msg { return blinkMsg(!closed) })
+	return h.last.Title + " " + symDot + " обновляется"
 }
 
-func (m *hwModel) Init() tea.Cmd { return tea.Batch(m.fetch(), nextBlink(false)) }
+func (h *hw) Command() string { return "tim hw --watch" }
 
-func push(h []float64, v int) []float64 {
-	h = append(h, float64(v))
-	if len(h) > histLen {
-		h = h[len(h)-histLen:]
+func (h *hw) Keys() []Key {
+	return []Key{{"tab", "процессы"}, {"space", "пауза"}, {"esc", "назад"}}
+}
+
+func push(hist []float64, v int) []float64 {
+	hist = append(hist, float64(v))
+	if len(hist) > histLen {
+		hist = hist[len(hist)-histLen:]
 	}
-	return h
+	return hist
 }
 
-func (m *hwModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (h *hw) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch msg := msg.(type) {
+	case hwSampleMsg:
+		h.last, h.have, h.busy = HWSample(msg), true, false
+		h.cpuH = push(h.cpuH, h.last.CPU)
+		h.gpuH = push(h.gpuH, h.last.GPU)
+		h.memH = push(h.memH, h.last.Mem)
+		if !h.paused {
+			return h.fetch() // замер сам длится секунду - это и есть такт
+		}
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "q", "esc", "ctrl+c", "й":
-			return m, tea.Quit
-		case "p", "з", "space":
-			m.paused = !m.paused
-			if !m.paused {
-				return m, m.fetch()
+		case "tab", "p", "з":
+			if h.opts.Procs != nil {
+				return app.Push(h.opts.Procs())
+			}
+		case "space", " ":
+			h.paused = !h.paused
+			if !h.paused {
+				return h.fetch()
 			}
 		}
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-	case blinkMsg:
-		m.blink = bool(msg)
-		return m, nextBlink(m.blink)
-	case sampleMsg:
-		m.last, m.have, m.busy = HWSample(msg), true, false
-		m.cpuH = push(m.cpuH, m.last.CPU)
-		m.gpuH = push(m.gpuH, m.last.GPU)
-		m.memH = push(m.memH, m.last.Mem)
-		if !m.paused {
-			return m, m.fetch() // замер сам длится секунду - это и есть такт
-		}
 	}
-	return m, nil
+	return nil
 }
 
-// mood: маскот отражает машину - спит без нагрузки, сердится, когда тяжело.
-func (m *hwModel) mood() brand.Mood {
-	s := m.last
-	switch {
-	case !m.have:
-		return brand.Calm
-	case s.CPU >= 85 || s.GPU >= 90 || (s.SwapTotal > 0 && s.SwapUsed*5 > s.SwapTotal*4):
-		return brand.Upset
-	case s.CPU < 8 && (!s.GPUValid || s.GPU < 8):
-		return brand.Asleep
-	case m.blink:
-		return brand.Blink
-	}
-	return brand.Calm
-}
-
-var (
-	styleLabel = lipgloss.NewStyle().Foreground(colAccent).Width(12)
-	styleDimHW = lipgloss.NewStyle().Foreground(colDim)
-	styleWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color(brand.Amber.Hex()))
-	styleBadHW = lipgloss.NewStyle().Foreground(colBad)
-	styleOKHW  = lipgloss.NewStyle().Foreground(colOK)
-)
-
-func levelStyle(pct int) lipgloss.Style {
+func pctLevel(pct int) lipgloss.Style {
 	switch {
 	case pct >= 85:
-		return styleBadHW
+		return styleBad
 	case pct >= 60:
-		return styleWarn
+		return styleAmber
 	}
-	return styleOKHW
-}
-
-func hwBar(pct, width int) string {
-	pct = max(0, min(100, pct))
-	full := pct * width / 100
-	return levelStyle(pct).Render(strings.Repeat("\u2588", full)) + styleDimHW.Render(strings.Repeat("\u2591", width-full)) +
-		" " + levelStyle(pct).Render(fmt.Sprintf("%3d%%", pct))
+	return styleGood
 }
 
 // spark: история процентов столбиками на постоянной шкале 0-100: спокойные 3% остаются у пола,
 // а не растягиваются на всю высоту, как сделал бы график с подстройкой шкалы.
-func spark(h []float64, width int, pct int) string {
+func spark(hist []float64, width int, pct int) string {
 	bars := []rune{'\u2581', '\u2582', '\u2583', '\u2584', '\u2585', '\u2586', '\u2587', '\u2588'}
-	if len(h) > width {
-		h = h[len(h)-width:]
+	if len(hist) > width {
+		hist = hist[len(hist)-width:]
 	}
 	out := make([]rune, 0, width)
-	for range width - len(h) {
+	for range width - len(hist) {
 		out = append(out, ' ')
 	}
-	for _, v := range h {
+	for _, v := range hist {
 		i := int(v * float64(len(bars)) / 101)
 		out = append(out, bars[max(0, min(len(bars)-1, i))])
 	}
-	return levelStyle(pct).Faint(true).Render(string(out))
+	return pctLevel(pct).Faint(true).Render(string(out))
 }
 
-func gib(b int64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(b)/(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.0f MB", float64(b)/(1<<20))
+func (h *hw) View(width, height int) string {
+	var out []string
+	out = append(out, "")
+	if !h.have {
+		out = append(out, "  "+styleEmpty.Render("первый замер, секунду..."))
+		return strings.Join(out, "\n")
 	}
-	return fmt.Sprintf("%d KB", b>>10)
-}
-
-func (m *hwModel) View() tea.View {
-	d := brand.DetectDepth(os.Getenv("COLORTERM"), os.Getenv("TERM"))
-	mascot := brand.Mascot(m.mood(), d)
-	head := []string{
-		"",
-		styleTitle.Render("tim hw") + "  " + styleDimHW.Render(m.title),
-		styleDimHW.Render(time.Now().Format("15:04:05")),
-	}
-	s := m.last
-	if len(s.Load) == 3 {
-		head = append(head, styleDimHW.Render(fmt.Sprintf("load %.1f %.1f %.1f", s.Load[0], s.Load[1], s.Load[2])))
-	}
-	if m.paused {
-		head = append(head, styleWarn.Render("пауза"))
-	}
-	var b strings.Builder
-	for i := 0; i < max(len(mascot), len(head)); i++ {
-		left := strings.Repeat(" ", brand.MascotWidth)
-		if i < len(mascot) {
-			left = mascot[i]
+	s := h.last
+	barW := min(40, max(16, width-62))
+	sparkW := min(30, max(8, width-20-barW-20))
+	row := func(label string, pct int, hist []float64, tail string) string {
+		line := "  " + styleDim.Render(Pad(label, 11)) + Bar(float64(pct)/100, barW) + "  " + pctLevel(pct).Render(fmt.Sprintf("%3d%%", pct))
+		if hist != nil {
+			line += "   " + spark(hist, sparkW, pct)
 		}
-		right := ""
-		if i < len(head) {
-			right = head[i]
+		if tail != "" {
+			line += "   " + styleDim.Render(tail)
 		}
-		b.WriteString("  " + left + "   " + right + "\n")
+		return line
 	}
-	b.WriteString("\n")
-	if !m.have {
-		b.WriteString("  " + styleDimHW.Render("первый замер...") + "\n")
-		return m.frame(b.String())
-	}
-	barW, sparkW := 22, 30
-	if m.width > 0 && m.width < 90 {
-		sparkW = max(10, m.width-62)
-	}
-	// Пустая строка между показателями: иначе графики истории трёх рядов слипаются в один блок.
-	b.WriteString("  " + styleLabel.Render("процессор") + hwBar(s.CPU, barW) + "  " + spark(m.cpuH, sparkW, s.CPU) + "\n\n")
+	out = append(out, row("процессор", s.CPU, h.cpuH, ""))
 	if s.GPUValid {
-		b.WriteString("  " + styleLabel.Render("видеокарта") + hwBar(s.GPU, barW) + "  " + spark(m.gpuH, sparkW, s.GPU) +
-			"  " + styleDimHW.Render("видеопамять "+gib(s.VRAM)) + "\n\n")
+		out = append(out, row("видеокарта", s.GPU, h.gpuH, "видеопамять "+Human(s.VRAM)))
 	}
-	b.WriteString("  " + styleLabel.Render("память") + hwBar(s.Mem, barW) + "  " + spark(m.memH, sparkW, s.Mem) +
-		"  " + styleDimHW.Render(gib(s.MemUsed)+" из "+gib(s.MemTotal)) + "\n\n")
+	mem := Human(s.MemUsed) + " из " + Human(s.MemTotal)
 	if s.SwapTotal > 0 {
-		sw := gib(s.SwapUsed) + " из " + gib(s.SwapTotal)
-		if s.SwapUsed*2 > s.SwapTotal {
-			sw = styleWarn.Render(sw + ", памяти не хватает")
-		}
-		b.WriteString("  " + styleLabel.Render("swap") + sw + "\n")
+		mem += ", swap " + Human(s.SwapUsed)
 	}
+	out = append(out, row("память", s.Mem, h.memH, mem))
+	if s.Disk > 0 {
+		out = append(out, row("диск", s.Disk, nil, ""))
+	}
+	if len(s.Load) == 3 {
+		out = append(out, "  "+styleDim.Render(fmt.Sprintf("%-11snагрузка %.1f %.1f %.1f за 1, 5 и 15 минут", "", s.Load[0], s.Load[1], s.Load[2])))
+	}
+	out = append(out, "")
 	if len(s.Top) > 0 {
-		b.WriteString("\n  " + styleTitle.Render("больше всех CPU") + "\n")
+		var rows []string
 		for _, r := range s.Top {
-			name := []rune(r.Name)
-			if len(name) > 30 {
-				name = append(name[:29], '~')
-			}
-			b.WriteString("    " + lipgloss.NewStyle().Width(32).Render(string(name)) +
-				levelStyle(int(r.CPU/2)).Render(fmt.Sprintf("%6.1f%%", r.CPU)) + "  " + styleDimHW.Render(gib(r.RSS)) + "\n")
+			rows = append(rows, Pad(Clip(r.Name, 30), 32)+pctLevel(int(r.CPU/2)).Render(fmt.Sprintf("%5.0f%%", r.CPU))+"  "+styleDim.Render(Pad(Human(r.RSS), 9)))
+		}
+		for _, p := range Pane("больше всех", "CPU "+symDot+" память", rows, width-4) {
+			out = append(out, "  "+p)
 		}
 	}
-	return m.frame(b.String())
+	if w := h.advice(); w != "" {
+		out = append(out, "", "  "+styleAmber.Render(symWarn+" "+w)+styleDim.Render("  "+symArrow+"  tab к процессам"))
+	}
+	for len(out) < height {
+		out = append(out, "")
+	}
+	return strings.Join(out[:min(len(out), height)], "\n")
 }
 
-func (m *hwModel) frame(body string) tea.View {
-	keys := []string{"p пауза", "q выход"}
-	for i, k := range keys {
-		key, desc, _ := strings.Cut(k, " ")
-		keys[i] = styleKey.Render(key) + " " + styleHint.Render(desc)
+// advice: вывод словами - что не так и кто виноват.
+func (h *hw) advice() string {
+	s := h.last
+	var byCPU, byMem string
+	var topCPU float64
+	var topRSS int64
+	for _, r := range s.Top {
+		if r.CPU > topCPU {
+			topCPU, byCPU = r.CPU, r.Name
+		}
+		if r.RSS > topRSS {
+			topRSS, byMem = r.RSS, r.Name
+		}
 	}
-	up := styleDimHW.Render("  смотрю " + strconv.Itoa(int(time.Since(m.started).Seconds())) + " с  " + symDot + "  ")
-	v := tea.NewView(body + "\n" + up + strings.Join(keys, styleHint.Render(" "+symDot+" ")))
-	v.AltScreen = true
-	return v
+	switch {
+	case s.SwapTotal > 0 && s.SwapUsed*2 > s.SwapTotal:
+		w := "swap " + Human(s.SwapUsed) + ": памяти не хватает"
+		if byMem != "" {
+			w += "; больше всех держит " + byMem
+		}
+		return w
+	case s.CPU >= 85:
+		w := "процессор занят почти целиком"
+		if byCPU != "" {
+			w += ": " + byCPU + fmt.Sprintf(" %.0f%%", topCPU)
+		}
+		return w
+	case s.Mem >= 90:
+		w := "память почти кончилась"
+		if byMem != "" {
+			w += "; больше всех держит " + byMem + ", " + Human(topRSS)
+		}
+		return w
+	}
+	return ""
 }
 
-// RunHW: живой экран загрузки до q или Esc. sample вызывается в фоне и может занимать секунду.
-func RunHW(title string, sample func() HWSample) error {
-	if !Available() {
-		return ErrNoTTY
+// durShort: длительность словом - для возраста процесса или сервера.
+func durShort(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return itoa(int(d.Seconds())) + " с"
+	case d < time.Hour:
+		return itoa(int(d.Minutes())) + " мин"
+	case d < 48*time.Hour:
+		return itoa(int(d.Hours())) + " ч"
 	}
-	m := &hwModel{title: title, sample: sample, started: time.Now()}
-	_, err := tea.NewProgram(m).Run()
-	return err
+	return itoa(int(d.Hours()/24)) + " дн"
 }

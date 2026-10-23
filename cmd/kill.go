@@ -91,6 +91,9 @@ var psCmd = &cobra.Command{
 	Short: "Найти процессы по имени (с опечатками) и показать, как их закрыть",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if tui.Available() {
+			return runScreen(procsScreen(args[0]))
+		}
 		list, err := allProcs()
 		if err != nil {
 			return err
@@ -158,11 +161,11 @@ func confirmKill(q string) bool { return killYes || runner.Confirm(q) }
 // confirmGentle: бережное закрытие ты и так попросил, словом kill, - Enter соглашается.
 func confirmGentle(q string) bool { return killYes || runner.ConfirmDefault(q, true) }
 
-// killApp: сначала как человек - Cmd+Q у приложения или SIGTERM у программы; не помогло - SIGKILL.
-func killApp(a procs.App) error {
+// killable: процессы приложения, которые можно трогать; системные не отдаём.
+func killable(a procs.App) ([]int, error) {
 	for _, p := range a.Procs {
 		if procs.Protected(p) {
-			return ui.Errorf("%s (pid %s) - системный процесс, без него машина или сеанс упадут; не трогаю", a.Name, p.PID)
+			return nil, ui.Errorf("%s (pid %s) - системный процесс, без него машина или сеанс упадут; не трогаю", a.Name, p.PID)
 		}
 	}
 	var pids []int
@@ -172,7 +175,52 @@ func killApp(a procs.App) error {
 		}
 	}
 	if len(pids) == 0 {
-		return ui.Errorf("закрывать нечего")
+		return nil, ui.Errorf("закрывать нечего")
+	}
+	return pids, nil
+}
+
+// closeApp без вопросов: бережно - Cmd+Q у приложения или SIGTERM, и подождать; force - SIGKILL.
+// Что осталось живым, возвращается ошибкой: кто спрашивает, тот и решает, добивать ли.
+func closeApp(a procs.App, force bool) (string, error) {
+	pids, err := killable(a)
+	if err != nil {
+		return "", err
+	}
+	if force {
+		_ = signalAll("KILL", pids)
+		if left := waitGone(pids, 3*time.Second); len(left) > 0 {
+			return "", ui.Errorf("не убился (pid %v): похоже, ждёт диск или сеть; поможет только перезагрузка", left)
+		}
+		return a.Name + " убит", nil
+	}
+	if a.IsApp && runtime.GOOS == "darwin" {
+		// Приложение само спросит про несохранённое и закроет окна - бережнее, чем сигнал.
+		_ = runner.Run("osascript", "-e", `quit app "`+strings.ReplaceAll(a.Name, `"`, `\"`)+`"`)
+	} else {
+		_ = signalAll("TERM", pids)
+	}
+	// Приложению нужно время спросить про несохранённое, программе хватит и пяти секунд.
+	wait := 5 * time.Second
+	if a.IsApp {
+		wait = 8 * time.Second
+	}
+	left := waitGone(pids, wait)
+	if len(left) > 0 && a.IsApp && runtime.GOOS == "darwin" {
+		_ = signalAll("TERM", left)
+		left = waitGone(left, 3*time.Second)
+	}
+	if len(left) > 0 {
+		return "", ui.Errorf("%s не закрылся: осталось процессов %d; принудительно - X", a.Name, len(left))
+	}
+	return a.Name + " закрыт", nil
+}
+
+// killApp: сначала как человек - Cmd+Q у приложения или SIGTERM у программы; не помогло - SIGKILL.
+func killApp(a procs.App) error {
+	pids, err := killable(a)
+	if err != nil {
+		return err
 	}
 	if runner.DryRun {
 		// В dry-run сигналы не уходят - ждать завершения и пугать "не закрылся" бессмысленно.
@@ -184,47 +232,28 @@ func killApp(a procs.App) error {
 		return nil
 	}
 	if !killForce {
+		q := fmt.Sprintf("завершить %s (%d процессов)?", a.Name, len(pids))
 		if a.IsApp && runtime.GOOS == "darwin" {
-			if !confirmGentle("закрыть " + a.Name + " как Cmd+Q?") {
-				return ui.Errorf("отменено")
-			}
-			// Приложение само спросит про несохранённое и закроет окна - бережнее, чем сигнал.
-			_ = runner.Run("osascript", "-e", `quit app "`+strings.ReplaceAll(a.Name, `"`, `\"`)+`"`)
-		} else {
-			if !confirmGentle(fmt.Sprintf("завершить %s (%d процессов)?", a.Name, len(pids))) {
-				return ui.Errorf("отменено")
-			}
-			_ = signalAll("TERM", pids)
+			q = "закрыть " + a.Name + " как Cmd+Q?"
 		}
-		// Приложению нужно время спросить про несохранённое, программе хватит и пяти секунд.
-		wait := 5 * time.Second
-		if a.IsApp {
-			wait = 8 * time.Second
+		if !confirmGentle(q) {
+			return ui.Errorf("отменено")
 		}
-		left := waitGone(pids, wait)
-		if len(left) == 0 {
-			ui.Println(ui.Label(a.Name + " закрыт"))
+		text, err := closeApp(a, false)
+		if err == nil {
+			ui.Println(ui.Label(text))
 			return nil
 		}
-		if a.IsApp && runtime.GOOS == "darwin" {
-			_ = signalAll("TERM", left)
-			left = waitGone(left, 3*time.Second)
-			if len(left) == 0 {
-				ui.Println(ui.Label(a.Name + " закрыт"))
-				return nil
-			}
-		}
-		ui.Println(ui.Warn(fmt.Sprintf("не закрылся: осталось процессов %d", len(left))))
-		pids = left
+		ui.Println(ui.Warn(strings.TrimSuffix(err.Error(), "; принудительно - X")))
 	}
 	if !confirmKill("убить принудительно? несохранённое пропадёт") {
 		return ui.Errorf("оставлен как есть")
 	}
-	_ = signalAll("KILL", pids)
-	if left := waitGone(pids, 3*time.Second); len(left) > 0 {
-		return ui.Errorf("не убился (pid %v): похоже, ждёт диск или сеть; поможет только перезагрузка", left)
+	text, err := closeApp(a, true)
+	if err != nil {
+		return err
 	}
-	ui.Println(ui.Label(a.Name + " убит"))
+	ui.Println(ui.Label(text))
 	return nil
 }
 
