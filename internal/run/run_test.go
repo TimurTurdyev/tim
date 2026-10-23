@@ -62,14 +62,14 @@ func TestDetect(t *testing.T) {
 }
 
 func TestMatchNames(t *testing.T) {
-	names := []string{"lpack-site", "lpack-kb", "mercurio-lpack", "lpack", "shop"}
-	if got := MatchNames(names, "LPACK"); len(got) != 1 || got[0] != 3 {
+	names := []string{"cargo-site", "cargo-kb", "market-cargo", "cargo", "shop"}
+	if got := MatchNames(names, "CARGO"); len(got) != 1 || got[0] != 3 {
 		t.Errorf("exact: %v", got)
 	}
-	if got := MatchNames(names[:3], "lpack"); len(got) != 2 || got[0] != 0 || got[1] != 1 {
+	if got := MatchNames(names[:3], "cargo"); len(got) != 2 || got[0] != 0 || got[1] != 1 {
 		t.Errorf("prefix over substring: %v", got)
 	}
-	if got := MatchNames(names, "merc"); len(got) != 1 || got[0] != 2 {
+	if got := MatchNames(names, "mark"); len(got) != 1 || got[0] != 2 {
 		t.Errorf("single prefix: %v", got)
 	}
 	if got := MatchNames(names, "kb"); len(got) != 1 || got[0] != 1 {

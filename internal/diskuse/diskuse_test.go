@@ -212,11 +212,11 @@ func TestParseAPFS(t *testing.T) {
     |   Capacity Consumed:         835151556608 B (835.2 GB)
     +-> Volume disk3s7 D
     |   APFS Volume Disk (Role):   disk3s7 (No specific role)
-    |   Name:                      prvoffice-backup (Case-sensitive)
+    |   Name:                      old-backup (Case-sensitive)
     |   Capacity Consumed:         41364611072 B (41.4 GB)
 `
 	v := ParseAPFS(out, "/System/Volumes/Data")
-	if len(v) != 3 || v[0].Role != "System" || v[2].Name != "prvoffice-backup" || v[2].Size != 41364611072 || v[1].Mount != "/System/Volumes/Data" {
+	if len(v) != 3 || v[0].Role != "System" || v[2].Name != "old-backup" || v[2].Size != 41364611072 || v[1].Mount != "/System/Volumes/Data" {
 		t.Errorf("%+v", v)
 	}
 }

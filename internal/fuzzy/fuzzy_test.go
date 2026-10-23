@@ -19,16 +19,16 @@ func TestEmptyQueryKeepsOrder(t *testing.T) {
 }
 
 func TestDropsNonMatching(t *testing.T) {
-	items := []string{"mercurio", "lpack", "timcode"}
+	items := []string{"marketplace", "cargo", "website"}
 	got := names(items, Filter("mrc", items))
-	if len(got) != 1 || got[0] != "mercurio" {
+	if len(got) != 1 || got[0] != "marketplace" {
 		t.Errorf("got %v", got)
 	}
 }
 
 func TestCaseInsensitive(t *testing.T) {
-	items := []string{"WaviotSite"}
-	if len(Filter("wavs", items)) != 1 {
+	items := []string{"AcmeSite"}
+	if len(Filter("acms", items)) != 1 {
 		t.Error("case should not matter")
 	}
 }
@@ -42,17 +42,17 @@ func TestPrefixBeatsMiddle(t *testing.T) {
 }
 
 func TestPathSegmentBeatsScattered(t *testing.T) {
-	items := []string{"e-fm-mapper-x", "work/waviot/efm"}
+	items := []string{"e-fm-mapper-x", "work/acme/efm"}
 	got := names(items, Filter("efm", items))
-	if got[0] != "work/waviot/efm" {
+	if got[0] != "work/acme/efm" {
 		t.Errorf("got %v", got)
 	}
 }
 
 func TestRunBeatsScattered(t *testing.T) {
-	items := []string{"lxpxaxcxk", "lpack"}
-	got := names(items, Filter("lpack", items))
-	if got[0] != "lpack" {
+	items := []string{"cxaxrxgxo", "cargo"}
+	got := names(items, Filter("cargo", items))
+	if got[0] != "cargo" {
 		t.Errorf("got %v", got)
 	}
 }

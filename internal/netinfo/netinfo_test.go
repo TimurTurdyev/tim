@@ -22,7 +22,7 @@ func TestParseRouteGet(t *testing.T) {
 }
 
 func TestParseLsof(t *testing.T) {
-	out := "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\npostgres 1728 timurt 7u IPv6 0x1 0t0 TCP [::1]:5432 (LISTEN)\npostgres 1728 timurt 8u IPv4 0x2 0t0 TCP 127.0.0.1:5432 (LISTEN)\nOrbStack\\x20Helper 52572 timurt 9u IPv4 0x3 0t0 TCP *:443 (LISTEN)\n"
+	out := "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\npostgres 1728 dev 7u IPv6 0x1 0t0 TCP [::1]:5432 (LISTEN)\npostgres 1728 dev 8u IPv4 0x2 0t0 TCP 127.0.0.1:5432 (LISTEN)\nOrbStack\\x20Helper 52572 dev 9u IPv4 0x3 0t0 TCP *:443 (LISTEN)\n"
 	list := ParseLsof(out)
 	if len(list) != 2 || list[0].Port != "5432" || list[0].PID != "1728" || list[1].Port != "443" {
 		t.Errorf("lsof: %+v", list)
