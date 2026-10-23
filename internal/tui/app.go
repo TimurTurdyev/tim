@@ -266,12 +266,10 @@ func (a *App) update(msg tea.Msg) tea.Cmd {
 		return a.key(msg)
 	case ownedMsg:
 		// Ответ фоновой загрузки должен дойти до своего экрана, даже если поверх уже открыт другой.
-		if done, ok := msg.msg.(jobDoneMsg); ok {
-			return tea.Batch(a.finish(done), a.deliver(msg.id, done.done))
-		}
 		return a.deliver(msg.id, msg.msg)
 	case jobDoneMsg:
-		return a.finish(msg)
+		owner, cmd := a.finish(msg)
+		return tea.Batch(cmd, a.deliver(owner, msg.done))
 	}
 	var cmds []tea.Cmd
 	for _, f := range a.stack {
@@ -422,12 +420,21 @@ func own(id int, c tea.Cmd) tea.Cmd {
 			}
 			return out
 		default:
-			if runtimeMsg(m) {
+			if runtimeMsg(m) || appMsg(m) {
 				return m
 			}
 			return ownedMsg{id: id, msg: m}
 		}
 	}
+}
+
+// appMsg: сообщение самого каркаса - его разбирает App, а не экран.
+func appMsg(m tea.Msg) bool {
+	switch m.(type) {
+	case jobDoneMsg, sayExpireMsg, animMsg:
+		return true
+	}
+	return false
 }
 
 func runtimeMsg(m tea.Msg) bool {

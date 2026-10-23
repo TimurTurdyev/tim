@@ -19,7 +19,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/run"
-	"github.com/TimurTurdyev/tim/internal/serve"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/sshx"
@@ -68,7 +67,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	env, one := h.env, len(args) == 1
 	switch {
 	case args[0] == "go" || args[0] == "proj":
-		return projects.Screen(env, "")
+		return h.projectsScreen("", projects.TabAll)
 	case args[0] == "hw":
 		return machine.HWScreen()
 	case args[0] == "vpn" && one:
@@ -76,7 +75,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	case args[0] == "check" && one:
 		return sites.CheckScreen(env)
 	case args[0] == "serve" && len(args) == 2 && args[1] == "list":
-		return serve.Screen(env)
+		return h.projectsScreen("", projects.TabRunning)
 	case args[0] == "domain" && len(args) == 2:
 		if d, err := sites.DomainOf(env, args[1]); err == nil {
 			return sites.DomainScreen(env, d)
@@ -93,6 +92,16 @@ func (h *Home) screenFor(args []string) tui.Screen {
 		return diskScreen(env, args[1:])
 	}
 	return nil
+}
+
+// projectsScreen: проекты вкладками - Все, Запущенные, Проверка; focus - кого показать первым.
+func (h *Home) projectsScreen(focus string, tab int) tui.Screen {
+	env := h.env
+	return tui.NewTabs("Проекты", []tui.Tab{
+		projects.AllTab(env, focus, func() map[string]string { return machine.RunningPorts(env.Cfg) }),
+		machine.RunningTab(env),
+		sites.CheckTab(env),
+	}, tab)
 }
 
 func diskScreen(env *app.Env, flags []string) tui.Screen {
@@ -193,7 +202,7 @@ func (h *Home) lineDest(d motd.Dest) (string, func() tui.Action) {
 	case motd.ToNet:
 		return "Сеть", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
 	case motd.ToRunning:
-		return "Проекты " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: serve.Screen(h.env)} }
+		return "Проекты " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: h.projectsScreen("", projects.TabRunning)} }
 	}
 	return "", nil
 }
@@ -204,7 +213,7 @@ func (h *Home) sections() []tui.Section {
 		return func() tui.Action { return tui.Action{Push: screen()} }
 	}
 	return []tui.Section{
-		{Key: "p", Title: "Проекты", Hint: "go, serve, запущенные, проверка", Open: push(func() tui.Screen { return projects.Screen(h.env, "") })},
+		{Key: "p", Title: "Проекты", Hint: "go, serve, запущенные, проверка", Open: push(func() tui.Screen { return h.projectsScreen("", projects.TabAll) })},
 		{Key: "s", Title: "Серверы", Hint: "состояние, кто ломится, ssh", Open: push(func() tui.Screen {
 			return servers.ServersScreen(h.env, servers.Targets(h.env, nil, false))
 		})},
@@ -285,7 +294,7 @@ func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
 		note = ui.OK("\u25cf :" + st.Port)
 	}
 	return tui.Hit{Kind: "проекты", Title: name, Hint: hint, Note: note, Open: func() tui.Action {
-		return tui.Action{Push: projects.Screen(h.env, name)}
+		return tui.Action{Push: h.projectsScreen(name, projects.TabAll)}
 	}}
 }
 

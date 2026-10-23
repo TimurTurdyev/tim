@@ -117,25 +117,25 @@ func (a *App) Job(what string, fn func() (string, error)) tea.Cmd {
 	}
 }
 
-// finish: работа закончилась - исход в строку состояния.
-func (a *App) finish(m jobDoneMsg) tea.Cmd {
+// finish: работа закончилась - исход в строку состояния; owner - экран, который её запустил.
+func (a *App) finish(m jobDoneMsg) (owner int, cmd tea.Cmd) {
 	var took time.Duration
 	for i, j := range a.jobs {
 		if j.id == m.id {
-			took = time.Since(j.start)
+			took, owner = time.Since(j.start), j.owner
 			a.jobs = append(a.jobs[:i], a.jobs[i+1:]...)
 			break
 		}
 	}
 	switch {
 	case m.done.Err != nil:
-		return a.Say(level.Bad, m.done.Err.Error())
+		return owner, a.Say(level.Bad, m.done.Err.Error())
 	case m.done.Text != "" && took < 100*time.Millisecond:
-		return a.Say(level.OK, m.done.Text)
+		return owner, a.Say(level.OK, m.done.Text)
 	case m.done.Text != "":
-		return a.Say(level.OK, m.done.Text+" "+symSep+" "+tookText(took))
+		return owner, a.Say(level.OK, m.done.Text+" "+symSep+" "+tookText(took))
 	}
-	return nil
+	return owner, nil
 }
 
 // tookText: сколько шла работа - "0.4 с", "4 с", "2 мин".

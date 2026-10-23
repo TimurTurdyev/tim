@@ -46,7 +46,7 @@ func check(env *app.Env, args []string, o checkOptions) error {
 		ui.Println(ui.Label("ежедневный обход убран"))
 		return nil
 	case len(args) == 0 && !o.notify && !o.json && app.Interactive():
-		return env.Open(checkScreen(env, o))
+		return env.Open(checkScreen(env, o, true))
 	}
 	projects, err := projectsOrDomains(env.Cfg, args)
 	if err != nil {
@@ -93,6 +93,13 @@ func checkRows(cfg *config.Config, projects []*config.Project, o checkOptions) [
 		}
 	}
 	health.Sort(kept)
+	var registry []health.Row
+	for _, r := range kept {
+		if _, ok := cfg.Project(r.Name); ok {
+			registry = append(registry, r)
+		}
+	}
+	health.SaveRows(registry)
 	return kept
 }
 

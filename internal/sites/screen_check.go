@@ -2,6 +2,7 @@ package sites
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -11,25 +12,34 @@ import (
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/machine"
+	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // CheckScreen: проверка проектов, как у tim check без флагов.
 func CheckScreen(env *app.Env) tui.Screen {
-	return checkScreen(env, checkOptions{older: machine.ForgottenAfter})
+	return checkScreen(env, checkOptions{older: machine.ForgottenAfter}, true)
 }
 
-// checkScreen: таблица проектов, панель с проблемами, только проблемные по e.
-func checkScreen(env *app.Env, o checkOptions) tui.Screen {
+// CheckTab: вкладка Проверка экрана проектов - из кэша проверок, r проверяет заново.
+func CheckTab(env *app.Env) tui.Tab {
+	return checkScreen(env, checkOptions{older: machine.ForgottenAfter}, false).(tui.Tab)
+}
+
+// checkScreen: таблица проектов с группами ПРОБЛЕМЫ и В ПОРЯДКЕ, карточка с тем, что не так и что
+// делать. Вкладка открывается из кэша, сеть - по r; tim check в терминале сразу проверяет заново.
+func checkScreen(env *app.Env, o checkOptions, now bool) tui.Screen {
 	var (
 		mu   sync.Mutex
 		rows []health.Row
-		only bool
+		at   time.Time
 	)
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs:  []string{"Проекты", "Проверка"},
+		Crumbs:  []string{"Проекты"},
+		Tab:     "Проверка",
 		Loading: loadingText(o),
+		Search:  true,
 		Command: func(row *tui.BoardRow) string {
 			if row != nil {
 				return "tim check " + row.ID
@@ -39,29 +49,74 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 		Load: func(fresh bool) tui.BoardData {
 			mu.Lock()
 			defer mu.Unlock()
-			if rows == nil || fresh {
-				rows = checkAll(env.Cfg, o)
+			if rows == nil && !fresh && !now {
+				rows, at = savedRows(env.Cfg)
 			}
-			return checkData(env.Cfg, rows, only, o.older)
+			if fresh || rows == nil && now {
+				rows, at = checkAll(env.Cfg, o), time.Now()
+			}
+			return checkData(env.Cfg, rows, at)
+		},
+		Enter: func(row *tui.BoardRow) string {
+			return "подробно: check " + row.ID + ", все проверки и причины"
 		},
 		Actions: []tui.BoardAction{
 			{Key: "enter", Label: "подробно", Do: func(row *tui.BoardRow) tui.Action {
-				if row == nil {
-					return tui.Action{}
-				}
 				return env.Result([]string{"check", row.ID})
 			}},
-			{Key: "tab", Label: "вкладка", Doing: "переключаю", Free: true, Run: func(*tui.BoardRow) (string, error) {
-				mu.Lock()
-				only = !only
-				mu.Unlock()
-				if only {
-					return "проверка: только проблемные", nil
+			{Key: "c", Label: "проверить", Doing: "проверяю", Run: func(row *tui.BoardRow) (string, error) {
+				p, err := env.Cfg.Pick(row.ID)
+				if err != nil {
+					return "", err
 				}
-				return "проверка: все проекты", nil
+				r := checkRows(env.Cfg, []*config.Project{p}, o)
+				if len(r) == 0 {
+					return row.ID + ": проверять нечего", nil
+				}
+				mu.Lock()
+				for i := range rows {
+					if rows[i].Name == r[0].Name {
+						rows[i] = r[0]
+					}
+				}
+				mu.Unlock()
+				return row.ID + ": " + verdict(r[0]), nil
+			}},
+			{Key: "w", Label: "браузер", Doing: "открываю сайт", Run: func(row *tui.BoardRow) (string, error) {
+				p, err := env.Cfg.Pick(row.ID)
+				if err != nil || p.URL == "" {
+					return "", ui.Errorf("у %s нет адреса сайта", row.ID)
+				}
+				return row.ID + ": сайт открыт в браузере", runner.OpenBrowser(p.URL)
 			}},
 		},
 	})
+}
+
+// savedRows: проверки проектов реестра из кэша и время самой старой из них.
+func savedRows(cfg *config.Config) ([]health.Row, time.Time) {
+	var rows []health.Row
+	var oldest time.Time
+	for _, s := range health.SavedRows() {
+		if _, ok := cfg.Project(s.Name); !ok {
+			continue
+		}
+		rows = append(rows, s.Row)
+		if oldest.IsZero() || s.At.Before(oldest) {
+			oldest = s.At
+		}
+	}
+	health.Sort(rows)
+	return rows, oldest
+}
+
+// verdict: исход проверки одного проекта для строки состояния.
+func verdict(r health.Row) string {
+	switch r.Level() {
+	case level.Bad, level.Warn:
+		return ui.Count(len(r.Problems()), "проблема", "проблемы", "проблем")
+	}
+	return "в порядке"
 }
 
 // loadingText: что проверяется; с серверами обход заметно дольше.
@@ -81,52 +136,81 @@ func checkAll(cfg *config.Config, o checkOptions) []health.Row {
 	return checkRows(cfg, projects, o)
 }
 
-func checkData(cfg *config.Config, rows []health.Row, only bool, older time.Duration) tui.BoardData {
+func checkData(cfg *config.Config, rows []health.Row, at time.Time) tui.BoardData {
 	var d tui.BoardData
-	ok, warn, bad := health.Counts(rows)
+	d.Tab = "Проверка"
+	if len(rows) == 0 {
+		d.Status = "не проверялось"
+		d.Empty = "Проверок ещё не было: git на машине, сайт, сертификат, почта и домен по сети - несколько секунд"
+		return d
+	}
+	_, warn, bad := health.Counts(rows)
 	d.Status = ui.Count(len(rows), "проект", "проекта", "проектов")
 	if warn+bad > 0 {
-		d.Status += fmt.Sprintf(" \u00b7 %d требуют внимания", warn+bad)
-	} else {
-		d.Status += " \u00b7 всё в порядке"
+		d.Status = fmt.Sprintf("%d требуют внимания", warn+bad)
 	}
+	d.Status += " \u00b7 проверено " + since(at)
 	cols := usedCols(rows)
-	nameW := nameWidth(rows)
-	head := ui.Pad("ПРОЕКТ", nameW+1)
+	nameW := nameWidth(rows) + 2
+	head := ui.Pad("ПРОЕКТ", nameW)
 	for _, col := range cols {
 		head += ui.Pad(strings.ToUpper(col.name), col.width)
 	}
-	d.Columns = ui.Dim(head)
-	hidden := 0
+	d.Columns = head
+	d.Wide = nameW+len(cols)*12 > 56
+	problems := warn + bad
 	for _, r := range rows {
-		if only && r.Level() < level.Warn {
-			hidden++
-			continue
+		row := tui.BoardRow{ID: r.Name, Group: "В ПОРЯДКЕ \u00b7 " + strconv.Itoa(len(rows)-problems)}
+		if r.Level() >= level.Warn {
+			row.Group = "ПРОБЛЕМЫ \u00b7 " + strconv.Itoa(problems)
 		}
-		row := tui.BoardRow{ID: r.Name, Title: r.Name}
-		if p, err := cfg.Pick(r.Name); err == nil && p.URL != "" {
-			row.Sub = p.URL
-		}
-		row.Cells = ui.Fit(r.Name, nameW) + " "
+		row.Cells = ui.Fit(r.Name, nameW)
 		for _, col := range cols {
 			c := r.Get(col.name)
-			row.Cells += ui.Pad(level.Lamp(c.Level, ui.Clip(c.Text, col.width-3)), col.width)
+			cell := ""
+			if c.Level != level.Skip && (c.Level != level.OK || r.Level() >= level.Warn || col.name != "git") {
+				cell = level.Lamp(c.Level, ui.Clip(c.Text, col.width-3))
+			}
+			row.Cells += ui.Pad(cell, col.width)
 		}
-		row.Pane = problemLines(r)
-		hint := "\u2192 enter покажет проверку целиком"
-		if row.Sub != "" {
-			hint += ", tim domain " + row.Sub + " - домен"
+		card := &tui.Card{Title: r.Name}
+		if p, err := cfg.Pick(r.Name); err == nil && p.URL != "" {
+			card.Sub = strings.TrimPrefix(strings.TrimPrefix(p.URL, "https://"), "http://")
 		}
-		row.Pane = append(row.Pane, ui.Dim(hint))
+		for _, c := range r.Checks {
+			if c.Level < level.Warn {
+				continue
+			}
+			text := c.Detail
+			if text == "" {
+				text = c.Text
+			}
+			card.Facts = append(card.Facts, tui.Fact{Label: level.Lamp(c.Level, c.Name), Value: text})
+			if c.Fix != "" {
+				card.Facts = append(card.Facts, tui.Fact{Label: "что делать", Value: c.Fix})
+			}
+		}
+		if len(card.Facts) == 0 {
+			card.Facts = []tui.Fact{{Value: ui.OK("\u25cf всё в порядке")}}
+		}
+		row.Card = card
 		d.Rows = append(d.Rows, row)
 	}
-	if hidden > 0 {
-		d.Foot = append(d.Foot, ui.Dim(fmt.Sprintf("ещё %d в порядке, e - показать", hidden)))
-	}
-	d.Foot = append(d.Foot, machineNotes(cfg, older)...)
-	d.Empty = fmt.Sprintf("проблем нет: ок %d", ok)
-	if len(rows) == 0 {
-		d.Empty = "проверять нечего: ни у одного проекта нет git и адреса сайта"
-	}
+	d.Foot = machineNotes(cfg, machine.ForgottenAfter)
 	return d
+}
+
+// since: давность проверки; старше суток - янтарная.
+func since(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	d := time.Since(t)
+	if d < time.Minute {
+		return "только что"
+	}
+	if d > health.StaleAfter {
+		return ui.Warn(ui.Short(d))
+	}
+	return ui.Short(d)
 }

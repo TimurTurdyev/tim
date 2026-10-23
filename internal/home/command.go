@@ -58,6 +58,7 @@ func New(env *app.Env, root *cobra.Command, o Options) *Home {
 	// Дерево команд не меняется после запуска: подсказки собираются один раз, а не на каждую букву.
 	h.entries = sync.OnceValue(h.collectCommands)
 	env.Result, env.After, env.Open, env.Home = h.result, h.after, h.open, h.screen
+	env.Inside, env.ProjectsScreen = h.inside, h.projectsScreen
 	return h
 }
 

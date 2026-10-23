@@ -3,6 +3,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -12,6 +13,10 @@ import (
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
+
+// terminalEditors: редакторы, которым нужен терминал целиком - из экрана tim для них закрывается.
+var terminalEditors = map[string]bool{"vi": true, "vim": true, "nvim": true, "nano": true, "emacs": true,
+	"micro": true, "hx": true, "helix": true, "kak": true, "mg": true, "ne": true, "joe": true}
 
 // Env: окружение команд. Корень заполняет Cfg перед запуском команды, остальное - при сборке.
 // Раздел получает указатель в Commands(env) и передаёт нужное дальше аргументами.
@@ -26,6 +31,10 @@ type Env struct {
 	After  func(args []string)
 	Open   func(s tui.Screen) error
 	Home   func() tui.Screen // главный экран: туда уходит мастер первого запуска
+	// Inside: команда tim внутри экрана - вывод собирается, вопросы не задаются; для работы в фоне.
+	Inside func(args []string) (string, error)
+	// ProjectsScreen: экран проектов с вкладками; tab - какая открыта первой.
+	ProjectsScreen func(focus string, tab int) tui.Screen
 }
 
 // Build: сборка для лок-апа - "сборка e3642b7" до первого тега, у релиза его версия. Версия go install
@@ -146,6 +155,19 @@ func (e *Env) projectsBy(arg string) ([]*config.Project, error) {
 }
 
 // Edit открывает папку в редакторе: ключ editor конфига, $VISUAL, на Linux ещё $EDITOR; без них - Finder.
+// EditorInTerminal: редактор проекта работает в терминале, а не своим окном.
+func (e *Env) EditorInTerminal() bool {
+	editor := e.Cfg.Editor
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" && runtime.GOOS != "darwin" {
+		editor = os.Getenv("EDITOR")
+	}
+	f := strings.Fields(editor)
+	return len(f) > 0 && terminalEditors[filepath.Base(f[0])]
+}
+
 func (e *Env) Edit(dir string) error {
 	editor := e.Cfg.Editor
 	if editor == "" {
