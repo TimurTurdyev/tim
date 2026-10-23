@@ -79,9 +79,9 @@ func (l *leftovers) Command() string { return "tim disk --leftovers" }
 
 func (l *leftovers) Keys() []Key {
 	if len(l.shown()) == 0 {
-		return []Key{{"h", "скрытые"}, {"esc", "назад"}}
+		return []Key{{"tab", "вкладка"}}
 	}
-	return []Key{{symUpDown, "выбор"}, {"space", "отметить"}, {"a", "все"}, {"x", "убрать"}, {"h", "скрытые"}, {"esc", "назад"}}
+	return []Key{{"space", "отметить"}, {"v", "все"}, {"x", "убрать"}, {"tab", "вкладка"}}
 }
 
 func (l *leftovers) shown() []LeftGroup {
@@ -157,7 +157,7 @@ func (l *leftovers) Update(msg tea.Msg, app *App) tea.Cmd {
 				l.marked[g.ID] = !l.marked[g.ID]
 				l.list.Down()
 			}
-		case "a", "ф":
+		case "v":
 			all := true
 			for _, g := range l.shown() {
 				if !l.marked[g.ID] {
@@ -167,10 +167,10 @@ func (l *leftovers) Update(msg tea.Msg, app *App) tea.Cmd {
 			for _, g := range l.shown() {
 				l.marked[g.ID] = !all
 			}
-		case "h", "р":
+		case "tab", "shift+tab":
 			l.hidden = !l.hidden
 			l.refill()
-		case "x", "ч":
+		case "x":
 			return l.confirmRemove(app)
 		}
 	}
@@ -189,7 +189,7 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 		}
 	}
 	if len(picked) == 0 {
-		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
+		return app.Say(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var cmds []string
 	for _, g := range picked {
@@ -217,9 +217,9 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 				freed += g.Size
 			}
 			l.marked = map[string]bool{}
-			toast := app.Toast(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки")
+			toast := app.Say(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки")
 			if len(errs) > 0 {
-				toast = app.Toast(level.Bad, strings.Join(errs, "; "))
+				toast = app.Say(level.Bad, strings.Join(errs, "; "))
 			}
 			return tea.Batch(toast, l.Init())
 		},

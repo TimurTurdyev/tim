@@ -86,7 +86,7 @@ func (b *browse) Command() string {
 }
 
 func (b *browse) Keys() []Key {
-	return []Key{{symUpDown, "выбор"}, {symLR, "внутрь, назад"}, {"space", "отметить"}, {"x", "убрать"}, {"o", "Finder"}, {"esc", "назад"}}
+	return []Key{{"enter", "внутрь"}, {"space", "отметить"}, {"x", "убрать"}, {"o", "Finder"}, {symLeft, "вверх"}}
 }
 
 // under: путь внутри уже отмеченной папки.
@@ -151,17 +151,17 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 			return nil
 		}
 		switch k {
-		case "enter", "right", "l", "д":
+		case "enter", "right":
 			if l.loading || len(l.kids) == 0 {
 				return nil
 			}
 			e := l.kids[l.list.Cursor]
 			if !e.Dir {
-				return app.Toast(level.Warn, "внутрь не зайти: это файлы или место без папок")
+				return app.Say(level.Warn, "внутрь не зайти: это файлы или место без папок")
 			}
 			b.stack = append(b.stack, &folder{entry: e, loading: true})
 			return b.load(e.Path)
-		case "left", "backspace", "р":
+		case "left", "backspace":
 			if len(b.stack) > 1 {
 				b.stack = b.stack[:len(b.stack)-1]
 				return nil
@@ -174,18 +174,18 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 			e := l.kids[l.list.Cursor]
 			switch {
 			case e.Path == "":
-				return app.Toast(level.Warn, "это не папка - отметить нельзя")
+				return app.Say(level.Warn, "это не папка - отметить нельзя")
 			case b.under(e.Path):
-				return app.Toast(level.Warn, "уже внутри отмеченной папки - уйдёт вместе с ней")
+				return app.Say(level.Warn, "уже внутри отмеченной папки - уйдёт вместе с ней")
 			}
 			b.marked.toggle(e.Path, e)
 			l.list.Down()
-		case "o", "щ":
+		case "o":
 			if !l.loading && len(l.kids) > 0 && l.kids[l.list.Cursor].Path != "" && b.opts.Open != nil {
 				b.opts.Open(l.kids[l.list.Cursor].Path)
-				return app.Toast(level.OK, "открыто в Finder")
+				return app.Say(level.OK, "открыто в Finder")
 			}
-		case "x", "ч":
+		case "x":
 			return b.confirmRemove(app)
 		}
 	}
@@ -195,7 +195,7 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 func (b *browse) confirmRemove(app *App) tea.Cmd {
 	top := Outermost(b.marked.list())
 	if len(top) == 0 {
-		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
+		return app.Say(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var lines, paths []string
 	var sum int64
@@ -216,9 +216,9 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 			b.marked.clear()
 			cmds := []tea.Cmd{}
 			if len(errs) > 0 {
-				cmds = append(cmds, app.Toast(level.Bad, strings.Join(errs, "; ")))
+				cmds = append(cmds, app.Say(level.Bad, strings.Join(errs, "; ")))
 			} else {
-				cmds = append(cmds, app.Toast(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
+				cmds = append(cmds, app.Say(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
 			}
 			// Размеры изменились - перечитать все уровни стопки.
 			for _, l := range b.stack {

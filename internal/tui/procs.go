@@ -65,10 +65,6 @@ type procsScreen struct {
 type (
 	procsDataMsg ProcsData
 	procsTickMsg struct{}
-	closedMsg    struct {
-		text string
-		err  error
-	}
 )
 
 // NewProcs создаёт экран процессов.
@@ -110,13 +106,10 @@ func (p *procsScreen) tick() tea.Cmd {
 func (p *procsScreen) Crumbs() []string { return []string{"Машина", "Процессы"} }
 
 func (p *procsScreen) Status() string {
-	switch {
-	case p.closing != "":
-		return "закрываю " + p.closing + "..."
-	case p.loading && len(p.data.Groups) == 0:
-		return "смотрю..."
+	if p.loading && len(p.data.Groups) == 0 {
+		return spinFrames[0] + " смотрю"
 	}
-	return fmt.Sprintf("CPU %d%% %s память %s из %s", p.data.CPU, symDot, ui.Bytes(p.data.MemUsed), ui.Bytes(p.data.MemTotal))
+	return fmt.Sprintf("CPU %d%% %s память %s из %s", p.data.CPU, symSep, ui.Bytes(p.data.MemUsed), ui.Bytes(p.data.MemTotal))
 }
 
 func (p *procsScreen) Command() string {
@@ -132,7 +125,7 @@ func (p *procsScreen) Keys() []Key {
 	if p.input.Focused() {
 		return []Key{{"enter", "применить"}, {"esc", "закрыть фильтр"}}
 	}
-	return []Key{{symUpDown, "выбор"}, {"x", "закрыть бережно"}, {"X", "принудительно"}, {"enter", "раскрыть"}, {"/", "фильтр"}, {"tab", "память/CPU"}, {"esc", "назад"}}
+	return []Key{{"enter", "раскрыть"}, {"/", "найти"}, {"x", "закрыть"}, {"X", "принудительно"}, {"p", "порядок"}, {"r", "обновить"}}
 }
 
 func (p *procsScreen) refill() {
@@ -216,13 +209,10 @@ func (p *procsScreen) Update(msg tea.Msg, app *App) tea.Cmd {
 			cmd = p.load()
 		}
 		return tea.Batch(cmd, p.tick())
-	case closedMsg:
+	case JobDone:
 		p.closing = ""
 		p.loading = true
-		if msg.err != nil {
-			return tea.Batch(app.Toast(level.Bad, msg.err.Error()), p.load())
-		}
-		return tea.Batch(app.Toast(level.OK, msg.text), p.load())
+		return p.load()
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if p.input.Focused() {
@@ -246,15 +236,15 @@ func (p *procsScreen) Update(msg tea.Msg, app *App) tea.Cmd {
 			return p.input.Focus()
 		case "enter":
 			p.expanded = !p.expanded
-		case "tab":
+		case "p":
 			p.byMem = !p.byMem
 			p.refill()
 		// k занят списком (вверх), поэтому закрыть - x, как убрать на экранах диска.
 		case "X":
 			return p.confirmClose(app, true)
-		case "x", "ч":
+		case "x":
 			return p.confirmClose(app, false)
-		case "r", "к":
+		case "r":
 			p.loading = true
 			return p.load()
 		}
@@ -271,9 +261,7 @@ func (p *procsScreen) confirmClose(app *App, force bool) tea.Cmd {
 	case cur == nil:
 		return nil
 	case cur.Protected:
-		return app.Toast(level.Warn, cur.Name+" - системный процесс, без него машина или сеанс упадут")
-	case p.closing != "":
-		return app.Toast(level.Warn, "подожди, закрываю "+p.closing)
+		return app.Say(level.Warn, cur.Name+" - системный процесс, без него машина или сеанс упадут")
 	}
 	g := *cur
 	d := Dialog{Title: "Закрыть " + g.Name + "?", OK: "Закрыть"}
@@ -290,10 +278,7 @@ func (p *procsScreen) confirmClose(app *App, force bool) tea.Cmd {
 	}
 	d.Yes = func() tea.Cmd {
 		p.closing = g.Name
-		return func() tea.Msg {
-			text, err := p.opts.Close(g, force)
-			return closedMsg{text, err}
-		}
+		return app.Job("закрываю "+g.Name, func() (string, error) { return p.opts.Close(g, force) })
 	}
 	return app.Confirm(d)
 }

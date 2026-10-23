@@ -26,7 +26,7 @@ func (h *Home) utilsScreen() tui.Screen {
 				row.Pane = append(row.Pane, l)
 			}
 		}
-		row.Pane = append(row.Pane, ui.Dim("→ enter - набрать в строке \":\", h - справка"))
+		row.Pane = append(row.Pane, ui.Dim("→ enter - набрать в строке \":\""))
 		data.Rows = append(data.Rows, row)
 	}
 	return tui.NewBoard(tui.BoardOpts{
@@ -42,9 +42,6 @@ func (h *Home) utilsScreen() tui.Screen {
 		Actions: []tui.BoardAction{
 			{Key: "enter", Label: "набрать", Do: func(row *tui.BoardRow) tui.Action {
 				return tui.Action{Command: row.ID + " "}
-			}},
-			{Key: "h", Label: "справка", Do: func(row *tui.BoardRow) tui.Action {
-				return h.result([]string{row.ID, "--help"})
 			}},
 		},
 	})

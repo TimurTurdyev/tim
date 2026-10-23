@@ -29,12 +29,14 @@ type confirmOverlay struct {
 }
 
 func (c *confirmOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
+	// Только enter, tab, esc и латинская y: раскладка здесь не переводится - "н" стоит на клавише y
+	// и подтвердила бы удаление.
 	switch msg.String() {
-	case "esc", "n", "т":
+	case "esc":
 		app.overlay = nil
-	case "tab", "left", "right", "h", "l":
+	case "tab", "shift+tab", "left", "right":
 		c.onYes = !c.onYes
-	case "y", "н":
+	case "y":
 		app.overlay = nil
 		return c.d.Yes()
 	case "enter":
@@ -47,7 +49,7 @@ func (c *confirmOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 }
 
 func (c *confirmOverlay) keys() []Key {
-	return []Key{{"enter", "выбранная кнопка"}, {"tab", "другая кнопка"}, {"y", "да"}, {"esc", "отмена"}}
+	return []Key{{"enter", "выбранная кнопка"}, {"tab", "другая"}, {"esc", "отмена"}}
 }
 
 func (c *confirmOverlay) view(width, height int) string {
@@ -99,7 +101,7 @@ func (h *helpOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	return nil
 }
 
-func (h *helpOverlay) keys() []Key { return []Key{{"любая клавиша", "закрыть"}} }
+func (h *helpOverlay) keys() []Key { return []Key{{"esc", "закрыть"}} }
 
 func (h *helpOverlay) view(width, height int) string {
 	box := HelpBox(h.ks, width)
@@ -239,7 +241,7 @@ func (c *cmdline) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 }
 
 func (c *cmdline) keys() []Key {
-	return []Key{{"tab", "подставить"}, {"enter", "выполнить"}, {"esc", "отмена"}}
+	return []Key{{"enter", "выполнить"}, {"tab", "дополнить"}, {"esc", "закрыть"}}
 }
 
 func (c *cmdline) view(width, height int) string {

@@ -109,9 +109,9 @@ func (o *onboard) Keys() []Key {
 	case o.step == 0:
 		return []Key{{symUpDown, "выбор"}, {"enter", "дальше"}, {"esc", "позже"}}
 	case o.step == 1:
-		return []Key{{"space", "галочка"}, {"a", "все"}, {"enter", "сохранить"}, {"esc", "назад"}}
+		return []Key{{"enter", "сохранить"}, {"space", "отметить"}, {"v", "все"}, {"esc", "назад"}}
 	}
-	return []Key{{"y", "подключить"}, {"n", "пропустить"}}
+	return []Key{{"enter", "выбрать"}}
 }
 
 func (o *onboard) fillRoots() {
@@ -183,11 +183,12 @@ func (o *onboard) Update(msg tea.Msg, app *App) tea.Cmd {
 	case onbDoneMsg:
 		o.busy = ""
 		if msg.err != nil {
-			return app.Toast(level.Bad, msg.err.Error())
+			return app.Say(level.Bad, msg.err.Error())
 		}
 		switch o.step {
 		case 1:
 			o.saved, o.step = msg.text, 2
+			o.fillShell()
 			return nil
 		default:
 			o.shellOK = msg.text
@@ -217,7 +218,7 @@ func (o *onboard) typePath(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	if msg.String() == "enter" {
 		path := strings.TrimSpace(o.input.Value())
 		if path == "" {
-			return app.Toast(level.Warn, "введи путь к папке с проектами")
+			return app.Say(level.Warn, "введи путь к папке с проектами")
 		}
 		o.input.Blur()
 		return o.scan(path)
@@ -249,7 +250,7 @@ func (o *onboard) pickProjects(k string) tea.Cmd {
 			o.found[o.list.Cursor].Checked = !o.found[o.list.Cursor].Checked
 			o.list.Down()
 		}
-	case "a", "ф":
+	case "v":
 		all := len(o.chosen()) == len(o.found)
 		for i := range o.found {
 			o.found[i].Checked = !all
@@ -267,20 +268,31 @@ func (o *onboard) pickProjects(k string) tea.Cmd {
 
 // askShell: шаг 3 - подключить ли tim к оболочке.
 func (o *onboard) askShell(k string, app *App) tea.Cmd {
-	switch k {
-	case "y", "н", "enter":
-		if o.opts.Shell == nil {
-			return o.finish(app)
-		}
-		o.busy = "подключаю к оболочке"
-		return func() tea.Msg {
-			text, err := o.opts.Shell()
-			return onbDoneMsg{text, err}
-		}
-	case "n", "т":
+	if o.list.Key(k, 2) || k != "enter" {
+		return nil
+	}
+	if o.list.Cursor != 0 || o.opts.Shell == nil {
 		return o.finish(app)
 	}
-	return nil
+	o.busy = "подключаю к оболочке"
+	return func() tea.Msg {
+		text, err := o.opts.Shell()
+		return onbDoneMsg{text, err}
+	}
+}
+
+// fillShell: шаг 3 - два варианта, подключить или пропустить.
+func (o *onboard) fillShell() {
+	o.list.Rows = nil
+	for _, s := range []string{"подключить", "пропустить, можно потом: tim init setup"} {
+		o.list.Rows = append(o.list.Rows, Row{Text: s, Render: func(sel bool, w int) string {
+			if sel {
+				return SelRow(sel, w, styleBold.Render(s))
+			}
+			return SelRow(sel, w, styleText.Render(s))
+		}})
+	}
+	o.list.Cursor = 0
 }
 
 func (o *onboard) finish(app *App) tea.Cmd {
@@ -289,7 +301,7 @@ func (o *onboard) finish(app *App) tea.Cmd {
 		text += "; " + o.shellOK
 	}
 	if o.opts.Home != nil {
-		return tea.Batch(app.Replace(o.opts.Home()), app.Toast(level.OK, text))
+		return tea.Batch(app.Replace(o.opts.Home()), app.Say(level.OK, text))
 	}
 	return app.Pop()
 }
@@ -319,7 +331,7 @@ func (o *onboard) View(width, height int) string {
 			"",
 			"  " + styleText.Render("Подключить tim к оболочке?"),
 			"  " + styleDim.Render("Допишу "+o.opts.ShellLine+": tim go станет делать cd, появятся подсказки и дополнение."),
-			"  " + styleDim.Render("Можно и потом: tim init setup"),
+			"",
 		}
 	}
 	if o.step == 0 && len(o.opts.Art) > 0 {
@@ -329,6 +341,9 @@ func (o *onboard) View(width, height int) string {
 	if o.busy != "" {
 		out = append(out, "", "  "+styleEmpty.Render(o.busy+"..."))
 		return strings.Join(out, "\n")
+	}
+	if o.step == 2 {
+		out = append(out, o.list.View(width, 2)...)
 	}
 	if o.step < 2 {
 		listH := max(3, height-len(out)-5)

@@ -3,7 +3,6 @@ package tui
 import (
 	"math/rand/v2"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -13,9 +12,6 @@ import (
 )
 
 // Главный экран: строка поиска, недавнее и разделы, плитки состояния, одно предупреждение.
-
-// blinkShut: сколько глаза маскота закрыты при моргании.
-const blinkShut = 150 * time.Millisecond
 
 // recentW: ширина колонки недавнего на главном экране.
 const recentW = 52
@@ -56,23 +52,17 @@ type HomeOpts struct {
 }
 
 type home struct {
-	opts  HomeOpts
-	data  HomeData
-	input textinput.Model
-	list  List
-	hits  []Hit
-	ready bool
-	blink bool
-	gen   int // поколение таймера моргания: повторный Init не запускает вторую цепочку
+	opts   HomeOpts
+	data   HomeData
+	input  textinput.Model
+	list   List
+	hits   []Hit
+	ready  bool
+	blink  bool
+	shutAt int // кадр общего тикера, на котором глаза закроются
 }
 
 type homeDataMsg HomeData
-
-// blinkMsg: глаза маскота закрыть или открыть.
-type blinkMsg struct {
-	gen  int
-	shut bool
-}
 
 // NewHome создаёт главный экран.
 func NewHome(opts HomeOpts) Screen {
@@ -103,18 +93,28 @@ func (h *home) Cursor() *tea.Cursor {
 }
 
 func (h *home) Init() tea.Cmd {
-	h.gen++
-	return tea.Batch(textinput.Blink, func() tea.Msg { return homeDataMsg(h.opts.Load()) }, h.blinkAfter(false))
+	return tea.Batch(textinput.Blink, func() tea.Msg { return homeDataMsg(h.opts.Load()) })
 }
 
-// blinkAfter: закрытые глаза открыть через миг, открытые - закрыть через 3-7 секунд.
-func (h *home) blinkAfter(shut bool) tea.Cmd {
-	d := blinkShut
-	if !shut {
-		d = time.Duration(3000+rand.IntN(4000)) * time.Millisecond
+// Animating: маскот моргает, пока главный открыт.
+func (h *home) Animating() bool { return h.data.Art != nil }
+
+// Tick: глаза закрыты один кадр, следующее моргание через 3-7 секунд.
+func (h *home) Tick(frame int) {
+	h.blink = frame == h.shutAt
+	if frame > h.shutAt {
+		h.shutAt = frame + 12 + rand.IntN(16)
 	}
-	msg := blinkMsg{gen: h.gen, shut: !shut}
-	return tea.Tick(d, func(time.Time) tea.Msg { return msg })
+}
+
+// Escape: esc сначала стирает набранное.
+func (h *home) Escape() bool {
+	if h.input.Value() == "" {
+		return false
+	}
+	h.input.SetValue("")
+	h.refill()
+	return true
 }
 
 func (h *home) Crumbs() []string { return nil }
@@ -124,9 +124,9 @@ func (h *home) Typing() bool     { return h.input.Value() != "" }
 
 func (h *home) Keys() []Key {
 	if h.Typing() {
-		return []Key{{symUpDown, "выбор"}, {"enter", "открыть"}, {"esc", "очистить"}}
+		return []Key{{"enter", "открыть"}, {"esc", "очистить"}}
 	}
-	return []Key{{symUpDown, "выбор"}, {"enter", "открыть"}, {"буква enter", "раздел"}, {":", "команда"}, {"?", "клавиши"}, {"esc", "выход"}}
+	return []Key{{"enter", "открыть"}}
 }
 
 func (h *home) refill() {
@@ -149,7 +149,7 @@ func (h *home) refill() {
 		if e.Kind != lastKind {
 			lastKind = e.Kind
 			k := kind
-			h.list.Rows = append(h.list.Rows, Row{Text: "", Render: func(sel bool, w int) string {
+			h.list.Rows = append(h.list.Rows, Row{Header: true, Render: func(sel bool, w int) string {
 				return "  " + styleHead.Render(strings.ToUpper(k))
 			}})
 		}
@@ -160,29 +160,13 @@ func (h *home) refill() {
 			return SelRow(sel, w, body)
 		}})
 	}
-	h.list.Cursor = 0
-	h.skipHeaders(1)
-}
-
-// skipHeaders: курсор не останавливается на заголовках групп.
-func (h *home) skipHeaders(dir int) {
-	for h.list.Cursor >= 0 && h.list.Cursor < len(h.list.Rows) && h.list.Rows[h.list.Cursor].Text == "" {
-		next := h.list.Cursor + dir
-		if next < 0 || next >= len(h.list.Rows) {
-			dir = -dir
-			next = h.list.Cursor + dir
-			if next < 0 || next >= len(h.list.Rows) {
-				break
-			}
-		}
-		h.list.Cursor = next
-	}
+	h.list.Home()
 }
 
 func (h *home) current() *Hit {
 	n := 0
 	for i, r := range h.list.Rows {
-		if r.Text == "" {
+		if r.Header {
 			continue
 		}
 		if i == h.list.Cursor {
@@ -200,22 +184,14 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 		h.ready = true
 		h.refill()
 		return nil
-	case blinkMsg:
-		if msg.gen != h.gen {
-			return nil
-		}
-		h.blink = msg.shut
-		return h.blinkAfter(msg.shut)
 	case tea.KeyPressMsg:
 		k := msg.String()
 		switch k {
 		case "up", "ctrl+p":
 			h.list.Up()
-			h.skipHeaders(-1)
 			return nil
 		case "down", "ctrl+n", "tab":
 			h.list.Down()
-			h.skipHeaders(1)
 			return nil
 		case "enter":
 			if e := h.current(); e != nil && e.Open != nil {

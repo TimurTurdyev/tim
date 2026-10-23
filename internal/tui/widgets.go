@@ -33,27 +33,27 @@ type PaneSection struct {
 // через перегородки. Строки обрезаются по ширине.
 func Pane(title, sub string, rows []string, width int, sections ...PaneSection) []string {
 	inner := width - 4
-	head := styleDim.Render("\u256d\u2500 ") + stylePaneT.Render(title)
+	head := styleLine.Render("\u256d\u2500 ") + stylePaneT.Render(title)
 	if sub != "" {
-		head += styleDim.Render(" \u2500 " + sub)
+		head += styleLine.Render(" \u2500 ") + styleDim.Render(sub)
 	}
 	n := lipgloss.Width(head)
-	head += styleDim.Render(" " + strings.Repeat("\u2500", max(0, width-n-2)) + "\u256e")
+	head += styleLine.Render(" " + strings.Repeat("\u2500", max(0, width-n-2)) + "\u256e")
 	out := []string{head}
 	line := func(r string) string {
-		return styleDim.Render("\u2502 ") + ui.Fit(r, inner) + styleDim.Render(" \u2502")
+		return styleLine.Render("\u2502 ") + ui.Fit(r, inner) + styleLine.Render(" \u2502")
 	}
 	for _, r := range rows {
 		out = append(out, line(r))
 	}
 	for _, sec := range sections {
 		fill := strings.Repeat("\u2500", max(0, width-lipgloss.Width(sec.Label)-5))
-		out = append(out, styleDim.Render("\u251c\u2500 "+sec.Label+" "+fill+"\u2524"))
+		out = append(out, styleLine.Render("\u251c\u2500 ")+styleDim.Render(sec.Label)+styleLine.Render(" "+fill+"\u2524"))
 		for _, r := range sec.Rows {
 			out = append(out, line(r))
 		}
 	}
-	out = append(out, styleDim.Render("\u2570"+strings.Repeat("\u2500", width-2)+"\u256f"))
+	out = append(out, styleLine.Render("\u2570"+strings.Repeat("\u2500", width-2)+"\u256f"))
 	return out
 }
 

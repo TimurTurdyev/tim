@@ -62,15 +62,15 @@ func Screen(env *app.Env, focus string) tui.Screen {
 			{Key: "o", Label: "редактор", Do: func(p tui.ProjectRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"open", p.Name}) }}
 			}},
-			{Key: "b", Label: "браузер", Do: func(p tui.ProjectRow) tui.Action { return env.Result([]string{"serve", "open", p.Name}) }},
-			{Key: "s", Label: "dev-сервер", Do: func(p tui.ProjectRow) tui.Action {
+			{Key: "w", Label: "браузер", Do: func(p tui.ProjectRow) tui.Action { return env.Result([]string{"serve", "open", p.Name}) }},
+			{Key: "d", Label: "dev-сервер", Do: func(p tui.ProjectRow) tui.Action {
 				if p.Running {
 					return env.Result([]string{"serve", "stop", p.Name})
 				}
 				return tui.Action{Exit: func() { env.After([]string{"serve", p.Name, "-d"}) }}
 			}},
 			{Key: "l", Label: "журнал", Do: func(p tui.ProjectRow) tui.Action { return env.Result([]string{"logs", p.Name}) }},
-			{Key: "d", Label: "база", Do: func(p tui.ProjectRow) tui.Action {
+			{Key: "b", Label: "база", Do: func(p tui.ProjectRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"db", p.Name}) }}
 			}},
 			{Key: "c", Label: "проверить", Do: func(p tui.ProjectRow) tui.Action { return env.Result([]string{"check", p.Name}) }},

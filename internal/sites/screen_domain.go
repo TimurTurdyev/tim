@@ -39,7 +39,7 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 		},
 		Actions: []tui.BoardAction{
 			{Key: "enter", Label: "подробно", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"domain", domain, "--fast"}) }},
-			{Key: "m", Label: "карта в браузере", Free: true, Run: func(*tui.BoardRow) (string, error) {
+			{Key: "w", Label: "браузер", Doing: "рисую карту домена", Free: true, Run: func(*tui.BoardRow) (string, error) {
 				mu.Lock()
 				defer mu.Unlock()
 				if rep == nil {
@@ -51,7 +51,6 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 				}
 				return "карта открыта в браузере", runner.OpenBrowser(path)
 			}},
-			{Key: "p", Label: "почта", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"mail", domain}) }},
 		},
 	})
 }

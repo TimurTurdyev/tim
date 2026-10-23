@@ -27,10 +27,10 @@ func Screen(env *app.Env) tui.Screen {
 		Load:  func(bool) tui.BoardData { return serveData() },
 		Every: 5 * time.Second,
 		Actions: []tui.BoardAction{
-			{Key: "n", Label: "запустить", Free: true, Do: func(*tui.BoardRow) tui.Action {
+			{Key: "n", Label: "добавить", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Command: "serve "}
 			}},
-			{Key: "enter", Label: "браузер", Run: func(row *tui.BoardRow) (string, error) {
+			{Key: "enter", Label: "браузер", Doing: "открываю браузер", Run: func(row *tui.BoardRow) (string, error) {
 				st, ok := stateOf(row)
 				if !ok {
 					return "", ui.Errorf("сервера нет")
@@ -38,7 +38,7 @@ func Screen(env *app.Env) tui.Screen {
 				url := "http://localhost:" + st.Port
 				return "открыто " + url, runner.OpenBrowser(url)
 			}},
-			{Key: "s", Label: "стоп/старт", Run: func(row *tui.BoardRow) (string, error) {
+			{Key: "d", Label: "dev-сервер", Doing: "останавливаю или поднимаю", Run: func(row *tui.BoardRow) (string, error) {
 				st, ok := stateOf(row)
 				if !ok {
 					return "", ui.Errorf("сервера нет")
@@ -52,7 +52,7 @@ func Screen(env *app.Env) tui.Screen {
 				}
 				return startAgain(env, st)
 			}},
-			{Key: "p", Label: "перезапуск", Run: func(row *tui.BoardRow) (string, error) {
+			{Key: "u", Label: "перезапуск", Doing: "перезапускаю", Run: func(row *tui.BoardRow) (string, error) {
 				st, ok := stateOf(row)
 				if !ok {
 					return "", ui.Errorf("сервера нет")

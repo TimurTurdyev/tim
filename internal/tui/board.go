@@ -8,7 +8,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -39,6 +38,7 @@ type BoardData struct {
 // тостом, потом доска перечитывается.
 type BoardAction struct {
 	Key, Label string
+	Doing      string // что пишет строка состояния, пока идёт Run; пусто - подпись
 	Do         func(row *BoardRow) Action
 	Run        func(row *BoardRow) (string, error)
 	Free       bool // работает и без выбранной строки; остальные на пустой доске не показываются
@@ -61,7 +61,6 @@ type board struct {
 	list    List
 	have    bool
 	loading bool
-	busy    string
 }
 
 type (
@@ -69,10 +68,6 @@ type (
 		data BoardData
 	}
 	boardTickMsg struct{}
-	boardRunMsg  struct {
-		text string
-		err  error
-	}
 )
 
 // NewBoard создаёт доску.
@@ -99,12 +94,12 @@ func (b *board) Crumbs() []string { return b.opts.Crumbs }
 
 func (b *board) Status() string {
 	switch {
-	case b.busy != "":
-		return b.busy + "..."
 	case !b.have:
-		return "смотрю..."
+		return spinFrames[0] + " смотрю"
+	case b.loading && b.data.Status != "":
+		return spinFrames[0] + " " + b.data.Status + " " + symSep + " обновляю"
 	case b.loading:
-		return b.data.Status + " " + symDot + " обновляю"
+		return spinFrames[0] + " обновляю"
 	}
 	return b.data.Status
 }
@@ -118,9 +113,6 @@ func (b *board) Command() string {
 
 func (b *board) Keys() []Key {
 	var k []Key
-	if len(b.data.Rows) > 0 {
-		k = append(k, Key{symUpDown, "выбор"})
-	}
 	for _, a := range b.opts.Actions {
 		if a.Free || len(b.data.Rows) > 0 {
 			k = append(k, Key{a.Key, a.Label})
@@ -129,7 +121,7 @@ func (b *board) Keys() []Key {
 	if !b.opts.Static {
 		k = append(k, Key{"r", "обновить"})
 	}
-	return append(k, Key{"esc", "назад"})
+	return k
 }
 
 func (b *board) current() *BoardRow {
@@ -166,18 +158,14 @@ func (b *board) Update(msg tea.Msg, app *App) tea.Cmd {
 		return nil
 	case boardTickMsg:
 		return tea.Batch(b.load(false), b.tick())
-	case boardRunMsg:
-		b.busy = ""
-		if msg.err != nil {
-			return tea.Batch(app.Toast(level.Bad, msg.err.Error()), b.load(false))
-		}
-		return tea.Batch(app.Toast(level.OK, msg.text), b.load(false))
+	case JobDone:
+		return b.load(false)
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if b.list.Key(k, 10) {
 			return nil
 		}
-		if (k == "r" || k == "к") && !b.opts.Static {
+		if k == "r" && !b.opts.Static {
 			return b.load(true)
 		}
 		for _, a := range b.opts.Actions {
@@ -185,16 +173,13 @@ func (b *board) Update(msg tea.Msg, app *App) tea.Cmd {
 			if a.Key != k || (row == nil && !a.Free) {
 				continue
 			}
-			if b.busy != "" {
-				return app.Toast(level.Warn, "подожди: "+b.busy)
-			}
 			switch {
 			case a.Run != nil:
-				b.busy = a.Label
-				return func() tea.Msg {
-					text, err := a.Run(row)
-					return boardRunMsg{text, err}
+				doing := a.Doing
+				if doing == "" {
+					doing = a.Label
 				}
+				return app.Job(doing, func() (string, error) { return a.Run(row) })
 			case a.Do != nil:
 				return app.Do(a.Do(row))
 			}

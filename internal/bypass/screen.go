@@ -26,17 +26,17 @@ func Screen(env *app.Env) tui.Screen {
 			{Key: "f", Label: "починить", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"route", "fix"}) }}
 			}},
-			{Key: "t", Label: "проверить порты", Free: true, Run: func(*tui.BoardRow) (string, error) {
+			{Key: "c", Label: "проверить", Doing: "проверяю порты целей", Free: true, Run: func(*tui.BoardRow) (string, error) {
 				probe = true
 				return "порт 22 проверен у каждой цели", nil
 			}},
-			{Key: "d", Label: "убрать цель", Do: func(row *tui.BoardRow) tui.Action {
+			{Key: "x", Label: "убрать", Do: func(row *tui.BoardRow) tui.Action {
 				if row == nil {
 					return tui.Action{}
 				}
 				return tui.Action{Exit: func() { env.After([]string{"direct", "rm", row.ID}) }}
 			}},
-			{Key: "s", Label: "страж", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
+			{Key: "l", Label: "журнал", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
 		},
 	})
 }

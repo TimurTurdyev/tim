@@ -56,20 +56,19 @@ func (r *result) Crumbs() []string { return []string{r.title} }
 
 func (r *result) Status() string {
 	if !r.done {
-		return "выполняется..."
+		return spinFrames[0] + " выполняется"
 	}
 	if r.err != nil {
-		return "ошибка"
+		return symCross + " ошибка"
 	}
-	return "готово"
+	return symCheck + " готово"
 }
 
 func (r *result) Keys() []Key {
-	k := []Key{{symUpDown, "прокрутка"}, {"r", "повторить"}}
+	k := []Key{{"r", "повторить"}}
 	if r.copied != nil {
-		k = append(k, Key{"c", "скопировать команду"})
+		k = append(k, Key{"y", "скопировать"})
 	}
-	k = append(k, Key{"esc", "назад"})
 	return k
 }
 
@@ -95,14 +94,14 @@ func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 			r.top = max(0, r.top-20)
 		case "pgdown":
 			r.top += 20
-		case "r", "к":
+		case "r":
 			r.done = false
 			r.lines = nil
 			return r.Init()
-		case "c", "с":
+		case "y":
 			if r.copied != nil {
 				r.copied("tim " + r.title)
-				return app.Toast(level.OK, "скопировано: tim "+r.title)
+				return app.Say(level.OK, "скопировано: tim "+r.title)
 			}
 		case "1", "2", "3":
 			i := int(msg.String()[0] - '1')

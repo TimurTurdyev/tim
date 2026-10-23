@@ -117,13 +117,12 @@ func (p *projects) Escape() bool {
 
 func (p *projects) Keys() []Key {
 	if p.input.Focused() {
-		return []Key{{symUpDown, "выбор"}, {"enter", "перейти"}, {"esc", "готово"}}
+		return []Key{{"enter", "перейти"}, {"esc", "готово"}}
 	}
-	k := []Key{{symUpDown, "выбор"}, {"enter", "перейти"}, {"/", "найти"}}
+	k := []Key{{"enter", "перейти"}, {"/", "найти"}, {"p", "порядок"}}
 	for _, a := range p.opts.Actions {
 		k = append(k, Key{a.Key, a.Label})
 	}
-	k = append(k, Key{"n", "по имени"}, Key{"esc", "назад"})
 	return k
 }
 
@@ -216,7 +215,7 @@ func (p *projects) Update(msg tea.Msg, app *App) tea.Cmd {
 				return app.Do(p.opts.Go(*cur))
 			}
 			return nil
-		case "n", "т":
+		case "p":
 			if !p.Typing() {
 				p.byName = !p.byName
 				p.refill()
@@ -244,9 +243,9 @@ func (p *projects) Update(msg tea.Msg, app *App) tea.Cmd {
 }
 
 func (p *projects) View(width, height int) string {
-	order := "недавние сверху  " + symDot + "  n по имени"
+	order := "недавние сверху  " + symSep + "  p порядок"
 	if p.byName {
-		order = "по имени  " + symDot + "  n недавние сверху"
+		order = "по имени  " + symSep + "  p порядок"
 	}
 	filter := p.input.View()
 	if !p.input.Focused() && p.input.Value() == "" {

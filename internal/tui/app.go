@@ -5,24 +5,35 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Экранный режим tim: один каркас у всех экранов - верхняя строка с крошками, тело, строка клавиш.
-// Экраны лежат стопкой: esc возвращает на предыдущий, с первого - выходит.
+// Экранный режим tim: один каркас у всех экранов - верхняя строка с крошками, тело, строка
+// состояния, строка клавиш. Экраны лежат стопкой: esc возвращает на предыдущий, с корневого
+// выходит со второго нажатия.
+
+// animEvery: шаг общего тикера всех анимаций - кадр работы, моргание, идущие секунды.
+const animEvery = 250 * time.Millisecond
+
+// escWindow: сколько ждать второго esc на корневом экране.
+const escWindow = 2 * time.Second
 
 // globalKeys: то, что одинаково на всех экранах - для справки.
-var globalKeys = []Key{{"esc", "назад, с первого - выход"}, {"?", "справка"}, {":", "любая команда tim"}, {"q", "выход"}}
+var globalKeys = []Key{{"esc", "назад, на главном дважды - выход"}, {"?", "справка"}, {":", "любая команда tim"}, {"q", "выход"}}
+
+// animFrame: кадр общего тикера; экраны берут из него кадр работы через Spinner.
+var animFrame int
 
 // Key: подсказка клавиши для нижней строки и справки.
 type Key struct{ K, D string }
 
-// Screen: один экран. Тело рисует сам, остальное - каркас.
+// Screen: один экран. Тело рисует сам, остальное - каркас. Корневой экран (главный, мастер)
+// отдаёт пустые крошки: верхней строки у него нет, её место занимает лок-ап.
 type Screen interface {
 	Crumbs() []string
 	Status() string
@@ -55,6 +66,13 @@ type Initer interface {
 	Init() tea.Cmd
 }
 
+// animated: экрану нужен общий тикер, пока он открыт (моргание маскота, бегунок в теле).
+// Tick зовётся на каждый кадр.
+type animated interface {
+	Animating() bool
+	Tick(frame int)
+}
+
 // Action: что сделать по выбору пользователя. Заполнено что-то одно.
 type Action struct {
 	Push Screen                 // открыть экран поверх
@@ -84,7 +102,7 @@ type overlay interface {
 	keys() []Key
 }
 
-type toastMsg struct{ id int }
+type animMsg struct{}
 
 // ownedMsg: ответ команды, которую запустил экран id. Доходит только до него, даже если поверх открыт
 // такой же экран; у закрытого экрана ответ пропадает, и его тикер останавливается.
@@ -99,12 +117,6 @@ type frame struct {
 	id int
 }
 
-type toastState struct {
-	text string
-	cls  lipgloss.Style
-	id   int
-}
-
 // App: стопка экранов и общее состояние.
 type App struct {
 	opts    Options
@@ -113,7 +125,12 @@ type App struct {
 	width   int
 	height  int
 	overlay overlay
-	toast   toastState
+	say     sayState
+	jobs    []job
+	lastJob int
+	lastErr string // полный текст последней ошибки - первой строкой палитры
+	ticking bool
+	escAt   time.Time
 	Dir     string // куда перейти после выхода
 	after   func()
 	quit    bool
@@ -143,6 +160,9 @@ func Run(root Screen, opts Options) (dir string, err error) {
 	}
 	return a.Dir, nil
 }
+
+// Spinner: текущий кадр работы ▖▘▝▗.
+func Spinner() string { return spinFrames[animFrame%len(spinFrames)] }
 
 func (a *App) cur() Screen { return a.top().s }
 
@@ -201,97 +221,57 @@ func (a *App) Do(act Action) tea.Cmd {
 	return nil
 }
 
-// Toast показывает строку внизу на несколько секунд.
-func (a *App) Toast(l level.Level, text string) tea.Cmd {
-	st := styleToastOK
-	mark := symCheck
-	switch l {
-	case level.Warn:
-		st, mark = styleToastWn, symWarn
-	case level.Bad:
-		st, mark = styleToastBd, symCross
-	}
-	a.toast = toastState{text: mark + " " + text, cls: st, id: a.toast.id + 1}
-	id := a.toast.id
-	return tea.Tick(4*time.Second, func(time.Time) tea.Msg { return toastMsg{id} })
-}
-
 // Confirm показывает окно подтверждения; yes вызывается по согласию.
 func (a *App) Confirm(d Dialog) tea.Cmd {
 	a.overlay = &confirmOverlay{d: d}
 	return nil
 }
 
-func (a *App) Init() tea.Cmd { return a.init(a.top()) }
+func (a *App) Init() tea.Cmd { return tea.Batch(a.init(a.top()), a.wake()) }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cmd := a.update(msg)
+	return a, tea.Batch(cmd, a.wake())
+}
+
+func (a *App) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
 		// Размер приходит сразу после старта - тогда же один раз спрашивается фон терминала.
 		if !a.askedBg {
 			a.askedBg = true
-			return a, tea.RequestBackgroundColor
+			return tea.RequestBackgroundColor
 		}
-		return a, nil
+		return nil
 	case tea.BackgroundColorMsg:
 		// Строки экрана уже покрашены через ui прежней палитрой - экран собирается заново.
 		if useBackground(msg) {
-			return a, a.init(a.top())
+			return a.init(a.top())
 		}
-		return a, nil
-	case toastMsg:
-		if msg.id == a.toast.id {
-			a.toast.text = ""
+		return nil
+	case sayExpireMsg:
+		if msg.id == a.say.id {
+			a.say = sayState{}
 		}
-		return a, nil
+		return nil
+	case animMsg:
+		a.ticking = false
+		animFrame++
+		if an, ok := a.cur().(animated); ok {
+			an.Tick(animFrame)
+		}
+		return nil
 	case tea.KeyPressMsg:
-		if a.overlay != nil {
-			// Окно открыл верхний экран: ответ его действия - ему.
-			return a, own(a.top().id, a.overlay.update(msg, a))
+		return a.key(msg)
+	case ownedMsg:
+		// Ответ фоновой загрузки должен дойти до своего экрана, даже если поверх уже открыт другой.
+		if done, ok := msg.msg.(jobDoneMsg); ok {
+			return tea.Batch(a.finish(done), a.deliver(msg.id, done.done))
 		}
-		typing := false
-		if t, ok := a.cur().(Typer); ok {
-			typing = t.Typing()
-		}
-		switch msg.String() {
-		case "ctrl+c":
-			a.quit = true
-			return a, tea.Quit
-		case "esc":
-			if e, ok := a.cur().(Escaper); ok && e.Escape() {
-				return a, nil
-			}
-			return a, a.Pop()
-		case "?":
-			if !typing {
-				a.overlay = &helpOverlay{ks: a.cur().Keys()}
-				return a, nil
-			}
-		case ":":
-			if !typing {
-				a.overlay = newCmdline(a, "")
-				return a, nil
-			}
-		case "q", "й":
-			if !typing {
-				a.quit = true
-				return a, tea.Quit
-			}
-		}
-	}
-	if _, ok := msg.(tea.KeyPressMsg); ok {
-		f := a.top()
-		return a, own(f.id, f.s.Update(msg, a))
-	}
-	// Ответ фоновой загрузки должен дойти до своего экрана, даже если поверх уже открыт другой.
-	if m, ok := msg.(ownedMsg); ok {
-		for _, f := range a.stack {
-			if f.id == m.id {
-				return a, own(f.id, f.s.Update(m.msg, a))
-			}
-		}
-		return a, nil
+		return a.deliver(msg.id, msg.msg)
+	case jobDoneMsg:
+		return a.finish(msg)
 	}
 	var cmds []tea.Cmd
 	for _, f := range a.stack {
@@ -299,7 +279,130 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, own(f.id, c))
 		}
 	}
-	return a, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
+}
+
+// deliver отдаёт сообщение экрану id, если он ещё в стопке.
+func (a *App) deliver(id int, msg tea.Msg) tea.Cmd {
+	for _, f := range a.stack {
+		if f.id == id {
+			return own(f.id, f.s.Update(msg, a))
+		}
+	}
+	return nil
+}
+
+// key: порядок разбора клавиши - наложение, ctrl+c, ? : q (если не набор), esc, экран.
+// Строка состояния клавиш не перехватывает: ✕ и ▲ гаснут, а клавиша идёт дальше.
+func (a *App) key(msg tea.KeyPressMsg) tea.Cmd {
+	if a.say.text != "" && a.say.lvl != level.OK && !a.say.plain {
+		a.say = sayState{id: a.say.id + 1}
+	}
+	if msg.String() == "ctrl+c" {
+		a.quit = true
+		return tea.Quit
+	}
+	if _, ok := a.overlay.(*helpOverlay); ok {
+		// Справка закрывается любой клавишей, и эта клавиша делает своё, кроме esc и самого ?.
+		a.overlay = nil
+		if k := msg.String(); k == "esc" || k == "?" {
+			return nil
+		}
+	}
+	if a.overlay != nil {
+		// Окно открыл верхний экран: ответ его действия - ему.
+		return own(a.top().id, a.overlay.update(msg, a))
+	}
+	msg = a.translate(msg)
+	typing := a.typing()
+	switch msg.String() {
+	case "esc":
+		return a.escape()
+	case "?":
+		if !typing {
+			a.overlay = &helpOverlay{ks: slices.DeleteFunc(a.screenKeys(a.cur()), func(k Key) bool { return quietKey(k.K) })}
+			return nil
+		}
+	case ":":
+		if !typing {
+			a.overlay = newCmdline(a, "")
+			return nil
+		}
+	case "q":
+		if !typing {
+			a.quit = true
+			return tea.Quit
+		}
+	}
+	if a.busy() {
+		return nil
+	}
+	f := a.top()
+	return own(f.id, f.s.Update(msg, a))
+}
+
+func (a *App) typing() bool {
+	t, ok := a.cur().(Typer)
+	return ok && t.Typing()
+}
+
+// translate: русская буква становится латинской с той же клавиши. Только там, где нет живой
+// строки ввода: на главном и в наборе русская буква - это текст.
+func (a *App) translate(msg tea.KeyPressMsg) tea.KeyPressMsg {
+	if c, ok := a.cur().(cursored); ok && c.Cursor() != nil || a.typing() {
+		return msg
+	}
+	r := []rune(msg.Text)
+	if len(r) != 1 {
+		return msg
+	}
+	lat, ok := ruLayout[unicode.ToLower(r[0])]
+	if !ok {
+		return msg
+	}
+	if unicode.IsUpper(r[0]) {
+		lat = unicode.ToUpper(lat)
+	}
+	return tea.KeyPressMsg{Code: unicode.ToLower(lat), Text: string(lat), Mod: msg.Mod}
+}
+
+// escape: сначала экран (закрыть фильтр, очистить ввод), потом назад; на корневом первый esc
+// только подсказывает, второй выходит - чтобы, листая назад, не вылететь из tim.
+func (a *App) escape() tea.Cmd {
+	if e, ok := a.cur().(Escaper); ok && e.Escape() {
+		return nil
+	}
+	if len(a.stack) > 1 {
+		a.stack = a.stack[:len(a.stack)-1]
+		return nil
+	}
+	if time.Since(a.escAt) < escWindow {
+		a.quit = true
+		return tea.Quit
+	}
+	a.escAt = time.Now()
+	return a.hint("esc ещё раз - выход "+symSep+" q - выход", escWindow)
+}
+
+// wake запускает общий тикер, если что-то движется: работа, кадр в статусе, экран.
+func (a *App) wake() tea.Cmd {
+	if a.ticking || a.quit || !a.animating() {
+		return nil
+	}
+	a.ticking = true
+	return tea.Tick(animEvery, func(time.Time) tea.Msg { return animMsg{} })
+}
+
+func (a *App) animating() bool {
+	if len(a.jobs) > 0 {
+		return true
+	}
+	s := a.cur()
+	if strings.HasPrefix(s.Status(), spinFrames[0]) {
+		return true
+	}
+	an, ok := s.(animated)
+	return ok && an.Animating()
 }
 
 // own помечает ответы команды экрана его номером. Сообщения самого bubbletea (выход, запуск
@@ -333,103 +436,4 @@ func runtimeMsg(m tea.Msg) bool {
 		t = t.Elem()
 	}
 	return strings.HasPrefix(t.PkgPath(), "charm.land/bubbletea/")
-}
-
-func (a *App) View() tea.View {
-	if a.quit {
-		return tea.NewView("")
-	}
-	w, h := a.width, a.height
-	s := a.cur()
-	top := a.topBar(s)
-	bottom := a.keyBar(s)
-	bodyH := max(1, h-2)
-	var body string
-	if a.overlay != nil {
-		body = a.overlay.view(w, bodyH)
-	} else {
-		body = s.View(w, bodyH)
-	}
-	lines := strings.Split(body, "\n")
-	if len(lines) > bodyH {
-		lines = lines[:bodyH]
-	}
-	for len(lines) < bodyH {
-		lines = append(lines, "")
-	}
-	// Терминал режет длинную строку молча; тильда хотя бы показывает, что там было ещё.
-	for i, l := range lines {
-		lines[i] = ui.Clip(l, w)
-	}
-	if a.toast.text != "" {
-		lines[bodyH-1] = " " + a.toast.cls.Render(a.toast.text)
-	}
-	v := tea.NewView(top + "\n" + strings.Join(lines, "\n") + "\n" + bottom)
-	v.AltScreen = true
-	if c, ok := s.(cursored); ok && a.overlay == nil {
-		if cur := c.Cursor(); cur != nil {
-			cur.Y++ // верхняя полоса
-			v.Cursor = cur
-		}
-	}
-	return v
-}
-
-func (a *App) topBar(s Screen) string {
-	left := styleBrand.Render(" tim ")
-	crumbs := ""
-	for _, c := range s.Crumbs() {
-		crumbs += " " + symPointer + " " + c
-	}
-	left = ui.Clip(left+styleCrumb.Render(crumbs), a.width)
-	// Крошки важнее строки состояния: на узком экране она обрезается или уходит.
-	right := ""
-	if room := a.width - lipgloss.Width(left) - 4; room >= 8 {
-		right = styleStatus.Render(ui.Clip(s.Status(), room) + " ")
-	}
-	gap := a.width - lipgloss.Width(left) - lipgloss.Width(right)
-	return styleTop.Render(left + strings.Repeat(" ", max(0, gap)) + right)
-}
-
-func (a *App) keyBar(s Screen) string {
-	keys := s.Keys()
-	if a.overlay != nil {
-		keys = a.overlay.keys()
-	}
-	right := ""
-	if c := s.Command(); c != "" && a.overlay == nil {
-		right = styleKeyDesc.Render(c + " ")
-	}
-	left := " " + strings.Join(keyCaps(keys), styleKeyDesc.Render("  "))
-	if lipgloss.Width(left) > a.width {
-		left = " " + strings.Join(fitKeys(keys, a.width-1), styleKeyDesc.Render("  "))
-	}
-	gap := a.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		right = ""
-		gap = max(0, a.width-lipgloss.Width(left))
-	}
-	return styleKeyBar.Render(left + strings.Repeat(" ", gap) + right)
-}
-
-func keyCaps(keys []Key) []string {
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = styleKeyCap.Render(" "+k.K+" ") + styleKeyDesc.Render(" "+k.D)
-	}
-	return parts
-}
-
-// fitKeys: клавиши, которые влезают в width, и в конце всегда "?" - там все остальные.
-func fitKeys(keys []Key, width int) []string {
-	more := keyCaps([]Key{{"?", "все клавиши"}})[0]
-	budget := width - lipgloss.Width(more)
-	var parts []string
-	for _, p := range keyCaps(slices.DeleteFunc(slices.Clone(keys), func(k Key) bool { return k.K == "?" })) {
-		if budget -= lipgloss.Width(p) + 2; budget < 0 {
-			break
-		}
-		parts = append(parts, p)
-	}
-	return append(parts, more)
 }

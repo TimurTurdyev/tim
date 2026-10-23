@@ -51,14 +51,14 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 				}
 				return env.Result([]string{"check", row.ID})
 			}},
-			{Key: "e", Label: "только проблемы", Free: true, Run: func(*tui.BoardRow) (string, error) {
+			{Key: "tab", Label: "вкладка", Doing: "переключаю", Free: true, Run: func(*tui.BoardRow) (string, error) {
 				mu.Lock()
 				only = !only
 				mu.Unlock()
 				if only {
-					return "только проблемные; e - все", nil
+					return "проверка: только проблемные", nil
 				}
-				return "все проекты", nil
+				return "проверка: все проекты", nil
 			}},
 		},
 	})

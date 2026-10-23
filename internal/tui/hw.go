@@ -82,7 +82,7 @@ func (h *hw) Status() string {
 func (h *hw) Command() string { return "tim hw --watch" }
 
 func (h *hw) Keys() []Key {
-	return []Key{{"tab", "процессы"}, {"space", "пауза"}, {"esc", "назад"}}
+	return []Key{{"z", "пауза"}, {"tab", "вкладка"}}
 }
 
 func push(hist []float64, v int) []float64 {
@@ -105,11 +105,11 @@ func (h *hw) Update(msg tea.Msg, app *App) tea.Cmd {
 		}
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "tab", "p", "з":
+		case "tab", "shift+tab":
 			if h.opts.Procs != nil {
 				return app.Push(h.opts.Procs())
 			}
-		case "space", " ":
+		case "z":
 			h.paused = !h.paused
 			if !h.paused {
 				return h.fetch()

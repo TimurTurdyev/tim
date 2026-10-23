@@ -110,7 +110,7 @@ func (d *disk) Status() string {
 func (d *disk) Command() string { return "tim disk" }
 
 func (d *disk) Keys() []Key {
-	return []Key{{symLR, "разделы"}, {symUpDown, "место"}, {"space", "отметить"}, {"x", "убрать"}, {"b", "по папкам"}, {"h", "хвосты программ"}, {"r", "пересчитать"}}
+	return []Key{{"enter", "по папкам"}, {"space", "отметить"}, {"x", "убрать"}, {"h", "хвосты"}, {"tab", "вкладка"}, {"r", "обновить"}}
 }
 
 func (d *disk) rows() []DiskRow {
@@ -203,25 +203,18 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "space", " ":
 			if cur := d.current(); cur != nil {
 				if !cur.Removable || cur.Path == "" {
-					return app.Toast(level.Warn, "это место так не убрать: смотри подсказку справа")
+					return app.Say(level.Warn, "это место так не убрать: смотри подсказку справа")
 				}
 				d.marked.toggle(cur.Path, *cur)
 				d.list.Down()
 			}
-		case "x", "ч":
+		case "x":
 			return d.confirmRemove(app)
-		case "b", "и":
-			if d.loading {
-				return app.Toast(level.Warn, "подожди, замер ещё идёт")
-			}
-			if d.opts.Browse != nil {
-				return app.Push(d.opts.Browse())
-			}
-		case "h", "р":
+		case "h":
 			if d.opts.Leftovers != nil {
 				return app.Push(d.opts.Leftovers())
 			}
-		case "r", "к":
+		case "r":
 			return d.load(true)
 		case "enter":
 			if cur := d.current(); cur != nil && d.opts.Browse != nil && cur.Path != "" && !d.loading {
@@ -234,7 +227,7 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 
 func (d *disk) confirmRemove(app *App) tea.Cmd {
 	if d.marked.len() == 0 {
-		return app.Toast(level.Warn, "сначала отметь пробелом, что убрать")
+		return app.Say(level.Warn, "сначала отметь пробелом, что убрать")
 	}
 	var lines, paths []string
 	var sum int64
@@ -255,9 +248,9 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 			d.marked.clear()
 			var cmds []tea.Cmd
 			if len(errs) > 0 {
-				cmds = append(cmds, app.Toast(level.Bad, strings.Join(errs, "; ")))
+				cmds = append(cmds, app.Say(level.Bad, strings.Join(errs, "; ")))
 			} else {
-				cmds = append(cmds, app.Toast(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
+				cmds = append(cmds, app.Say(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
 			}
 			cmds = append(cmds, d.load(false))
 			return tea.Batch(cmds...)

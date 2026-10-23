@@ -46,9 +46,6 @@ func SitesScreen(env *app.Env) tui.Screen {
 				}
 				return tui.Action{Push: DomainScreen(env, d)}
 			}},
-			{Key: "d", Label: "любой домен", Free: true, Do: func(*tui.BoardRow) tui.Action {
-				return tui.Action{Command: "domain "}
-			}},
 		},
 	})
 }
