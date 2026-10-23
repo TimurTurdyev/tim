@@ -5,8 +5,8 @@ import "testing"
 func TestTranslateError(t *testing.T) {
 	cases := map[string]string{
 		"unknown command \"serv\" for \"tim\"\n\nDid you mean this?\n\tserve\n\tsvc\n": "нет команды serv у tim: tim --help; может, serve или svc?",
-		"unknown flag: --nope":                        "нет флага --nope: посмотри --help",
-		"unknown shorthand flag: 'q' in -q":           "нет флага -q: посмотри --help",
+		"unknown flag: --nope":                        "нет флага --nope, посмотри --help",
+		"unknown shorthand flag: 'q' in -q":           "нет флага -q, посмотри --help",
 		"requires at least 1 arg(s), only received 0": "нужно аргументов не меньше 1, передано 0",
 		"accepts at most 2 arg(s), received 3":        "аргументов не больше 2, передано 3",
 		"invalid argument \"x\" for \"--port\" flag: strconv.ParseInt: parsing \"x\": invalid syntax": "неверное значение x для --port",
