@@ -32,6 +32,13 @@ tim() {
       else
         command tim "$@"
       fi ;;
+    "")
+      local f d
+      f=$(mktemp -t tim-cd) || { command tim; return $?; }
+      TIM_CD_FILE=$f command tim; local r=$?
+      d=$(cat "$f" 2>/dev/null); rm -f "$f"
+      [[ -n "$d" ]] && cd "$d"
+      return $r ;;
     *) command tim "$@" ;;
   esac
 }

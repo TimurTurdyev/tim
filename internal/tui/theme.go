@@ -18,6 +18,11 @@ var (
 	colBad    = lipgloss.Color(brand.Red.Hex())
 	colOnAcc  = lipgloss.Color("#0E1A19")
 	colRow    = lipgloss.Color(brand.Shade.Hex())
+	colWarn   = lipgloss.Color(brand.Amber.Hex())
+	colText   = lipgloss.Color("#D7DAE0")
+	colBarBg  = lipgloss.Color("#1F2227") // верхняя и нижняя строки каркаса
+	colKeyBg  = lipgloss.Color("#33373F") // подложка клавиш
+	colGhost  = lipgloss.Color("#2B2F37") // пустая часть полосы
 )
 
 // Символы интерфейса записаны кодами, чтобы исходник оставался набранным с клавиатуры.
@@ -28,6 +33,13 @@ const (
 	symBar     = "\u258c"
 	symUpDown  = "\u2191\u2193"
 	symLR      = "\u2190\u2192"
+	symWarn    = "\u25b2"
+	symCross   = "\u2715"
+	symLamp    = "\u25cf"
+	symOff     = "\u25cb"
+	symArrow   = "\u2192"
+	symBlock   = "\u2588"
+	symShade   = "\u2591"
 )
 
 func timTheme(isDark bool) *huh.Styles {

@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
 
 	"io"
@@ -42,6 +43,16 @@ func wrap(code, s string) string {
 		return s
 	}
 	return "\x1b[" + code + "m" + s + "\x1b[0m"
+}
+
+// Capture выполняет f и возвращает всё, что ушло в ui, с цветами: вывод покажется на экране.
+func Capture(f func()) string {
+	var b bytes.Buffer
+	prevOut, prevEnabled := out, enabled
+	out, enabled = &b, true
+	defer func() { out, enabled = prevOut, prevEnabled }()
+	f()
+	return b.String()
 }
 
 // Роли текста в фирменных цветах; в терминале на 16 цветов - ближайшие стандартные.
