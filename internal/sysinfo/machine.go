@@ -56,14 +56,16 @@ func ParseVMStat(out string) uint64 {
 	return pages * page
 }
 
-// Disk: размер и занято в байтах.
-type Disk struct{ Size, Used uint64 }
+// Disk: размер, занято и доступно в байтах. Доступно меньше, чем размер минус занятое:
+// в APFS остальные тома (система, VM, Preboot) делят то же место.
+type Disk struct{ Size, Used, Avail uint64 }
 
+// Percent: занято в процентах так же, как считает df: от занятого плюс доступного.
 func (d Disk) Percent() int {
-	if d.Size == 0 {
+	if d.Used+d.Avail == 0 {
 		return 0
 	}
-	return int(d.Used * 100 / d.Size)
+	return int((d.Used*100 + d.Used + d.Avail - 1) / (d.Used + d.Avail))
 }
 
 // ParseDF: последняя строка df -k <путь>.
@@ -75,10 +77,11 @@ func ParseDF(out string) (Disk, bool) {
 	}
 	size, err1 := strconv.ParseUint(f[1], 10, 64)
 	used, err2 := strconv.ParseUint(f[2], 10, 64)
-	if err1 != nil || err2 != nil {
+	avail, err3 := strconv.ParseUint(f[3], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil {
 		return Disk{}, false
 	}
-	return Disk{Size: size * 1024, Used: used * 1024}, true
+	return Disk{Size: size * 1024, Used: used * 1024, Avail: avail * 1024}, true
 }
 
 // Battery из pmset -g batt.

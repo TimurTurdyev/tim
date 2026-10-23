@@ -28,6 +28,7 @@ var (
 	diskClean bool
 	diskDays  int
 	diskSys   bool
+	diskDeps  bool
 )
 
 // engineHint: docker system prune чистит только через работающий движок - у выключенного
@@ -368,12 +369,21 @@ func parseSize(s string) (int64, error) {
 }
 
 var diskCmd = &cobra.Command{
-	Use:   "disk [папка] [--min 50M]",
-	Short: "Сколько места заняли node_modules, vendor, venv и сборки по проектам; --clean убирает заброшенное",
-	Args:  cobra.MaximumNArgs(1),
+	Use:   "disk [папка] [--all] [--system] [--deps] [--clean]",
+	Short: "Куда ушло место на диске: игры, виртуалки, файлы проектов, кеши - и как это освободить",
+	Long: `Без флагов - обзор: занято и свободно, и самые большие места, раскрытые до того, что именно
+там лежит (конкретная игра, виртуалка, storage проекта), с подсказкой, как освободить. Первый замер
+домашней папки идёт полминуты, дальше 15 минут берётся из кэша (--fresh - заново).
+--all - все места от 100 MB, а не только крупнейшие. --system - кеши программ по именам.
+--deps [папка] - node_modules, vendor, venv и сборки по проектам; --clean - убрать заброшенные в Корзину.
+tim сам ничего не удаляет, кроме --clean, и то в Корзину и с вопросом.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if diskSys {
 			return diskSystem()
+		}
+		if !diskDeps && !diskClean {
+			return diskMap(args)
 		}
 		root := cfg.Dev
 		if len(args) > 0 {
@@ -431,6 +441,9 @@ func init() {
 	diskCmd.Flags().StringVar(&diskMin, "min", "50M", "не показывать папки меньше")
 	diskCmd.Flags().BoolVar(&diskClean, "clean", false, "предложить убрать в Корзину папки заброшенных проектов")
 	diskCmd.Flags().IntVar(&diskDays, "days", 60, "сколько дней без изменений считать заброшенным")
-	diskCmd.Flags().BoolVar(&diskSys, "system", false, "куда делось место кроме проектов: кеши, образы, Корзина")
+	diskCmd.Flags().BoolVar(&diskSys, "system", false, "кеши программ по именам: npm, go, docker, IDE, модели")
+	diskCmd.Flags().BoolVarP(&diskAll, "all", "a", false, "все места от 100 MB, а не только крупнейшие")
+	diskCmd.Flags().BoolVar(&diskFresh, "fresh", false, "померить заново, а не из кэша")
+	diskCmd.Flags().BoolVar(&diskDeps, "deps", false, "зависимости и сборки по проектам")
 	root.AddCommand(diskCmd)
 }

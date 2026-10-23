@@ -35,9 +35,10 @@ func TestParseVMStat(t *testing.T) {
 	}
 }
 
+// Процент как у df: на APFS размер минус занятое - не свободное место.
 func TestParseDFAndPmset(t *testing.T) {
 	d, ok := ParseDF("Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted on\n/dev/disk3s5 971298980 767109096 132900328 86% 1 2 0% /System/Volumes/Data\n")
-	if !ok || d.Percent() != 78 || d.Size != 971298980*1024 {
+	if !ok || d.Percent() != 86 || d.Avail != 132900328*1024 {
 		t.Errorf("df %+v %d", d, d.Percent())
 	}
 	b, ok := ParsePmset("Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t87%; discharging; 4:12 remaining present: true\n")
