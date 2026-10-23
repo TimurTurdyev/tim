@@ -173,7 +173,7 @@ func diskMap(args []string) error {
 		printMapRow(r)
 	}
 	ui.Println()
-	defer ui.Println(ui.Dim("кеши по программам: tim disk --system; зависимости проектов: tim disk --deps, --clean; tim ничего не удаляет сам"))
+	defer ui.Println(ui.Dim("кеши: --system; зависимости проектов: --deps, --clean; хвосты удалённых программ: --leftovers; tim ничего не удаляет сам"))
 	if len(shown) < len(rows) {
 		ui.Println(ui.Dim("показано " + strconv.Itoa(len(shown)) + " мест из " + strconv.Itoa(len(rows)) + " крупнее 1 GB; все, от 100 MB: tim disk --all"))
 	}
