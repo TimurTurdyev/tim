@@ -193,14 +193,14 @@ func addProject(env *app.Env, dir, name, url string) error {
 	return nil
 }
 
-func removeProject(env *app.Env, name string, yes bool) error {
+func removeProject(env *app.Env, name string) error {
 	if _, ok := env.Cfg.Project(name); !ok {
 		return ui.Errorf("нет проекта %s в реестре", name)
 	}
-	if !yes && runner.NoInput {
+	if !runner.Yes && runner.NoInput {
 		return ui.Errorf("без ввода не спрашиваю: tim proj rm %s -y", name)
 	}
-	if !yes && !runner.Confirm("убрать "+name+" из реестра?") {
+	if !runner.Confirm("убрать " + name + " из реестра?") {
 		return nil
 	}
 	env.Cfg.RemoveProject(name)

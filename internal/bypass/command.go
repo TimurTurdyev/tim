@@ -24,14 +24,13 @@ func (o *addOptions) bind(c *cobra.Command) {
 // unblockOptions: сколько кругов смотреть, куда ходит сайт, и что учитывать.
 type unblockOptions struct {
 	rounds, seconds int
-	yes, all        bool
+	all             bool
 }
 
 func (o *unblockOptions) bind(c *cobra.Command) {
 	c.Flags().IntVar(&o.rounds, "rounds", 3, "сколько кругов смотреть, куда ходит сайт")
 	c.Flags().IntVar(&o.seconds, "seconds", 15, "сколько секунд смотреть за круг")
-	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "не спрашивать после каждого круга")
-	c.Flags().BoolVar(&o.all, "all", false, "учитывать все программы, а не только браузер")
+	c.Flags().BoolVarP(&o.all, "all", "a", false, "учитывать все программы, а не только браузер")
 }
 
 // Commands: команды раздела.
@@ -120,7 +119,7 @@ func routeCommand(env *app.Env) *cobra.Command {
 		Args: cobra.NoArgs,
 		Run:  func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, false, list) },
 	}
-	c.Flags().BoolVar(&list, "all", false, "все адреса, а не только с отклонением")
+	c.Flags().BoolVarP(&list, "all", "a", false, "все адреса, а не только с отклонением")
 	var all bool
 	clean := &cobra.Command{
 		Use:   "clean [--all]",
@@ -128,7 +127,7 @@ func routeCommand(env *app.Env) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return Clean(env.Cfg, all) },
 	}
-	clean.Flags().BoolVar(&all, "all", false, "по всей таблице, а не только для целей из конфига")
+	clean.Flags().BoolVarP(&all, "all", "a", false, "по всей таблице, а не только для целей из конфига")
 	c.AddCommand(
 		&cobra.Command{
 			Use:   "check",

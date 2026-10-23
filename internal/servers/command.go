@@ -96,7 +96,7 @@ func serverCommand(env *app.Env) *cobra.Command {
 	c.Flags().BoolVar(&asJSON, "json", false, "отчёт в JSON")
 	c.Flags().BoolVar(&attacks, "attacks", false, "кто ломится: перебор ssh, удачные входы, пробы сайта, баны - по журналам")
 	c.Flags().BoolVar(&traffic, "traffic", false, "кто ходит: запросы, ошибки, адреса, пути и время ответа - по журналам nginx")
-	c.Flags().StringVar(&since, "since", "", "окно: 24h, 3d, 1w; у --attacks по умолчанию 24h, у --traffic 1h")
+	c.Flags().StringVar(&since, "since", "", "окно назад: 30m, 24h, 3d, 1w; у --attacks по умолчанию 24h, у --traffic 1h")
 	return c
 }
 
@@ -105,7 +105,7 @@ func withWindow(since string, def time.Duration, run func(time.Duration) error) 
 	w := def
 	if since != "" {
 		var err error
-		if w, err = parseSince(since); err != nil {
+		if w, err = ui.ParseSpan(since); err != nil {
 			return err
 		}
 	}
@@ -115,7 +115,7 @@ func withWindow(since string, def time.Duration, run func(time.Duration) error) 
 func serversCommand(env *app.Env) *cobra.Command {
 	var o serversOptions
 	c := &cobra.Command{
-		Use:   "servers [алиас...] [--all] [--json] [--record | --install | --uninstall]",
+		Use:   "servers [алиас...] [--all] [--json] | servers record | install | uninstall",
 		Short: "Все серверы одной таблицей: состояние, uptime, нагрузка, память, диск",
 		Long: `Те же отчёты, что tim server, по всем серверам сразу: без аргументов - по ssh проектов из реестра,
 --all - по всем алиасам ~/.ssh/config. По 6 серверов за раз, каждому 15 секунд, только чтение.
@@ -127,11 +127,36 @@ func serversCommand(env *app.Env) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return runServers(env, args, o) },
 	}
 	f := c.Flags()
-	f.BoolVar(&o.all, "all", false, "все алиасы ~/.ssh/config, а не только серверы проектов")
+	f.BoolVarP(&o.all, "all", "a", false, "все алиасы ~/.ssh/config, а не только серверы проектов")
 	f.BoolVar(&o.json, "json", false, "отчёты в JSON")
-	f.BoolVar(&o.record, "record", false, "записать замер каждого сервера в журнал")
-	f.BoolVar(&o.install, "install", false, "замер каждые 6 часов по расписанию")
-	f.BoolVar(&o.uninstall, "uninstall", false, "убрать замер по расписанию")
+	// Прежние флаги остаются скрытыми: их знают поставленные задания launchd.
+	f.BoolVar(&o.record, "record", false, "")
+	f.BoolVar(&o.install, "install", false, "")
+	f.BoolVar(&o.uninstall, "uninstall", false, "")
+	for _, name := range []string{"record", "install", "uninstall"} {
+		_ = f.MarkHidden(name)
+	}
+	c.AddCommand(&cobra.Command{
+		Use:   "record [алиас...]",
+		Short: "Записать замер каждого сервера в журнал - для прогноза места",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServers(env, args, serversOptions{record: true, all: o.all})
+		},
+	}, &cobra.Command{
+		Use:   "install",
+		Short: "Замер каждые 6 часов по расписанию (launchd, на Linux - systemd)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServers(env, nil, serversOptions{install: true})
+		},
+	}, &cobra.Command{
+		Use:   "uninstall",
+		Short: "Убрать замер по расписанию",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServers(env, nil, serversOptions{uninstall: true})
+		},
+	})
 	return c
 }
 

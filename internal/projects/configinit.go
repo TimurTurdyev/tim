@@ -72,19 +72,19 @@ func onOff(on bool) string {
 func initConfig(env *app.Env, o initOptions) error {
 	_, statErr := os.Stat(config.Path())
 	exists := statErr == nil
-	if !exists && app.Interactive() && !o.yes && o.root == "" && !o.all {
+	if !exists && app.Interactive() && !runner.Yes && o.root == "" && !o.all {
 		return env.Open(OnboardScreen(env, env.Home))
 	}
 	c := config.Default()
 	switch {
 	case exists && o.merge:
 		c = env.Cfg
-	case exists && !o.yes:
+	case exists && !runner.Yes:
 		if !runner.Confirm("конфиг " + config.Path() + " уже есть, перезаписать? (дополнить: --merge)") {
 			return nil
 		}
 	}
-	interactive := app.Interactive() && !o.yes
+	interactive := app.Interactive() && !runner.Yes
 	root, err := askRoot(c.Dev, o.root, interactive)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func initConfig(env *app.Env, o initOptions) error {
 	ui.Println(ui.Label("корень ") + c.Dev + ui.Dim("  найдено новых клонов: "+strconv.Itoa(len(found))))
 	chosen := found
 	if !o.all {
-		if chosen, err = chooseProjects(found, o.yes); err != nil {
+		if chosen, err = chooseProjects(found, runner.Yes); err != nil {
 			return err
 		}
 	}

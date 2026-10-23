@@ -44,7 +44,7 @@ func installStats() error {
 	if err != nil {
 		return err
 	}
-	job := schedule.Job{Label: statsLabel, Args: []string{self, "stats", "--record"}, Every: 3600,
+	job := schedule.Job{Label: statsLabel, Args: []string{self, "stats", "record"}, Every: 3600,
 		Env: schedule.JobEnv(), Log: stats.Dir() + "/record.log"}
 	if err := schedule.Install(job, "tim-stats"); err != nil {
 		return err
@@ -83,7 +83,7 @@ func localSample() stats.Sample {
 // printStats: графики за период и прогноз по одному журналу.
 func printStats(name string, list []stats.Sample) {
 	if len(list) == 0 {
-		ui.Println(ui.Label(name) + ui.Dim("  замеров нет: tim stats --record или --install"))
+		ui.Println(ui.Label(name) + ui.Dim("  замеров нет: tim stats record или tim stats install"))
 		return
 	}
 	first, last := list[0], list[len(list)-1]
@@ -120,7 +120,7 @@ func forecastLine(list []stats.Sample) string {
 	text, lvl, ok := stats.ForecastLine(list)
 	if !ok {
 		if !schedule.Installed(statsLabel, "tim-stats", false) {
-			return ui.Dim("для прогноза нужны замеры хотя бы за сутки, а ежечасный замер не стоит: tim stats --install")
+			return ui.Dim("для прогноза нужны замеры хотя бы за сутки, а ежечасный замер не стоит: tim stats install")
 		}
 		return ui.Dim("для прогноза нужны замеры хотя бы за сутки")
 	}

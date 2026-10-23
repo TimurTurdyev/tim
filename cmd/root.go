@@ -75,6 +75,7 @@ var utilCmds = []string{"hex", "dec", "b64", "jwt", "ts", "uuid", "hash", "json"
 func init() {
 	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
 	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
+	root.PersistentFlags().BoolVarP(&runner.Yes, "yes", "y", false, "на все вопросы отвечать да: для скриптов и агентов")
 	root.CompletionOptions.HiddenDefaultCmd = true
 	env.Version = resolveVersion()
 	screens = home.New(env, root, home.Options{Examples: examples, Overview: overview, Translate: translateError,

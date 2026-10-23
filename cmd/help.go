@@ -36,7 +36,13 @@ const usageTemplate = `{{h "Использование:"}}{{if .Runnable}}
 {{flags (.LocalFlags.FlagUsages | trimTrailingWhitespaces)}}{{end}}{{if .HasAvailableInheritedFlags}}
 
 {{h "Общие флаги:"}}
-{{flags (.InheritedFlags.FlagUsages | trimTrailingWhitespaces)}}{{end}}{{if .HasAvailableSubCommands}}
+{{flags (.InheritedFlags.FlagUsages | trimTrailingWhitespaces)}}{{end}}{{if not .HasParent}}
+
+{{h "Соглашения:"}}
+  up/down - туннели и маршруты, on/off - переключатели, start/stop - службы, kill - процессы
+  -y отвечает "да" на все вопросы, --no-input - "нет"; --dry-run печатает команды, ничего не делая
+  сроки пишутся как 30m, 24h, 3d, 1w; --since принимает и дату 2025-10-01
+  у отчётов есть --json - для скриптов и агентов{{end}}{{if .HasAvailableSubCommands}}
 
 {{dim (print "Подробнее о команде: " .CommandPath " <команда> --help")}}{{end}}
 `
@@ -73,9 +79,9 @@ var examples = map[string]string{
 	"tim setup":       "  tim setup shop             # доделать склонированный проект\n  tim setup git@github.com:me/shop.git\n  tim setup shop --dry-run   # посмотреть, что будет сделано",
 	"tim check":       "  tim check                  # все проекты реестра\n  tim check shop             # один проект\n  tim check example.com      # домен не из реестра\n  tim check --local          # без сети\n  tim check --servers        # и серверы проектов по ssh",
 	"tim server":      "  tim server prod            # алиас из ~/.ssh/config или проект\n  tim server prod --attacks  # кто ломится, за сутки\n  tim server prod --traffic  # кто ходит на сайты, за час\n  tim server prod --traffic --since 1d",
-	"tim servers":     "  tim servers                # серверы проектов из реестра\n  tim servers --all          # все алиасы ~/.ssh/config\n  tim servers --install      # замер раз в 6 часов для прогноза диска",
+	"tim servers":     "  tim servers                # серверы проектов из реестра\n  tim servers --all          # все алиасы ~/.ssh/config\n  tim servers install        # замер раз в 6 часов для прогноза диска",
 	"tim sync":        "  tim sync                   # порт и база из .env\n  tim sync --remote          # боевые домены из nginx на серверах\n  tim sync shop --force",
-	"tim ports":       "  tim ports\n  tim port 5173          # карточка: что это, папка, кто запустил\n  tim port 8000 kill\n  tim ports --old --hours 4",
+	"tim ports":       "  tim ports\n  tim port 5173          # карточка: что это, папка, кто запустил\n  tim port 8000 kill\n  tim ports --old --older 4h",
 	"tim php":         "  tim php\n  tim php use 8.3\n  tim php exec 8.1 composer install",
 	"tim disk":        "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --deps ~/Dev/clients --min 200M",
 	"tim cron":        "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",

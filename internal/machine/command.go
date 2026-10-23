@@ -1,9 +1,12 @@
 package machine
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Commands: команды раздела.
@@ -80,7 +83,7 @@ func psCommand(env *app.Env) *cobra.Command {
 func killCommand() *cobra.Command {
 	var o killOptions
 	c := &cobra.Command{
-		Use:   "kill <имя|pid> [--force] [-y]",
+		Use:   "kill <имя|pid> [--force]",
 		Short: "Закрыть зависшее приложение или процесс: сначала бережно, потом принудительно",
 		Long: `Ищет по имени с опечатками ("goglehrome" найдёт Google Chrome) и закрывает все процессы
 приложения разом. Приложение сначала закрывается как Cmd+Q - оно успеет спросить про несохранённое.
@@ -90,24 +93,32 @@ func killCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return kill(args[0], o) },
 	}
 	c.Flags().BoolVar(&o.force, "force", false, "сразу принудительно (SIGKILL)")
-	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "не спрашивать")
 	return c
 }
 
 func portsCommand(env *app.Env) *cobra.Command {
 	var o portsOptions
+	var older string
+	var hours float64
 	c := &cobra.Command{
-		Use:   "ports [--all] [--old [--hours 8] [--kill]]",
+		Use:   "ports [--all] [--old [--older 8h] [--kill]]",
 		Short: "Кто слушает TCP-порты: процесс, сколько работает, чей проект",
 		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return printPorts(env.Cfg, o) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if o.older, err = olderFlag(cmd, older, hours); err != nil {
+				return err
+			}
+			return printPorts(env.Cfg, o)
+		},
 	}
-	c.Flags().BoolVar(&o.all, "all", false, "показать и системные процессы")
-	c.Flags().BoolVar(&o.old, "old", false, "dev-серверы проектов, которые работают дольше --hours")
-	c.Flags().Float64Var(&o.hours, "hours", ForgottenAfter.Hours(), "сколько часов считать долгим")
+	c.Flags().BoolVarP(&o.all, "all", "a", false, "показать и системные процессы")
+	c.Flags().BoolVar(&o.old, "old", false, "dev-серверы проектов, которые работают дольше --older")
+	c.Flags().StringVar(&older, "older", "8h", "с какого возраста dev-сервер считается забытым: 8h, 2d")
+	c.Flags().Float64Var(&hours, "hours", 0, "")
+	_ = c.Flags().MarkHidden("hours")
 	c.Flags().BoolVar(&o.kill, "kill", false, "с --old: предложить остановить каждый")
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
-	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "с --kill: не спрашивать, для скриптов и агентов")
 	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	return c
 }
@@ -115,7 +126,7 @@ func portsCommand(env *app.Env) *cobra.Command {
 func portCommand(env *app.Env) *cobra.Command {
 	var o portsOptions
 	c := &cobra.Command{
-		Use:   "port <n> [kill [-y]] [--json] | port check <host:port...>",
+		Use:   "port <n> [kill] [--json] | port check <host:port...>",
 		Short: "Кто держит порт, остановить его; проверка чужих портов",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -125,7 +136,6 @@ func portCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
-	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "kill без вопроса, для скриптов и агентов")
 	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "check <host:port...>",
@@ -168,18 +178,46 @@ func netCommand() *cobra.Command {
 func statsCommand() *cobra.Command {
 	var o statsOptions
 	c := &cobra.Command{
-		Use:   "stats [--month] [--record] [--install] [--uninstall]",
+		Use:   "stats [--month] | stats record | install | uninstall",
 		Short: "История машины: место, память, нагрузка, батарея и когда кончится диск",
 		Long: `Показывает графики за неделю (--month - за месяц) по журналу замеров и прогноз свободного места.
-Замеры пишет tim stats --record; tim stats --install ставит его каждый час (launchd, на Linux - systemd).`,
+Замеры пишет tim stats record; tim stats install ставит его каждый час (launchd, на Linux - systemd).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return runStats(o) },
 	}
-	c.Flags().BoolVar(&o.record, "record", false, "сделать замер и дописать в журнал")
-	c.Flags().BoolVar(&o.install, "install", false, "замер каждый час")
-	c.Flags().BoolVar(&o.uninstall, "uninstall", false, "убрать ежечасный замер")
 	c.Flags().BoolVar(&o.month, "month", false, "за месяц, а не за неделю")
+	// Прежние флаги остаются скрытыми: их уже знают поставленные задания launchd.
+	c.Flags().BoolVar(&o.record, "record", false, "")
+	c.Flags().BoolVar(&o.install, "install", false, "")
+	c.Flags().BoolVar(&o.uninstall, "uninstall", false, "")
+	for _, name := range []string{"record", "install", "uninstall"} {
+		_ = c.Flags().MarkHidden(name)
+	}
+	c.AddCommand(&cobra.Command{
+		Use:   "record",
+		Short: "Сделать замер и дописать в журнал",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return runStats(statsOptions{record: true}) },
+	}, &cobra.Command{
+		Use:   "install",
+		Short: "Замер каждый час по расписанию (launchd, на Linux - systemd)",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return runStats(statsOptions{install: true}) },
+	}, &cobra.Command{
+		Use:   "uninstall",
+		Short: "Убрать ежечасный замер",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return runStats(statsOptions{uninstall: true}) },
+	})
 	return c
+}
+
+// olderFlag: срок из --older; прежний --hours ещё понимается.
+func olderFlag(cmd *cobra.Command, older string, hours float64) (time.Duration, error) {
+	if cmd.Flags().Changed("hours") {
+		return time.Duration(hours * float64(time.Hour)), nil
+	}
+	return ui.ParseSpan(older)
 }
 
 func ipCommand(env *app.Env) *cobra.Command {

@@ -19,7 +19,7 @@ func Commands(env *app.Env) []*cobra.Command {
 		ValidArgs: names(),
 		RunE:      func(cmd *cobra.Command, args []string) error { return show(env.Cfg, args, all, timing) },
 	}
-	c.Flags().BoolVar(&all, "all", false, "все разделы")
+	c.Flags().BoolVarP(&all, "all", "a", false, "все разделы")
 	c.Flags().BoolVar(&timing, "time", false, "сколько занял каждый раздел")
 	return []*cobra.Command{c}
 }

@@ -68,7 +68,7 @@ func unblock(env *app.Env, site string, o unblockOptions) error {
 			break
 		}
 		targets, names := offerGroups(fresh)
-		if !o.yes && !runner.ConfirmDefault("пустить их мимо VPN?", true) {
+		if !runner.ConfirmDefault("пустить их мимо VPN?", true) {
 			break
 		}
 		if err := u.apply(targets, names); err != nil {

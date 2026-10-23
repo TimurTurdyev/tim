@@ -77,7 +77,7 @@ func envCommand(env *app.Env) *cobra.Command {
 		ValidArgsFunction: app.ProjectNames,
 		RunE:              func(cmd *cobra.Command, args []string) error { return printEnv(env, app.First(args), all) },
 	}
-	c.Flags().BoolVar(&all, "all", false, "все ключи, секреты скрыты")
+	c.Flags().BoolVarP(&all, "all", "a", false, "все ключи, секреты скрыты")
 	diff := &cobra.Command{
 		Use:   "diff [проект] [--server]",
 		Short: "Чем .env отличается от образца, а с --server - от .env на сервере",

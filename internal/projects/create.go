@@ -118,11 +118,11 @@ func setupProject(env *app.Env, arg string, o setupOptions) error {
 	for _, s := range steps {
 		ui.Println("  " + ui.Label(ui.Pad(s.Why, width)) + "  " + ui.Dim(s.String()))
 	}
-	if !o.yes && !runner.Confirm("выполнить?") {
+	if !runner.Confirm("выполнить?") {
 		return ui.Errorf("отменено")
 	}
 	for _, s := range steps {
-		if s.Ask && !o.yes && !runner.Confirm(s.Why+": "+s.String()+"?") {
+		if s.Ask && !runner.Confirm(s.Why+": "+s.String()+"?") {
 			continue
 		}
 		if err := doStep(dir, s); err != nil {

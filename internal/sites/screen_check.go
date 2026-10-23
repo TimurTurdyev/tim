@@ -4,17 +4,21 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // CheckScreen: проверка проектов, как у tim check без флагов.
-func CheckScreen(env *app.Env) tui.Screen { return checkScreen(env, checkOptions{hours: 8}) }
+func CheckScreen(env *app.Env) tui.Screen {
+	return checkScreen(env, checkOptions{older: machine.ForgottenAfter})
+}
 
 // checkScreen: таблица проектов, панель с проблемами, только проблемные по e.
 func checkScreen(env *app.Env, o checkOptions) tui.Screen {
@@ -38,7 +42,7 @@ func checkScreen(env *app.Env, o checkOptions) tui.Screen {
 			if rows == nil || fresh {
 				rows = checkAll(env.Cfg, o)
 			}
-			return checkData(env.Cfg, rows, only, o.hours)
+			return checkData(env.Cfg, rows, only, o.older)
 		},
 		Actions: []tui.BoardAction{
 			{Key: "enter", Label: "подробно", Do: func(row *tui.BoardRow) tui.Action {
@@ -77,7 +81,7 @@ func checkAll(cfg *config.Config, o checkOptions) []health.Row {
 	return checkRows(cfg, projects, o)
 }
 
-func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) tui.BoardData {
+func checkData(cfg *config.Config, rows []health.Row, only bool, older time.Duration) tui.BoardData {
 	var d tui.BoardData
 	ok, warn, bad := health.Counts(rows)
 	d.Status = ui.Count(len(rows), "проект", "проекта", "проектов")
@@ -119,7 +123,7 @@ func checkData(cfg *config.Config, rows []health.Row, only bool, hours float64) 
 	if hidden > 0 {
 		d.Foot = append(d.Foot, ui.Dim(fmt.Sprintf("ещё %d в порядке, e - показать", hidden)))
 	}
-	d.Foot = append(d.Foot, machineNotes(cfg, hours)...)
+	d.Foot = append(d.Foot, machineNotes(cfg, older)...)
 	d.Empty = fmt.Sprintf("проблем нет: ок %d", ok)
 	if len(rows) == 0 {
 		d.Empty = "проверять нечего: ни у одного проекта нет git и адреса сайта"

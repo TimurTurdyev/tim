@@ -3,7 +3,11 @@
 package tools
 
 import (
+	"strconv"
+
 	"github.com/spf13/cobra"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Commands: команды раздела.
@@ -143,13 +147,23 @@ func urlCommand() *cobra.Command {
 func passCommand() *cobra.Command {
 	var o passOptions
 	c := &cobra.Command{
-		Use:   "pass [-n 20] [-c 1] [--no-symbols] [--no-ambiguous] [--copy]",
-		Short: "Сгенерировать пароль (криптослучайный, все классы символов)",
-		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return printPasswords(o) },
+		Use:   "pass [длина] [-n 1] [--no-symbols] [--no-ambiguous] [--copy]",
+		Short: "Сгенерировать пароль (криптослучайный, все классы символов); длина по умолчанию 20",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				n, err := strconv.Atoi(args[0])
+				if err != nil || n < 4 {
+					return ui.Errorf("длина - число от 4: tim pass 32")
+				}
+				o.length = n
+			}
+			return printPasswords(o)
+		},
 	}
-	c.Flags().IntVarP(&o.length, "length", "n", 20, "длина")
-	c.Flags().IntVarP(&o.count, "count", "c", 1, "сколько паролей")
+	c.Flags().IntVarP(&o.count, "count", "n", 1, "сколько паролей")
+	c.Flags().IntVar(&o.length, "length", 20, "")
+	_ = c.Flags().MarkHidden("length")
 	c.Flags().BoolVar(&o.noSymbols, "no-symbols", false, "только буквы и цифры")
 	c.Flags().BoolVar(&o.noAmbiguous, "no-ambiguous", false, "без похожих 0 O o 1 l I")
 	c.Flags().BoolVar(&o.copy, "copy", false, "сразу в буфер обмена (его история тоже запомнит пароль)")

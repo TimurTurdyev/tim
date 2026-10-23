@@ -20,7 +20,7 @@ type topOptions struct {
 	cpu   bool
 }
 
-type killOptions struct{ force, yes bool }
+type killOptions struct{ force bool }
 
 func printTop(cfg *config.Config, o topOptions) error {
 	full, err := procs.All()
@@ -195,7 +195,7 @@ func killApp(a procs.App, o killOptions) error {
 			q = "закрыть " + a.Name + " как Cmd+Q?"
 		}
 		// Бережное закрытие ты и так попросил, словом kill, - Enter соглашается.
-		if !o.yes && !runner.ConfirmDefault(q, true) {
+		if !runner.ConfirmDefault(q, true) {
 			return ui.Errorf("отменено")
 		}
 		text, err := Close(a, false)
@@ -205,7 +205,7 @@ func killApp(a procs.App, o killOptions) error {
 		}
 		ui.Println(ui.Warn(strings.TrimSuffix(err.Error(), "; принудительно - X")))
 	}
-	if !o.yes && !runner.Confirm("убить принудительно? несохранённое пропадёт") {
+	if !runner.Confirm("убить принудительно? несохранённое пропадёт") {
 		return ui.Errorf("оставлен как есть")
 	}
 	text, err := Close(a, true)

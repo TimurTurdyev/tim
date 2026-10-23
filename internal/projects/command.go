@@ -13,9 +13,9 @@ import (
 
 // initOptions: как собирать первый конфиг.
 type initOptions struct {
-	root, wrapper   string
-	all, yes, merge bool
-	wrapperSet      bool
+	root, wrapper string
+	all, merge    bool
+	wrapperSet    bool
 }
 
 // newOptions: из какого шаблона и куда создавать проект.
@@ -26,7 +26,6 @@ type newOptions struct {
 
 // setupOptions: куда клонировать и спрашивать ли.
 type setupOptions struct {
-	yes      bool
 	in, name string
 }
 
@@ -90,15 +89,13 @@ func projCommand(env *app.Env) *cobra.Command {
 }
 
 func removeCommand(env *app.Env) *cobra.Command {
-	var yes bool
 	c := &cobra.Command{
-		Use:               "rm <имя> [-y]",
+		Use:               "rm <имя>",
 		Short:             "Убрать проект из реестра (папка остаётся)",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return removeProject(env, args[0], yes) },
+		RunE:              func(cmd *cobra.Command, args []string) error { return removeProject(env, args[0]) },
 	}
-	c.Flags().BoolVarP(&yes, "yes", "y", false, "не спрашивать подтверждения")
 	return c
 }
 
@@ -124,7 +121,7 @@ func configCommand(env *app.Env) *cobra.Command {
 	c.Flags().BoolVar(&raw, "raw", false, "весь файл целиком")
 	var o initOptions
 	initCmd := &cobra.Command{
-		Use:   "init [--root папка] [--wrapper app] [--all] [--merge] [-y]",
+		Use:   "init [--root папка] [--wrapper app] [--all] [--merge]",
 		Short: "Мастер первого конфига: корень проектов, поиск клонов, реестр",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -135,8 +132,7 @@ func configCommand(env *app.Env) *cobra.Command {
 	f := initCmd.Flags()
 	f.StringVar(&o.root, "root", "", "корень проектов")
 	f.StringVar(&o.wrapper, "wrapper", "", "подпапка с клоном внутри папки проекта, например app")
-	f.BoolVar(&o.all, "all", false, "добавить все найденные клоны")
-	f.BoolVarP(&o.yes, "yes", "y", false, "без вопросов")
+	f.BoolVarP(&o.all, "all", "a", false, "добавить все найденные клоны")
 	f.BoolVar(&o.merge, "merge", false, "дополнить существующий конфиг")
 	c.AddCommand(initCmd)
 	return c
@@ -179,7 +175,6 @@ func setupCommand(env *app.Env) *cobra.Command {
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error { return setupProject(env, app.First(args), o) },
 	}
-	c.Flags().BoolVarP(&o.yes, "yes", "y", false, "не спрашивать подтверждения")
 	c.Flags().StringVar(&o.in, "in", "projects", "папка внутри корня проектов при клонировании")
 	c.Flags().StringVar(&o.name, "name", "", "имя проекта при клонировании")
 	return c
@@ -188,7 +183,7 @@ func setupCommand(env *app.Env) *cobra.Command {
 func syncCommand(env *app.Env) *cobra.Command {
 	var o syncOptions
 	c := &cobra.Command{
-		Use:   "sync [проект...] [--remote] [--ssh] [--force]",
+		Use:   "sync [проект...] [--remote] [--ssh] [--overwrite]",
 		Short: "Заполнить поля реестра тем, что известно из самих проектов",
 		Long: `Берёт из .env проекта адрес сайта (APP_URL), порт и базу и дописывает их в реестр.
 Локальные адреса (localhost, .test) адресом сайта не считаются. По умолчанию заполняются только
@@ -199,7 +194,9 @@ func syncCommand(env *app.Env) *cobra.Command {
 		ValidArgsFunction: app.ProjectNames,
 		RunE:              func(cmd *cobra.Command, args []string) error { return syncRegistry(env, args, o) },
 	}
-	c.Flags().BoolVar(&o.force, "force", false, "перезаписывать и непустые поля")
+	c.Flags().BoolVar(&o.force, "overwrite", false, "перезаписывать и непустые поля")
+	c.Flags().BoolVar(&o.force, "force", false, "")
+	_ = c.Flags().MarkHidden("force")
 	c.Flags().BoolVar(&o.remote, "remote", false, "спросить домены у серверов по ssh (конфиги nginx)")
 	c.Flags().BoolVar(&o.ssh, "ssh", false, "определить ssh-алиас по адресу сайта")
 	return c
@@ -224,7 +221,7 @@ func eachCommand(env *app.Env) *cobra.Command {
 	}
 	f := c.Flags()
 	f.BoolVar(&o.list, "list", false, "только показать, где и в каких версиях")
-	f.BoolVar(&o.all, "all", false, "во всех, даже свежих")
+	f.BoolVarP(&o.all, "all", "a", false, "во всех, даже свежих")
 	f.BoolVar(&o.scan, "scan", false, "искать и вне реестра, под корнем проектов")
 	f.StringVar(&o.marker, "marker", "", "разовый запуск: файл-маркер, команда после --")
 	f.BoolVarP(&o.verbose, "verbose", "v", false, "печатать вывод команды")
@@ -234,7 +231,7 @@ func eachCommand(env *app.Env) *cobra.Command {
 func todayCommand(env *app.Env) *cobra.Command {
 	var o todayOptions
 	c := &cobra.Command{
-		Use:   "today [проект...] [--week] [--since 2025-10-01] [--md]",
+		Use:   "today [проект...] [--week] [--since 2025-10-01|3d] [--md]",
 		Short: "Что сделано сегодня или за неделю: свои коммиты по всем проектам",
 		Long: `Собирает свои коммиты по всем проектам реестра (или по названным) с полуночи,
 с понедельника (--week) или с даты (--since). Автор - user.email каждого репозитория.
@@ -243,7 +240,7 @@ func todayCommand(env *app.Env) *cobra.Command {
 		RunE:              func(cmd *cobra.Command, args []string) error { return today(env, args, o) },
 	}
 	c.Flags().BoolVar(&o.week, "week", false, "с понедельника этой недели")
-	c.Flags().StringVar(&o.since, "since", "", "с даты, например 2025-10-01")
+	c.Flags().StringVar(&o.since, "since", "", "с даты (2025-10-01) или за срок назад (3d, 2w)")
 	c.Flags().BoolVar(&o.md, "md", false, "списком для отчёта")
 	c.Flags().BoolVar(&o.anyone, "anyone", false, "коммиты всех авторов, а не только свои")
 	return c

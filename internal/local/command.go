@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/hostsfile"
 	"github.com/TimurTurdyev/tim/internal/localca"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Commands: команды раздела; cert new и cert ca встают под cert раздела sites.
@@ -68,21 +69,25 @@ func hostCommand() *cobra.Command {
 func resolverCommand() *cobra.Command {
 	var off bool
 	c := &cobra.Command{
-		Use:   "resolver [домен верхнего уровня] [--off]",
+		Use:   "resolver [зона] [off]",
 		Short: "Весь домен вида *.test на 127.0.0.1 через dnsmasq, без записей в /etc/hosts",
 		Long: `/etc/hosts знает только точные имена, поэтому поддомены вида a.shop.test в него не записать.
 Резолвер решает это целиком: dnsmasq отдаёт 127.0.0.1 на любое имя в зоне, а /etc/resolver/<зона>
 говорит системе спрашивать про эту зону у него. Без аргумента показывает уже настроенные зоны.`,
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				listResolvers()
 				return nil
 			}
-			return setResolver(args[0], off)
+			if len(args) == 2 && args[1] != "off" {
+				return ui.Errorf("после зоны может быть только off: tim host resolver %s off", args[0])
+			}
+			return setResolver(args[0], off || len(args) == 2)
 		},
 	}
-	c.Flags().BoolVar(&off, "off", false, "убрать зону")
+	c.Flags().BoolVar(&off, "off", false, "")
+	_ = c.Flags().MarkHidden("off")
 	return c
 }
 

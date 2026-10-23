@@ -6,14 +6,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
-	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // checkOptions: что проверять и как часто обходить по расписанию.
 type checkOptions struct {
 	local, net, servers, install, uninstall, notify bool
-	hours                                           float64
+	older                                           time.Duration
 	at                                              string
 }
 
@@ -44,21 +43,58 @@ func Commands(env *app.Env) []*cobra.Command {
 
 func checkCommand(env *app.Env) *cobra.Command {
 	var o checkOptions
+	var older string
+	var hours float64
 	c := &cobra.Command{
-		Use:   "check [проект...]",
+		Use:   "check [проект...] | check install [--at 09:30] | uninstall",
 		Short: "Обход хозяйства: git, сайт, сертификат, почта, срок домена по всем проектам",
-		RunE:  func(cmd *cobra.Command, args []string) error { return check(env, args, o) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if o.older, err = olderFlag(cmd, older, hours); err != nil {
+				return err
+			}
+			return check(env, args, o)
+		},
 	}
 	f := c.Flags()
 	f.BoolVar(&o.local, "local", false, "только локальные проверки, без сети")
 	f.BoolVar(&o.net, "net", false, "только сетевые проверки")
 	f.BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh: место, юниты, обновления, sshd - только чтение")
-	f.Float64Var(&o.hours, "hours", machine.ForgottenAfter.Hours(), "с какого возраста dev-сервер считается забытым")
-	f.BoolVar(&o.install, "install", false, "обходить каждый день и присылать уведомление, если что-то плохо")
-	f.BoolVar(&o.uninstall, "uninstall", false, "убрать ежедневный обход")
+	f.StringVar(&older, "older", "8h", "с какого возраста dev-сервер считается забытым: 8h, 2d")
 	f.BoolVar(&o.notify, "notify", false, "уведомление системы, если есть плохие строки")
-	f.StringVar(&o.at, "at", "09:30", "во сколько обходить (с --install)")
+	// Прежние флаги остаются скрытыми: их знают поставленные задания и чужие скрипты.
+	f.Float64Var(&hours, "hours", 0, "")
+	f.BoolVar(&o.install, "install", false, "")
+	f.BoolVar(&o.uninstall, "uninstall", false, "")
+	f.StringVar(&o.at, "at", "09:30", "")
+	for _, name := range []string{"hours", "install", "uninstall", "at"} {
+		_ = f.MarkHidden(name)
+	}
+	install := &cobra.Command{
+		Use:   "install [--at 09:30] [--servers]",
+		Short: "Обходить каждый день и присылать уведомление, если что-то плохо",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return check(env, nil, checkOptions{install: true, at: o.at, servers: o.servers})
+		},
+	}
+	install.Flags().StringVar(&o.at, "at", "09:30", "во сколько обходить")
+	install.Flags().BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh")
+	c.AddCommand(install, &cobra.Command{
+		Use:   "uninstall",
+		Short: "Убрать ежедневный обход",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return check(env, nil, checkOptions{uninstall: true}) },
+	})
 	return c
+}
+
+// olderFlag: срок из --older; прежний --hours ещё понимается.
+func olderFlag(cmd *cobra.Command, older string, hours float64) (time.Duration, error) {
+	if cmd.Flags().Changed("hours") {
+		return time.Duration(hours * float64(time.Hour)), nil
+	}
+	return ui.ParseSpan(older)
 }
 
 func certCommand(env *app.Env) *cobra.Command {
@@ -137,7 +173,7 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 func domainCommand(env *app.Env) *cobra.Command {
 	var o domainOptions
 	c := &cobra.Command{
-		Use:   "domain [домен|проект] [--fast] [--map] [--json]",
+		Use:   "domain [домен|проект] [--fast] [--map [--out файл]] [--json]",
 		Short: "Проверить домен целиком: записи, поддомены, адреса, живость, сертификаты",
 		Long: `Собирает по домену всё, что отдают публичные источники: регистрацию, записи DNS, поддомены из логов
 сертификатов и перебором частых имён, адреса с провайдером и страной, живость каждого имени, сертификаты
@@ -153,8 +189,10 @@ func domainCommand(env *app.Env) *cobra.Command {
 	f.BoolVar(&o.noNeighbors, "no-neighbors", false, "не спрашивать соседей по IP")
 	f.BoolVar(&o.json, "json", false, "вывод в JSON")
 	f.BoolVar(&o.openMap, "map", false, "собрать карту в HTML и открыть")
-	f.StringVar(&o.mapOut, "map-out", "", "сохранить карту в файл, не открывая")
-	f.BoolVar(&o.all, "all", false, "кратко по всем доменам реестра")
+	f.StringVar(&o.mapOut, "out", "", "сохранить карту в файл, не открывая")
+	f.StringVar(&o.mapOut, "map-out", "", "")
+	_ = f.MarkHidden("map-out")
+	f.BoolVarP(&o.all, "all", "a", false, "кратко по всем доменам реестра")
 	return c
 }
 
@@ -175,7 +213,7 @@ func mailCommand(env *app.Env) *cobra.Command {
 			return printMail(args[0], selectors)
 		},
 	}
-	c.Flags().BoolVar(&all, "all", false, "сводка по доменам реестра")
+	c.Flags().BoolVarP(&all, "all", "a", false, "сводка по доменам реестра")
 	c.Flags().StringSliceVar(&selectors, "selector", nil, "свой DKIM-селектор (можно несколько)")
 	return c
 }

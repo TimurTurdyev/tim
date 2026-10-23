@@ -39,8 +39,8 @@ func today(env *app.Env, args []string, o todayOptions) error {
 	}
 	since := worklog.Since(time.Now(), o.week)
 	if o.since != "" {
-		if since, err = time.ParseInLocation("2006-01-02", o.since, time.Local); err != nil {
-			return ui.Errorf("дата в виде 2025-10-01: %s", o.since)
+		if since, err = ui.ParseSince(o.since, time.Now()); err != nil {
+			return err
 		}
 	}
 	lists := par.Map(projects, par.Limit, func(p *config.Project) []worklog.Commit {

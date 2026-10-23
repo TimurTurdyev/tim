@@ -23,6 +23,9 @@ import (
 // NoInput: ни о чём не спрашивать, на подтверждения отвечать "нет" (--no-input, TIM_NO_INPUT).
 var NoInput = os.Getenv("TIM_NO_INPUT") != ""
 
+// Yes: на все вопросы отвечать "да" - общий флаг -y для скриптов и агентов.
+var Yes bool
+
 // DryRun печатает команды, меняющие систему, вместо запуска.
 var DryRun = os.Getenv("TIM_DRY_RUN") != ""
 
@@ -171,6 +174,10 @@ func Confirm(question string) bool { return ConfirmDefault(question, false) }
 // на экране: интерактивный вопрос стирает себя, и без неё непонятно, что именно было отменено.
 func ConfirmDefault(question string, def bool) bool {
 	if DryRun {
+		return true
+	}
+	if Yes {
+		ui.Println(ui.Dim(question + " - да (-y)"))
 		return true
 	}
 	if NoInput {

@@ -65,7 +65,7 @@ func check(env *app.Env, args []string, o checkOptions) error {
 	}
 	ok, warn, bad := health.Counts(rows)
 	ui.Println(ui.Dim(fmt.Sprintf("всего %d: ок %d, внимание %d", len(rows), ok, warn)))
-	if lines := machineNotes(env.Cfg, o.hours); len(lines) > 0 {
+	if lines := machineNotes(env.Cfg, o.older); len(lines) > 0 {
 		ui.Println("")
 		for _, l := range lines {
 			ui.Println(l)
@@ -169,14 +169,14 @@ func paint(l level.Level, text string) string {
 }
 
 // machineNotes: замечания не о проектах, а о самой машине.
-func machineNotes(cfg *config.Config, hours float64) []string {
+func machineNotes(cfg *config.Config, older time.Duration) []string {
 	out := machine.HogLines("")
 	var forgotten []string
-	for _, r := range machine.Forgotten(machine.Ports(cfg), time.Duration(hours*float64(time.Hour))) {
+	for _, r := range machine.Forgotten(machine.Ports(cfg), older) {
 		forgotten = append(forgotten, r.Project+":"+r.Port)
 	}
 	if len(forgotten) > 0 {
-		out = append(out, ui.Warn(fmt.Sprintf("dev-серверы старше %g ч: ", hours))+strings.Join(forgotten, " ")+ui.Dim("  (tim ports --old --kill)"))
+		out = append(out, ui.Warn("dev-серверы старше "+ui.Short(older)+": ")+strings.Join(forgotten, " ")+ui.Dim("  (tim ports --old --kill)"))
 	}
 	if d, ok := sysinfo.DataDisk(); ok && d.Percent() >= 85 {
 		out = append(out, ui.Warn(fmt.Sprintf("диск занят на %d%%", d.Percent()))+ui.Dim("  (tim disk)"))

@@ -281,7 +281,7 @@ func installServers() error {
 	if err != nil {
 		return err
 	}
-	job := schedule.Job{Label: serversLabel, Args: []string{self, "servers", "--record"}, Every: serversEvery,
+	job := schedule.Job{Label: serversLabel, Args: []string{self, "servers", "record"}, Every: serversEvery,
 		Env: schedule.JobEnv(), Log: stats.Dir() + "/servers.log"}
 	if err := schedule.Install(job, "tim-servers"); err != nil {
 		return err

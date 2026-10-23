@@ -34,8 +34,8 @@ type PortRow struct {
 }
 
 type portsOptions struct {
-	all, old, kill, force, yes, json bool
-	hours                            float64
+	all, old, kill, force, json bool
+	older                       time.Duration
 }
 
 // portJSON: строка порта для --json - то, что видно в таблице и карточке, без внутренних полей.
@@ -183,17 +183,17 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 }
 
 func printForgotten(cfg *config.Config, o portsOptions) error {
-	rows := Forgotten(Ports(cfg), time.Duration(o.hours*float64(time.Hour)))
+	rows := Forgotten(Ports(cfg), o.older)
 	if o.json && !o.kill {
 		return printJSON(rows)
 	}
 	if len(rows) == 0 {
-		ui.Println(ui.Dim(fmt.Sprintf("процессов проектов старше %g ч нет", o.hours)))
+		ui.Println(ui.Dim("процессов проектов старше " + ui.Short(o.older) + " нет"))
 		return nil
 	}
 	printRows(rows)
 	if o.kill {
-		killRows(rows, o.force, o.yes)
+		killRows(rows, o.force)
 		return nil
 	}
 	ui.Println(ui.Dim("остановить: tim ports --old --kill"))
@@ -224,7 +224,7 @@ func portOwner(cfg *config.Config, args []string, o portsOptions) error {
 	}
 	if len(args) > 1 && args[1] == "kill" {
 		printRows(found)
-		killRows(found, o.force, o.yes)
+		killRows(found, o.force)
 		return nil
 	}
 	for _, r := range found {
@@ -236,13 +236,13 @@ func portOwner(cfg *config.Config, args []string, o portsOptions) error {
 // killRows: процессу - сигнал; порту контейнера - docker stop, иначе лёг бы весь движок Docker.
 // Если сервер тут же поднялся заново, его перезапускает родитель (php artisan serve следит за своим
 // php -S) - тогда останавливается и родитель.
-func killRows(rows []PortRow, force, yes bool) {
+func killRows(rows []PortRow, force bool) {
 	sig := "-TERM"
 	if force {
 		sig = "-KILL"
 	}
 	for _, r := range rows {
-		if !yes && !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
+		if !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
 			continue
 		}
 		if r.Container != nil {
