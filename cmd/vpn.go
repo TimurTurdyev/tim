@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -14,6 +15,9 @@ var vpnCmd = &cobra.Command{
 	Use:   "vpn",
 	Short: "Что с VPN: туннели, подключения, куда идёт трафик, DNS, цели обхода",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if tui.Available() {
+			return runScreen(vpnScreen())
+		}
 		tunnels := netinfo.Tunnels()
 		hasV6 := false
 		if len(tunnels) == 0 {
