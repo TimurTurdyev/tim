@@ -15,6 +15,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/diskuse"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -274,8 +275,16 @@ func printMapRow(r mapRow) {
 			ui.Println("          " + ui.Dim(ui.Pad(fmtBytes(rest), 10)+text))
 		}
 	}
-	if r.hint != "" {
-		ui.Println("          " + ui.Dim(r.hint))
+	hint := r.hint
+	if strings.HasSuffix(r.path, "steamapps/common") && !steamInstalled() {
+		// Удаление Steam игры не трогает: они так и лежат, а удалить их через Steam уже нечем.
+		lib := filepath.Dir(filepath.Dir(r.path))
+		hint = ui.Warn("Steam удалён, а игры остались") + ui.Dim(": убрать всё в Корзину - trash "+shellq.Join([]string{lib}))
+		ui.Println("          " + hint)
+		return
+	}
+	if hint != "" {
+		ui.Println("          " + ui.Dim(hint))
 	}
 }
 
@@ -320,4 +329,16 @@ func volumeRows() []mapRow {
 func chromeClones() int {
 	dirs, _ := filepath.Glob("/private/var/folders/*/*/X/com.google.Chrome.code_sign_clone/*")
 	return len(dirs)
+}
+
+func steamInstalled() bool {
+	if runtime.GOOS != "darwin" {
+		return runner.Has("steam")
+	}
+	for _, p := range []string{"/Applications/Steam.app", filepath.Join(paths.Home(), "Applications", "Steam.app")} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
