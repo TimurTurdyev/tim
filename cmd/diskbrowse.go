@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/diskuse"
 	"github.com/TimurTurdyev/tim/internal/paths"
@@ -42,17 +43,28 @@ func diskBrowseRun(args []string) error {
 		}
 		return e
 	}
-	var used int64
-	rootEntry := tui.Entry{Name: "диск", Dir: true}
-	var top []tui.Entry
-	for _, r := range roots {
-		e := entry(r, tree[r])
-		e.Name = showPath(r)
-		top = append(top, e)
-		rootEntry.Size += tree[r]
-	}
+	var vols []mapRow
 	if len(args) == 0 {
-		for _, v := range volumeRows() {
+		vols = volumeRows()
+	}
+	// build: корень и верхний уровень заново из дерева - после уборки размеры другие.
+	var top []tui.Entry
+	var used int64
+	build := func() tui.Entry {
+		rootEntry := tui.Entry{Name: "диск", Dir: true}
+		top = nil
+		for _, r := range roots {
+			e := entry(r, tree[r])
+			e.Name = showPath(r)
+			top = append(top, e)
+			rootEntry.Size += tree[r]
+		}
+		if len(args) > 0 {
+			rootEntry = entry(roots[0], tree[roots[0]])
+			rootEntry.Name = showPath(roots[0])
+			return rootEntry
+		}
+		for _, v := range vols {
 			top = append(top, tui.Entry{Name: v.name, Size: v.size, Hint: v.hint})
 			rootEntry.Size += v.size
 		}
@@ -61,11 +73,9 @@ func diskBrowseRun(args []string) error {
 			if rest := used - rootEntry.Size; rest > 1<<30 {
 				top = append(top, tui.Entry{Name: "не разобрано", Size: rest, Hint: "без прав не прочитать, снимки Time Machine, копии Chrome"})
 			}
-			rootEntry.Size = used
+			rootEntry.Size = max(used, rootEntry.Size)
 		}
-	} else if len(roots) == 1 {
-		rootEntry = entry(roots[0], tree[roots[0]])
-		rootEntry.Name = showPath(roots[0])
+		return rootEntry
 	}
 	kids := func(p string) []tui.Entry {
 		if p == "" {
@@ -110,37 +120,69 @@ func diskBrowseRun(args []string) error {
 		}
 		_, _ = runner.Output("xdg-open", filepath.Dir(p))
 	}
-	marked, trash, err := tui.Browse(tui.BrowseOpts{Root: rootEntry, Kids: kids, Open: open, Total: used})
-	if err != nil || !trash || len(marked) == 0 {
-		return err
-	}
-	sort.Slice(marked, func(i, j int) bool { return marked[i].Size > marked[j].Size })
-	var sum int64
-	for _, e := range marked {
-		ui.Println(ui.Label(ui.Pad(fmtBytes(e.Size), 10)) + showPath(e.Path))
-		sum += e.Size
-	}
-	if !runner.ConfirmDefault("убрать это в Корзину ("+fmtBytes(sum)+")?", false) {
-		return nil
-	}
-	var freed int64
-	for _, e := range marked {
-		var err error
-		if strings.HasPrefix(e.Path, home+"/") {
-			err = moveToTrash(e.Path)
-		} else {
-			err = runner.Sudo("mv", e.Path, filepath.Join(home, ".Trash")+"/")
+	var at []string
+	for {
+		marked, trash, where, err := tui.Browse(tui.BrowseOpts{Root: build(), Kids: kids, Open: open, Total: used, Start: at})
+		if err != nil || !trash || len(marked) == 0 {
+			return err
 		}
-		if err != nil {
-			ui.Println(ui.Bad(e.Path + ": " + err.Error()))
+		at = where
+		marked = tui.Outermost(marked)
+		sort.Slice(marked, func(i, j int) bool { return marked[i].Size > marked[j].Size })
+		var sum int64
+		for _, e := range marked {
+			ui.Println(ui.Label(ui.Pad(fmtBytes(e.Size), 10)) + showPath(e.Path))
+			sum += e.Size
+		}
+		if !runner.ConfirmDefault("убрать это в Корзину ("+fmtBytes(sum)+")?", false) {
 			continue
 		}
-		freed += e.Size
+		var freed int64
+		for _, e := range marked {
+			var err error
+			if strings.HasPrefix(e.Path, home+"/") {
+				err = moveToTrash(e.Path)
+			} else {
+				err = runner.Sudo("mv", e.Path, filepath.Join(home, ".Trash")+"/")
+			}
+			if err != nil {
+				ui.Println(ui.Bad(e.Path + ": " + err.Error()))
+				continue
+			}
+			freed += e.Size
+			mu.Lock()
+			moveInTree(tree, e.Path, filepath.Join(home, ".Trash"))
+			mu.Unlock()
+		}
+		// Сохранённый замер устарел: следующий обзор посчитает заново.
+		_ = os.Remove(mapCachePath())
+		ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину; возвращаюсь к папкам"))
+		if !runner.DryRun {
+			time.Sleep(1500 * time.Millisecond)
+		}
 	}
-	// Замер устарел: следующий обзор посчитает заново.
-	_ = os.Remove(mapCachePath())
-	ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
-	return nil
+}
+
+// moveInTree: папка уехала в Корзину - её размер уходит от прежних родителей и приходит к Корзине.
+// На диске место не освободилось, пока Корзина не очищена, и обозреватель должен это показывать.
+func moveInTree(tree diskuse.Tree, path, trash string) {
+	size := tree[path]
+	for k := range tree {
+		if k == path || strings.HasPrefix(k, path+"/") {
+			delete(tree, k)
+		}
+	}
+	for d := filepath.Dir(path); d != "/" && d != "."; d = filepath.Dir(d) {
+		if _, ok := tree[d]; ok {
+			tree[d] -= size
+		}
+	}
+	tree[trash] += size
+	for d := filepath.Dir(trash); d != "/" && d != "."; d = filepath.Dir(d) {
+		if _, ok := tree[d]; ok {
+			tree[d] += size
+		}
+	}
 }
 
 func sortEntries(list []tui.Entry) []tui.Entry {

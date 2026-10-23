@@ -21,7 +21,8 @@ type BrowseOpts struct {
 	Root  Entry
 	Kids  func(path string) []Entry
 	Open  func(path string)
-	Total int64 // занято на диске: от него проценты в заголовке
+	Total int64    // занято на диске: от него проценты в заголовке
+	Start []string // куда зайти сразу: пути по порядку, как вернул прошлый Browse
 }
 
 type level struct {
@@ -58,23 +59,36 @@ var (
 
 // Browse: папки по размеру с заходом внутрь, как в программах-чистильщиках. Пробел отмечает,
 // d - закончить и убрать отмеченное (вернётся trash=true), q - выйти, ничего не трогая.
-func Browse(o BrowseOpts) (marked []Entry, trash bool, err error) {
+func Browse(o BrowseOpts) (marked []Entry, trash bool, at []string, err error) {
 	if !Available() {
-		return nil, false, ErrNoTTY
+		return nil, false, nil, ErrNoTTY
 	}
 	b := &browser{opts: o, marked: map[string]Entry{}, height: 24, width: 100}
 	b.stack = []*level{{entry: o.Root, loading: true}}
 	if _, err := tea.NewProgram(b).Run(); err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	for _, e := range b.marked {
 		marked = append(marked, e)
 	}
-	return marked, b.trash, nil
+	for _, l := range b.stack[1:] {
+		at = append(at, l.entry.Path)
+	}
+	return marked, b.trash, at, nil
 }
 
 func (b *browser) load(path string) tea.Cmd {
 	return func() tea.Msg { return kidsMsg{path, b.opts.Kids(path)} }
+}
+
+// under: путь внутри уже отмеченной папки.
+func (b *browser) under(path string) bool {
+	for p := range b.marked {
+		if strings.HasPrefix(path, strings.TrimSuffix(p, "/")+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *browser) cur() *level { return b.stack[len(b.stack)-1] }
@@ -91,6 +105,16 @@ func (b *browser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, l := range b.stack {
 			if l.entry.Path == msg.path && l.loading {
 				l.kids, l.loading = msg.kids, false
+			}
+		}
+		// Возврат после уборки: заходим туда же, где были, пока такие папки ещё есть.
+		if depth := len(b.stack) - 1; depth < len(b.opts.Start) && b.cur().entry.Path == msg.path {
+			for i, e := range msg.kids {
+				if e.Path == b.opts.Start[depth] && e.Dir {
+					b.cur().cursor = i
+					b.stack = append(b.stack, &level{entry: e, loading: true})
+					return b, b.load(e.Path)
+				}
 			}
 		}
 	case tea.KeyPressMsg:
@@ -138,6 +162,8 @@ func (b *browser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if _, ok := b.marked[e.Path]; ok {
 				delete(b.marked, e.Path)
+			} else if b.under(e.Path) {
+				b.flash = "уже внутри отмеченной папки - уйдёт вместе с ней"
 			} else {
 				b.marked[e.Path] = e
 			}
@@ -207,6 +233,8 @@ func (b *browser) View() tea.View {
 		mark := "  "
 		if _, ok := b.marked[e.Path]; ok && e.Path != "" {
 			mark = styleMark.Render(symCheck + " ")
+		} else if e.Path != "" && b.under(e.Path) {
+			mark = styleHint.Render(symCheck + " ")
 		}
 		name := clipTitle(e.Name, nameW)
 		if e.Dir {
@@ -233,10 +261,15 @@ func (b *browser) View() tea.View {
 	s.WriteString("\n")
 	if len(b.marked) > 0 {
 		var sum int64
+		var all []Entry
 		for _, e := range b.marked {
+			all = append(all, e)
+		}
+		top := Outermost(all)
+		for _, e := range top {
 			sum += e.Size
 		}
-		s.WriteString(styleMark.Render(fmt.Sprintf("отмечено %d на %s", len(b.marked), human(sum))) + styleHint.Render("  d - убрать в Корзину") + "\n")
+		s.WriteString(styleMark.Render(fmt.Sprintf("отмечено %d на %s", len(top), human(sum))) + styleHint.Render("  d - убрать в Корзину") + "\n")
 	}
 	if b.flash != "" {
 		s.WriteString(styleHint.Render(b.flash) + "\n")
@@ -249,4 +282,23 @@ func (b *browser) View() tea.View {
 	v := tea.NewView(styleFrame.Render(strings.TrimRight(s.String(), "\n")) + "\n" + strings.Join(keys, styleHint.Render(" "+symDot+" ")))
 	v.AltScreen = true
 	return v
+}
+
+// Outermost: отмеченное без того, что лежит внутри другого отмеченного - иначе оно посчиталось бы
+// дважды, а убрать его второй раз нельзя: оно уже уехало вместе с родителем.
+func Outermost(list []Entry) []Entry {
+	var out []Entry
+	for _, e := range list {
+		inside := false
+		for _, p := range list {
+			if p.Path != e.Path && strings.HasPrefix(e.Path, strings.TrimSuffix(p.Path, "/")+"/") {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			out = append(out, e)
+		}
+	}
+	return out
 }
