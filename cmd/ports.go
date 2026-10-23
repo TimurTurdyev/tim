@@ -72,10 +72,13 @@ func printRows(rows []portRow) {
 var portsAll bool
 
 var portsCmd = &cobra.Command{
-	Use:   "ports [--all]",
+	Use:   "ports [--all] [--old [--hours 8] [--kill]]",
 	Short: "Кто слушает TCP-порты: процесс, сколько работает, чей проект",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if portsOld {
+			return portsOldRun()
+		}
 		var rows []portRow
 		for _, r := range listenRows() {
 			port, _ := strconv.Atoi(r.Port)
@@ -138,31 +141,28 @@ func killRows(rows []portRow) error {
 var (
 	staleHours float64
 	staleKill  bool
+	portsOld   bool
 )
 
-var staleCmd = &cobra.Command{
-	Use:   "stale [--hours 8] [--kill]",
-	Short: "Dev-серверы проектов, которые работают дольше N часов",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		limit := time.Duration(staleHours * float64(time.Hour))
-		var rows []portRow
-		for _, r := range listenRows() {
-			if r.project != "" && !strings.HasSuffix(r.project, "?") && r.Uptime >= limit {
-				rows = append(rows, r)
-			}
+// portsOld: dev-серверы проектов, которые работают дольше --hours: их обычно забыли остановить.
+func portsOldRun() error {
+	limit := time.Duration(staleHours * float64(time.Hour))
+	var rows []portRow
+	for _, r := range listenRows() {
+		if r.project != "" && !strings.HasSuffix(r.project, "?") && r.Uptime >= limit {
+			rows = append(rows, r)
 		}
-		if len(rows) == 0 {
-			ui.Println(ui.Dim(fmt.Sprintf("процессов проектов старше %g ч нет", staleHours)))
-			return nil
-		}
-		printRows(rows)
-		if staleKill {
-			return killRows(rows)
-		}
-		ui.Println(ui.Dim("остановить: tim stale --kill"))
+	}
+	if len(rows) == 0 {
+		ui.Println(ui.Dim(fmt.Sprintf("процессов проектов старше %g ч нет", staleHours)))
 		return nil
-	},
+	}
+	printRows(rows)
+	if staleKill {
+		return killRows(rows)
+	}
+	ui.Println(ui.Dim("остановить: tim ports --old --kill"))
+	return nil
 }
 
 func init() {
@@ -171,8 +171,9 @@ func init() {
 	portCmd.Short = "Кто держит порт, остановить его; проверка чужих портов"
 	portCmd.RunE = portRun
 	portCmd.Flags().BoolVar(&portForce, "force", false, "SIGKILL вместо SIGTERM")
-	staleCmd.Flags().Float64Var(&staleHours, "hours", 8, "сколько часов считать долгим")
-	staleCmd.Flags().BoolVar(&staleKill, "kill", false, "предложить остановить каждый")
-	staleCmd.Flags().BoolVar(&portForce, "force", false, "SIGKILL вместо SIGTERM")
-	root.AddCommand(portsCmd, staleCmd)
+	portsCmd.Flags().BoolVar(&portsOld, "old", false, "dev-серверы проектов, которые работают дольше --hours")
+	portsCmd.Flags().Float64Var(&staleHours, "hours", 8, "сколько часов считать долгим")
+	portsCmd.Flags().BoolVar(&staleKill, "kill", false, "с --old: предложить остановить каждый")
+	portsCmd.Flags().BoolVar(&portForce, "force", false, "SIGKILL вместо SIGTERM")
+	root.AddCommand(portsCmd)
 }

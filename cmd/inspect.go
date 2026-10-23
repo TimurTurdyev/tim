@@ -43,10 +43,12 @@ func daysLeft(t time.Time) string {
 }
 
 var certCmd = &cobra.Command{
-	Use:   "cert <host[:port]>",
-	Short: "TLS-сертификат: кому выдан, кем, SAN, срок, цепочка",
-	Args:  cobra.ExactArgs(1),
+	Use:   "cert [host[:port]...]",
+	Short: "TLS-сертификат: один домен - подробно, несколько или без аргументов - сроки списком",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return certExpiries(args)
+		}
 		host, port := hostPort(args[0], "443")
 		info, err := inspect.Cert(host, port)
 		if err != nil {
