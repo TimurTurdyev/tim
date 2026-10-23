@@ -22,12 +22,38 @@ import (
 var keyHeaders = []string{"Server", "Content-Type", "Content-Encoding", "Cache-Control", "Location", "Strict-Transport-Security", "X-Powered-By"}
 
 // printTimings: сколько отвечает сайт по фазам; follow - идти по редиректам, до десяти.
-func printTimings(arg string, follow, allHeaders bool) error {
+// timingJSON: один переход для --json, время в миллисекундах.
+type timingJSON struct {
+	URL       string      `json:"url"`
+	Status    int         `json:"status"`
+	Proto     string      `json:"proto"`
+	Size      int64       `json:"size"`
+	DNSMs     int64       `json:"dns_ms"`
+	ConnectMs int64       `json:"connect_ms"`
+	TLSMs     int64       `json:"tls_ms"`
+	TTFBMs    int64       `json:"ttfb_ms"`
+	TotalMs   int64       `json:"total_ms"`
+	Location  string      `json:"location,omitempty"`
+	Headers   http.Header `json:"headers"`
+}
+
+func printTimings(arg string, follow, allHeaders, asJSON bool) error {
 	url := withScheme(arg)
+	var hops []timingJSON
 	for range 10 {
 		t, err := inspect.Measure(url)
 		if err != nil {
 			return ui.Errorf("%s: %v", url, err)
+		}
+		if asJSON {
+			hops = append(hops, timingJSON{URL: url, Status: t.Status, Proto: t.Proto, Size: t.Size, DNSMs: t.DNS.Milliseconds(),
+				ConnectMs: t.Connect.Milliseconds(), TLSMs: t.TLS.Milliseconds(), TTFBMs: t.TTFB.Milliseconds(), TotalMs: t.All.Milliseconds(),
+				Location: t.Location, Headers: t.Header})
+			if !follow || t.Location == "" {
+				return ui.JSON(hops)
+			}
+			url = t.Location
+			continue
 		}
 		status := fmt.Sprintf("%d %s", t.Status, t.Proto)
 		switch {
@@ -72,11 +98,26 @@ func printHeaders(h http.Header, all bool) {
 func ms(d time.Duration) string { return fmt.Sprintf("%d мс", d.Milliseconds()) }
 
 // printPreview: как ссылка будет выглядеть в Telegram и соцсетях.
-func printPreview(arg string) error {
+func printPreview(arg string, asJSON bool) error {
 	url := withScheme(arg)
 	card, status, err := og.Fetch(url)
 	if err != nil {
 		return ui.Errorf("%s: %v", url, ui.ShortErr(err))
+	}
+	if asJSON {
+		out := struct {
+			URL      string       `json:"url"`
+			Status   int          `json:"status"`
+			Card     og.Card      `json:"card"`
+			Image    string       `json:"image,omitempty"`
+			Problems []og.Problem `json:"problems"`
+		}{URL: url, Status: status, Card: card, Problems: og.Check(card)}
+		if card.Image != "" {
+			out.Image = og.ImageURL(url, card)
+			_, more := og.CheckImage(out.Image)
+			out.Problems = append(out.Problems, more...)
+		}
+		return ui.JSON(out)
 	}
 	if status != 200 {
 		ui.Println(ui.Warn(fmt.Sprintf("страница отвечает %d боту мессенджера - превью может не собраться", status)))
@@ -139,6 +180,23 @@ func checkCORS(arg string, o corsOptions) error {
 	if err != nil {
 		return err
 	}
+	probs := cors.Analyze(r, resp.PreflightCode, resp.Preflight, resp.Actual)
+	if o.json {
+		allowed := true
+		for _, p := range probs {
+			allowed = allowed && !p.Bad
+		}
+		return ui.JSON(struct {
+			Origin          string         `json:"origin"`
+			Method          string         `json:"method"`
+			PreflightStatus string         `json:"preflight_status,omitempty"`
+			Preflight       http.Header    `json:"preflight,omitempty"`
+			Status          string         `json:"status"`
+			Headers         http.Header    `json:"headers"`
+			Problems        []cors.Problem `json:"problems"`
+			Allowed         bool           `json:"allowed"`
+		}{r.Origin, r.Method, resp.PreflightStatus, resp.Preflight, resp.Status, resp.Actual, probs, allowed})
+	}
 	if resp.Preflight != nil {
 		ui.Println(ui.Label("preflight") + "  OPTIONS " + resp.PreflightStatus)
 		printHeaderValues(resp.Preflight, "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers",
@@ -146,7 +204,6 @@ func checkCORS(arg string, o corsOptions) error {
 	}
 	ui.Println(ui.Label("ответ") + "      " + resp.Method + " " + resp.Status)
 	printHeaderValues(resp.Actual, "Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Expose-Headers", "Vary")
-	probs := cors.Analyze(r, resp.PreflightCode, resp.Preflight, resp.Actual)
 	ui.Println()
 	if len(probs) == 0 {
 		ui.Println(ui.Label("браузер пустит " + r.Method + " с " + r.Origin))

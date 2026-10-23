@@ -15,9 +15,9 @@ import (
 )
 
 type topOptions struct {
-	by    string
-	count int
-	cpu   bool
+	by        string
+	count     int
+	cpu, json bool
 }
 
 type killOptions struct{ force bool }
@@ -41,6 +41,9 @@ func printTop(cfg *config.Config, o topOptions) error {
 		return ui.Errorf("--by app или project, а не %s", o.by)
 	}
 	groups := procs.GroupBy(list, key, o.cpu)
+	if o.json {
+		return ui.JSON(groups[:min(o.count, len(groups))])
+	}
 	if len(groups) == 0 {
 		ui.Println(ui.Dim("процессов проектов не нашлось"))
 		return nil

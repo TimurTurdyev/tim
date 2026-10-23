@@ -45,7 +45,7 @@ func check(env *app.Env, args []string, o checkOptions) error {
 		}
 		ui.Println(ui.Label("ежедневный обход убран"))
 		return nil
-	case len(args) == 0 && !o.notify && app.Interactive():
+	case len(args) == 0 && !o.notify && !o.json && app.Interactive():
 		return env.Open(checkScreen(env, o))
 	}
 	projects, err := projectsOrDomains(env.Cfg, args)
@@ -58,6 +58,9 @@ func check(env *app.Env, args []string, o checkOptions) error {
 	rows := checkRows(env.Cfg, projects, o)
 	if len(rows) == 0 {
 		return ui.Errorf("проверять нечего: ни у одного проекта нет git и адреса сайта (tim sync --remote)")
+	}
+	if o.json {
+		return ui.JSON(rows)
 	}
 	printCheck(rows)
 	if o.notify {

@@ -18,23 +18,24 @@ func Commands(env *app.Env) []*cobra.Command {
 }
 
 func hwCommand(env *app.Env) *cobra.Command {
-	var watch bool
+	var watch, asJSON bool
 	c := &cobra.Command{
-		Use:   "hw [--watch]",
+		Use:   "hw [--watch] [--json]",
 		Short: "Железо и его загрузка: процессор, видеокарта, память, swap, диск, экраны, тепло",
 		Long: `Паспорт машины и текущая загрузка. У видеокарты видно, насколько она занята и сколько видеопамяти
 в работе, и какие твои процессы её держат (сколько каждый грузит - без root не узнать).
 --watch обновляет процессор, видеокарту и память раз в секунду; выход - Ctrl-C.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if watch && app.Interactive() {
+			if watch && app.Interactive() && !asJSON {
 				return env.Open(HWScreen())
 			}
 			// Без терминала живому экрану негде жить - один снимок.
-			return printSnapshot()
+			return printSnapshot(asJSON)
 		},
 	}
 	c.Flags().BoolVarP(&watch, "watch", "w", false, "обновлять раз в секунду")
+	c.Flags().BoolVar(&asJSON, "json", false, "снимок в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "battery",
 		Short: "Износ батареи: циклы, ёмкость от заводской, состояние",
@@ -47,14 +48,14 @@ func hwCommand(env *app.Env) *cobra.Command {
 func topCommand(env *app.Env) *cobra.Command {
 	var o topOptions
 	c := &cobra.Command{
-		Use:   "top [--by app|project] [--cpu] [-n 10]",
+		Use:   "top [--by app|project] [--cpu] [-n 10] [--json]",
 		Short: "Кто занял память и CPU: по приложениям или по проектам",
 		Long: `Складывает процессы по приложению (все помощники браузера - в одну строку) или по проекту
 реестра (по рабочей папке процесса). Память - RSS: общие страницы считаются в каждом процессе,
 поэтому у многопроцессных приложений сумма выше, чем в Мониторе системы.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if app.Interactive() && o.by == "app" {
+			if app.Interactive() && o.by == "app" && !o.json {
 				return env.Open(ProcsScreen(""))
 			}
 			return printTop(env.Cfg, o)
@@ -63,6 +64,7 @@ func topCommand(env *app.Env) *cobra.Command {
 	c.Flags().StringVar(&o.by, "by", "app", "app или project")
 	c.Flags().IntVarP(&o.count, "count", "n", 10, "сколько строк")
 	c.Flags().BoolVar(&o.cpu, "cpu", false, "сортировать по CPU, а не по памяти")
+	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	return c
 }
 

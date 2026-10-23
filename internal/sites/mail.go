@@ -12,9 +12,18 @@ import (
 )
 
 // printMail: MX, SPF, DKIM, DMARC домена, что с ними не так и какие записи добавить.
-func printMail(arg string, selectors []string) error {
+func printMail(arg string, selectors []string, asJSON bool) error {
 	domain, _ := netinfo.HostPort(arg, "")
 	m := inspect.MailCheck(domain, append(append([]string{}, selectors...), inspect.DKIMSelectors...))
+	if asJSON {
+		verdict, reasons := m.Verdict()
+		return ui.JSON(struct {
+			Domain  string        `json:"domain"`
+			Mail    *inspect.Mail `json:"mail"`
+			Verdict level.Level   `json:"verdict"`
+			Reasons []string      `json:"reasons,omitempty"`
+		}{domain, m, verdict, reasons})
+	}
 	bad := 0
 	ui.Println(ui.Info("MX"))
 	switch {

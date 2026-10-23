@@ -14,13 +14,53 @@ import (
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // printCert: сертификат одного хоста подробно - кому, кем, имена, сроки, цепочка.
-func printCert(arg string) error {
+// certJSON: сертификат для --json - то, что печатает tim cert, без самих байтов цепочки.
+type certJSON struct {
+	Host      string    `json:"host"`
+	Port      string    `json:"port"`
+	Subject   string    `json:"subject,omitempty"`
+	Issuer    string    `json:"issuer,omitempty"`
+	Names     []string  `json:"names,omitempty"`
+	NotBefore time.Time `json:"not_before,omitzero"`
+	NotAfter  time.Time `json:"not_after,omitzero"`
+	DaysLeft  int       `json:"days_left"`
+	TLS       string    `json:"tls,omitempty"`
+	Chain     []string  `json:"chain,omitempty"`
+	Verified  bool      `json:"verified"`
+	Error     string    `json:"error,omitempty"`
+}
+
+func certJSONOf(host, port string) certJSON {
+	c := certJSON{Host: host, Port: port}
+	info, err := inspect.Cert(host, port)
+	if err != nil {
+		c.Error = err.Error()
+		return c
+	}
+	leaf := info.Leaf()
+	c.Subject, c.Issuer, c.Names = leaf.Subject.CommonName, leaf.Issuer.CommonName, leaf.DNSNames
+	c.NotBefore, c.NotAfter, c.DaysLeft = leaf.NotBefore, leaf.NotAfter, ui.DaysUntil(leaf.NotAfter, time.Now())
+	c.TLS, c.Verified = info.Version, info.VerifyErr == nil
+	for _, x := range info.Chain[1:] {
+		c.Chain = append(c.Chain, x.Subject.CommonName)
+	}
+	if info.VerifyErr != nil {
+		c.Error = info.VerifyErr.Error()
+	}
+	return c
+}
+
+func printCert(arg string, asJSON bool) error {
 	host, port := netinfo.HostPort(arg, "443")
+	if asJSON {
+		return ui.JSON(certJSONOf(host, port))
+	}
 	info, err := inspect.Cert(host, port)
 	if err != nil {
 		return ui.Errorf("%s:%s: %v", host, port, err)
@@ -44,12 +84,18 @@ func printCert(arg string) error {
 }
 
 // printExpiries: сроки сертификатов списком; без доменов - сайты проектов из реестра.
-func printExpiries(cfg *config.Config, hosts []string) error {
+func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
 	if len(hosts) == 0 {
 		hosts = Domains(cfg)
 	}
 	if len(hosts) == 0 {
 		return ui.Errorf("доменов нет: tim cert <домен> или поле url у проектов (tim proj add --url)")
+	}
+	if asJSON {
+		return ui.JSON(par.Map(hosts, par.Limit, func(h string) certJSON {
+			host, port := netinfo.HostPort(h, "443")
+			return certJSONOf(host, port)
+		}))
 	}
 	rows := Expiries(hosts)
 	bad := 0
@@ -85,11 +131,26 @@ func Domains(cfg *config.Config) []string {
 	return out
 }
 
-func printDNS(arg, server string) error {
+func printDNS(arg, server string, asJSON bool) error {
 	host, _ := netinfo.HostPort(arg, "")
 	recs := inspect.DNS(host, server)
 	if len(recs) == 0 {
 		return ui.Errorf("%s: записей нет", host)
+	}
+	if asJSON {
+		out := struct {
+			Host    string           `json:"host"`
+			Records []inspect.Record `json:"records"`
+			CAA     []string         `json:"caa,omitempty"`
+			DNSSEC  *bool            `json:"dnssec,omitempty"`
+		}{Host: host, Records: recs}
+		if caa, err := dnsq.CAA(host); err == nil {
+			out.CAA = caa
+		}
+		if signed, err := dnsq.Signed(host); err == nil {
+			out.DNSSEC = &signed
+		}
+		return ui.JSON(out)
 	}
 	for _, r := range recs {
 		ui.Println(ui.Label(ui.Pad(r.Type, 6)) + r.Value)

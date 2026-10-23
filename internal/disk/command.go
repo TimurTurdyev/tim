@@ -9,16 +9,16 @@ import (
 )
 
 type options struct {
-	minSize                                       string
-	days                                          int
-	all, fresh, clean, system, deps, browse, left bool
+	minSize                                             string
+	days                                                int
+	all, fresh, clean, system, deps, browse, left, json bool
 }
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
 	var o options
 	c := &cobra.Command{
-		Use:   "disk [папка] [--all] [--system] [--deps] [--clean]",
+		Use:   "disk [папка] [--all] [--system] [--deps] [--clean] [--json]",
 		Short: "Куда ушло место на диске: игры, виртуалки, файлы проектов, кеши - и как это освободить",
 		Long: `Без флагов - обзор: занято и свободно, и самые большие места, раскрытые до того, что именно
 там лежит (конкретная игра, виртуалка, storage проекта), с подсказкой, как освободить. Первый замер
@@ -39,6 +39,7 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 	f.BoolVar(&o.system, "system", false, "кеши программ по именам: npm, go, docker, IDE, модели")
 	f.BoolVarP(&o.all, "all", "a", false, "все места от 100 MB, а не только крупнейшие")
 	f.BoolVar(&o.fresh, "fresh", false, "померить заново, а не из кэша")
+	f.BoolVar(&o.json, "json", false, "обзор в JSON")
 	f.BoolVar(&o.deps, "deps", false, "зависимости и сборки по проектам")
 	f.BoolVarP(&o.browse, "browse", "b", false, "разобрать по папкам: заходить внутрь, отмечать и убирать в Корзину")
 	f.BoolVar(&o.left, "leftovers", false, "хвосты удалённых программ: папки в Library, агенты автозапуска, процессы")
@@ -55,12 +56,12 @@ func run(env *app.Env, o options, args []string) error {
 		return browse(env, args, o.fresh)
 	case o.deps || o.clean:
 		return deps(env, o, args)
-	case app.Interactive() && !o.all:
+	case app.Interactive() && !o.all && !o.json:
 		s, err := Screen(env, args, o.fresh)
 		if err != nil {
 			return err
 		}
 		return env.Open(s)
 	}
-	return printOverview(env.Cfg, args, o.all, o.fresh)
+	return printOverview(env.Cfg, args, o.all, o.fresh, o.json)
 }

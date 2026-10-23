@@ -14,10 +14,13 @@ import (
 )
 
 // printSnapshot: паспорт и загрузка машины одним снимком.
-func printSnapshot() error {
+func printSnapshot(asJSON bool) error {
 	src, err := SourceFor()
 	if err != nil {
 		return err
+	}
+	if asJSON {
+		return ui.JSON(src.Collect())
 	}
 	PrintHW(src.Collect(), true)
 	return nil

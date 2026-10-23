@@ -11,9 +11,9 @@ import (
 
 // checkOptions: что проверять и как часто обходить по расписанию.
 type checkOptions struct {
-	local, net, servers, install, uninstall, notify bool
-	older                                           time.Duration
-	at                                              string
+	local, net, servers, install, uninstall, notify, json bool
+	older                                                 time.Duration
+	at                                                    string
 }
 
 // domainOptions: сколько собирать о домене и куда выводить.
@@ -24,9 +24,9 @@ type domainOptions struct {
 
 // corsOptions: что собирается сделать фронтенд.
 type corsOptions struct {
-	origin, method string
-	headers        []string
-	credentials    bool
+	origin, method    string
+	headers           []string
+	credentials, json bool
 }
 
 // watchOptions: как часто опрашивать и ждать ли уведомлений.
@@ -62,6 +62,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 	f.BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh: место, юниты, обновления, sshd - только чтение")
 	f.StringVar(&older, "older", "8h", "с какого возраста dev-сервер считается забытым: 8h, 2d")
 	f.BoolVar(&o.notify, "notify", false, "уведомление системы, если есть плохие строки")
+	f.BoolVar(&o.json, "json", false, "строки и проверки в JSON")
 	// Прежние флаги остаются скрытыми: их знают поставленные задания и чужие скрипты.
 	f.Float64Var(&hours, "hours", 0, "")
 	f.BoolVar(&o.install, "install", false, "")
@@ -98,27 +99,32 @@ func olderFlag(cmd *cobra.Command, older string, hours float64) (time.Duration, 
 }
 
 func certCommand(env *app.Env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "cert [host[:port]...]",
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "cert [host[:port]...] [--json]",
 		Short: "TLS-сертификат: один домен - подробно, несколько или без аргументов - сроки списком",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return printExpiries(env.Cfg, args)
+				return printExpiries(env.Cfg, args, asJSON)
 			}
-			return printCert(args[0])
+			return printCert(args[0], asJSON)
 		},
 	}
+	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
+	return c
 }
 
 func dnsCommand() *cobra.Command {
 	var server string
+	var asJSON bool
 	c := &cobra.Command{
-		Use:   "dns <host> [--server 1.1.1.1]",
+		Use:   "dns <host> [--server 1.1.1.1] [--json]",
 		Short: "Записи A, AAAA, CNAME, MX, NS, TXT, CAA и подписана ли зона (DNSSEC)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return printDNS(args[0], server) },
+		RunE:  func(cmd *cobra.Command, args []string) error { return printDNS(args[0], server, asJSON) },
 	}
 	c.Flags().StringVar(&server, "server", "", "резолвер, например 1.1.1.1")
+	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "flush",
 		Short: "Сбросить DNS-кэш системы (sudo)",
@@ -197,10 +203,10 @@ func domainCommand(env *app.Env) *cobra.Command {
 }
 
 func mailCommand(env *app.Env) *cobra.Command {
-	var all bool
+	var all, asJSON bool
 	var selectors []string
 	c := &cobra.Command{
-		Use:   "mail [домен] [--all] [--selector s]",
+		Use:   "mail [домен] [--all] [--selector s] [--json]",
 		Short: "Почта домена: MX, SPF, DKIM, DMARC и что с ними не так",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -210,34 +216,41 @@ func mailCommand(env *app.Env) *cobra.Command {
 			case len(args) == 0:
 				return ui.Errorf("укажи домен: tim mail example.com (или --all по доменам реестра)")
 			}
-			return printMail(args[0], selectors)
+			return printMail(args[0], selectors, asJSON)
 		},
 	}
 	c.Flags().BoolVarP(&all, "all", "a", false, "сводка по доменам реестра")
+	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
 	c.Flags().StringSliceVar(&selectors, "selector", nil, "свой DKIM-селектор (можно несколько)")
 	return c
 }
 
 func httpCommand() *cobra.Command {
-	var follow, allHeaders bool
+	var follow, allHeaders, asJSON bool
 	c := &cobra.Command{
-		Use:   "http <url> [-L] [--all-headers]",
+		Use:   "http <url> [-L] [--all-headers] [--json]",
 		Short: "Сколько отвечает сайт по фазам: DNS, TCP, TLS, первый байт, загрузка",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return printTimings(args[0], follow, allHeaders) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return printTimings(args[0], follow, allHeaders, asJSON)
+		},
 	}
 	c.Flags().BoolVarP(&follow, "location", "L", false, "идти по редиректам")
 	c.Flags().BoolVar(&allHeaders, "all-headers", false, "все заголовки ответа")
+	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON: по объекту на каждый переход")
 	return c
 }
 
 func ogCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "og <url>",
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "og <url> [--json]",
 		Short: "Как ссылка будет выглядеть в Telegram и соцсетях: заголовок, описание, картинка",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return printPreview(args[0]) },
+		RunE:  func(cmd *cobra.Command, args []string) error { return printPreview(args[0], asJSON) },
 	}
+	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
+	return c
 }
 
 func corsCommand() *cobra.Command {
@@ -255,6 +268,7 @@ func corsCommand() *cobra.Command {
 	c.Flags().StringVar(&o.method, "method", "GET", "метод запроса фронтенда")
 	c.Flags().StringSliceVar(&o.headers, "header", nil, "свои заголовки запроса (можно несколько)")
 	c.Flags().BoolVar(&o.credentials, "credentials", false, "запрос с куками (credentials: include)")
+	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	return c
 }
 

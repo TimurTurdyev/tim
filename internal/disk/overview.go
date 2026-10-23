@@ -35,7 +35,7 @@ var shortLimit = map[diskuse.Kind]int{diskuse.Free: 8, diskuse.Apps: 3, diskuse.
 const indent = "                       "
 
 // printOverview: занято и свободно и самые большие места по разделам; all - все от 100 MB.
-func printOverview(cfg *config.Config, args []string, all, fresh bool) error {
+func printOverview(cfg *config.Config, args []string, all, fresh, asJSON bool) error {
 	roots, err := rootsOf(args)
 	if err != nil {
 		return err
@@ -62,7 +62,19 @@ func printOverview(cfg *config.Config, args []string, all, fresh bool) error {
 		sortRows(rows)
 	}
 	var unknown int64
-	if d, ok := sysinfo.DataDisk(); ok && len(args) == 0 {
+	d, haveDisk := sysinfo.DataDisk()
+	if asJSON {
+		out := struct {
+			Size  int64         `json:"size,omitempty"`
+			Avail int64         `json:"avail,omitempty"`
+			Rows  []diskuse.Row `json:"rows"`
+		}{Rows: rows}
+		if haveDisk {
+			out.Size, out.Avail = int64(d.Size), int64(d.Avail)
+		}
+		return ui.JSON(out)
+	}
+	if haveDisk && len(args) == 0 {
 		ui.Println(ui.Title("Диск") + "  " + ui.Bar(d.Percent(), 30) + ui.Dim("свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
 		unknown = int64(d.Size-d.Avail) - measured - volumes
 	}
