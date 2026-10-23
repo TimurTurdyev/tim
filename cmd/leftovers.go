@@ -13,6 +13,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/leftover"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -204,8 +205,9 @@ func leftovers() error {
 	if small > 0 {
 		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + fmtBytes(smallSize) + ": tim disk --leftovers --all"))
 	}
-	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  убрать с вопросом по каждой: tim disk --leftovers --clean"))
-	ui.Println(ui.Dim("какие команды он выполнит, без запуска: tim disk --leftovers --clean --dry-run"))
+	ui.Println(ui.Info("всего " + fmtBytes(total)))
+	ui.Println(ui.Dim("  убрать, отметив нужное:   tim disk --leftovers --clean"))
+	ui.Println(ui.Dim("  только посмотреть команды: tim disk --leftovers --clean --dry-run"))
 	return nil
 }
 
@@ -287,40 +289,47 @@ func splitOwn(g *leftGroup) (mine, system []string) {
 	return mine, system
 }
 
-// cleanLeftovers: по группе - вопрос и уборка: выгрузить агенты, остановить процессы, файлы в Корзину.
-// "Похоже" по умолчанию - нет: узнано по одному имени.
+// cleanLeftovers: в терминале - список с галочками, что убрать, и одно подтверждение; без него -
+// вопрос по каждой. Команды печатаются по мере выполнения, с --dry-run - только печатаются.
+// "Похоже" заранее не отмечено: узнано по одному имени.
 func cleanLeftovers(groups []*leftGroup) error {
+	picked := groups
+	if tui.Available() && !runner.DryRun {
+		items := make([]tui.Item, len(groups))
+		for i, g := range groups {
+			hint := ""
+			if !g.sure {
+				hint = "похоже, проверь"
+			}
+			items[i] = tui.Item{Title: ui.Pad(fmtBytes(g.size), 10) + groupName(g), Hint: hint}
+		}
+		idx, err := tui.MultiSelect("Что убрать в Корзину?", items, nil)
+		if err != nil {
+			return err
+		}
+		picked = nil
+		var size int64
+		for _, i := range idx {
+			picked = append(picked, groups[i])
+			size += groups[i].size
+		}
+		if len(picked) == 0 {
+			ui.Println(ui.Dim("ничего не выбрано"))
+			return nil
+		}
+		ok, err := tui.Confirm("Убрать "+strconv.Itoa(len(picked))+" "+ui.Plural(len(picked), "программу", "программы", "программ")+", "+fmtBytes(size)+"?", false)
+		if err != nil || !ok {
+			return err
+		}
+	}
 	var freed int64
-	for _, g := range groups {
-		printLeftGroup(g)
-		if !runner.ConfirmDefault("убрать "+strings.Split(groupTitle(g), "  ")[0]+" ("+fmtBytes(g.size)+")?", false) {
+	for _, g := range picked {
+		ui.Println(ui.Label(ui.Pad(fmtBytes(g.size), 10)) + groupTitle(g))
+		if !tui.Available() && !runner.DryRun && !runner.ConfirmDefault("убрать "+groupName(g)+"?", false) {
+			ui.Println()
 			continue
 		}
-		for _, a := range g.agents {
-			if strings.HasPrefix(a, "system/") {
-				_ = runner.Sudo("launchctl", "bootout", a)
-			} else {
-				_ = runner.Run("launchctl", "bootout", a)
-			}
-		}
-		if len(g.pids) > 0 {
-			_ = runner.Run("kill", g.pids...)
-		}
-		mine, system := splitOwn(g)
-		ok := true
-		for _, p := range mine {
-			if err := moveToTrash(p); err != nil {
-				ui.Println(ui.Bad(err.Error()))
-				ok = false
-			}
-		}
-		for _, p := range system {
-			if err := runner.Sudo("mv", p, filepath.Join(paths.Home(), ".Trash")+"/"); err != nil {
-				ui.Println(ui.Bad(p + ": не убрано"))
-				ok = false
-			}
-		}
-		if ok {
+		if removeGroup(g) {
 			freed += g.size
 		}
 		ui.Println()
@@ -332,4 +341,36 @@ func cleanLeftovers(groups []*leftGroup) error {
 		ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
 	}
 	return nil
+}
+
+func groupName(g *leftGroup) string { return strings.Split(groupTitle(g), "  ")[0] }
+
+// removeGroup: агенты выгрузить, процессы остановить, файлы в Корзину; системные - через sudo.
+func removeGroup(g *leftGroup) bool {
+	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
+	for _, a := range g.agents {
+		if strings.HasPrefix(a, "system/") {
+			_ = runner.Sudo("launchctl", "bootout", a)
+		} else {
+			_ = runner.Run("launchctl", "bootout", a)
+		}
+	}
+	if len(g.pids) > 0 {
+		_ = runner.Run("kill", g.pids...)
+	}
+	mine, system := splitOwn(g)
+	ok := true
+	for _, p := range mine {
+		if err := moveToTrash(p); err != nil {
+			ui.Println(ui.Bad(err.Error()))
+			ok = false
+		}
+	}
+	for _, p := range system {
+		if err := runner.Sudo("mv", p, filepath.Join(paths.Home(), ".Trash")+"/"); err != nil {
+			ui.Println(ui.Bad(p + ": не убрано"))
+			ok = false
+		}
+	}
+	return ok
 }
