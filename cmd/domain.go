@@ -12,6 +12,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -65,6 +66,9 @@ var domainCmd = &cobra.Command{
 		domain, err := domainOf(first(args))
 		if err != nil {
 			return err
+		}
+		if tui.Available() && !domJSON && !domMap && domMapOut == "" && !domFast {
+			return runScreen(domainScreen(domain))
 		}
 		notify := func(s string) { ui.Println(ui.Dim(s)) }
 		if domJSON {

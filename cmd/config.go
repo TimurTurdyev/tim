@@ -54,6 +54,9 @@ var configInitCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		_, statErr := os.Stat(config.Path())
 		exists := statErr == nil
+		if !exists && tui.Available() && !initYes && initRoot == "" && !initAll {
+			return runScreen(onboardScreen())
+		}
 		c := config.Default()
 		switch {
 		case exists && initMerge:
