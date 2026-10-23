@@ -12,7 +12,7 @@ type Peer struct {
 	Proc, Local, Remote string
 }
 
-// ParseLsofPeers разбирает lsof -nP -i -w: строки вида
+// ParseLsofPeers разбирает lsof -nP -i -w +c 0: строки вида
 // "firefox 123 user 75u IPv4 0x.. 0t0 TCP 10.8.1.1:53261->34.107.243.93:443 (ESTABLISHED)".
 // Слушающие сокеты и UDP без адресата пропускаются.
 func ParseLsofPeers(out string) []Peer {
@@ -22,14 +22,36 @@ func ParseLsofPeers(out string) []Peer {
 		if len(f) < 9 {
 			continue
 		}
-		conn := f[8]
+		// Имя процесса бывает с пробелами ("Google Chrome Helper"): оно тянется до первого числа - PID.
+		pid := 1
+		for pid < len(f) && !digits(f[pid]) {
+			pid++
+		}
+		conn := f[len(f)-1]
+		if strings.HasPrefix(conn, "(") && len(f) >= 2 {
+			conn = f[len(f)-2]
+		}
 		local, remote, ok := strings.Cut(conn, "->")
-		if !ok {
+		if !ok || pid >= len(f) {
 			continue
 		}
-		list = append(list, Peer{Proc: f[0], Local: hostOf(local), Remote: hostOf(remote)})
+		// Пробел в имени lsof печатает как \x20.
+		name := strings.ReplaceAll(strings.Join(f[:pid], " "), `\x20`, " ")
+		list = append(list, Peer{Proc: name, Local: hostOf(local), Remote: hostOf(remote)})
 	}
 	return list
+}
+
+func digits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ParseSSPeers разбирает ss -tunpH: "tcp ESTAB 0 0 10.8.0.2:52345 82.1.1.1:443 users:(("chrome",pid=1,fd=5))".
@@ -71,6 +93,7 @@ func Peers() []Peer {
 		out, _ := runner.Output("ss", "-tunpH")
 		return ParseSSPeers(out)
 	}
-	out, _ := runner.Output("lsof", "-nP", "-i", "-w")
+	// +c 0 - имена процессов целиком, иначе lsof режет их до девяти букв.
+	out, _ := runner.Output("lsof", "-nP", "-i", "-w", "+c", "0")
 	return ParseLsofPeers(out)
 }
