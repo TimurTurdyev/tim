@@ -69,6 +69,7 @@ type BoardOpts struct {
 	Search  bool          // "/" ищет по строкам
 	Tab     string        // название вкладки, пока данных нет
 	Order   string        // как отсортировано - справа в строке управления
+	Refresh bool          // первая загрузка - из кэша, сразу за ней свежая
 	// Miss: что сделать с запросом, которого нет в списке - например проверить его как домен.
 	Miss  func(q string) (string, Action)
 	Enter func(row *BoardRow) string
@@ -83,6 +84,7 @@ type board struct {
 	have    bool
 	loading bool
 	inTabs  bool // строку поиска рисуют вкладки
+	fresh   bool // свежая загрузка после кэша уже шла
 }
 
 type (
@@ -296,6 +298,10 @@ func (b *board) Update(msg tea.Msg, app *App) tea.Cmd {
 	case boardDataMsg:
 		b.data, b.have, b.loading = msg.data, true, false
 		b.refill()
+		if b.opts.Refresh && !b.fresh {
+			b.fresh = true
+			return b.load(true)
+		}
 		return nil
 	case boardTickMsg:
 		return tea.Batch(b.load(false), b.tick())
@@ -372,7 +378,7 @@ func (b *board) card(row *BoardRow) *Card {
 	}
 	if len(out.Actions) == 0 {
 		for _, a := range b.opts.Actions {
-			if !a.Free && a.Key != "enter" {
+			if !a.Free && !a.Hidden && a.Key != "enter" {
 				out.Actions = append(out.Actions, CardAction{a.Key, a.Label, a.Note})
 			}
 		}

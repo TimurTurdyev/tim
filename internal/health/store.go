@@ -88,3 +88,9 @@ func SavedRows() []Saved {
 	}
 	return out
 }
+
+// Alert: беда для группы ВНИМАНИЕ главного экрана - уровень и текст "<объект>: <что>".
+type Alert struct {
+	Level level.Level
+	Text  string
+}

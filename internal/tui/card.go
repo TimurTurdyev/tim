@@ -153,6 +153,9 @@ func (c Card) actionLines(w int) []string {
 	return out
 }
 
+// KeyCap: клавиша на подложке - для строк карточки, которые собирают разделы.
+func KeyCap(k string) string { return styleKeyCap.Render(" " + k + " ") }
+
 // besideList: список слева и карточка справа строка к строке; карточка с колонки 60.
 func besideList(left []string, card []string, width int) []string {
 	return besideListW(left, card, cardListW, width)

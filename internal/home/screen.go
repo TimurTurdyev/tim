@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/disk"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/motd"
 	"github.com/TimurTurdyev/tim/internal/paths"
@@ -67,7 +68,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	env, one := h.env, len(args) == 1
 	switch {
 	case args[0] == "go" || args[0] == "proj":
-		return h.projectsScreen("", projects.TabAll)
+		return h.projectsScreen("", app.TabAll)
 	case args[0] == "hw":
 		return machine.HWScreen()
 	case args[0] == "vpn" && one:
@@ -75,7 +76,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	case args[0] == "check" && one:
 		return sites.CheckScreen(env)
 	case args[0] == "serve" && len(args) == 2 && args[1] == "list":
-		return h.projectsScreen("", projects.TabRunning)
+		return h.projectsScreen("", app.TabRunning)
 	case args[0] == "domain" && len(args) == 2:
 		if d, err := sites.DomainOf(env, args[1]); err == nil {
 			return sites.DomainScreen(env, d)
@@ -149,12 +150,45 @@ func (h *Home) machine() tui.HomeMachine {
 	rows, m := motd.Rows(h.env.Cfg, nil)
 	out := tui.HomeMachine{Mood: m.Mood(time.Now()), Badges: map[string]string{}}
 	counts := map[string][2]int{}
-	for _, w := range m.Warnings() {
-		dest, key, open := h.trouble(w, m.MemHolder)
-		out.Attention = append(out.Attention, tui.Hit{Kind: tui.KindAttention, Title: ui.Warn("\u25b2 " + w.Text), Hint: dest, Open: open})
+	add := func(lvl level.Level, text, dest, key string, open func() tui.Action) {
+		title := ui.Warn("\u25b2 " + text)
 		c := counts[key]
-		c[1]++
+		if lvl == level.Bad {
+			title = ui.Bad("\u2715 " + text)
+			c[0]++
+		} else {
+			c[1]++
+		}
 		counts[key] = c
+		out.Attention = append(out.Attention, tui.Hit{Kind: tui.KindAttention, Title: title, Hint: dest, Open: open})
+	}
+	// Порядок: память и диск машины, сайты, обход и страж, серверы.
+	sitesOpen := func() tui.Action { return tui.Action{Push: sites.SitesScreen(h.env)} }
+	sitesDone := false
+	for _, w := range m.Warnings() {
+		if (w.Kind == health.Bypass || w.Kind == health.Guard) && !sitesDone {
+			for _, a := range sites.Attention(h.env.Cfg) {
+				add(a.Level, a.Text, "Сайты", "w", sitesOpen)
+			}
+			sitesDone = true
+		}
+		dest, key, open := h.trouble(w, m.MemHolder)
+		add(level.Warn, w.Text, dest, key, open)
+	}
+	if !sitesDone {
+		for _, a := range sites.Attention(h.env.Cfg) {
+			add(a.Level, a.Text, "Сайты", "w", sitesOpen)
+		}
+	}
+	for _, a := range servers.Attention(h.env) {
+		target, _, _ := strings.Cut(a.Text, ":")
+		add(a.Level, a.Text, "Серверы", "s", func() tui.Action {
+			return tui.Action{Push: servers.Screen(h.env, target)}
+		})
+	}
+	// У Сайтов бейдж - число сайтов с бедой, а не строк ВНИМАНИЯ.
+	if bad, warn := sites.Troubled(h.env.Cfg); bad+warn > 0 {
+		counts["w"] = [2]int{bad, warn}
 	}
 	for key, c := range counts {
 		out.Badges[key] = badge(c[0], c[1])
@@ -202,7 +236,7 @@ func (h *Home) lineDest(d motd.Dest) (string, func() tui.Action) {
 	case motd.ToNet:
 		return "Сеть", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
 	case motd.ToRunning:
-		return "Проекты " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: h.projectsScreen("", projects.TabRunning)} }
+		return "Проекты " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: h.projectsScreen("", app.TabRunning)} }
 	}
 	return "", nil
 }
@@ -213,7 +247,7 @@ func (h *Home) sections() []tui.Section {
 		return func() tui.Action { return tui.Action{Push: screen()} }
 	}
 	return []tui.Section{
-		{Key: "p", Title: "Проекты", Hint: "go, serve, запущенные, проверка", Open: push(func() tui.Screen { return h.projectsScreen("", projects.TabAll) })},
+		{Key: "p", Title: "Проекты", Hint: "go, serve, запущенные, проверка", Open: push(func() tui.Screen { return h.projectsScreen("", app.TabAll) })},
 		{Key: "s", Title: "Серверы", Hint: "состояние, кто ломится, ssh", Open: push(func() tui.Screen {
 			return servers.ServersScreen(h.env, servers.Targets(h.env, nil, false))
 		})},
@@ -294,7 +328,7 @@ func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
 		note = ui.OK("\u25cf :" + st.Port)
 	}
 	return tui.Hit{Kind: "проекты", Title: name, Hint: hint, Note: note, Open: func() tui.Action {
-		return tui.Action{Push: h.projectsScreen(name, projects.TabAll)}
+		return tui.Action{Push: h.projectsScreen(name, app.TabAll)}
 	}}
 }
 

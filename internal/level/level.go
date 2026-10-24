@@ -1,7 +1,11 @@
 // Package level: общая шкала "насколько всё плохо" для проверок, находок и сообщений экранов.
 package level
 
-import "github.com/TimurTurdyev/tim/internal/ui"
+import (
+	"fmt"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
+)
 
 // Level: порядок важен, худший уровень - наибольший.
 type Level int
@@ -29,6 +33,17 @@ func (l Level) String() string {
 // MarshalText: в --json уровень словом, а не числом.
 func (l Level) MarshalText() ([]byte, error) {
 	return []byte([...]string{"skip", "info", "ok", "warn", "bad"}[l]), nil
+}
+
+// UnmarshalText: уровень словом обратно - кэш проверок читается тем же типом, что пишется.
+func (l *Level) UnmarshalText(b []byte) error {
+	for i, w := range [...]string{"skip", "info", "ok", "warn", "bad"} {
+		if string(b) == w {
+			*l = Level(i)
+			return nil
+		}
+	}
+	return fmt.Errorf("неизвестный уровень %q", b)
 }
 
 // Worst: худший из уровней, Skip без уровней.

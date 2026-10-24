@@ -90,9 +90,9 @@ func osLine(r srvinfo.Report) string {
 		parts = append(parts, r.OS)
 	}
 	if r.Uptime > 0 {
-		parts = append(parts, "up "+ui.Duration(r.Uptime))
+		parts = append(parts, "работает "+ui.Short(r.Uptime))
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(parts, " \u00b7 ")
 }
 
 // printFindings: находки строками, у настоящих бед - с чего начать.

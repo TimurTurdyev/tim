@@ -17,13 +17,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
-// Вкладки экрана проектов.
-const (
-	TabAll = iota
-	TabRunning
-	TabCheck
-)
-
 // knownStack: стек проекта; неопознанный - пусто, а не "other": в списке это шум.
 func knownStack(dir string) string {
 	if s := run.Stack(dir); s != "other" {

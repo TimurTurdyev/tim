@@ -49,11 +49,11 @@ func serveCommand(env *app.Env) *cobra.Command {
 	logs.Flags().BoolVarP(&follow, "follow", "f", false, "следить")
 	c.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "Фоновые dev-серверы",
+		Short: "Запущенные dev-серверы",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if app.Interactive() {
-				return env.Open(Screen(env))
+			if app.Interactive() && env.ProjectsScreen != nil {
+				return env.Open(env.ProjectsScreen("", app.TabRunning))
 			}
 			printBackground()
 			return nil

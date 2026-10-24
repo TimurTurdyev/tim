@@ -169,16 +169,7 @@ func gitHost(alias string) bool {
 
 // collectAll: отчёты параллельно, худшие первыми.
 func collectAll(targets []Server) []serverState {
-	states := par.Map(targets, serversLimit, func(t Server) serverState {
-		s := serverState{Target: t.Alias, Projects: t.Projects}
-		r, err := srvinfo.Collect(t.Alias, serverTimeout)
-		if err != nil {
-			s.Err = sshError(err)
-			return s
-		}
-		s.Report, s.Findings = r, evaluate(t.Alias, r)
-		return s
-	})
+	states := par.Map(targets, serversLimit, collect)
 	sort.SliceStable(states, func(i, j int) bool { return states[i].level() > states[j].level() })
 	return states
 }

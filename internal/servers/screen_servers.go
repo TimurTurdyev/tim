@@ -2,6 +2,8 @@ package servers
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
@@ -10,66 +12,109 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// ServersScreen: все серверы одной доской; enter открывает сервер, a - кто ломится, s - ssh.
+// ServersScreen: серверы из кэша последнего состояния - без входа по ssh на каждый; enter - экран
+// сервера со сбором по ssh, r - собрать выбранный заново.
 func ServersScreen(env *app.Env, targets []Server) tui.Screen {
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs:  []string{"Серверы"},
-		Loading: fmt.Sprintf("захожу по ssh на %d %s, только чтение", len(targets), ui.Plural(len(targets), "сервер", "сервера", "серверов")),
+		Static:  true,
+		Search:  true,
+		Loading: "смотрю, что известно о серверах",
 		Command: func(row *tui.BoardRow) string {
 			if row == nil {
 				return "tim servers"
 			}
 			return "tim server " + row.ID
 		},
-		Load: func(bool) tui.BoardData { return serversData(targets) },
+		Load:  func(bool) tui.BoardData { return serversData(targets) },
+		Enter: func(*tui.BoardRow) string { return "состояние по ssh, tim остаётся" },
 		Actions: []tui.BoardAction{
-			{Key: "enter", Label: "сервер", Do: func(row *tui.BoardRow) tui.Action { return tui.Action{Push: Screen(env, row.ID)} }},
+			{Key: "enter", Label: "состояние", Do: func(row *tui.BoardRow) tui.Action { return tui.Action{Push: Screen(env, row.ID)} }},
+			{Key: "s", Label: "ssh", Note: "закроет tim", Do: func(row *tui.BoardRow) tui.Action {
+				return tui.Action{Exit: func() { env.After([]string{"ssh", row.ID}) }}
+			}},
 			{Key: "a", Label: "кто ломится", Do: func(row *tui.BoardRow) tui.Action {
 				return tui.Action{Push: AttacksScreen(row.ID, 24*time.Hour)}
 			}},
-			{Key: "s", Label: "ssh", Do: func(row *tui.BoardRow) tui.Action {
-				return tui.Action{Exit: func() { env.After([]string{"ssh", row.ID}) }}
+			{Key: "r", Label: "обновить", Doing: "захожу по ssh", Free: true, Run: func(row *tui.BoardRow) (string, error) {
+				if row == nil {
+					return "", nil
+				}
+				s := collect(Server{Alias: row.ID})
+				if s.Err != "" {
+					return "", ui.Errorf("%s: %s", row.ID, s.Err)
+				}
+				return row.ID + ": " + s.state(), nil
 			}},
 		},
 	})
 }
 
 func serversData(targets []Server) tui.BoardData {
-	states := collectAll(targets)
-	d := tui.BoardData{Columns: serversHeader(), Empty: "серверов нет"}
-	var bad int
-	for _, s := range states {
-		if s.level() >= level.Warn {
-			bad++
+	d := tui.BoardData{Columns: ui.Pad("СЕРВЕР", 14) + ui.Pad("ОС", 20) + ui.Pad("РАБОТАЕТ", 10) + "НАХОДКИ"}
+	d.Empty = "Серверов нет: tim знает их из ~/.ssh/config и поля ssh у проектов"
+	var oldest time.Time
+	for _, t := range targets {
+		s, at, ok := saved(t.Alias)
+		if ok && (oldest.IsZero() || at.Before(oldest)) {
+			oldest = at
 		}
-		d.Rows = append(d.Rows, serverRow(s))
+		d.Rows = append(d.Rows, serverRow(t, s, at, ok))
 	}
-	d.Status = fmt.Sprintf("%d %s", len(states), ui.Plural(len(states), "сервер", "сервера", "серверов"))
-	if bad > 0 {
-		d.Status += fmt.Sprintf(", требуют внимания %d", bad)
+	d.Status = ui.Count(len(targets), "сервер", "сервера", "серверов")
+	if !oldest.IsZero() {
+		d.Status += " \u00b7 проверено " + ago(oldest)
 	}
 	return d
 }
 
-// serverRow: строка таблицы; в панели - все находки сервера с подсказками.
-func serverRow(s serverState) tui.BoardRow {
-	row := tui.BoardRow{ID: s.Target, Title: s.Target, Cells: serverLine(s)}
-	if s.level() > level.OK {
-		row.Sub = s.level().String()
+func ago(t time.Time) string {
+	if time.Since(t) < time.Minute {
+		return "только что"
 	}
-	if s.Err != "" {
-		row.Pane = []string{s.Err, ui.Dim("маршрут и вход проверит tim ssh " + s.Target)}
+	return ui.Short(time.Since(t))
+}
+
+// serverRow: строка из кэша; в карточке - находки, диск и память, когда снято.
+func serverRow(t Server, s serverState, at time.Time, ok bool) tui.BoardRow {
+	row := tui.BoardRow{ID: t.Alias, Find: strings.Join(t.Projects, " ")}
+	card := &tui.Card{Title: t.Alias, Sub: "ssh " + t.Alias}
+	row.Card = card
+	if !ok {
+		row.Cells = ui.Pad(t.Alias, 14) + ui.Dim("- не проверялся")
+		card.Path = "не проверялся: enter соберёт состояние по ssh"
 		return row
 	}
-	row.Pane = []string{ui.Dim(summaryLine(s.Report))}
+	r := s.Report
+	warn := 0
+	var names []string
 	for _, c := range s.Findings {
-		row.Pane = append(row.Pane, ui.Pad(level.Lamp(c.Level, ui.Pad(c.Name, 12)), 16)+c.Detail)
-		if c.Fix != "" && c.Level >= level.Warn {
-			row.Pane = append(row.Pane, ui.Dim("  \u2192 "+c.Fix))
+		if c.Level >= level.Warn {
+			warn++
+			names = append(names, c.Name)
 		}
 	}
-	if len(s.Findings) == 0 {
-		row.Pane = append(row.Pane, "замечаний нет")
+	finds := ""
+	if warn > 0 {
+		finds = level.Lamp(s.level(), strconv.Itoa(warn))
+	}
+	row.Cells = ui.Pad(t.Alias, 14) + ui.Fit(r.OS, 20) + ui.Pad(ui.Short(r.Uptime), 10) + finds
+	card.Path = "проверялся " + ago(at)
+	if len(names) > 0 {
+		card.Facts = append(card.Facts, tui.Fact{Label: "находки", Value: level.Lamp(level.Warn, strings.Join(names, ", "))})
+	}
+	var load []string
+	if disk, ok := r.Root(); ok {
+		load = append(load, fmt.Sprintf("диск %d%%", disk.Pct))
+	}
+	if r.MemTotal > 0 {
+		load = append(load, fmt.Sprintf("память %d%%", (r.MemTotal-r.MemAvail)*100/r.MemTotal))
+	}
+	if len(load) > 0 {
+		card.Facts = append(card.Facts, tui.Fact{Label: "занято", Value: strings.Join(load, " \u00b7 ")})
+	}
+	if len(t.Projects) > 0 {
+		card.Facts = append(card.Facts, tui.Fact{Label: "проекты", Value: strings.Join(t.Projects, ", ")})
 	}
 	return row
 }

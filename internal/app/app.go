@@ -18,6 +18,13 @@ import (
 var terminalEditors = map[string]bool{"vi": true, "vim": true, "nvim": true, "nano": true, "emacs": true,
 	"micro": true, "hx": true, "helix": true, "kak": true, "mg": true, "ne": true, "joe": true}
 
+// Вкладки экрана проектов: Все, Запущенные, Проверка.
+const (
+	TabAll = iota
+	TabRunning
+	TabCheck
+)
+
 // Env: окружение команд. Корень заполняет Cfg перед запуском команды, остальное - при сборке.
 // Раздел получает указатель в Commands(env) и передаёт нужное дальше аргументами.
 type Env struct {
