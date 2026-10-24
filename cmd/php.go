@@ -5,104 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/brew"
-	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/phpver"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
-
-type phpInstall struct {
-	Version phpver.Version
-	Bin     string
-}
-
-// phpInstalls: версии PHP из brew; у формулы php версия спрашивается у самого бинарника.
-// На Linux - /usr/bin/php8.3 и соседи (Debian, Ubuntu, PPA ondrej).
-func phpInstalls() []phpInstall {
-	if runtime.GOOS == "linux" {
-		return linuxPHP()
-	}
-	if !runner.Has("brew") {
-		return nil
-	}
-	prefix := brew.Prefix()
-	var out []phpInstall
-	for _, f := range brew.Formulas() {
-		if f != "php" && !strings.HasPrefix(f, "php@") {
-			continue
-		}
-		bin := filepath.Join(prefix, "opt", f, "bin")
-		var v phpver.Version
-		var ok bool
-		if f == "php" {
-			s, _ := runner.Output(filepath.Join(bin, "php"), "-r", "echo PHP_VERSION;")
-			v, ok = phpver.Parse(s)
-		} else {
-			v, ok = phpver.Parse(strings.TrimPrefix(f, "php@"))
-		}
-		if ok {
-			out = append(out, phpInstall{v, bin})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[j].Version.Less(out[i].Version) })
-	return out
-}
-
-// linuxPHP: версии из /usr/bin. Бинарник там называется php8.3, а не php, поэтому для каждой версии
-// заводится папка-шим с php внутри: её и ставим первой в PATH.
-func linuxPHP() []phpInstall {
-	bins, _ := filepath.Glob("/usr/bin/php[0-9]*.[0-9]*")
-	var out []phpInstall
-	for _, b := range bins {
-		v, ok := phpver.Parse(strings.TrimPrefix(filepath.Base(b), "php"))
-		if !ok {
-			continue
-		}
-		dir := paths.State("php", v.String())
-		link := filepath.Join(dir, "php")
-		if _, err := os.Lstat(link); err != nil {
-			if os.MkdirAll(dir, 0o755) != nil || os.Symlink(b, link) != nil {
-				continue
-			}
-		}
-		out = append(out, phpInstall{v, dir})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[j].Version.Less(out[i].Version) })
-	return out
-}
-
-func phpHint(v string) string { return runner.InstallHint("php@"+v, "php"+v+"-cli") }
-
-func findPHP(want string) (phpInstall, error) {
-	w, ok := phpver.Parse(want)
-	if !ok {
-		return phpInstall{}, ui.Errorf("версия вида 8.3: %s", want)
-	}
-	for _, i := range phpInstalls() {
-		if i.Version.Major == w.Major && i.Version.Minor == w.Minor {
-			return i, nil
-		}
-	}
-	return phpInstall{}, ui.Errorf("php %s не установлен: %s", w, phpHint(w.String()))
-}
-
-// phpPath: PATH без каталогов других версий brew php и с нужной версией первой.
-func phpPath(bin string) string {
-	keep := []string{bin, filepath.Join(filepath.Dir(bin), "sbin")}
-	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
-		if strings.Contains(d, "/opt/php") || strings.Contains(d, "/Cellar/php") {
-			continue
-		}
-		keep = append(keep, d)
-	}
-	return strings.Join(keep, string(os.PathListSeparator))
-}
 
 var phpCmd = &cobra.Command{
 	Use:   "php",
@@ -115,7 +25,7 @@ var phpCmd = &cobra.Command{
 			}
 		}
 		active, _ := runner.Output("php", "-r", "echo PHP_VERSION;")
-		installs := phpInstalls()
+		installs := phpver.Installs()
 		var versions []phpver.Version
 		for _, i := range installs {
 			mark := "  "
@@ -157,12 +67,12 @@ var phpExecCmd = &cobra.Command{
 		if len(args) < 2 {
 			return ui.Errorf("tim php exec 8.3 composer install")
 		}
-		i, err := findPHP(args[0])
+		i, err := phpver.Find(args[0])
 		if err != nil {
 			return err
 		}
 		cwd, _ := os.Getwd()
-		return runner.ExecIn(cwd, []string{"PATH=" + phpPath(i.Bin)}, args[1], args[2:]...)
+		return runner.ExecIn(cwd, []string{"PATH=" + phpver.Path(i.Bin)}, args[1], args[2:]...)
 	},
 }
 
@@ -173,11 +83,11 @@ var phpUseCmd = &cobra.Command{
 	Short: "Переключить PHP в текущей оболочке (через шим tim init zsh)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		i, err := findPHP(args[0])
+		i, err := phpver.Find(args[0])
 		if err != nil {
 			return err
 		}
-		line := fmt.Sprintf("export PATH=%q", phpPath(i.Bin))
+		line := fmt.Sprintf("export PATH=%q", phpver.Path(i.Bin))
 		if phpUsePrint {
 			fmt.Println(line)
 			return nil
