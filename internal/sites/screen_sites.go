@@ -191,7 +191,7 @@ func siteCard(cfg *config.Config, host string, r health.Row) *tui.Card {
 		}
 	}
 	if len(c.Facts) == 0 {
-		c.Facts = []tui.Fact{{Value: ui.OK("\u25cf всё в порядке")}}
+		c.About = []string{ui.OK("\u25cf всё в порядке")}
 	}
 	return c
 }

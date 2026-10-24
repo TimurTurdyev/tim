@@ -33,6 +33,7 @@ type CardAction struct{ Key, Label, Note string }
 type Card struct {
 	Title, Sub string // имя жирным и подзаголовок серым справа в той же строке
 	Path       string
+	About      []string // проза под путём: что это за место и чем оно опасно, переносится по ширине
 	Facts      []Fact
 	Extra      []string // блок после фактов, уже с цветом: например последние строки журнала
 	Enter      string   // что сделает enter, честно
@@ -61,6 +62,9 @@ func (c Card) Lines(w, maxH int) []string {
 	path := []string{}
 	if c.Path != "" {
 		path = append(path, styleDim.Render(ui.Clip(c.Path, w)))
+	}
+	for _, a := range c.About {
+		path = append(path, ui.Wrap(a, w)...)
 	}
 	var facts []string
 	if c.Loading {

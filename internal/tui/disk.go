@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -11,7 +12,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Обзор диска: полоса занятости, разделы вкладками, список мест и панель с подробностями.
+// Обзор диска: полоса занятости, разделы вкладками, места с размерами и карточка выбранного под
+// списком. Места двух видов: папку отмечают и убирают в Корзину, кэш чистят его командой.
 
 // DiskItem: что лежит внутри места - модель, игра, виртуалка.
 type DiskItem struct {
@@ -27,6 +29,7 @@ type DiskRow struct {
 	Items                  []DiskItem
 	Warn                   string // например "Steam удалён, а игры остались"
 	Removable              bool   // можно убрать в Корзину целиком
+	Cmd                    string // кэш чистится этой командой: enter выполняет её через подтверждение
 }
 
 func (r DiskRow) shown() string {
@@ -52,27 +55,31 @@ type DiskData struct {
 	Notes       []string // например про копии Chrome
 }
 
-// DiskOpts: источники и действия обзора.
+// DiskOpts: источники и действия обзора. progress - сколько папок посчитано из скольких и где.
 type DiskOpts struct {
-	Load      func(fresh bool, progress func(string)) DiskData
+	Load      func(fresh bool, progress func(done, total int, where string)) DiskData
 	Remove    func(paths []string) (freed int64, errs []string)
+	Clean     func(cmd string) (string, error) // команда очистки кэша
+	Open      func(path string)                // показать в Finder
 	Browse    func() Screen
 	Leftovers func() Screen
 }
 
 type disk struct {
-	opts     DiskOpts
-	data     DiskData
-	tab      int
-	list     List
-	marked   marks[DiskRow]
-	loading  bool
-	progress string
-	mu       sync.Mutex
+	opts    DiskOpts
+	data    DiskData
+	tab     int
+	list    List
+	marked  marks[DiskRow]
+	loading bool
+	started time.Time
+	done    int
+	total   int
+	where   string
+	mu      sync.Mutex
 }
 
 type diskDataMsg DiskData
-type diskTickMsg struct{}
 
 // NewDisk создаёт экран обзора диска.
 func NewDisk(opts DiskOpts) Screen {
@@ -82,35 +89,55 @@ func NewDisk(opts DiskOpts) Screen {
 func (d *disk) Init() tea.Cmd { return d.load(false) }
 
 func (d *disk) load(fresh bool) tea.Cmd {
-	d.loading = true
-	d.progress = "считаю..."
-	return tea.Batch(
-		func() tea.Msg {
-			return diskDataMsg(d.opts.Load(fresh, func(s string) {
-				d.mu.Lock()
-				d.progress = s
-				d.mu.Unlock()
-			}))
-		},
-		tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return diskTickMsg{} }),
-	)
+	d.loading, d.started = true, time.Now()
+	return func() tea.Msg {
+		return diskDataMsg(d.opts.Load(fresh, func(done, total int, where string) {
+			d.mu.Lock()
+			d.done, d.total, d.where = done, total, where
+			d.mu.Unlock()
+		}))
+	}
+}
+
+// Animating: пока идёт замер, полоса хода и секунды движутся от общего тикера.
+func (d *disk) Animating() bool { return d.loading }
+
+func (d *disk) Tick(int) {}
+
+// counted: сколько посчитано.
+func (d *disk) counted() (done, total int, where string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.done, d.total, d.where
 }
 
 func (d *disk) Crumbs() []string { return []string{"Диск"} }
 
 func (d *disk) Status() string {
 	if d.loading {
-		d.mu.Lock()
-		defer d.mu.Unlock()
-		return d.progress
+		done, total, _ := d.counted()
+		// Полоса хода в теле уже движется - статус без кадра, только счёт и секунды.
+		return "считаю " + itoa(done) + " из " + itoa(total) + " " + symSep + " " + ui.Short(time.Since(d.started))
 	}
-	return "занято " + ui.Bytes(d.data.Size-d.data.Avail) + " из " + ui.Bytes(d.data.Size) + " " + symDot + " свободно " + ui.Bytes(d.data.Avail)
+	return ui.Bytes(d.data.Size-d.data.Avail) + " из " + ui.Bytes(d.data.Size) + " " + symSep + " свободно " + ui.Bytes(d.data.Avail)
 }
 
 func (d *disk) Command() string { return "tim disk" }
 
 func (d *disk) Keys() []Key {
-	return []Key{{"enter", "по папкам"}, {"space", "отметить"}, {"x", "убрать"}, {"h", "хвосты"}, {"tab", "вкладка"}, {"r", "обновить"}}
+	if d.loading && len(d.data.Tabs) == 0 {
+		return nil
+	}
+	enter := Key{"enter", "по папкам"}
+	if cur := d.current(); cur != nil && cur.Cmd != "" {
+		enter = Key{"enter", "выполнить"}
+	}
+	return []Key{enter, {"space", "отметить"}, {"x", "убрать"}, {"h", "хвосты"}, {"tab", "вкладка"}}
+}
+
+// HelpKeys: r и o - в справке: r подписан в строке полосы, o - в карточке.
+func (d *disk) HelpKeys() []Key {
+	return append(d.Keys(), Key{"r", "обновить"}, Key{"o", "Finder"})
 }
 
 func (d *disk) rows() []DiskRow {
@@ -126,26 +153,17 @@ func (d *disk) refill() {
 	for _, r := range rows {
 		top = max(top, r.Size)
 	}
-	longest := 0
-	for _, r := range rows {
-		longest = max(longest, ui.Width(r.Name))
-	}
 	d.list.Rows = nil
 	for _, r := range rows {
-		r := r
 		d.list.Rows = append(d.list.Rows, Row{Text: r.Name, Render: func(sel bool, w int) string {
-			// Имя по самому длинному: на широком экране до 44, на узком - 34, чтобы осталась подсказка.
-			nameW := min(longest, 44)
-			if w < 130 {
-				nameW = min(nameW, 34)
-			}
-			mark := "  "
+			mark := " "
 			if r.Path != "" && d.marked.has(r.Path) {
-				mark = styleBad.Render(symCheck) + " "
+				mark = styleBad.Render(symCheck)
 			}
-			size := styleText.Render(ui.Fit(ui.Bytes(r.Size), 9))
-			bar := styleAccent.Render(strings.Repeat(symBlock, max(1, int(r.Size*8/max(1, top))))) +
-				styleGhost.Render(strings.Repeat(symShade, 8-max(1, int(r.Size*8/max(1, top)))))
+			// Доля - от самого крупного места: процент от диска тут ничего не говорит.
+			cells := max(1, int(r.Size*8/max(1, top)))
+			bar := styleText.Render(strings.Repeat("\u2584", cells)) + styleGhost.Render(strings.Repeat("\u2582", 8-cells))
+			nameW := min(34, max(20, w-60))
 			name := styleText.Render(ui.Fit(r.Name, nameW))
 			if sel {
 				name = styleBold.Render(ui.Fit(r.Name, nameW))
@@ -154,7 +172,8 @@ func (d *disk) refill() {
 			if r.Warn != "" {
 				tail = styleAmber.Render(r.Warn)
 			}
-			return SelRow(sel, w, mark+size+" "+bar+"  "+name+" "+tail)
+			line := fmt.Sprintf("%s%9s   %s  %s %s", mark, ui.Bytes(r.Size), bar, name, tail)
+			return SelRow(sel, w, line)
 		}})
 	}
 	if d.list.Cursor >= len(d.list.Rows) {
@@ -180,11 +199,8 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 		}
 		d.refill()
 		return nil
-	case diskTickMsg:
-		if d.loading {
-			return tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return diskTickMsg{} })
-		}
-		return nil
+	case JobDone:
+		return d.load(false)
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if d.list.Key(k, 10) {
@@ -203,10 +219,15 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "space", " ":
 			if cur := d.current(); cur != nil {
 				if !cur.Removable || cur.Path == "" {
-					return app.Say(level.Warn, "это место так не убрать: смотри подсказку справа")
+					return app.Say(level.Warn, cur.Name+": это не папка для Корзины - как убрать, сказано в карточке")
 				}
 				d.marked.toggle(cur.Path, *cur)
 				d.list.Down()
+			}
+		case "o":
+			if cur := d.current(); cur != nil && cur.Path != "" && d.opts.Open != nil {
+				d.opts.Open(cur.Path)
+				return app.Say(level.OK, cur.Name+": открыто в Finder")
 			}
 		case "x":
 			return d.confirmRemove(app)
@@ -217,7 +238,11 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "r":
 			return d.load(true)
 		case "enter":
-			if cur := d.current(); cur != nil && d.opts.Browse != nil && cur.Path != "" && !d.loading {
+			cur := d.current()
+			switch {
+			case cur != nil && cur.Cmd != "":
+				return d.confirmClean(app, *cur)
+			case d.opts.Browse != nil && !d.loading:
 				return app.Push(d.opts.Browse())
 			}
 		}
@@ -244,105 +269,34 @@ func (d *disk) confirmRemove(app *App) tea.Cmd {
 		OK:      "Убрать " + ui.Bytes(sum),
 		Danger:  true,
 		Yes: func() tea.Cmd {
-			freed, errs := d.opts.Remove(paths)
 			d.marked.clear()
-			var cmds []tea.Cmd
-			if len(errs) > 0 {
-				cmds = append(cmds, app.Say(level.Bad, strings.Join(errs, "; ")))
-			} else {
-				cmds = append(cmds, app.Say(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
-			}
-			cmds = append(cmds, d.load(false))
-			return tea.Batch(cmds...)
+			what := "убираю в Корзину " + ui.Count(len(paths), "место", "места", "мест") + ", " + ui.Bytes(sum)
+			return app.Job(what, func() (string, error) {
+				freed, errs := d.opts.Remove(paths)
+				if len(errs) > 0 {
+					return "", ui.Errorf("%s", strings.Join(errs, "; "))
+				}
+				return "Корзина: +" + ui.Bytes(freed) + ", место освободится после её очистки", nil
+			})
 		},
 	})
 }
 
-func (d *disk) View(width, height int) string {
-	var out []string
-	if d.loading && len(d.data.Tabs) == 0 {
-		out = append(out, "", "  "+styleEmpty.Render("считаю, куда ушло место..."), "",
-			"  "+styleDim.Render("Первый замер домашней папки идёт около минуты, потом 15 минут берётся готовый."),
-			"  "+styleDim.Render("Можно не ждать: esc - назад, замер досчитается в фоне, пока tim открыт."))
-		return strings.Join(out, "\n")
+// confirmClean: команда очистки кэша - через то же окно, что и Корзина, и в фоне.
+func (d *disk) confirmClean(app *App, r DiskRow) tea.Cmd {
+	note := "Кэш пересоздастся сам, когда понадобится."
+	if r.Cmd == "очистить Корзину" {
+		note = "Из очищенной Корзины ничего не вернуть."
 	}
-	out = append(out, "  "+ui.Bar(d.data.UsedPct, 20)+
-		styleDim.Render("  замер "+ui.Ago(d.data.MeasuredAt)+", r - заново"))
-	out = append(out, "")
-	out = append(out, "  "+d.tabs(width-2), "")
-	paneH := 0
-	cur := d.current()
-	var pane []string
-	if cur != nil {
-		var rows []string
-		for i, it := range cur.Items {
-			if i >= 6 {
-				rows = append(rows, styleDim.Render("ещё "+itoa(len(cur.Items)-6)))
-				break
-			}
-			note := styleDim.Render(it.Note)
-			if it.Stale {
-				note = styleAmber.Render(it.Note)
-			}
-			rows = append(rows, styleDim.Render(ui.Fit(ui.Bytes(it.Size), 9))+"  "+ui.Fit(it.Name, 32)+note)
-		}
-		if cur.Warn != "" {
-			rows = append(rows, styleAmber.Render(symWarn+" "+cur.Warn))
-		}
-		if cur.Hint != "" {
-			rows = append(rows, styleDim.Render(symArrow+" "+cur.Hint))
-		}
-		if len(rows) == 0 {
-			rows = append(rows, styleDim.Render("подробностей нет"))
-		}
-		pane = Pane(cur.Name, cur.shown(), rows, width-4)
-		paneH = len(pane)
-	}
-	var noteLines []string
-	for _, n := range d.data.Notes {
-		noteLines = append(noteLines, ui.Wrap(n, width-4)...)
-	}
-	notes := len(noteLines)
-	listH := max(3, height-len(out)-paneH-notes-2)
-	out = append(out, d.list.View(width, listH)...)
-	for len(out) < height-paneH-notes-1 {
-		out = append(out, "")
-	}
-	if d.marked.len() > 0 {
-		var sum int64
-		for _, r := range d.marked.list() {
-			sum += r.Size
-		}
-		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(d.marked.len())+" "+symDot+" "+ui.Bytes(sum)) + styleDim.Render("   x - убрать")
-	}
-	for _, p := range pane {
-		out = append(out, "  "+p)
-	}
-	for _, n := range noteLines {
-		out = append(out, "  "+styleDim.Render(n))
-	}
-	return strings.Join(out, "\n")
-}
-
-// tabs: разделы с размерами; не влезают в width - размер остаётся только у открытого.
-func (d *disk) tabs(width int) string {
-	render := func(short bool) string {
-		var tabs []string
-		for i, t := range d.data.Tabs {
-			label := " " + t.Title + " "
-			if !short || i == d.tab {
-				label += ui.Bytes(t.Total) + " "
-			}
-			if i == d.tab {
-				tabs = append(tabs, styleTabOn.Render(label))
-			} else {
-				tabs = append(tabs, styleTabOff.Render(label))
-			}
-		}
-		return strings.Join(tabs, " ")
-	}
-	if full := render(false); ui.Width(full) <= width {
-		return full
-	}
-	return render(true)
+	return app.Confirm(Dialog{
+		Title:   r.Name + ": очистить?",
+		Lines:   []string{ui.Fit(ui.Bytes(r.Size), 9) + "  " + r.Name + "  " + styleDim.Render(r.shown())},
+		Command: r.Cmd,
+		Note:    note,
+		OK:      "Выполнить",
+		Danger:  true,
+		Yes: func() tea.Cmd {
+			return app.Job("выполняю "+r.Cmd, func() (string, error) { return d.opts.Clean(r.Cmd) })
+		},
+	})
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -162,7 +163,10 @@ func Run(root Screen, opts Options) (dir string, err error) {
 	defer func() { _ = tty.Close() }()
 	app := &App{opts: opts, stack: []frame{{s: root, id: 1}}, lastID: 1, width: 100, height: 30}
 	setStyles(ui.Light())
+	// Строки "$ ..." работ в фоне не должны печататься поверх экрана.
+	restore := ui.Divert(io.Discard)
 	m, err := tea.NewProgram(app, tea.WithInput(tty), tea.WithOutput(tty)).Run()
+	restore()
 	if err != nil {
 		return "", err
 	}

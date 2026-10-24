@@ -59,6 +59,19 @@ func paint(s, bold string, c brand.Color, basic string) string {
 	return "\x1b[" + bold + Palette()[c].FG(depth, basic) + "m" + s + "\x1b[0m"
 }
 
+// Divert: вывод ui уходит в w, пока экран занимает терминал; вернуть - вызвать то, что вернулось.
+func Divert(w io.Writer) func() {
+	outMu.Lock()
+	prev := out
+	out = w
+	outMu.Unlock()
+	return func() {
+		outMu.Lock()
+		out = prev
+		outMu.Unlock()
+	}
+}
+
 // Capture выполняет f и возвращает всё, что ушло в ui, с цветами: вывод покажется на экране.
 // Захваты не вкладываются: второй ждёт, пока закончится первый.
 func Capture(f func()) string {

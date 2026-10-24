@@ -33,7 +33,7 @@ type tabMsg struct {
 }
 
 type tabs struct {
-	title  string
+	crumbs []string
 	list   []Tab
 	active int
 	inited []bool
@@ -42,14 +42,14 @@ type tabs struct {
 // inTabs: вкладке сказать, что строку поиска рисует строка вкладок.
 type inTabs interface{ setInTabs() }
 
-// NewTabs: экран title из вкладок; start - какая открыта первой.
-func NewTabs(title string, list []Tab, start int) Screen {
+// NewTabs: экран из вкладок с этими крошками; start - какая открыта первой.
+func NewTabs(crumbs []string, list []Tab, start int) Screen {
 	for _, t := range list {
 		if in, ok := t.(inTabs); ok {
 			in.setInTabs()
 		}
 	}
-	return &tabs{title: title, list: list, active: max(0, min(start, len(list)-1)), inited: make([]bool, len(list))}
+	return &tabs{crumbs: crumbs, list: list, active: max(0, min(start, len(list)-1)), inited: make([]bool, len(list))}
 }
 
 func (t *tabs) cur() Tab { return t.list[t.active] }
@@ -68,7 +68,7 @@ func (t *tabs) open(i int) tea.Cmd {
 	return nil
 }
 
-func (t *tabs) Crumbs() []string { return []string{t.title} }
+func (t *tabs) Crumbs() []string { return t.crumbs }
 func (t *tabs) Status() string   { return t.cur().Status() }
 func (t *tabs) Command() string  { return t.cur().Command() }
 

@@ -45,7 +45,7 @@ func newState(cfg *config.Config, args []string, fresh bool) (*state, error) {
 	return &state{cfg: cfg, roots: roots, args: args, fresh: fresh}, nil
 }
 
-func (d *state) ensure(fresh bool, progress func(string)) {
+func (d *state) ensure(fresh bool, progress func(done, total int, where string)) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.tree != nil && !fresh {
@@ -55,7 +55,7 @@ func (d *state) ensure(fresh bool, progress func(string)) {
 	d.fresh = false
 	d.tree, d.at = diskuse.Map(d.roots, fresh, func(done, total int, root string) {
 		if progress != nil {
-			progress(fmt.Sprintf("считаю %s: %d из %d", paths.Show(root), done, total))
+			progress(done, total, paths.Show(root))
 		}
 	})
 }
@@ -93,11 +93,13 @@ func Screen(env *app.Env, args []string, fresh bool) (tui.Screen, error) {
 		return nil, err
 	}
 	return tui.NewDisk(tui.DiskOpts{
-		Load: func(fresh bool, progress func(string)) tui.DiskData {
+		Load: func(fresh bool, progress func(done, total int, where string)) tui.DiskData {
 			st.ensure(fresh, progress)
 			return overviewData(st)
 		},
 		Remove:    st.remove,
+		Clean:     func(cmd string) (string, error) { return clean(st, cmd) },
+		Open:      reveal,
 		Browse:    func() tui.Screen { return browseScreen(st) },
 		Leftovers: func() tui.Screen { return LeftoversScreen(env.Cfg) },
 	}), nil
@@ -119,9 +121,9 @@ func browse(env *app.Env, args []string, fresh bool) error {
 	if err != nil {
 		return err
 	}
-	st.ensure(false, func(s string) {
+	st.ensure(false, func(done, total int, where string) {
 		if ui.Terminal() {
-			fmt.Fprintf(os.Stderr, "\r\033[2K%s", ui.Dim(s))
+			fmt.Fprintf(os.Stderr, "\r\033[2K%s", ui.Dim(fmt.Sprintf("считаю %s: %d из %d", where, done, total)))
 		}
 	})
 	fmt.Fprint(os.Stderr, "\r\033[2K")
@@ -170,7 +172,7 @@ func diskRow(r diskuse.Row, home string) tui.DiskRow {
 	if name == "" {
 		name = filepath.Base(r.Path)
 	}
-	row := tui.DiskRow{Name: name, Path: r.Path, Hint: r.Hint, Size: r.Size}
+	row := tui.DiskRow{Name: name, Path: r.Path, Hint: r.Hint, Size: r.Size, Cmd: diskuse.Command(r.Hint)}
 	if r.Path != "" {
 		row.Show = paths.Show(r.Path)
 		// Целиком в Корзину - кэши, которые вернутся сами, и свои файлы в домашней папке.
@@ -332,6 +334,7 @@ func bySize(list []tui.Entry) []tui.Entry {
 // LeftoversScreen: хвосты удалённых программ - отметить и убрать.
 func LeftoversScreen(cfg *config.Config) tui.Screen {
 	return tui.NewLeftovers(tui.LeftOpts{
+		Open: reveal,
 		Load: func() []tui.LeftGroup {
 			groups, err := gatherLeftovers(cfg)
 			if err != nil {
@@ -406,4 +409,25 @@ func leftCommands(g *leftover.Group) []string {
 		out = append(out, "sudo mv "+p+" ~/.Trash/")
 	}
 	return out
+}
+
+// clean: команда очистки кэша из экрана; Корзину чистит Finder. Замер после неё устарел.
+func clean(st *state, cmd string) (string, error) {
+	var err error
+	if cmd == diskuse.EmptyTrash {
+		_, err = runner.Quiet("osascript", "-e", `tell application "Finder" to empty trash`)
+	} else {
+		f := strings.Fields(cmd)
+		_, err = runner.Quiet(f[0], f[1:]...)
+	}
+	if err != nil {
+		return "", err
+	}
+	st.mu.Lock()
+	st.tree = nil
+	st.mu.Unlock()
+	if !runner.DryRun {
+		_ = os.Remove(diskuse.CachePath())
+	}
+	return cmd + ": готово", nil
 }

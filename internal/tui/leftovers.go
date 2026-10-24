@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -9,7 +11,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Хвосты удалённых программ: список с галочками, панель с подробностями, уборка с подтверждением.
+// Хвосты удалённых программ: вкладки Заметные и Мелкие, отметки, карточка под списком, уборка с
+// подтверждением и в фоне.
 
 // LeftItem: файл или папка хвоста.
 type LeftItem struct {
@@ -25,7 +28,7 @@ type LeftGroup struct {
 	Note     string // "программа удалена", "похоже, проверь", "твой проект"
 	Size     int64
 	Sure     bool
-	Hidden   bool // показывается только по h
+	Hidden   bool // мелкий: во вкладке Мелкие
 	Items    []LeftItem
 	Commands []string // что выполнится при уборке
 }
@@ -34,6 +37,7 @@ type LeftGroup struct {
 type LeftOpts struct {
 	Load   func() []LeftGroup
 	Remove func(g LeftGroup) error
+	Open   func(path string) // показать в Finder
 }
 
 type leftovers struct {
@@ -41,8 +45,9 @@ type leftovers struct {
 	groups  []LeftGroup
 	list    List
 	marked  map[string]bool
-	hidden  bool
+	hidden  bool // открыта вкладка Мелкие
 	loading bool
+	started time.Time
 }
 
 type leftMsg []LeftGroup
@@ -53,7 +58,7 @@ func NewLeftovers(opts LeftOpts) Screen {
 }
 
 func (l *leftovers) Init() tea.Cmd {
-	l.loading = true
+	l.loading, l.started = true, time.Now()
 	return func() tea.Msg { return leftMsg(l.opts.Load()) }
 }
 
@@ -61,18 +66,28 @@ func (l *leftovers) Crumbs() []string {
 	return []string{"Диск", "Хвосты удалённых программ"}
 }
 
+// counts: заметных и мелких.
+func (l *leftovers) counts() (big, small int, smallSize int64) {
+	for _, g := range l.groups {
+		if g.Hidden {
+			small++
+			smallSize += g.Size
+		} else {
+			big++
+		}
+	}
+	return big, small, smallSize
+}
+
 func (l *leftovers) Status() string {
 	if l.loading {
-		return "ищу..."
+		return spinFrames[0] + " ищу хвосты"
 	}
-	var sum int64
-	for _, g := range l.shown() {
-		sum += g.Size
+	big, small, _ := l.counts()
+	if big == 0 {
+		return "крупных нет " + symSep + " " + itoa(small) + " мелких"
 	}
-	if sum == 0 {
-		return "крупных нет"
-	}
-	return "найдено " + ui.Bytes(sum)
+	return itoa(big) + " заметных " + symSep + " " + itoa(small) + " мелких"
 }
 
 func (l *leftovers) Command() string { return "tim disk --leftovers" }
@@ -81,16 +96,15 @@ func (l *leftovers) Keys() []Key {
 	if len(l.shown()) == 0 {
 		return []Key{{"tab", "вкладка"}}
 	}
-	return []Key{{"space", "отметить"}, {"v", "все"}, {"x", "убрать"}, {"tab", "вкладка"}}
+	return []Key{{"enter", "Finder"}, {"space", "отметить"}, {"v", "все"}, {"x", "убрать"}, {"tab", "вкладка"}}
 }
 
 func (l *leftovers) shown() []LeftGroup {
 	var out []LeftGroup
 	for _, g := range l.groups {
-		if g.Hidden && !l.hidden {
-			continue
+		if g.Hidden == l.hidden {
+			out = append(out, g)
 		}
-		out = append(out, g)
 	}
 	return out
 }
@@ -100,24 +114,19 @@ func (l *leftovers) refill() {
 	for _, g := range l.shown() {
 		g := g
 		l.list.Rows = append(l.list.Rows, Row{Text: g.Name, Render: func(sel bool, w int) string {
-			box := styleDim.Render("[ ]")
+			mark := " "
 			if l.marked[g.ID] {
-				box = styleBad.Render("[" + symCheck + "]")
+				mark = styleBad.Render(symCheck)
 			}
-			name := ui.Fit(g.Name, 22)
-			switch {
-			case sel:
-				name = styleBold.Render(name)
-			case g.Hidden:
-				name = styleDim.Render(name)
-			default:
-				name = styleText.Render(name)
+			name := styleText.Render(ui.Fit(g.Name, 24))
+			if sel {
+				name = styleBold.Render(ui.Fit(g.Name, 24))
 			}
 			note := styleDim.Render(g.Note)
 			if !g.Sure && !g.Hidden {
 				note = styleAmber.Render(g.Note)
 			}
-			return SelRow(sel, w, box+" "+styleText.Render(ui.Fit(ui.Bytes(g.Size), 9))+"  "+name+note)
+			return SelRow(sel, w, fmt.Sprintf("%s%9s  %s%s  %s", mark, ui.Bytes(g.Size), name, styleDim.Render(ui.Fit(g.Owner, 28)), note))
 		}})
 	}
 	if l.list.Cursor >= len(l.list.Rows) {
@@ -146,6 +155,8 @@ func (l *leftovers) Update(msg tea.Msg, app *App) tea.Cmd {
 		}
 		l.refill()
 		return nil
+	case JobDone:
+		return l.Init()
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if l.list.Key(k, 10) {
@@ -169,7 +180,13 @@ func (l *leftovers) Update(msg tea.Msg, app *App) tea.Cmd {
 			}
 		case "tab", "shift+tab":
 			l.hidden = !l.hidden
+			l.list.Cursor = 0
 			l.refill()
+		case "enter":
+			if g := l.current(); g != nil && len(g.Items) > 0 && l.opts.Open != nil {
+				l.opts.Open(g.Items[0].Path)
+				return app.Say(level.OK, g.Name+": открыто в Finder")
+			}
 		case "x":
 			return l.confirmRemove(app)
 		}
@@ -207,65 +224,49 @@ func (l *leftovers) confirmRemove(app *App) tea.Cmd {
 		OK:      "Убрать " + ui.Bytes(sum),
 		Danger:  true,
 		Yes: func() tea.Cmd {
-			var errs []string
-			var freed int64
-			for _, g := range picked {
-				if err := l.opts.Remove(g); err != nil {
-					errs = append(errs, g.Name+": "+err.Error())
-					continue
-				}
-				freed += g.Size
-			}
 			l.marked = map[string]bool{}
-			toast := app.Say(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки")
-			if len(errs) > 0 {
-				toast = app.Say(level.Bad, strings.Join(errs, "; "))
-			}
-			return tea.Batch(toast, l.Init())
+			what := "убираю хвосты: " + ui.Count(len(picked), "программа", "программы", "программ") + ", " + ui.Bytes(sum)
+			return app.Job(what, func() (string, error) {
+				var errs []string
+				var freed int64
+				for _, g := range picked {
+					if err := l.opts.Remove(g); err != nil {
+						errs = append(errs, g.Name+": "+err.Error())
+						continue
+					}
+					freed += g.Size
+				}
+				if len(errs) > 0 {
+					return "", ui.Errorf("%s", strings.Join(errs, "; "))
+				}
+				return "Корзина: +" + ui.Bytes(freed) + ", место освободится после её очистки", nil
+			})
 		},
 	})
 }
 
 func (l *leftovers) View(width, height int) string {
-	var out []string
-	out = append(out, "")
+	big, small, smallSize := l.counts()
+	tabs := func() string {
+		on, off := styleTabOn, styleTabOff
+		if l.hidden {
+			on, off = off, on
+		}
+		return "   " + on.Render(" Заметные "+itoa(big)+" ") + " " + off.Render(" Мелкие "+itoa(small)+" ")
+	}
 	if l.loading {
-		out = append(out, "  "+styleEmpty.Render("смотрю, что осталось от удалённых программ..."))
+		out := Notice("Ищу, что осталось от удалённых программ", progressLine(-1, "смотрю Library, автозапуск и кэши", l.started),
+			"находки не трогаются: убирать - только отмеченное и после подтверждения", width)
 		return strings.Join(out, "\n")
 	}
-	if len(l.groups) == 0 {
-		out = append(out, "  "+styleDim.Render("хвостов удалённых программ не нашёл"))
-		return strings.Join(out, "\n")
+	if len(l.shown()) == 0 && !l.hidden {
+		out := Notice(styleGood.Render(symLamp)+" Хвостов удалённых программ нет",
+			styleDim.Render(itoa(small)+" мелких записей на "+ui.Bytes(smallSize)+": настройки и кэши, их не стоит трогать вслепую"),
+			"мелкие лежат во вкладке Мелкие, уборка там такая же: отметить и убрать в Корзину", width)
+		return strings.Join(append(out, "", tabs()), "\n")
 	}
-	if len(l.shown()) == 0 {
-		var sum int64
-		for _, g := range l.groups {
-			sum += g.Size
-		}
-		out = append(out, "  "+styleDim.Render("крупных хвостов нет; h - показать "+itoa(len(l.groups))+" мелких на "+ui.Bytes(sum)))
-		return strings.Join(out, "\n")
-	}
-	var pane []string
-	if g := l.current(); g != nil {
-		var rows []string
-		for i, it := range g.Items {
-			if i >= 5 {
-				rows = append(rows, styleDim.Render("ещё "+itoa(len(g.Items)-5)))
-				break
-			}
-			line := styleDim.Render(ui.Fit(ui.Bytes(it.Size), 9)) + "  " + it.Path
-			if it.Note != "" {
-				line += "  " + styleAmber.Render(it.Note)
-			}
-			rows = append(rows, line)
-		}
-		pane = Pane(g.Name, g.Owner+" "+symDot+" "+g.Note, rows, width-4)
-	}
-	listH := max(3, height-len(out)-len(pane)-3)
-	out = append(out, l.list.View(width, listH)...)
-	for len(out) < height-len(pane)-2 {
-		out = append(out, "")
-	}
+	out := []string{"", tabs(), "", "   " + styleHead.Render(fmt.Sprintf("%10s  %-24s%-28s  %s", "РАЗМЕР "+sortMark(true), "ПРОГРАММА", "ГДЕ", ""))}
+	var marked []string
 	n, sum := 0, int64(0)
 	for _, g := range l.shown() {
 		if l.marked[g.ID] {
@@ -274,12 +275,25 @@ func (l *leftovers) View(width, height int) string {
 		}
 	}
 	if n > 0 {
-		out = append(out, "  "+styleBad.Render("отмечено "+itoa(n)+" "+symDot+" "+ui.Bytes(sum))+styleDim.Render("   x - убрать"))
-	} else {
-		out = append(out, "")
+		marked = []string{"", "   " + styleBad.Render("отмечено "+itoa(n)+" "+symSep+" "+ui.Bytes(sum))}
 	}
-	for _, p := range pane {
-		out = append(out, "  "+p)
+	var card []string
+	if g := l.current(); g != nil {
+		c := &Card{Title: g.Name, Sub: g.Owner + " " + symSep + " " + g.Note, Enter: "показать в Finder"}
+		for i, it := range g.Items {
+			if i >= 5 {
+				c.Extra = append(c.Extra, styleDim.Render("и ещё "+itoa(len(g.Items)-5)))
+				break
+			}
+			line := fmt.Sprintf("%9s  %s", ui.Bytes(it.Size), it.Path)
+			if it.Note != "" {
+				line += "  " + styleAmber.Render(it.Note)
+			}
+			c.Extra = append(c.Extra, line)
+		}
+		card = append([]string{""}, indent(c.Lines(width-6, 10))...)
 	}
-	return strings.Join(out, "\n")
+	room := height - len(out) - len(marked) - len(card)
+	out = append(out, l.list.View(width, max(3, room))...)
+	return strings.Join(append(append(out, marked...), card...), "\n")
 }

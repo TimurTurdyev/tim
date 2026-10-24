@@ -2,9 +2,11 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -59,4 +61,40 @@ func Beside(left []string, leftW int, right []string, width int) []string {
 		out[i] = ui.Fit(l, leftW) + " " + ui.Fit(r, width-leftW-1)
 	}
 	return out
+}
+
+// Notice: заметка той же геометрии, что лок-ап, - для загрузки, пустоты и ошибки экрана. Маскот в
+// настроении сессии слева, справа заголовок жирным и две строки: ход или числа, факт и последствие.
+// Клавиш и команд в заметке нет: они внизу экрана.
+func Notice(title, line2, line3 string, width int) []string {
+	lines := [][]string{{styleBold.Render(title)}}
+	if line2 != "" {
+		lines = append(lines, []string{line2})
+	}
+	if line3 != "" {
+		lines = append(lines, []string{styleDim.Render(line3)})
+	}
+	look := brand.Look{Mood: sessionMood(brand.Calm), Light: ui.Light()}
+	if width < 70 {
+		out := []string{""}
+		for _, l := range lines {
+			out = append(out, "   "+ui.TrimSegments(l, width-4))
+		}
+		return out
+	}
+	return append([]string{""}, ui.Header(lines, ui.HeaderOpts{Look: look, Indent: 2, Width: width, Sprite: true, Keep: true})...)
+}
+
+// progressLine: полоса хода 40 клеток и счётчик с идущими секундами; frac < 0 - доля неизвестна.
+func progressLine(frac float64, text string, started time.Time) string {
+	line := ui.Progress(frac, 40, animFrame) + "  " + styleDim.Render(text)
+	if d := time.Since(started); d >= time.Second {
+		line += styleDim.Render(" " + symSep + " " + ui.Short(d))
+	}
+	return line
+}
+
+// WaitNotice: заметка загрузки с полосой хода; frac < 0 - доля неизвестна, бежит бегунок.
+func WaitNotice(title string, frac float64, count string, started time.Time, fact string, width int) []string {
+	return Notice(title, progressLine(frac, count, started), fact, width)
 }

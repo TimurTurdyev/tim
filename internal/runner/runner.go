@@ -119,6 +119,20 @@ func Run(name string, args ...string) error {
 	return cmd.Run()
 }
 
+// Quiet: как Run, но вывод команды возвращается строкой, а не идёт в терминал - для работы в фоне
+// экрана, где терминал занят. Ошибка несёт хвост вывода.
+func Quiet(name string, args ...string) (string, error) {
+	ui.Println(ui.Dim("$ " + shellq.Join(append([]string{name}, args...))))
+	if DryRun {
+		return "", nil
+	}
+	out, err := exec.Command(name, args...).CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(ui.Tail(string(out), 200)))
+	}
+	return string(out), nil
+}
+
 // Exec передаёт терминал команде целиком (ssh, mysql, psql).
 func Exec(name string, args ...string) error {
 	if DryRun {

@@ -63,6 +63,8 @@ type BoardOpts struct {
 	Command func(row *BoardRow) string
 	Load    func(fresh bool) BoardData // fresh - по r, иначе можно отдать из кэша
 	Loading string                     // что сказать, пока первая загрузка идёт
+	// Wait: заметка на время первой загрузки вместо строки Loading - например этапы сбора.
+	Wait    func(width int) []string
 	Actions []BoardAction
 	Every   time.Duration // перечитывать само; 0 - только по r
 	Static  bool          // данные не меняются: без r
@@ -390,6 +392,9 @@ func (b *board) View(width, height int) string {
 	out := []string{""}
 	if b.opts.Search && !b.inTabs {
 		out = []string{b.controlLine(width), ""}
+	}
+	if !b.have && b.opts.Wait != nil {
+		return strings.Join(b.opts.Wait(width), "\n")
 	}
 	if !b.have {
 		text := b.opts.Loading

@@ -98,7 +98,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 // projectsScreen: проекты вкладками - Все, Запущенные, Проверка; focus - кого показать первым.
 func (h *Home) projectsScreen(focus string, tab int) tui.Screen {
 	env := h.env
-	return tui.NewTabs("Проекты", []tui.Tab{
+	return tui.NewTabs([]string{"Проекты"}, []tui.Tab{
 		projects.AllTab(env, focus, func() map[string]string { return machine.RunningPorts(env.Cfg) }),
 		machine.RunningTab(env),
 		sites.CheckTab(env),

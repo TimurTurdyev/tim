@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -71,9 +72,12 @@ func (b *browse) Crumbs() []string {
 
 func (b *browse) Status() string {
 	l := b.cur()
+	if l.loading {
+		return spinFrames[0] + " считаю, что внутри"
+	}
 	s := ui.Bytes(l.entry.Size)
 	if b.opts.Total > 0 {
-		s += " " + symDot + " " + itoa(int(l.entry.Size*100/b.opts.Total)) + "% занятого"
+		s += " " + symSep + " " + itoa(int(l.entry.Size*100/b.opts.Total)) + "% занятого"
 	}
 	return s
 }
@@ -108,21 +112,26 @@ func (b *browse) fill(l *folder) {
 			if l.entry.Size > 0 {
 				pct = int(e.Size * 100 / l.entry.Size)
 			}
-			filled := max(0, min(16, int(e.Size*16/max(1, l.entry.Size))))
-			bar := styleAccent.Render(strings.Repeat(symBlock, filled)) + styleGhost.Render(strings.Repeat(symShade, 16-filled))
-			mark := "  "
+			filled := max(0, min(15, int(e.Size*15/max(1, l.entry.Size))))
+			bar := styleText.Render(strings.Repeat("\u2584", filled)) + styleGhost.Render(strings.Repeat("\u2582", 15-filled))
+			mark := " "
 			if e.Path != "" && b.marked.has(e.Path) {
-				mark = styleBad.Render(symCheck) + " "
+				mark = styleBad.Render(symCheck)
 			} else if e.Path != "" && b.under(e.Path) {
-				mark = styleDim.Render(symCheck) + " "
+				mark = styleDim.Render(symCheck)
 			}
-			name := ui.Fit(e.Name, max(20, min(44, w-62)))
-			if e.Dir {
-				name = styleBold.Render(name)
-			} else {
-				name = styleDim.Render(name)
+			share := fmt.Sprintf("%3d%%", pct)
+			if pct == 0 {
+				share = "    "
 			}
-			line := mark + styleText.Render(ui.Fit(ui.Bytes(e.Size), 9)) + " " + bar + " " + styleDim.Render(ui.Fit(itoa(pct)+"%", 4)) + "  " + name
+			name := styleText.Render(ui.Fit(e.Name, max(20, min(44, w-62))))
+			switch {
+			case sel:
+				name = styleBold.Render(ui.Fit(e.Name, max(20, min(44, w-62))))
+			case !e.Dir:
+				name = styleDim.Render(ui.Fit(e.Name, max(20, min(44, w-62))))
+			}
+			line := fmt.Sprintf("%s%9s  %s %s  %s", mark, ui.Bytes(e.Size), bar, styleDim.Render(share), name)
 			if e.Hint != "" {
 				line += "  " + styleDim.Render(e.Hint)
 			}
@@ -133,6 +142,14 @@ func (b *browse) fill(l *folder) {
 
 func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch msg := msg.(type) {
+	case JobDone:
+		// Размеры изменились - перечитать все уровни стопки.
+		var cmds []tea.Cmd
+		for _, l := range b.stack {
+			l.loading = true
+			cmds = append(cmds, b.load(l.entry.Path))
+		}
+		return tea.Batch(cmds...)
 	case kidsMsg:
 		for _, l := range b.stack {
 			if l.entry.Path == msg.path {
@@ -212,36 +229,26 @@ func (b *browse) confirmRemove(app *App) tea.Cmd {
 		OK:      "Убрать " + ui.Bytes(sum),
 		Danger:  true,
 		Yes: func() tea.Cmd {
-			freed, errs := b.opts.Remove(top)
 			b.marked.clear()
-			cmds := []tea.Cmd{}
-			if len(errs) > 0 {
-				cmds = append(cmds, app.Say(level.Bad, strings.Join(errs, "; ")))
-			} else {
-				cmds = append(cmds, app.Say(level.OK, "в Корзине "+ui.Bytes(freed)+", место освободится после её очистки"))
-			}
-			// Размеры изменились - перечитать все уровни стопки.
-			for _, l := range b.stack {
-				l.loading = true
-				cmds = append(cmds, b.load(l.entry.Path))
-			}
-			return tea.Batch(cmds...)
+			what := "убираю в Корзину " + ui.Count(len(top), "место", "места", "мест") + ", " + ui.Bytes(sum)
+			return app.Job(what, func() (string, error) {
+				freed, errs := b.opts.Remove(top)
+				if len(errs) > 0 {
+					return "", ui.Errorf("%s", strings.Join(errs, "; "))
+				}
+				return "Корзина: +" + ui.Bytes(freed) + ", место освободится после её очистки", nil
+			})
 		},
 	})
 }
 
 func (b *browse) View(width, height int) string {
 	l := b.cur()
-	var out []string
-	out = append(out, "")
-	if l.loading {
-		out = append(out, "  "+styleEmpty.Render("считаю, что внутри..."))
+	out := []string{"", "   " + styleHead.Render(fmt.Sprintf("%10s  %-15s %4s  %s", "РАЗМЕР "+sortMark(true), "ДОЛЯ", "", "ПАПКА"))}
+	if l.loading && len(l.kids) == 0 {
+		return strings.Join(append(out, "   "+styleDim.Render("считаю, что внутри")), "\n")
 	}
-	rows := l.list.View(width, max(3, height-4))
-	out = append(out, rows...)
-	for len(out) < height-1 {
-		out = append(out, "")
-	}
+	var marked []string
 	if b.marked.len() > 0 {
 		top := Outermost(b.marked.list())
 		var sum int64
@@ -250,9 +257,45 @@ func (b *browse) View(width, height int) string {
 			sum += e.Size
 			names = append(names, e.Name)
 		}
-		out[len(out)-1] = "  " + styleBad.Render("отмечено "+itoa(len(top))+" "+symDot+" "+ui.Bytes(sum)) + styleDim.Render("   "+ui.Clip(strings.Join(names, ", "), width-30))
+		marked = []string{"", "   " + styleBad.Render("отмечено "+itoa(len(top))+" "+symSep+" "+ui.Bytes(sum)) + "   " + styleDim.Render(ui.Clip(strings.Join(names, ", "), width-30))}
 	}
-	return strings.Join(out, "\n")
+	var card []string
+	if c := b.card(); c != nil {
+		card = append([]string{""}, indent(c.Lines(width-6, 8))...)
+	}
+	room := height - len(out) - len(marked) - len(card)
+	out = append(out, l.list.View(width, max(3, room))...)
+	return strings.Join(append(append(out, marked...), card...), "\n")
+}
+
+func indent(lines []string) []string {
+	for i, l := range lines {
+		lines[i] = "   " + l
+	}
+	return lines
+}
+
+// card: выбранная папка - путь, что внутри, что сделает enter.
+func (b *browse) card() *Card {
+	l := b.cur()
+	if l.loading || l.list.Cursor >= len(l.kids) {
+		return nil
+	}
+	e := l.kids[l.list.Cursor]
+	c := &Card{Title: e.Name}
+	if e.Path != "" {
+		c.Sub = ui.Clip(e.Path, 60)
+		c.Actions = []CardAction{{"o", "Finder", ""}}
+	}
+	if e.Hint != "" {
+		c.Facts = append(c.Facts, Fact{Label: "заметка", Value: e.Hint})
+	}
+	if e.Dir {
+		c.Enter = "внутрь, подпапки по размеру"
+	} else {
+		c.Enter = "внутрь не зайти: это файлы и мелкие папки"
+	}
+	return c
 }
 
 // Outermost: отмеченное без того, что лежит внутри другого отмеченного - иначе оно посчиталось бы

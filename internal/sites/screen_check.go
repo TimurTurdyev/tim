@@ -191,7 +191,7 @@ func checkData(cfg *config.Config, rows []health.Row, at time.Time) tui.BoardDat
 			}
 		}
 		if len(card.Facts) == 0 {
-			card.Facts = []tui.Fact{{Value: ui.OK("\u25cf всё в порядке")}}
+			card.About = []string{ui.OK("\u25cf всё в порядке")}
 		}
 		row.Card = card
 		d.Rows = append(d.Rows, row)

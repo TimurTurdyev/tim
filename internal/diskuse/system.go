@@ -9,6 +9,13 @@ import (
 	"strings"
 )
 
+// EmptyTrash: подпись Корзины - её чистит сам tim, а не команда в терминале.
+const EmptyTrash = "очистить Корзину"
+
+// cleaners: программы, чью команду очистки кэша можно выполнить как есть.
+var cleaners = map[string]bool{"go": true, "pip": true, "bun": true, "pnpm": true, "yarn": true, "npm": true,
+	"composer": true, "brew": true, "uv": true, "docker": true, "podman": true, "xcrun": true}
+
 // SystemPlaces: известные места. Порядок не важен, вывод сортируется по размеру.
 var SystemPlaces = []Place{
 	{"OrbStack", []string{"Library/Group Containers/HUAQ24HBR6.dev.orbstack", ".orbstack"}, "docker system prune -a", false},
@@ -33,7 +40,7 @@ var SystemPlaces = []Place{
 	{"uv", []string{".cache/uv"}, "uv cache clean", true},
 	{"браузеры puppeteer", []string{".cache/puppeteer"}, "удалить папку, скачаются снова при надобности", true},
 	{"браузеры chrome-devtools-mcp", []string{".cache/chrome-devtools-mcp"}, "удалить папку, скачаются снова при надобности", true},
-	{"Корзина", []string{".Trash", ".local/share/Trash"}, "очистить Корзину", false},
+	{"Корзина", []string{".Trash", ".local/share/Trash"}, EmptyTrash, false},
 	{"Загрузки", []string{"Downloads"}, "", false},
 }
 
@@ -180,4 +187,17 @@ func Under(path string, roots ...string) bool {
 		}
 	}
 	return false
+}
+
+// Command: подсказка - готовая команда очистки, которую можно выполнить из экрана; пусто - это совет
+// словами ("удалить в Steam ..."). Корзина - тоже команда.
+func Command(hint string) string {
+	if hint == EmptyTrash {
+		return hint
+	}
+	f := strings.Fields(hint)
+	if len(f) < 2 || !cleaners[f[0]] || strings.ContainsAny(hint, ";") || strings.Contains(hint, " - ") {
+		return ""
+	}
+	return hint
 }

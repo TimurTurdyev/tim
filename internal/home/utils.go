@@ -32,7 +32,7 @@ func (h *Home) utilsScreen() tui.Screen {
 			card.Enter = "выполнить сразу"
 		}
 		if long, _, _ := strings.Cut(strings.TrimSpace(c.Long), "\n"); long != "" {
-			card.Facts = append(card.Facts, tui.Fact{Value: long})
+			card.About = append(card.About, long)
 		}
 		card.Facts = append(card.Facts, tui.Fact{Label: "вызов", Value: c.Use})
 		for i, ex := range examplesOf(h.exampleText(n)) {
