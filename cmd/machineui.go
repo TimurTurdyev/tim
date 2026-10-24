@@ -3,34 +3,28 @@ package cmd
 import (
 	"runtime"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
-	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Экраны машины: живое железо и процессы по приложениям.
 
-func hwTitle(s hwSnapshot) string {
-	return s.model + " \u00b7 " + strconv.Itoa(s.cores) + " ядер \u00b7 " + ui.Bytes(s.memTotal)
-}
-
 // hwScreen: паспорт собирается при первом замере, уже в фоне - открытие экрана не ждёт system_profiler.
 func hwScreen() tui.Screen {
-	collect, sample, err := hwFuncs()
+	collect, sample, err := machine.Funcs()
 	if err != nil {
 		return tui.NewResult("hw", func() (string, error) { return "", err }, tui.ResultOpts{})
 	}
 	var once sync.Once
-	var base hwSnapshot
+	var base machine.Snapshot
 	return tui.NewHW(tui.HWOpts{
 		Sample: func() tui.HWSample {
 			once.Do(func() { base = collect() })
-			s := sample(base)
+			s := toHWSample(sample(base))
 			if d, ok := sysinfo.DataDisk(); ok {
 				s.Disk = d.Percent()
 			}
@@ -46,7 +40,7 @@ func procsScreen(query string) tui.Screen {
 
 func loadProcs() tui.ProcsData {
 	var data tui.ProcsData
-	list, err := allProcs()
+	list, err := machine.All()
 	if err != nil {
 		return data
 	}
@@ -73,34 +67,31 @@ func procGroup(a procs.App) tui.ProcGroup {
 		if procs.Protected(p) {
 			g.Protected = true
 		}
-		g.Procs = append(g.Procs, tui.ProcRow{PID: p.PID, Name: rowName(p), Note: stateNote(p.State), CPU: p.CPU, RSS: p.RSS})
+		g.Procs = append(g.Procs, tui.ProcRow{PID: p.PID, Name: machine.RowName(p), Note: machine.StateNote(p.State), CPU: p.CPU, RSS: p.RSS})
 	}
 	return g
 }
 
-// stateNote: как stateHint, но без цвета - экран красит сам.
-func stateNote(s string) string {
-	switch {
-	case strings.HasPrefix(s, "Z"):
-		return "зомби: уже завершился, ждёт родителя"
-	case strings.HasPrefix(s, "U"), strings.HasPrefix(s, "D"):
-		return "ждёт диск или сеть и не прерывается"
-	case strings.HasPrefix(s, "T"):
-		return "остановлен"
-	}
-	return ""
-}
-
 // closeGroup: процессы перечитываются, чтобы не слать сигналы по устаревшим pid.
 func closeGroup(g tui.ProcGroup, force bool) (string, error) {
-	list, err := allProcs()
+	list, err := machine.All()
 	if err != nil {
 		return "", err
 	}
 	for _, a := range procs.Groups(list) {
 		if a.Name == g.Name {
-			return closeApp(a, force)
+			return machine.Close(a, force)
 		}
 	}
 	return g.Name + " уже закрыт", nil
+}
+
+// toHWSample: замер модуля в тип экрана - поля те же, пакеты разные.
+func toHWSample(l machine.Live) tui.HWSample {
+	out := tui.HWSample{Title: l.Title, CPU: l.CPU, GPU: l.GPU, Mem: l.Mem, GPUValid: l.GPUValid, VRAM: l.VRAM,
+		MemUsed: l.MemUsed, MemTotal: l.MemTotal, SwapUsed: l.SwapUsed, SwapTotal: l.SwapTotal, Load: l.Load, Disk: l.Disk}
+	for _, r := range l.Top {
+		out.Top = append(out.Top, tui.TopRow{Name: r.Name, CPU: r.CPU, RSS: r.RSS})
+	}
+	return out
 }

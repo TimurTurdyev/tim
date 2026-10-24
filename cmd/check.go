@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -157,7 +158,7 @@ func printCheck(rows []health.Row) {
 
 // checkMachine: замечания не о проектах, а о самой машине.
 func checkMachine() []string {
-	out := hogLines("")
+	out := machine.HogLines("")
 	limit := time.Duration(checkHours * float64(time.Hour))
 	var forgotten []string
 	for _, r := range listenRows() {

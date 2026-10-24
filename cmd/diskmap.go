@@ -71,7 +71,7 @@ func diskMap(args []string) error {
 	var unknown int64
 	if d, ok := sysinfo.DataDisk(); ok && len(args) == 0 {
 		pct := d.Percent()
-		ui.Println(ui.Title("Диск") + "  " + bar(pct, 30) + ui.Dim("свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
+		ui.Println(ui.Title("Диск") + "  " + ui.Bar(pct, 30) + ui.Dim("свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
 		unknown = int64(d.Size-d.Avail) - measured - volumes
 	}
 	// Кратко - по несколько самых больших в разделе; освобождаемого больше: с него и начинают.

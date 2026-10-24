@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/bypass"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -60,7 +61,7 @@ func init() {
 
 // closeRunningApp бережно закрывает открытый экземпляр приложения перед запуском мимо VPN.
 func closeRunningApp(bundle, appName string) error {
-	list, err := allProcs()
+	list, err := machine.All()
 	if err != nil {
 		return nil
 	}
@@ -69,7 +70,7 @@ func closeRunningApp(bundle, appName string) error {
 			continue
 		}
 		ui.Println(ui.Dim("закрываю " + a.Name + ": открытый экземпляр остался бы под VPN"))
-		text, err := closeApp(a, false)
+		text, err := machine.Close(a, false)
 		if err != nil {
 			return ui.Errorf("%v; закрой %s сам и повтори", err, a.Name)
 		}

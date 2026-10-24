@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -68,4 +70,21 @@ func DaysLeft(t time.Time) string {
 func Terminal() bool {
 	st, err := os.Stderr.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// Bar: полоска загрузки в фирменных цветах: спокойно, внимание, плохо.
+func Bar(pct, width int) string {
+	pct = max(0, min(100, pct))
+	full := pct * width / 100
+	head := strings.Repeat("\u2588", full)
+	var b string
+	switch {
+	case pct >= 85:
+		b = Bad(head) + Dim(strings.Repeat("\u2591", width-full))
+	case pct >= 60:
+		b = Warn(head) + Dim(strings.Repeat("\u2591", width-full))
+	default:
+		b = OK(head) + Dim(strings.Repeat("\u2591", width-full))
+	}
+	return b + " " + Pad(strconv.Itoa(pct)+"%", 5)
 }
