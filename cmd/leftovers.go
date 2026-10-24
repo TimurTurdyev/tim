@@ -96,9 +96,9 @@ func leftovers() error {
 		printLeftGroup(g)
 	}
 	if small > 0 {
-		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + fmtBytes(smallSize) + ": tim disk --leftovers --all"))
+		ui.Println(ui.Dim("ещё " + strconv.Itoa(small) + " мелких на " + ui.Bytes(smallSize) + ": tim disk --leftovers --all"))
 	}
-	ui.Println(ui.Info("всего " + fmtBytes(total)))
+	ui.Println(ui.Info("всего " + ui.Bytes(total)))
 	ui.Println(ui.Dim("  убрать, отметив нужное:   tim disk --leftovers --clean"))
 	ui.Println(ui.Dim("  только посмотреть команды: tim disk --leftovers --clean --dry-run"))
 	return nil
@@ -288,7 +288,7 @@ func printLeftGroup(g *leftGroup) {
 	if !g.sure {
 		title += ui.Dim("  похоже, от удалённой программы - проверь")
 	}
-	ui.Println(ui.Label(ui.Pad(fmtBytes(g.size), 10)) + title)
+	ui.Println(ui.Label(ui.Pad(ui.Bytes(g.size), 10)) + title)
 	if g.similar != "" {
 		ui.Println("          " + ui.Warn("установлен другой "+g.similar+": это данные другой версии, проверь, что они не нужны"))
 	}
@@ -302,7 +302,7 @@ func printLeftGroup(g *leftGroup) {
 		}
 		line := "          "
 		if it.path != "" {
-			line += ui.Pad(fmtBytes(it.size), 10) + libPath(it.path)
+			line += ui.Pad(ui.Bytes(it.size), 10) + libPath(it.path)
 		}
 		if it.note != "" {
 			line += "  " + ui.Warn(it.note)
@@ -310,7 +310,7 @@ func printLeftGroup(g *leftGroup) {
 		ui.Println(line)
 	}
 	if tiny > 0 {
-		ui.Println("          " + ui.Dim(ui.Pad(fmtBytes(tinySize), 10)+"ещё "+strconv.Itoa(tiny)+" "+ui.Plural(tiny, "мелочь", "мелочи", "мелочей")+": настройки, журналы, кеши"))
+		ui.Println("          " + ui.Dim(ui.Pad(ui.Bytes(tinySize), 10)+"ещё "+strconv.Itoa(tiny)+" "+ui.Plural(tiny, "мелочь", "мелочи", "мелочей")+": настройки, журналы, кеши"))
 	}
 	ui.Println()
 }
@@ -346,7 +346,7 @@ func cleanLeftovers(groups []*leftGroup) error {
 					hint += " и ещё " + strconv.Itoa(len(g.items)-1)
 				}
 			}
-			items[i] = tui.Item{Title: ui.Pad(fmtBytes(g.size), 10) + groupName(g), Hint: hint}
+			items[i] = tui.Item{Title: ui.Pad(ui.Bytes(g.size), 10) + groupName(g), Hint: hint}
 		}
 		idx, err := tui.MultiSelect("Что убрать в Корзину?", items, nil)
 		if err != nil {
@@ -362,14 +362,14 @@ func cleanLeftovers(groups []*leftGroup) error {
 			ui.Println(ui.Dim("ничего не выбрано"))
 			return nil
 		}
-		ok, err := tui.Confirm("Убрать "+strconv.Itoa(len(picked))+" "+ui.Plural(len(picked), "программу", "программы", "программ")+", "+fmtBytes(size)+"?", false)
+		ok, err := tui.Confirm("Убрать "+strconv.Itoa(len(picked))+" "+ui.Plural(len(picked), "программу", "программы", "программ")+", "+ui.Bytes(size)+"?", false)
 		if err != nil || !ok {
 			return err
 		}
 	}
 	var freed int64
 	for _, g := range picked {
-		ui.Println(ui.Label(ui.Pad(fmtBytes(g.size), 10)) + groupTitle(g))
+		ui.Println(ui.Label(ui.Pad(ui.Bytes(g.size), 10)) + groupTitle(g))
 		if !tui.Available() && !runner.DryRun && !runner.ConfirmDefault("убрать "+groupName(g)+"?", false) {
 			ui.Println()
 			continue
@@ -381,9 +381,9 @@ func cleanLeftovers(groups []*leftGroup) error {
 	}
 	switch {
 	case freed > 0 && runner.DryRun:
-		ui.Println(ui.Info("ушло бы в Корзину "+fmtBytes(freed)) + ui.Dim("  это --dry-run, ничего не тронуто"))
+		ui.Println(ui.Info("ушло бы в Корзину "+ui.Bytes(freed)) + ui.Dim("  это --dry-run, ничего не тронуто"))
 	case freed > 0:
-		ui.Println(ui.Info("в Корзине "+fmtBytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
+		ui.Println(ui.Info("в Корзине "+ui.Bytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
 	}
 	return nil
 }

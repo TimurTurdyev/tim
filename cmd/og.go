@@ -48,13 +48,13 @@ func checkImage(url string) (string, []og.Problem) {
 	var probs []og.Problem
 	// Telegram не показывает картинки тяжелее 5 МБ, Facebook - тяжелее 8 МБ.
 	if len(data) > 5<<20 {
-		probs = append(probs, og.Problem{Text: "картинка " + fmtBytes(int64(len(data))) + ": Telegram покажет превью без неё, нужно меньше 5 MB"})
+		probs = append(probs, og.Problem{Text: "картинка " + ui.Bytes(int64(len(data))) + ": Telegram покажет превью без неё, нужно меньше 5 MB"})
 	}
 	cfg, format, err := image.DecodeConfig(strings.NewReader(string(data)))
 	if err != nil {
-		return fmtBytes(int64(len(data))) + ", " + resp.Header.Get("Content-Type"), probs
+		return ui.Bytes(int64(len(data))) + ", " + resp.Header.Get("Content-Type"), probs
 	}
-	info := fmt.Sprintf("%dx%d %s, %s", cfg.Width, cfg.Height, format, fmtBytes(int64(len(data))))
+	info := fmt.Sprintf("%dx%d %s, %s", cfg.Width, cfg.Height, format, ui.Bytes(int64(len(data))))
 	// Меньше 1200x630 соцсети показывают маленькой картинкой сбоку, а не большой сверху.
 	if cfg.Width < 1200 || cfg.Height < 630 {
 		probs = append(probs, og.Problem{Text: fmt.Sprintf("картинка %dx%d: для большого превью нужно от 1200x630", cfg.Width, cfg.Height)})

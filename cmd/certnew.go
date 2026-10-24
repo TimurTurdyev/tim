@@ -68,7 +68,7 @@ var certNewCmd = &cobra.Command{
 		names := append(append([]string{}, dns...), ipStrings(leaf)...)
 		ui.Println(ui.Label("сертификат") + "  " + strings.Join(names, " "))
 		ui.Println(ui.Pad("  файлы", 12) + certPath + " " + ui.Dim("и ключ рядом"))
-		ui.Println(ui.Pad("  годен", 12) + daysLeft(leaf.Expires))
+		ui.Println(ui.Pad("  годен", 12) + ui.DaysLeft(leaf.Expires))
 		if !trust.Installed(localca.Name()) {
 			ui.Println(ui.Warn("CA не в хранилище, браузер сертификату не поверит") + ui.Dim("  (tim cert ca install)"))
 		}
@@ -97,7 +97,7 @@ var certCaCmd = &cobra.Command{
 		}
 		ui.Println(ui.Label("имя   ") + ca.Cert.Subject.CommonName)
 		ui.Println(ui.Label("файл  ") + localca.CertPath())
-		ui.Println(ui.Label("годен ") + daysLeft(ca.Cert.NotAfter))
+		ui.Println(ui.Label("годен ") + ui.DaysLeft(ca.Cert.NotAfter))
 		if trust.Installed(localca.Name()) {
 			ui.Println(ui.Label("в хранилище ") + "да")
 		} else {

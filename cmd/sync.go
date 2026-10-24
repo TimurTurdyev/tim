@@ -162,7 +162,7 @@ var syncCmd = &cobra.Command{
 			if ips == nil || p.URL == "" {
 				continue
 			}
-			host, _ := hostPort(p.URL, "")
+			host, _ := netinfo.HostPort(p.URL, "")
 			ip := netinfo.ResolveIPv4(host)
 			if ip == "" {
 				continue

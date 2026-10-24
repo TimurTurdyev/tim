@@ -88,32 +88,15 @@ func measureMap(roots []string, fresh bool, progress func(done, total int, root 
 
 // cliProgress: ход замера в stderr, пока команда идёт в терминале.
 func cliProgress() func(done, total int, root string) {
-	if !stdoutTerminal() {
+	if !ui.Terminal() {
 		return nil
 	}
 	return func(done, total int, root string) {
-		fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("считаю %s: %d из %d"), showPath(root), done, total)
+		fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("считаю %s: %d из %d"), paths.Show(root), done, total)
 		if done == total {
 			fmt.Fprint(os.Stderr, "\r\033[2K")
 		}
 	}
-}
-
-func stdoutTerminal() bool {
-	st, err := os.Stderr.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
-}
-
-// showPath: путь с ~ вместо домашней папки.
-func showPath(p string) string {
-	home := paths.Home()
-	if r, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(r, "..") {
-		if r == "." {
-			return "~"
-		}
-		return "~/" + r
-	}
-	return p
 }
 
 type mapRow struct {
@@ -160,7 +143,7 @@ func diskMap(args []string) error {
 	var unknown int64
 	if d, ok := sysinfo.DataDisk(); ok && len(args) == 0 {
 		pct := d.Percent()
-		ui.Println(ui.Title("Диск") + "  " + bar(pct, 30) + ui.Dim("свободно ") + fmtBytes(int64(d.Avail)) + ui.Dim(" из "+fmtBytes(int64(d.Size))))
+		ui.Println(ui.Title("Диск") + "  " + bar(pct, 30) + ui.Dim("свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
 		unknown = int64(d.Size-d.Avail) - measured - volumes
 	}
 	// Кратко - по несколько самых больших в разделе; освобождаемого больше: с него и начинают.
@@ -203,7 +186,7 @@ func diskMap(args []string) error {
 			continue
 		}
 		ui.Println()
-		ui.Println(ui.Title(sec.title) + ui.Dim("  "+fmtBytes(total)))
+		ui.Println(ui.Title(sec.title) + ui.Dim("  "+ui.Bytes(total)))
 		for _, r := range in {
 			printMapRow(r, top)
 		}
@@ -225,7 +208,7 @@ func diskMap(args []string) error {
 			ui.Dim(" - известная ошибка. Закрой Chrome и: trash /private/var/folders/*/*/X/com.google.Chrome.code_sign_clone"))
 	}
 	if unknown > 1<<30 {
-		ui.Println(ui.Dim("не разобрано " + fmtBytes(unknown) + ": без прав не прочитать, снимки Time Machine, копии Chrome"))
+		ui.Println(ui.Dim("не разобрано " + ui.Bytes(unknown) + ": без прав не прочитать, снимки Time Machine, копии Chrome"))
 	}
 	return nil
 }
@@ -325,9 +308,9 @@ func printMapRow(r mapRow, top int64) {
 	}
 	where := ""
 	if r.path != "" {
-		where = showPath(r.path)
+		where = paths.Show(r.path)
 	}
-	ui.Println("  " + ui.Label(ui.Pad(fmtBytes(r.size), 9)) + sizeBar(r.size, top) + "  " + ui.Pad(clip(name, 38), 40) + ui.Dim(where))
+	ui.Println("  " + ui.Label(ui.Pad(ui.Bytes(r.size), 9)) + sizeBar(r.size, top) + "  " + ui.Pad(ui.Clip(name, 38), 40) + ui.Dim(where))
 	const indent = "                       "
 	if len(r.items) > 0 {
 		var games map[string]diskuse.Game
@@ -349,12 +332,12 @@ func printMapRow(r mapRow, top int64) {
 			}
 			label := diskuse.ItemName(it.Path)
 			if g, ok := games[filepath.Base(it.Path)]; ok {
-				label = g.Name + " " + fmtBytes(it.Size) + ", " + playedAgo(g.LastPlayed)
+				label = g.Name + " " + ui.Bytes(it.Size) + ", " + playedAgo(g.LastPlayed)
 				ui.Println(indent + label)
 				parts = append(parts, "")
 				continue
 			}
-			parts = append(parts, label+" "+fmtBytes(it.Size))
+			parts = append(parts, label+" "+ui.Bytes(it.Size))
 		}
 		var inline []string
 		for _, p := range parts {
@@ -365,13 +348,13 @@ func printMapRow(r mapRow, top int64) {
 		if more > 0 {
 			inline = append(inline, "ещё "+strconv.Itoa(more))
 		} else if rest > 0 && len(inline) > 0 {
-			inline = append(inline, "мелочь "+fmtBytes(rest))
+			inline = append(inline, "мелочь "+ui.Bytes(rest))
 		}
 		// Одна виртуалка или программа в группе - имя и так понятно из строки, разбивка лишняя.
-		if len(inline) > 1 || (len(inline) == 1 && len(r.items) > 1) || (len(inline) == 1 && !strings.HasSuffix(inline[0], fmtBytes(r.size))) {
+		if len(inline) > 1 || (len(inline) == 1 && len(r.items) > 1) || (len(inline) == 1 && !strings.HasSuffix(inline[0], ui.Bytes(r.size))) {
 			ui.Println(indent + ui.Dim(strings.Join(inline, "  \u00b7  ")))
 		} else if len(inline) == 1 {
-			ui.Println(indent + ui.Dim(strings.TrimSuffix(inline[0], " "+fmtBytes(r.size))))
+			ui.Println(indent + ui.Dim(strings.TrimSuffix(inline[0], " "+ui.Bytes(r.size))))
 		}
 	}
 	if strings.HasSuffix(r.path, "steamapps/common") && !steamInstalled() {

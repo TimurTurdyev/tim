@@ -350,7 +350,7 @@ func routeStatus(probe bool) error {
 		ui.Println(ui.Dim("физический интерфейс ") + phys.Device + ui.Dim(" шлюз ") + gw)
 	}
 	inet := netinfo.InternetIface()
-	line := ui.Dim("трафик в интернет идёт через ") + dashIfEmpty(inet)
+	line := ui.Dim("трафик в интернет идёт через ") + ui.Dash(inet)
 	if netinfo.IsTunnelIface(inet) {
 		line += "  " + ui.Warn("(VPN забирает весь трафик)")
 	}
@@ -428,7 +428,7 @@ func routeUp(dests []string) error {
 			}
 			continue
 		}
-		if !verbose && stdoutTerminal() {
+		if !verbose && ui.Terminal() {
 			fmt.Fprintf(os.Stderr, "\r\033[2K"+ui.Dim("маршруты: %d из %d"), i+1, len(dests))
 		}
 		if err := setRoute(d, gw, phys.Device); err != nil {
@@ -450,7 +450,7 @@ func routeUp(dests []string) error {
 	if verbose {
 		return nil
 	}
-	if stdoutTerminal() {
+	if ui.Terminal() {
 		fmt.Fprint(os.Stderr, "\r\033[2K")
 	}
 	line := ui.Label(fmt.Sprintf("заведено %d", done))

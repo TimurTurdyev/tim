@@ -68,7 +68,7 @@ func vpnScreen() tui.Screen {
 func vpnData(probe bool) tui.BoardData {
 	var d tui.BoardData
 	phys, gw := physical()
-	d.Status = phys.Name + " " + phys.Device + " \u00b7 шлюз " + dashIfEmpty(gw)
+	d.Status = phys.Name + " " + phys.Device + " \u00b7 шлюз " + ui.Dash(gw)
 	tunnels := netinfo.Tunnels()
 	inet := netinfo.InternetIface()
 	var vpn string
@@ -76,9 +76,9 @@ func vpnData(probe bool) tui.BoardData {
 	case netinfo.IsTunnelIface(inet):
 		vpn = ui.OK("\u25cf VPN включён ") + ui.Dim(inet+", весь трафик в туннель")
 	case len(tunnels) > 0:
-		vpn = ui.OK("\u25cf VPN включён ") + ui.Dim("раздельный туннель, интернет через "+dashIfEmpty(inet))
+		vpn = ui.OK("\u25cf VPN включён ") + ui.Dim("раздельный туннель, интернет через "+ui.Dash(inet))
 	default:
-		vpn = ui.Dim("\u25cb VPN выключен, интернет напрямую через " + dashIfEmpty(inet))
+		vpn = ui.Dim("\u25cb VPN выключен, интернет напрямую через " + ui.Dash(inet))
 	}
 	var guard string
 	st, hasSt := guardStatus()
@@ -90,9 +90,9 @@ func vpnData(probe bool) tui.BoardData {
 	case !hasSt:
 		guard = ui.OK("\u25cf страж работает ") + ui.Dim("отчёта пока нет")
 	case time.Since(st.LastCheck) > time.Minute:
-		guard = ui.Warn("\u25b2 страж молчит "+human(time.Since(st.LastCheck))) + ui.Dim("  tim route status")
+		guard = ui.Warn("\u25b2 страж молчит "+ui.Duration(time.Since(st.LastCheck))) + ui.Dim("  tim route status")
 	default:
-		guard = ui.OK("\u25cf страж работает ") + ui.Dim("проверка "+human(time.Since(st.LastCheck))+" назад")
+		guard = ui.OK("\u25cf страж работает ") + ui.Dim("проверка "+ui.Duration(time.Since(st.LastCheck))+" назад")
 	}
 	d.Head = append(d.Head, ui.Pad(vpn, 60)+guard)
 	if len(cfg.Hosts) == 0 {
@@ -184,7 +184,7 @@ func serveScreen() tui.Screen {
 					return "", ui.Errorf("сервера нет")
 				}
 				url := "http://localhost:" + st.Port
-				return "открыто " + url, openBrowser(url)
+				return "открыто " + url, runner.OpenBrowser(url)
 			}},
 			{Key: "s", Label: "стоп/старт", Run: func(row *tui.BoardRow) (string, error) {
 				st, ok := stateOf(row)
@@ -261,7 +261,7 @@ func serveData() tui.BoardData {
 	alive := 0
 	for _, s := range states {
 		row := tui.BoardRow{ID: s.Name, Title: "журнал " + s.Name, Sub: "хвост, l - целиком"}
-		age := human(time.Since(s.Started))
+		age := ui.Duration(time.Since(s.Started))
 		if s.Alive() {
 			alive++
 			row.Cells = ui.OK("\u25cf ") + ui.Pad(s.Name, 18) + ui.Pad(":"+s.Port, 8) + ui.Dim(ui.Pad(s.Command, 24)+ui.Pad(age, 9)) + ui.Info("http://localhost:"+s.Port)
@@ -290,7 +290,7 @@ func logTail(path string, n int) []string {
 	}
 	out := make([]string, 0, len(lines))
 	for _, l := range lines {
-		l = clip(strings.TrimRight(l, "\r"), 110)
+		l = ui.Clip(strings.TrimRight(l, "\r"), 110)
 		low := strings.ToLower(l)
 		switch {
 		case strings.Contains(low, "error") || strings.Contains(low, "exception") || strings.Contains(low, " 500 ") || strings.Contains(low, "fatal"):
@@ -415,7 +415,7 @@ func checkData(rows []health.Row, only bool) tui.BoardData {
 		row.Cells = ui.Pad(r.Name, 20)
 		for _, col := range cols {
 			c := r.Get(col.name)
-			row.Cells += ui.Pad(lamp(c.Level, clip(c.Text, col.width-3)), col.width)
+			row.Cells += ui.Pad(lamp(c.Level, ui.Clip(c.Text, col.width-3)), col.width)
 		}
 		for _, c := range r.Problems() {
 			text := c.Detail
@@ -472,7 +472,7 @@ func domainScreen(domain string) tui.Screen {
 				if err := domaudit.WriteMap(rep, path); err != nil {
 					return "", err
 				}
-				return "карта открыта в браузере", openBrowser(path)
+				return "карта открыта в браузере", runner.OpenBrowser(path)
 			}},
 			{Key: "p", Label: "почта", Do: func(*tui.BoardRow) tui.Action { return resultAction([]string{"mail", domain}) }},
 		},
@@ -643,14 +643,14 @@ func serverData(target string) tui.BoardData {
 	}
 	for _, disk := range r.Disks {
 		if disk.Mount == "/" {
-			d.Head = append(d.Head, barLine("диск", disk.Pct, fmtBytes(disk.Used)+" из "+fmtBytes(disk.Size)))
+			d.Head = append(d.Head, barLine("диск", disk.Pct, ui.Bytes(disk.Used)+" из "+ui.Bytes(disk.Size)))
 		}
 	}
 	if r.MemTotal > 0 {
 		used := r.MemTotal - r.MemAvail
-		tail := fmtBytes(used) + " из " + fmtBytes(r.MemTotal)
+		tail := ui.Bytes(used) + " из " + ui.Bytes(r.MemTotal)
 		if r.SwapTotal > 0 {
-			tail += ", swap " + fmtBytes(r.SwapTotal-r.SwapFree)
+			tail += ", swap " + ui.Bytes(r.SwapTotal-r.SwapFree)
 		}
 		d.Head = append(d.Head, barLine("память", int(used*100/r.MemTotal), tail))
 	}
@@ -706,7 +706,7 @@ func serverData(target string) tui.BoardData {
 	findings := srvinfo.Evaluate(r, time.Now())
 	for _, c := range findings {
 		row := tui.BoardRow{ID: c.Name + " " + c.Text, Title: c.Name + ": " + c.Text, Sub: c.Level.String()}
-		row.Cells = ui.Pad(lamp(c.Level, ui.Pad(c.Name, 12)), 16) + clip(c.Detail, 90)
+		row.Cells = ui.Pad(lamp(c.Level, ui.Pad(c.Name, 12)), 16) + ui.Clip(c.Detail, 90)
 		row.Pane = []string{c.Detail}
 		if fix := serverFix(c, r); fix != "" {
 			row.Pane = append(row.Pane, ui.Dim("\u2192 "+fix))

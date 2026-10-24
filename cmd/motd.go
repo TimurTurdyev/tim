@@ -169,7 +169,7 @@ func motdSystem() []string {
 	host, _, _ = strings.Cut(host, ".")
 	line1 := ui.Label(user+"@"+host) + "  " + osName + "  " + time.Now().Format("Mon 02 Jan, 15:04")
 	if booted {
-		line1 += ui.Dim("  up " + human(time.Since(boot)))
+		line1 += ui.Dim("  up " + ui.Duration(time.Since(boot)))
 	}
 	var parts []string
 	if l := load; len(l) == 3 {

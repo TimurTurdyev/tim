@@ -38,9 +38,9 @@ var vpnCmd = &cobra.Command{
 		case netinfo.IsTunnelIface(inet):
 			ui.Println(ui.Warn("весь трафик в интернет идёт в туннель " + inet))
 		case len(tunnels) > 0:
-			ui.Println(ui.Info("раздельный туннель: интернет идёт через " + dashIfEmpty(inet)))
+			ui.Println(ui.Info("раздельный туннель: интернет идёт через " + ui.Dash(inet)))
 		default:
-			ui.Println(ui.Dim("интернет напрямую через " + dashIfEmpty(inet)))
+			ui.Println(ui.Dim("интернет напрямую через " + ui.Dash(inet)))
 		}
 		if dns := netinfo.DNSServers(); len(dns) > 0 {
 			ui.Println(ui.Label("dns ") + strings.Join(dns, " "))

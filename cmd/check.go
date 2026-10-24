@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -89,7 +90,7 @@ func checkRow(p *config.Project) health.Row {
 	if !checkNet {
 		add(gitCheck(cfg.ProjectDir(p)))
 	}
-	host, _ := hostPort(p.URL, "")
+	host, _ := netinfo.HostPort(p.URL, "")
 	if !checkLocal && p.URL != "" && host != "" && !fill.Local(host) {
 		wg.Go(func() { add(health.Site(p.URL)) })
 		wg.Go(func() { add(health.Cert(host)) })
@@ -144,7 +145,7 @@ func printCheck(rows []health.Row) {
 		line := ui.Pad(r.Name, 22)
 		for _, col := range cols {
 			c := r.Get(col.name)
-			text := clip(c.Text, col.width-1)
+			text := ui.Clip(c.Text, col.width-1)
 			line += checkPaint(c, text) + strings.Repeat(" ", col.width-len([]rune(text)))
 		}
 		ui.Println(strings.TrimRight(line, " "))
@@ -152,14 +153,6 @@ func printCheck(rows []health.Row) {
 			ui.Println("  " + ui.Dim(c.Detail))
 		}
 	}
-}
-
-func clip(s string, width int) string {
-	r := []rune(s)
-	if len(r) <= width {
-		return s
-	}
-	return string(r[:width-1]) + "~"
 }
 
 // checkMachine: замечания не о проектах, а о самой машине.

@@ -41,7 +41,7 @@ func onboardRoots() []tui.RootChoice {
 		if st, err := os.Stat(p); err != nil || !st.IsDir() {
 			continue
 		}
-		out = append(out, tui.RootChoice{Path: showPath(p), Note: rootNote(p)})
+		out = append(out, tui.RootChoice{Path: paths.Show(p), Note: rootNote(p)})
 	}
 	for _, p := range []string{"/var/www", "/srv"} {
 		if st, err := os.Stat(p); err == nil && st.IsDir() {
@@ -100,7 +100,7 @@ func onboardScan(root string) []tui.FoundProject {
 	for _, p := range found {
 		dir := c.ProjectDir(&p)
 		touched := gitTouched(dir)
-		fp := tui.FoundProject{Name: p.Name, Stack: dashIfEmpty(run.Stack(dir)), Dir: showPath(dir), Checked: true}
+		fp := tui.FoundProject{Name: p.Name, Stack: ui.Dash(run.Stack(dir)), Dir: paths.Show(dir), Checked: true}
 		if !touched.IsZero() {
 			fp.Age = agoShort(touched)
 			// Год без изменений - скорее всего архив; галочку снимаем, вернуть можно пробелом.
@@ -124,7 +124,7 @@ func onboardSave(root string, chosen []tui.FoundProject) (string, error) {
 	}
 	cfg = c
 	return "в реестре " + strconv.Itoa(len(c.Projects)) + " " + ui.Plural(len(c.Projects), "проект", "проекта", "проектов") +
-		", конфиг " + showPath(config.Path()), nil
+		", конфиг " + paths.Show(config.Path()), nil
 }
 
 // onboardShell: та же строка, что дописывает tim init.
@@ -144,5 +144,5 @@ func onboardShell() (string, error) {
 	if err := f.Close(); err != nil {
 		return "", err
 	}
-	return "подключено в " + showPath(path) + ", открой новый терминал", nil
+	return "подключено в " + paths.Show(path) + ", открой новый терминал", nil
 }

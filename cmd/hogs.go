@@ -31,7 +31,7 @@ func hogLines(indent string) []string {
 	var out []string
 	for _, h := range procs.Hogs(list, 100, time.Hour) {
 		line := indent + ui.Warn(fmt.Sprintf("%s ест %s", h.Name, procs.Cores(h.CPU)))
-		detail := "уже " + human(h.Uptime)
+		detail := "уже " + ui.Duration(h.Uptime)
 		if h.Note != "" {
 			detail = h.Note + ", " + detail
 		}

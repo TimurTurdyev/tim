@@ -15,6 +15,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/shellq"
@@ -280,10 +281,10 @@ func homeTiles() (tiles []tui.TileData, warning string, open func() tui.Action) 
 		pct := disk.Percent()
 		tiles = append(tiles, tui.TileData{Title: "диск", Width: 22, Rows: []string{
 			tui.Bar(float64(pct)/100, 10) + " " + pctText(pct),
-			ui.Dim("свободно " + fmtBytes(int64(disk.Avail))),
+			ui.Dim("свободно " + ui.Bytes(int64(disk.Avail))),
 		}})
 		if pct >= 85 && warning == "" {
-			warning = fmt.Sprintf("диск занят на %d%%, свободно %s", pct, fmtBytes(int64(disk.Avail)))
+			warning = fmt.Sprintf("диск занят на %d%%, свободно %s", pct, ui.Bytes(int64(disk.Avail)))
 			open = func() tui.Action {
 				s, err := diskScreen(nil)
 				if err != nil {
@@ -434,7 +435,7 @@ func searchHome(q string) []tui.Hit {
 	}
 	var domains []string
 	for _, p := range cfg.Projects {
-		if h, _ := hostPort(p.URL, ""); h != "" {
+		if h, _ := netinfo.HostPort(p.URL, ""); h != "" {
 			domains = append(domains, h)
 		}
 	}
@@ -524,7 +525,7 @@ func projectCard(row tui.ProjectRow) tui.ProjectCard {
 	}
 	if row.Running {
 		if st, ok := run.LoadState(row.Name); ok {
-			lines = append(lines, label("сервер")+ui.OK("\u25cf работает :"+st.Port)+ui.Dim(", "+human(time.Since(st.Started))))
+			lines = append(lines, label("сервер")+ui.OK("\u25cf работает :"+st.Port)+ui.Dim(", "+ui.Duration(time.Since(st.Started))))
 		}
 	} else {
 		lines = append(lines, label("сервер")+ui.Dim("\u25cb не запущен, порт "+projectPort(p, row.Dir)))

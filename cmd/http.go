@@ -21,18 +21,6 @@ var keyHeaders = []string{"Server", "Content-Type", "Content-Encoding", "Cache-C
 
 func ms(d time.Duration) string { return fmt.Sprintf("%d мс", d.Milliseconds()) }
 
-func fmtBytes(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%d B", n)
-}
-
 var httpCmd = &cobra.Command{
 	Use:   "http <url> [-L] [--all-headers]",
 	Short: "Сколько отвечает сайт по фазам: DNS, TCP, TLS, первый байт, загрузка",
@@ -56,7 +44,7 @@ var httpCmd = &cobra.Command{
 			default:
 				status = ui.Label(status)
 			}
-			ui.Println(status + "  " + url + ui.Dim("  "+fmtBytes(t.Size)))
+			ui.Println(status + "  " + url + ui.Dim("  "+ui.Bytes(t.Size)))
 			download := t.All - t.TTFB
 			ui.Println(ui.Dim(fmt.Sprintf("  dns %s  tcp %s  tls %s  первый байт %s  загрузка %s", ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.TTFB), ms(download))) + "  " + ui.Label("всего "+ms(t.All)))
 			names := keyHeaders

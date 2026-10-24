@@ -39,7 +39,7 @@ var projListCmd = &cobra.Command{
 			if p.Port > 0 {
 				port = fmt.Sprint(p.Port)
 			}
-			ui.Println(ui.Label(ui.Pad(p.Name, 24)) + " " + ui.Pad(p.Path, 42) + " " + ui.Pad(port, 6) + " " + ui.Pad(dashIfEmpty(p.DB), 22) + " " + ui.Dim(dashIfEmpty(p.Deploy)))
+			ui.Println(ui.Label(ui.Pad(p.Name, 24)) + " " + ui.Pad(p.Path, 42) + " " + ui.Pad(port, 6) + " " + ui.Pad(ui.Dash(p.DB), 22) + " " + ui.Dim(ui.Dash(p.Deploy)))
 		}
 		return nil
 	},
@@ -57,16 +57,16 @@ var projInfoCmd = &cobra.Command{
 		dir := cfg.ProjectDir(p)
 		ui.Println(ui.Label(p.Name) + "  " + ui.Dim(run.Stack(dir)))
 		ui.Println(ui.Label("путь     ") + dir)
-		ui.Println(ui.Label("ssh      ") + dashIfEmpty(p.SSH))
+		ui.Println(ui.Label("ssh      ") + ui.Dash(p.SSH))
 		if p.Remote != "" {
 			ui.Println(ui.Label("удалённо ") + p.Remote)
 		}
-		ui.Println(ui.Label("деплой   ") + dashIfEmpty(p.Deploy))
+		ui.Println(ui.Label("деплой   ") + ui.Dash(p.Deploy))
 		port := "-"
 		if p.Port > 0 {
 			port = fmt.Sprint(p.Port)
 		}
-		ui.Println(ui.Label("порт     ") + port + "   " + ui.Label("база ") + dashIfEmpty(p.DB))
+		ui.Println(ui.Label("порт     ") + port + "   " + ui.Label("база ") + ui.Dash(p.DB))
 		if branch, _ := runner.Output("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD"); branch != "" {
 			status, _ := runner.Output("git", "-C", dir, "status", "--porcelain")
 			changes := strings.Count(status, "\n")
@@ -152,13 +152,6 @@ func shimHint() string {
 		return "эта оболочка открыта раньше подключения tim: открой новый терминал, и cd заработает"
 	}
 	return "чтобы cd работал из команды, выполни: tim init"
-}
-
-func dashIfEmpty(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }
 
 func first(args []string) string {

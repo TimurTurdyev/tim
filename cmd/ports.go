@@ -55,7 +55,7 @@ func uptime(d time.Duration) string {
 	if d == 0 {
 		return "-"
 	}
-	return human(d)
+	return ui.Duration(d)
 }
 
 func printRows(rows []portRow) {
@@ -65,7 +65,7 @@ func printRows(rows []portRow) {
 		if len([]rune(cmd)) > 60 {
 			cmd = "..." + string([]rune(cmd)[len([]rune(cmd))-57:])
 		}
-		ui.Println(ui.Label(ui.Pad(r.Port, 6)) + " " + ui.Pad(r.Listener.PID, 7) + " " + ui.Pad(uptime(r.Uptime), 12) + " " + ui.Pad(dashIfEmpty(r.project), 18) + " " + ui.Dim(cmd))
+		ui.Println(ui.Label(ui.Pad(r.Port, 6)) + " " + ui.Pad(r.Listener.PID, 7) + " " + ui.Pad(uptime(r.Uptime), 12) + " " + ui.Pad(ui.Dash(r.project), 18) + " " + ui.Dim(cmd))
 	}
 }
 

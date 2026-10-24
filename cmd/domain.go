@@ -12,6 +12,8 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -30,10 +32,10 @@ var (
 func domainOf(arg string) (string, error) {
 	if arg != "" {
 		if p, ok := cfg.Project(arg); ok && p.URL != "" {
-			h, _ := hostPort(p.URL, "")
+			h, _ := netinfo.HostPort(p.URL, "")
 			return inspect.Registrable(h), nil
 		}
-		h, _ := hostPort(arg, "")
+		h, _ := netinfo.HostPort(arg, "")
 		if !strings.Contains(h, ".") {
 			return "", ui.Errorf("не домен и не проект с полем url: %s", arg)
 		}
@@ -46,7 +48,7 @@ func domainOf(arg string) (string, error) {
 	if p.URL == "" {
 		return "", ui.Errorf("у проекта %s нет поля url: tim domain <домен>", p.Name)
 	}
-	h, _ := hostPort(p.URL, "")
+	h, _ := netinfo.HostPort(p.URL, "")
 	return h, nil
 }
 
@@ -100,16 +102,16 @@ func writeMap(rep *domaudit.Report, open bool) error {
 	if !open {
 		return nil
 	}
-	return openBrowser(path)
+	return runner.OpenBrowser(path)
 }
 
 func printDomain(rep *domaudit.Report) {
 	ui.Println(ui.Info(rep.Domain))
 
 	if d, err := inspect.Registration(rep.Domain); err == nil {
-		line := ui.Label("регистратор ") + dashIfEmpty(d.Registrar)
+		line := ui.Label("регистратор ") + ui.Dash(d.Registrar)
 		if !d.Expires.IsZero() {
-			line += "  до " + daysLeft(d.Expires)
+			line += "  до " + ui.DaysLeft(d.Expires)
 		}
 		ui.Println(line)
 		if len(d.Nameservers) > 0 {
@@ -246,7 +248,7 @@ func domainAll() error {
 	var domains []string
 	for _, p := range cfg.Projects {
 		if p.URL != "" {
-			h, _ := hostPort(p.URL, "")
+			h, _ := netinfo.HostPort(p.URL, "")
 			domains = append(domains, h)
 		}
 	}

@@ -65,7 +65,7 @@ func placePath(p diskuse.Place, sizes map[string]int64) string {
 }
 
 func subRow(size int64, name, path string) string {
-	return "          " + ui.Pad(fmtBytes(size), 10) + ui.Pad(name, 24) + path
+	return "          " + ui.Pad(ui.Bytes(size), 10) + ui.Pad(name, 24) + path
 }
 
 // printModels: модели Hugging Face по размеру и с тем, когда их последний раз запускали:
@@ -97,7 +97,7 @@ func printModels(hub string) {
 				used = ui.Warn("не запускали " + strconv.Itoa(days) + " дн")
 			}
 		}
-		ui.Println(ui.Dim("          "+ui.Pad(fmtBytes(m.Size), 10)+ui.Pad(m.Name, 44)) + ui.Pad(used, 24) +
+		ui.Println(ui.Dim("          "+ui.Pad(ui.Bytes(m.Size), 10)+ui.Pad(m.Name, 44)) + ui.Pad(used, 24) +
 			ui.Dim(tilde(filepath.Join(".cache", "huggingface", "hub", filepath.Base(m.Path)))))
 	}
 }
@@ -175,7 +175,7 @@ func diskSystem() error {
 			continue
 		}
 		total += m.Size
-		line := ui.Label(ui.Pad(fmtBytes(m.Size), 10)) + ui.Pad(m.Name, 28)
+		line := ui.Label(ui.Pad(ui.Bytes(m.Size), 10)) + ui.Pad(m.Name, 28)
 		hint := []string{placePath(m.Place, sizes)}
 		if m.Clean != "" {
 			hint = append(hint, engineHint(m.Name, m.Clean))
@@ -207,7 +207,7 @@ func diskSystem() error {
 				if old[sub.Path] {
 					// Готовая команда: trash кладёт в Корзину, а не стирает - передумал, вернул.
 					// Тильда остаётся снаружи кавычек, иначе shell её не раскроет.
-					ui.Println(ui.Dim("          "+ui.Pad(fmtBytes(sub.Size), 10)+ui.Pad(sub.Path, 24)) +
+					ui.Println(ui.Dim("          "+ui.Pad(ui.Bytes(sub.Size), 10)+ui.Pad(sub.Path, 24)) +
 						ui.Warn("старая версия") + ui.Dim("  trash ~/"+shellq.Join([]string{rel})))
 					continue
 				}
@@ -215,7 +215,7 @@ func diskSystem() error {
 			}
 		}
 	}
-	ui.Println(ui.Info("всего "+fmtBytes(total)) + ui.Dim("  места крупнее 50 MB; tim ничего не удаляет"))
+	ui.Println(ui.Info("всего "+ui.Bytes(total)) + ui.Dim("  места крупнее 50 MB; tim ничего не удаляет"))
 	return nil
 }
 
@@ -334,7 +334,7 @@ func cleanStale(items []diskuse.Item, min int64) error {
 	for _, it := range stale {
 		owner, _ := cfg.ProjectHere(it.Path)
 		days := int(time.Since(touched[it.Path]).Hours() / 24)
-		q := fmt.Sprintf("%s %s (%s, не трогали %d дн) - в Корзину?", fmtBytes(it.Size),
+		q := fmt.Sprintf("%s %s (%s, не трогали %d дн) - в Корзину?", ui.Bytes(it.Size),
 			strings.Replace(it.Path, home, "~", 1), owner.Name, days)
 		if !runner.Confirm(q) {
 			continue
@@ -349,7 +349,7 @@ func cleanStale(items []diskuse.Item, min int64) error {
 		ui.Println(ui.Dim("ничего не убрано; кандидатов " + strconv.Itoa(len(stale))))
 		return nil
 	}
-	ui.Println(ui.Info("освобождено "+fmtBytes(freed)) + ui.Dim("  вернуть можно из Корзины"))
+	ui.Println(ui.Info("освобождено "+ui.Bytes(freed)) + ui.Dim("  вернуть можно из Корзины"))
 	return nil
 }
 
@@ -437,7 +437,7 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 			if p, ok := cfg.ProjectHere(it.Path); ok {
 				owner = p.Name
 			}
-			ui.Println(ui.Label(ui.Pad(fmtBytes(it.Size), 9)) + " " + ui.Pad(owner, 20) + " " + ui.Dim(strings.Replace(it.Path, home, "~", 1)))
+			ui.Println(ui.Label(ui.Pad(ui.Bytes(it.Size), 9)) + " " + ui.Pad(owner, 20) + " " + ui.Dim(strings.Replace(it.Path, home, "~", 1)))
 		}
 		kinds := make([]string, 0, len(s.ByKind))
 		for k := range s.ByKind {
@@ -446,9 +446,9 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 		sort.Slice(kinds, func(i, j int) bool { return s.ByKind[kinds[i]] > s.ByKind[kinds[j]] })
 		var parts []string
 		for _, k := range kinds {
-			parts = append(parts, k+" "+fmtBytes(s.ByKind[k]))
+			parts = append(parts, k+" "+ui.Bytes(s.ByKind[k]))
 		}
-		ui.Println(ui.Info("всего "+fmtBytes(s.Total)) + ui.Dim("  в "+strconv.Itoa(len(items))+" папках: "+strings.Join(parts, ", ")))
+		ui.Println(ui.Info("всего "+ui.Bytes(s.Total)) + ui.Dim("  в "+strconv.Itoa(len(items))+" папках: "+strings.Join(parts, ", ")))
 		ui.Println(ui.Dim("всё это пересоздаётся установкой зависимостей или сборкой; заброшенное убрать: tim disk --clean"))
 		return nil
 	},

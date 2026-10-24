@@ -66,9 +66,9 @@ func guardLine() string {
 		return ui.Dim("страж работает, отчёта пока нет")
 	}
 	age := time.Since(st.LastCheck)
-	line := ui.Label("страж работает") + ui.Dim(fmt.Sprintf("  проверка %s назад, починок за сутки %d", human(age), st.Since(time.Now().Add(-24*time.Hour))))
+	line := ui.Label("страж работает") + ui.Dim(fmt.Sprintf("  проверка %s назад, починок за сутки %d", ui.Duration(age), st.Since(time.Now().Add(-24*time.Hour))))
 	if age > time.Minute {
-		line = ui.Warn(fmt.Sprintf("страж молчит %s", human(age))) + ui.Dim("  tim route status")
+		line = ui.Warn(fmt.Sprintf("страж молчит %s", ui.Duration(age))) + ui.Dim("  tim route status")
 	}
 	if st.Error != "" {
 		line += "  " + ui.Warn(st.Error)
@@ -96,9 +96,9 @@ var routeStatusCmd = &cobra.Command{
 			return nil
 		}
 		now := time.Now()
-		ui.Println(ui.Label("последняя проверка ") + human(now.Sub(st.LastCheck)) + " назад" +
+		ui.Println(ui.Label("последняя проверка ") + ui.Duration(now.Sub(st.LastCheck)) + " назад" +
 			ui.Dim(", запущен "+st.Started.Format("02.01 15:04")))
-		ui.Println(ui.Label("сеть               ") + st.Iface + " шлюз " + dashIfEmpty(st.Gateway))
+		ui.Println(ui.Label("сеть               ") + st.Iface + " шлюз " + ui.Dash(st.Gateway))
 		ok2 := strconv.Itoa(st.OK) + " из " + strconv.Itoa(st.Want)
 		if st.OK < st.Want {
 			ok2 = ui.Warn(ok2)

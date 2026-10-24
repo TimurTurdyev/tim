@@ -122,7 +122,7 @@ var eachCmd = &cobra.Command{
 						state = ui.Warn("устарела")
 						old++
 					}
-					line += " " + ui.Pad(dashIfEmpty(e.version), 8) + " " + state
+					line += " " + ui.Pad(ui.Dash(e.version), 8) + " " + state
 				}
 				ui.Println(line)
 			}
@@ -166,7 +166,7 @@ var eachCmd = &cobra.Command{
 			}
 			line := ui.Label(ui.Pad(e.name, 26)) + " готово"
 			if t.VersionKey != "" {
-				line = ui.Label(ui.Pad(e.name, 26)) + " " + dashIfEmpty(e.version) + " -> " + each.JSONVersion(filepath.Join(e.dir, t.Marker), t.VersionKey)
+				line = ui.Label(ui.Pad(e.name, 26)) + " " + ui.Dash(e.version) + " -> " + each.JSONVersion(filepath.Join(e.dir, t.Marker), t.VersionKey)
 			}
 			ui.Println(line)
 			if eachVerbose && strings.TrimSpace(out) != "" {
