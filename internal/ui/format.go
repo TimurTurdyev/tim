@@ -97,6 +97,9 @@ func Duration(d time.Duration) string {
 	return fmt.Sprintf("%d с", int(d.Seconds()))
 }
 
+// StripANSI: строка без цветов - для буфера обмена и приглушённых экранов.
+func StripANSI(s string) string { return ansi.Strip(s) }
+
 // Clip обрезает строку до width рун, помечая обрез тильдой.
 func Clip(s string, width int) string {
 	if width <= 0 {

@@ -2,22 +2,30 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// result: вывод обычной команды внутри экрана. Сверху сама команда, чтобы запомнить.
+// result: вывод команды внутри экрана. Команда - в крошке и справа внизу, в теле только вывод; исход
+// и время - в статусе; что логично сделать дальше - цифрами сразу под выводом.
 type result struct {
-	run    func() (string, error)
-	title  string
-	lines  []string
-	err    error
-	top    int
-	done   bool
-	copied func(string) // скопировать команду в буфер
-	next   []CommandEntry
+	run     func() (string, error)
+	title   string
+	lines   []string
+	out     string
+	err     error
+	top     int
+	done    bool
+	started time.Time
+	took    time.Duration
+	copied  func(string) // скопировать в буфер
+	copyOut bool         // y копирует вывод, а не команду
+	next    []CommandEntry
+	height  int // сколько строк вывода видно - для счётчика прокрутки
 }
 
 type resultMsg struct {
@@ -25,11 +33,13 @@ type resultMsg struct {
 	err error
 }
 
-// ResultOpts: как показывать результат команды.
+// ResultOpts: как показывать результат команды. CopyOutput - у утилит без аргументов полезен
+// сам вывод (uuid, пароль), его и копирует y.
 type ResultOpts struct {
-	Title string
-	Copy  func(text string)
-	Next  []CommandEntry
+	Title      string
+	Copy       func(text string)
+	CopyOutput bool
+	Next       []CommandEntry
 }
 
 func newResult(run func() (string, error)) *result {
@@ -41,11 +51,13 @@ func NewResult(title string, run func() (string, error), opts ResultOpts) Screen
 	r := newResult(run)
 	r.title = title
 	r.copied = opts.Copy
+	r.copyOut = opts.CopyOutput
 	r.next = opts.Next
 	return r
 }
 
 func (r *result) Init() tea.Cmd {
+	r.started = time.Now()
 	return func() tea.Msg {
 		out, err := r.run()
 		return resultMsg{out, err}
@@ -55,21 +67,30 @@ func (r *result) Init() tea.Cmd {
 func (r *result) Crumbs() []string { return []string{r.title} }
 
 func (r *result) Status() string {
-	if !r.done {
-		return spinFrames[0] + " выполняется"
-	}
-	if r.err != nil {
+	switch {
+	case !r.done:
+		return spinFrames[0] + " выполняю " + symSep + " " + ui.Short(time.Since(r.started))
+	case r.err != nil:
 		return symCross + " ошибка"
+	case r.top > 0 || len(r.lines) > r.height && r.height > 0:
+		end := min(len(r.lines), r.top+r.height)
+		return "строки " + itoa(r.top+1) + "-" + itoa(end) + " из " + itoa(len(r.lines))
 	}
-	return symCheck + " готово"
+	return symCheck + " готово " + symSep + " " + tookText(r.took)
 }
 
 func (r *result) Keys() []Key {
-	k := []Key{{"r", "повторить"}}
+	if !r.done {
+		return nil
+	}
+	var k []Key
+	if len(r.next) > 0 {
+		k = append(k, Key{"1-" + itoa(min(3, len(r.next))), "дальше"})
+	}
 	if r.copied != nil {
 		k = append(k, Key{"y", "скопировать"})
 	}
-	return k
+	return append(k, Key{"r", "повторить"})
 }
 
 func (r *result) Command() string { return "tim " + r.title }
@@ -77,33 +98,43 @@ func (r *result) Command() string { return "tim " + r.title }
 func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch msg := msg.(type) {
 	case resultMsg:
-		r.done = true
-		r.err = msg.err
+		r.done, r.err, r.out = true, msg.err, msg.out
+		r.took = time.Since(r.started)
 		r.lines = strings.Split(strings.TrimRight(msg.out, "\n"), "\n")
 		markOutcome(msg.err == nil)
 		if msg.err != nil {
 			r.lines = append(r.lines, "", styleBad.Render(symCross+" "+msg.err.Error()))
+			return app.Say(level.Bad, r.title+": "+msg.err.Error())
 		}
 		return nil
 	case tea.KeyPressMsg:
+		page := max(1, r.height-1)
 		switch msg.String() {
 		case "up", "k":
 			r.top = max(0, r.top-1)
 		case "down", "j":
 			r.top++
 		case "pgup":
-			r.top = max(0, r.top-20)
-		case "pgdown":
-			r.top += 20
+			r.top = max(0, r.top-page)
+		case "pgdown", "space", " ":
+			r.top += page
+		case "home", "g":
+			r.top = 0
+		case "end", "G":
+			r.top = len(r.lines)
 		case "r":
-			r.done = false
-			r.lines = nil
+			r.done, r.lines, r.top = false, nil, 0
 			return r.Init()
 		case "y":
-			if r.copied != nil {
-				r.copied("tim " + r.title)
-				return app.Say(level.OK, "скопировано: tim "+r.title)
+			if r.copied == nil || !r.done {
+				return nil
 			}
+			if r.copyOut {
+				r.copied(strings.TrimSpace(ui.StripANSI(r.out)))
+				return app.Say(level.OK, r.title+": вывод скопирован")
+			}
+			r.copied("tim " + r.title)
+			return app.Say(level.OK, "скопировано: tim "+r.title)
 		case "1", "2", "3":
 			i := int(msg.String()[0] - '1')
 			if i < len(r.next) && app.opts.RunCommand != nil {
@@ -115,34 +146,32 @@ func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 }
 
 func (r *result) View(width, height int) string {
-	var out []string
-	out = append(out, "", "  "+stylePrompt.Render("$ ")+styleBold.Render("tim "+r.title), "")
+	out := []string{""}
 	if !r.done {
-		out = append(out, "  "+styleEmpty.Render("выполняю..."))
 		return strings.Join(out, "\n")
 	}
-	body := height - len(out) - 1
+	var next []string
 	if len(r.next) > 0 {
-		body -= 4
-	}
-	if r.top > max(0, len(r.lines)-body) {
-		r.top = max(0, len(r.lines)-body)
-	}
-	for i := r.top; i < len(r.lines) && i < r.top+body; i++ {
-		out = append(out, "  "+r.lines[i])
-	}
-	if len(r.next) > 0 {
-		for len(out) < height-4 {
-			out = append(out, "")
-		}
-		var parts []string
+		parts := []string{styleDim.Render("дальше")}
 		for i, n := range r.next {
 			if i >= 3 {
 				break
 			}
-			parts = append(parts, styleKeyCap.Render(" "+string(rune('1'+i))+" ")+" "+styleText.Render("tim "+n.Line))
+			parts = append(parts, styleKeyCap.Render(" "+string(rune('1'+i))+" ")+" "+styleText.Render(n.Line))
 		}
-		out = append(out, "  "+strings.Join(parts, "     "))
+		next = []string{"", "   " + strings.Join(parts, "     ")}
 	}
-	return strings.Join(out, "\n")
+	body := height - len(out) - len(next)
+	r.height = body
+	if r.top > max(0, len(r.lines)-body) {
+		r.top = max(0, len(r.lines)-body)
+	}
+	end := min(len(r.lines), r.top+body)
+	for i := r.top; i < end; i++ {
+		out = append(out, "   "+r.lines[i])
+	}
+	if end < len(r.lines) {
+		out[len(out)-1] = styleDim.Render("   " + symDown + " ещё " + itoa(len(r.lines)-end) + " ниже")
+	}
+	return strings.Join(append(out, next...), "\n")
 }

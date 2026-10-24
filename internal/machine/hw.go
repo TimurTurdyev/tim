@@ -44,7 +44,9 @@ type Live struct {
 	SwapUsed, SwapTotal int64
 	Load                []float64
 	Disk                int
-	Top                 []TopRow
+	Cores               int
+	Top                 []TopRow // по процессору
+	TopMem              []TopRow // по памяти
 }
 
 // TopRow: строка самых занятых.
@@ -198,16 +200,21 @@ func (darwin) Sample(base Snapshot) Live {
 		out.Mem = int(out.MemUsed * 100 / base.MemTotal)
 	}
 	out.Top = TopRows(list)
+	out.TopMem = topBy(list, false)
+	out.Cores = runtime.NumCPU()
 	return out
 }
 
 // TopRows: самые занятые приложения для живого экрана.
-func TopRows(list []procs.Full) []TopRow {
+func TopRows(list []procs.Full) []TopRow { return topBy(list, true) }
+
+// topBy: самые занятые по процессору или по памяти.
+func topBy(list []procs.Full, byCPU bool) []TopRow {
 	samples := make([]procs.Sample, len(list))
 	for i, p := range list {
 		samples[i] = p.Sample
 	}
-	groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, true)
+	groups := procs.GroupBy(samples, func(p procs.Sample) string { return procs.Name(p.Comm, p.Args) }, byCPU)
 	var rows []TopRow
 	for _, g := range groups[:min(6, len(groups))] {
 		rows = append(rows, TopRow{Name: g.Name, CPU: g.CPU, RSS: g.RSS})

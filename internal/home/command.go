@@ -126,7 +126,7 @@ func (h *Home) result(args []string) tui.Action {
 		}
 		return out, err
 	},
-		tui.ResultOpts{Copy: runner.ToClipboard, Next: nextAfter(args)})}
+		tui.ResultOpts{Copy: runner.ToClipboard, CopyOutput: len(args) == 1 && runsBare[args[0]], Next: nextAfter(args)})}
 }
 
 // Remember: команда, набранная руками в терминале, - в недавнее главного экрана. Скрипты и агенты

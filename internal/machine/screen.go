@@ -9,15 +9,28 @@ import (
 	"github.com/TimurTurdyev/tim/internal/tui"
 )
 
-// HWScreen: живое железо. Паспорт собирается при первом замере, уже в фоне - открытие экрана
-// не ждёт system_profiler.
-func HWScreen() tui.Screen {
+// HWScreen: Машина на вкладке Железо. Паспорт собирается при первом замере, уже в фоне - открытие
+// экрана не ждёт system_profiler.
+func HWScreen() tui.Screen { return machineScreen(0, tui.ProcsOpts{}) }
+
+// ProcsScreen: Машина на вкладке Процессы; query - сразу отфильтровать.
+func ProcsScreen(query string) tui.Screen { return machineScreen(1, tui.ProcsOpts{Query: query}) }
+
+// MemoryScreen: процессы по памяти; из беды памяти - курсор на держателе и беда над списком.
+func MemoryScreen(warning, holder string) tui.Screen {
+	return machineScreen(1, tui.ProcsOpts{ByMem: true, Focus: holder, Warning: warning})
+}
+
+// machineScreen: вкладки Железо и Процессы на одном экране.
+func machineScreen(start int, po tui.ProcsOpts) tui.Screen {
+	po.Load, po.Close = loadProcs, closeGroup
+	procsTab := tui.NewProcs(po).(tui.Tab)
 	src, err := SourceFor()
 	if err != nil {
-		return tui.NewResult("hw", func() (string, error) { return "", err }, tui.ResultOpts{})
+		return tui.NewTabs([]string{"Машина"}, []tui.Tab{procsTab}, 0)
 	}
 	base := sync.OnceValue(src.Collect)
-	return tui.NewHW(tui.HWOpts{
+	hw := tui.NewHW(tui.HWOpts{
 		Sample: func() tui.HWSample {
 			s := toHWSample(src.Sample(base()))
 			if d, ok := sysinfo.DataDisk(); ok {
@@ -25,18 +38,8 @@ func HWScreen() tui.Screen {
 			}
 			return s
 		},
-		Procs: func() tui.Screen { return ProcsScreen("") },
 	})
-}
-
-// ProcsScreen: процессы по приложениям; query - сразу отфильтровать.
-func ProcsScreen(query string) tui.Screen {
-	return tui.NewProcs(tui.ProcsOpts{Query: query, Load: loadProcs, Close: closeGroup})
-}
-
-// MemoryScreen: процессы по памяти; из беды памяти - курсор на держателе и беда над списком.
-func MemoryScreen(warning, holder string) tui.Screen {
-	return tui.NewProcs(tui.ProcsOpts{Load: loadProcs, Close: closeGroup, ByMem: true, Focus: holder, Warning: warning})
+	return tui.NewTabs([]string{"Машина"}, []tui.Tab{hw, procsTab}, start)
 }
 
 func loadProcs() tui.ProcsData {
@@ -86,9 +89,13 @@ func closeGroup(g tui.ProcGroup, force bool) (string, error) {
 // toHWSample: замер в тип экрана - поля те же, пакеты разные.
 func toHWSample(l Live) tui.HWSample {
 	out := tui.HWSample{Title: l.Title, CPU: l.CPU, GPU: l.GPU, Mem: l.Mem, GPUValid: l.GPUValid, VRAM: l.VRAM,
-		MemUsed: l.MemUsed, MemTotal: l.MemTotal, SwapUsed: l.SwapUsed, SwapTotal: l.SwapTotal, Load: l.Load, Disk: l.Disk}
+		MemUsed: l.MemUsed, MemTotal: l.MemTotal, SwapUsed: l.SwapUsed, SwapTotal: l.SwapTotal, Load: l.Load, Disk: l.Disk,
+		Cores: l.Cores}
 	for _, r := range l.Top {
 		out.Top = append(out.Top, tui.TopRow{Name: r.Name, CPU: r.CPU, RSS: r.RSS})
+	}
+	for _, r := range l.TopMem {
+		out.TopMem = append(out.TopMem, tui.TopRow{Name: r.Name, CPU: r.CPU, RSS: r.RSS})
 	}
 	return out
 }

@@ -124,6 +124,19 @@ func diskScreen(env *app.Env, flags []string) tui.Screen {
 
 // nextAfter: что логично сделать после команды - подсказки цифрами на экране результата.
 func nextAfter(args []string) []tui.CommandEntry {
+	if len(args) == 1 {
+		switch args[0] {
+		case "today":
+			return []tui.CommandEntry{{Line: "today --week"}, {Line: "today --md"}}
+		case "status":
+			return []tui.CommandEntry{{Line: "hw"}, {Line: "ports"}, {Line: "top"}}
+		case "ports":
+			return []tui.CommandEntry{{Line: "ports --old"}, {Line: "ports --all"}}
+		case "doctor":
+			return []tui.CommandEntry{{Line: "config"}, {Line: "proj scan"}}
+		}
+		return nil
+	}
 	if len(args) < 2 {
 		return nil
 	}

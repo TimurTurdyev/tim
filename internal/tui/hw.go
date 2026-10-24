@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -10,7 +11,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Живой экран железа: полосы с историей за минуту, самые занятые приложения, вывод словами.
+// Живой экран железа: полосы с историей за минуту, две панели самых занятых - по процессору и по
+// памяти, вывод словами под ними.
 
 // HWSample: один замер для живого экрана.
 type HWSample struct {
@@ -23,7 +25,9 @@ type HWSample struct {
 	Load                []float64
 	Disk                int   // процент занятого
 	DiskFree            int64 // свободно, байт; 0 - неизвестно
-	Top                 []TopRow
+	Cores               int
+	Top                 []TopRow // по процессору
+	TopMem              []TopRow // по памяти
 }
 
 // TopRow: строка списка самых занятых.
@@ -36,28 +40,43 @@ type TopRow struct {
 // HWOpts: источники живого экрана.
 type HWOpts struct {
 	Sample func() HWSample // длится около секунды и задаёт такт
-	Procs  func() Screen   // tab
 }
+
+// SwitchTab: вкладка просит открыть соседнюю - Железо ведёт к Процессам.
+type SwitchTab int
 
 const histLen = 60 // минута истории при замере раз в секунду
 
 type hw struct {
-	opts   HWOpts
-	last   HWSample
-	have   bool
-	paused bool
-	busy   bool // замер идёт: второй не запускаем, иначе пауза плодит циклы
-	cpuH   []float64
-	gpuH   []float64
-	memH   []float64
+	opts    HWOpts
+	last    HWSample
+	have    bool
+	paused  bool
+	busy    bool // замер идёт: второй не запускаем, иначе пауза плодит циклы
+	started time.Time
+	cpuH    []float64
+	gpuH    []float64
+	memH    []float64
 }
 
 type hwSampleMsg HWSample
 
-// NewHW создаёт живой экран железа.
-func NewHW(o HWOpts) Screen { return &hw{opts: o} }
+// NewHW создаёт живой экран железа - вкладку Машины.
+func NewHW(o HWOpts) Tab { return &hw{opts: o} }
 
-func (h *hw) Init() tea.Cmd { return h.fetch() }
+func (h *hw) TabName() string { return "Железо" }
+
+func (h *hw) OrderText() string {
+	if h.paused {
+		return "пауза"
+	}
+	return "раз в секунду"
+}
+
+func (h *hw) Init() tea.Cmd {
+	h.started = time.Now()
+	return h.fetch()
+}
 
 func (h *hw) fetch() tea.Cmd {
 	if h.busy {
@@ -67,22 +86,22 @@ func (h *hw) fetch() tea.Cmd {
 	return func() tea.Msg { return hwSampleMsg(h.opts.Sample()) }
 }
 
-func (h *hw) Crumbs() []string { return []string{"Машина", "Железо"} }
+func (h *hw) Crumbs() []string { return []string{"Машина"} }
 
 func (h *hw) Status() string {
 	switch {
 	case !h.have:
-		return "первый замер..."
+		return spinFrames[0] + " первый замер"
 	case h.paused:
-		return h.last.Title + " " + symDot + " пауза"
+		return h.last.Title + " " + symSep + " пауза"
 	}
-	return h.last.Title + " " + symDot + " обновляется"
+	return h.last.Title
 }
 
 func (h *hw) Command() string { return "tim hw --watch" }
 
 func (h *hw) Keys() []Key {
-	return []Key{{"z", "пауза"}, {"tab", "вкладка"}}
+	return []Key{{"enter", "процессы"}, {"z", "пауза"}}
 }
 
 func push(hist []float64, v int) []float64 {
@@ -105,10 +124,8 @@ func (h *hw) Update(msg tea.Msg, app *App) tea.Cmd {
 		}
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "tab", "shift+tab":
-			if h.opts.Procs != nil {
-				return app.Push(h.opts.Procs())
-			}
+		case "enter":
+			return func() tea.Msg { return SwitchTab(1) }
 		case "z":
 			h.paused = !h.paused
 			if !h.paused {
@@ -148,38 +165,28 @@ func spark(hist []float64, width int, pct int) string {
 }
 
 func (h *hw) View(width, height int) string {
-	var out []string
-	out = append(out, "")
 	if !h.have {
-		out = append(out, "  "+styleEmpty.Render("первый замер, секунду..."))
-		return strings.Join(out, "\n")
+		return strings.Join(Notice("Первый замер", progressLine(-1, "процессор, память, видеокарта", h.started), "замер идёт раз в секунду, история набирается за минуту", width), "\n")
 	}
 	s := h.last
-	vram := ""
+	sparkW := 14
+	row := func(label string, pct int, hist []float64, tail string) string {
+		line := "   " + styleAccent.Render(ui.Fit(label, 12)) + ui.Bar(pct, 20) + "  "
+		if hist != nil {
+			line += ui.Fit(spark(hist, sparkW, pct), sparkW+3)
+		} else {
+			line += strings.Repeat(" ", sparkW+3)
+		}
+		return line + styleDim.Render(tail)
+	}
+	out := []string{"", "   " + strings.Repeat(" ", 12+20+2+4) + styleHead.Render("ЗА МИНУТУ")}
+	out = append(out, row("процессор", s.CPU, h.cpuH, ""))
 	if s.GPUValid {
-		vram = "видеопамять " + ui.Bytes(s.VRAM)
+		out = append(out, row("видеокарта", s.GPU, h.gpuH, "видеопамять "+ui.Bytes(s.VRAM)))
 	}
 	mem := ui.Bytes(s.MemUsed) + " из " + ui.Bytes(s.MemTotal)
 	if s.SwapTotal > 0 {
-		mem += ", swap " + ui.Bytes(s.SwapUsed)
-	}
-	// Сначала место под цифры справа, остаток делят полоса и график; на узком экране график уходит.
-	rest := width - 2 - 11 - 6 - max(ui.Width(vram), ui.Width(mem)) - 3 - 2
-	barW := min(40, max(16, rest*11/20))
-	sparkW := min(30, rest-barW-3)
-	row := func(label string, pct int, hist []float64, tail string) string {
-		line := "  " + styleDim.Render(ui.Fit(label, 11)) + ui.Bar(pct, barW)
-		if hist != nil && sparkW >= 8 {
-			line += "   " + spark(hist, sparkW, pct)
-		}
-		if tail != "" {
-			line += "   " + styleDim.Render(tail)
-		}
-		return line
-	}
-	out = append(out, row("процессор", s.CPU, h.cpuH, ""))
-	if s.GPUValid {
-		out = append(out, row("видеокарта", s.GPU, h.gpuH, vram))
+		mem += " " + symSep + " swap " + ui.Bytes(s.SwapUsed) + " из " + ui.Bytes(s.SwapTotal)
 	}
 	out = append(out, row("память", s.Mem, h.memH, mem))
 	if s.Disk > 0 {
@@ -189,26 +196,56 @@ func (h *hw) View(width, height int) string {
 		}
 		out = append(out, row("диск", s.Disk, nil, free))
 	}
-	if len(s.Load) == 3 {
-		out = append(out, "  "+styleDim.Render(fmt.Sprintf("%-11sнагрузка %.1f %.1f %.1f за 1, 5 и 15 минут", "", s.Load[0], s.Load[1], s.Load[2])))
+	if len(s.Load) == 3 && s.Cores > 0 {
+		pct := min(100, int(s.Load[0]*100/float64(s.Cores)))
+		out = append(out, row("нагрузка", pct, nil, fmt.Sprintf("%.1f %.1f %.1f за 1, 5, 15 мин на %d %s",
+			s.Load[0], s.Load[1], s.Load[2], s.Cores, ui.Plural(s.Cores, "ядре", "ядрах", "ядрах"))))
 	}
 	out = append(out, "")
-	if len(s.Top) > 0 {
-		var rows []string
-		for _, r := range s.Top {
-			rows = append(rows, ui.Fit(ui.Clip(r.Name, 30), 32)+pctLevel(int(r.CPU/2)).Render(fmt.Sprintf("%5.0f%%", r.CPU))+"  "+styleDim.Render(ui.Fit(ui.Bytes(r.RSS), 9)))
+	left := topPanel("ПО ПРОЦЕССОРУ", s.Top, true)
+	right := topPanel("ПО ПАМЯТИ", s.TopMem, false)
+	if width >= 120 {
+		for i := range max(len(left), len(right)) {
+			l, r := "", ""
+			if i < len(left) {
+				l = left[i]
+			}
+			if i < len(right) {
+				r = right[i]
+			}
+			out = append(out, "   "+ui.Fit(l, 58)+"  "+r)
 		}
-		for _, p := range Pane("больше всех", "CPU "+symDot+" память", rows, width-4) {
-			out = append(out, "  "+p)
+	} else {
+		for _, l := range left {
+			out = append(out, "   "+l)
 		}
 	}
 	if w := h.advice(); w != "" {
-		out = append(out, "", "  "+styleAmber.Render(symWarn+" "+w)+styleDim.Render("  "+symArrow+"  tab к процессам"))
-	}
-	for len(out) < height {
-		out = append(out, "")
+		out = append(out, "", "   "+styleAmber.Render(symWarn+" "+w))
 	}
 	return strings.Join(out[:min(len(out), height)], "\n")
+}
+
+// topPanel: самые занятые приложения со своей шапкой; по процессору спящие свёрнуты в строку.
+func topPanel(title string, rows []TopRow, byCPU bool) []string {
+	head := ui.Fit(title, 28) + fmt.Sprintf("%6s%9s", "CPU "+sortMark(true), "ПАМЯТЬ")
+	if !byCPU {
+		head = ui.Fit(title, 28) + fmt.Sprintf("%9s%7s", "ПАМЯТЬ "+sortMark(true), "CPU")
+	}
+	out := []string{styleHead.Render(head)}
+	for _, r := range rows {
+		if byCPU && r.CPU < 1 {
+			out = append(out, styleDim.Render("остальные спят, меньше 1% CPU"))
+			break
+		}
+		cpu := pctLevel(int(r.CPU)).Render(fmt.Sprintf("%5.0f%%", r.CPU))
+		if byCPU {
+			out = append(out, ui.Fit(r.Name, 28)+cpu+fmt.Sprintf("%9s", ui.Bytes(r.RSS)))
+		} else {
+			out = append(out, ui.Fit(r.Name, 28)+fmt.Sprintf("%9s", ui.Bytes(r.RSS))+"  "+cpu)
+		}
+	}
+	return out
 }
 
 // advice: вывод словами - что не так и кто виноват.
@@ -221,6 +258,8 @@ func (h *hw) advice() string {
 		if r.CPU > topCPU {
 			topCPU, byCPU = r.CPU, r.Name
 		}
+	}
+	for _, r := range append(s.TopMem, s.Top...) {
 		if r.RSS > topRSS {
 			topRSS, byMem = r.RSS, r.Name
 		}
@@ -229,7 +268,7 @@ func (h *hw) advice() string {
 	case s.SwapTotal > 0 && s.SwapUsed*2 > s.SwapTotal:
 		w := "swap " + ui.Bytes(s.SwapUsed) + ": памяти не хватает"
 		if byMem != "" {
-			w += "; больше всех держит " + byMem
+			w += ", больше всех держит " + byMem
 		}
 		return w
 	case s.CPU >= 85:

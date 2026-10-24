@@ -122,6 +122,9 @@ func (t *tabs) Switch(i int) tea.Cmd {
 func (t *tabs) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch m := msg.(type) {
 	case tabMsg:
+		if to, ok := m.msg.(SwitchTab); ok {
+			return t.Switch(int(to))
+		}
 		return tagTab(m.tab, t.list[m.tab].Update(m.msg, app))
 	case tea.KeyPressMsg:
 		if !t.Typing() {
