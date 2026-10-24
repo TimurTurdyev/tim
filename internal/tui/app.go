@@ -66,6 +66,11 @@ type Initer interface {
 	Init() tea.Cmd
 }
 
+// helpKeys: в справке у экрана клавиш больше, чем в нижней строке.
+type helpKeys interface {
+	HelpKeys() []Key
+}
+
 // animated: экрану нужен общий тикер, пока он открыт (моргание маскота, бегунок в теле).
 // Tick зовётся на каждый кадр.
 type animated interface {
@@ -81,6 +86,13 @@ type Action struct {
 	Dir  string                 // закрыть tim и перейти в папку (через шим)
 	// Command: открыть строку ":" с этим текстом для правки - пример с аргументами, утилита.
 	Command string
+	Ask     *Ask // спросить строку внизу экрана
+}
+
+// Ask: строка ввода на месте строки состояния и что сделать с набранным.
+type Ask struct {
+	Placeholder, Hint string
+	Done              func(text string) Action
 }
 
 // CommandEntry: подсказка для командной строки ":".
@@ -217,6 +229,9 @@ func (a *App) Do(act Action) tea.Cmd {
 		return tea.Quit
 	case act.Command != "":
 		a.overlay = newCmdline(a, act.Command)
+	case act.Ask != nil:
+		done := act.Ask.Done
+		return a.Ask(act.Ask.Placeholder, act.Ask.Hint, func(text string) tea.Cmd { return a.Do(done(text)) })
 	}
 	return nil
 }
@@ -318,7 +333,11 @@ func (a *App) key(msg tea.KeyPressMsg) tea.Cmd {
 		return a.escape()
 	case "?":
 		if !typing {
-			a.overlay = &helpOverlay{ks: slices.DeleteFunc(a.screenKeys(a.cur()), func(k Key) bool { return quietKey(k.K) })}
+			ks := a.screenKeys(a.cur())
+			if h, ok := a.cur().(helpKeys); ok {
+				ks = h.HelpKeys()
+			}
+			a.overlay = &helpOverlay{ks: slices.DeleteFunc(ks, func(k Key) bool { return quietKey(k.K) })}
 			return nil
 		}
 	case ":":

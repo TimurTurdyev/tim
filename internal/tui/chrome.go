@@ -63,8 +63,9 @@ func (a *App) screenKeys(s Screen) []Key {
 func (a *App) keyBar(s Screen) string {
 	keys := a.screenKeys(s)
 	cmd := s.Command()
+	_, inlined := a.overlay.(inline)
 	switch _, confirm := a.overlay.(*confirmOverlay); {
-	case a.overlay != nil:
+	case a.overlay != nil && !inlined:
 		keys = a.overlay.keys()
 		if !confirm {
 			cmd = ""
@@ -148,7 +149,8 @@ func (a *App) View() tea.View {
 	// Тело - всё между верхней и нижней строками; его последняя строка - строка состояния.
 	viewH := max(1, h-len(rows)-2)
 	var body string
-	if a.overlay != nil {
+	_, inlined := a.overlay.(inline)
+	if a.overlay != nil && !inlined {
 		body = a.overlay.view(w, viewH)
 	} else {
 		body = s.View(w, viewH)
@@ -165,7 +167,11 @@ func (a *App) View() tea.View {
 		lines[i] = ui.Clip(l, w)
 	}
 	rows = append(rows, lines...)
-	rows = append(rows, a.statusLine(w), a.keyBar(s))
+	status := a.statusLine(w)
+	if in, ok := a.overlay.(inline); ok {
+		status = in.line(w)
+	}
+	rows = append(rows, status, a.keyBar(s))
 	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	if c, ok := s.(cursored); ok && a.overlay == nil {

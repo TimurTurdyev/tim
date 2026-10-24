@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -55,6 +54,7 @@ type BoardAction struct {
 	Do         func(row *BoardRow) Action
 	Run        func(row *BoardRow) (string, error)
 	Free       bool
+	Hidden     bool // только в справке "?": нужно редко
 }
 
 // BoardOpts: источники доски.
@@ -68,7 +68,10 @@ type BoardOpts struct {
 	Static  bool          // данные не меняются: без r
 	Search  bool          // "/" ищет по строкам
 	Tab     string        // название вкладки, пока данных нет
-	Enter   func(row *BoardRow) string
+	Order   string        // как отсортировано - справа в строке управления
+	// Miss: что сделать с запросом, которого нет в списке - например проверить его как домен.
+	Miss  func(q string) (string, Action)
+	Enter func(row *BoardRow) string
 }
 
 type board struct {
@@ -79,6 +82,7 @@ type board struct {
 	input   textinput.Model
 	have    bool
 	loading bool
+	inTabs  bool // строку поиска рисуют вкладки
 }
 
 type (
@@ -171,6 +175,10 @@ func (b *board) Escape() bool {
 	return true
 }
 
+func (b *board) setInTabs() { b.inTabs = true }
+
+func (b *board) OrderText() string { return b.opts.Order }
+
 // SearchLine: строка поиска в строке вкладок или над списком.
 func (b *board) SearchLine() string {
 	if !b.opts.Search {
@@ -194,7 +202,7 @@ func (b *board) Keys() []Key {
 	}
 	var k []Key
 	for _, a := range b.opts.Actions {
-		if a.Key == "enter" && b.current() != nil || a.Free {
+		if (a.Key == "enter" && b.current() != nil || a.Free) && !a.Hidden {
 			k = append(k, Key{a.Key, a.Label})
 		}
 	}
@@ -203,6 +211,17 @@ func (b *board) Keys() []Key {
 	}
 	if !b.opts.Static {
 		k = append(k, Key{"r", "обновить"})
+	}
+	return k
+}
+
+// HelpKeys: в справке - и редкие действия экрана, и действия строки.
+func (b *board) HelpKeys() []Key {
+	k := b.Keys()
+	for _, a := range b.opts.Actions {
+		if a.Hidden || !a.Free && a.Key != "enter" {
+			k = append(k, Key{a.Key, a.Label})
+		}
 	}
 	return k
 }
@@ -293,6 +312,10 @@ func (b *board) key(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	if b.input.Focused() {
 		if k == "enter" {
 			b.input.Blur()
+			if q := strings.TrimSpace(b.input.Value()); len(b.shown) == 0 && b.opts.Miss != nil && q != "" {
+				_, act := b.opts.Miss(q)
+				return app.Do(act)
+			}
 			return nil
 		}
 		var cmd tea.Cmd
@@ -359,6 +382,9 @@ func (b *board) card(row *BoardRow) *Card {
 
 func (b *board) View(width, height int) string {
 	out := []string{""}
+	if b.opts.Search && !b.inTabs {
+		out = []string{b.controlLine(width), ""}
+	}
 	if !b.have {
 		text := b.opts.Loading
 		if text == "" {
@@ -380,7 +406,13 @@ func (b *board) View(width, height int) string {
 		out = append(out, "   "+styleHead.Render(b.data.Columns))
 	}
 	if len(b.shown) == 0 {
-		out = append(out, "   "+styleDim.Render(fmt.Sprintf("ничего похожего на \"%s\" из %d", strings.TrimSpace(b.input.Value()), len(b.data.Rows))))
+		q := strings.TrimSpace(b.input.Value())
+		line := fmt.Sprintf("ничего похожего на \"%s\" из %d", q, len(b.data.Rows))
+		if b.opts.Miss != nil {
+			text, _ := b.opts.Miss(q)
+			line += " " + symSep + " enter " + text
+		}
+		out = append(out, "   "+styleDim.Render(line))
 		return strings.Join(out, "\n")
 	}
 	var foot []string
@@ -394,7 +426,9 @@ func (b *board) View(width, height int) string {
 		room -= len(foot) + 1
 	}
 	cw, beside := cardWidth(width)
-	beside = beside && !b.data.Wide
+	if b.data.Wide {
+		cw, beside = width-6, false
+	}
 	card := b.card(b.current())
 	switch {
 	case card != nil && beside:
@@ -402,8 +436,10 @@ func (b *board) View(width, height int) string {
 		lines := card.Lines(cw, room)
 		out = append(out, besideList(list, lines, width)...)
 	case card != nil:
-		// Под списком: не выше трети тела, список берёт остальное.
-		cardH := min(len(card.Lines(cw, room)), max(5, room/3))
+		// Под списком: короткому списку - сколько нужно, карточке - остальное; длинному - карточка
+		// не выше трети тела.
+		need := len(b.list.Rows) + 1
+		cardH := min(len(card.Lines(cw, room)), max(5, room/3, room-need-1))
 		list := b.listLines(width, room-cardH-1)
 		out = append(out, list...)
 		out = append(out, "")
@@ -417,51 +453,4 @@ func (b *board) View(width, height int) string {
 		out = append(append(out, ""), foot...)
 	}
 	return strings.Join(out, "\n")
-}
-
-// listLines: строки списка; у выбранной строки-прозы под ней строка со стрелкой.
-func (b *board) listLines(w, h int) []string {
-	cur := b.current()
-	inline := cur != nil && cur.Card == nil && cur.Title == "" && cur.Inline != ""
-	if inline {
-		h--
-	}
-	lines := b.list.View(w, max(1, h))
-	if !inline {
-		return lines
-	}
-	sel := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, symBar) })
-	if sel < 0 {
-		return lines
-	}
-	note := "     " + styleDim.Render(ui.Clip(symArrow+" "+cur.Inline, w-6))
-	return slices.Insert(lines, sel+1, note)
-}
-
-// head: шапка и лампы - всё, что над списком.
-func (b *board) head(width int) []string {
-	var out []string
-	for _, h := range b.data.Head {
-		out = append(out, "   "+h)
-	}
-	if len(b.data.Lamps) > 0 {
-		for _, l := range ui.Pairs(b.data.Lamps, width-6) {
-			out = append(out, "   "+l)
-		}
-	}
-	if len(out) > 0 {
-		out = append(out, "")
-	}
-	return out
-}
-
-// clipRows: не больше n строк; последняя говорит, сколько не влезло.
-func clipRows(rows []string, n int) []string {
-	if len(rows) <= n {
-		return rows
-	}
-	if n < 1 {
-		return nil
-	}
-	return append(slices.Clone(rows[:n-1]), styleDim.Render(fmt.Sprintf("и ещё %d", len(rows)-n+1)))
 }

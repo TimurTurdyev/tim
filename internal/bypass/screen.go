@@ -2,6 +2,7 @@ package bypass
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,49 +15,79 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Screen: VPN и обход - туннель, страж и состояние каждой цели.
+var groupOrder = []string{"СЕРВЕРЫ", "САЙТЫ", "СЕТИ AS", "ПОДСЕТИ"}
+
+// Screen: Сеть - туннель, страж и цели обхода группами; n добавляет цель строкой ввода внизу.
 func Screen(env *app.Env) tui.Screen {
 	probe := false
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs:  []string{"Сеть и VPN"},
+		Crumbs:  []string{"Сеть"},
 		Command: func(*tui.BoardRow) string { return "tim vpn" },
-		Loading: "смотрю туннели и маршруты...",
+		Loading: "смотрю туннели и маршруты",
 		Load:    func(bool) tui.BoardData { return screenData(env.Cfg, probe) },
+		Enter: func(*tui.BoardRow) string {
+			return "адреса цели и их маршруты из таблицы"
+		},
 		Actions: []tui.BoardAction{
-			{Key: "f", Label: "починить", Free: true, Do: func(*tui.BoardRow) tui.Action {
+			{Key: "enter", Label: "адреса", Do: func(row *tui.BoardRow) tui.Action {
+				lines := row.Card.Extra
+				return tui.Action{Push: tui.NewResult("адреса "+row.ID, func() (string, error) {
+					return strings.Join(lines, "\n"), nil
+				}, tui.ResultOpts{})}
+			}},
+			{Key: "n", Label: "добавить", Free: true, Do: func(*tui.BoardRow) tui.Action {
+				return tui.Action{Ask: &tui.Ask{
+					Placeholder: "сайт, адрес или as:номер - пойдёт мимо VPN",
+					Hint:        "enter - добавить (sudo, tim закроется)",
+					Done: func(text string) tui.Action {
+						return tui.Action{Exit: func() { env.After([]string{"direct", text}) }}
+					},
+				}}
+			}},
+			{Key: "f", Label: "починить", Note: "sudo, закроет tim", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"route", "fix"}) }}
 			}},
-			{Key: "c", Label: "проверить", Doing: "проверяю порты целей", Free: true, Run: func(*tui.BoardRow) (string, error) {
+			{Key: "c", Label: "проверить", Doing: "проверяю порт 22 у целей", Free: true, Hidden: true, Run: func(*tui.BoardRow) (string, error) {
 				probe = true
-				return "порт 22 проверен у каждой цели", nil
+				return "порты целей: проверены, ответ в карточке", nil
 			}},
-			{Key: "x", Label: "убрать", Do: func(row *tui.BoardRow) tui.Action {
-				if row == nil {
-					return tui.Action{}
-				}
+			{Key: "x", Label: "убрать", Note: "sudo, закроет tim", Do: func(row *tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"direct", "rm", row.ID}) }}
 			}},
-			{Key: "l", Label: "журнал", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
+			{Key: "l", Label: "журнал", Free: true, Hidden: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
 		},
 	})
 }
 
-// target: строка цели и сколько её адресов ушли в туннель; ячейки собираются, когда известны ширины.
+// target: строка цели и сколько её адресов ушли в туннель.
 type target struct {
 	row   tui.BoardRow
+	group string
 	bad   int
 	count int
 	state string // пусто - всё мимо VPN
 }
 
+// groupOf: серверы - адреса, сайты - имена, сети AS и подсети - отдельно.
+func groupOf(addr string) string {
+	switch {
+	case strings.HasPrefix(addr, "as:"):
+		return "СЕТИ AS"
+	case strings.Contains(addr, "/"):
+		return "ПОДСЕТИ"
+	case netinfo.IsIPv4(addr):
+		return "СЕРВЕРЫ"
+	}
+	return "САЙТЫ"
+}
+
 func screenData(cfg *config.Config, probe bool) tui.BoardData {
 	var d tui.BoardData
 	phys, gw := netinfo.Physical()
-	d.Status = phys.Name + " " + phys.Device + " \u00b7 шлюз " + ui.Dash(gw)
-	d.Head = append(d.Head, vpnLamp(), guardLamp())
 	if len(cfg.Hosts) == 0 {
-		d.Head = append(d.Head, ui.Dim("целей обхода нет: tim direct <сайт|адрес|подсеть|as:N>"))
-		d.Empty = "цели обхода появятся здесь"
+		d.Head = append(d.Head, netLine(phys, gw, ""))
+		d.Status = "0 целей"
+		d.Empty = "Целей обхода нет: добавленный сайт, адрес или as:номер пойдёт мимо VPN"
 		return d
 	}
 	var targets []target
@@ -68,39 +99,68 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 		ok += fine
 		targets = append(targets, t)
 	}
-	sort.SliceStable(targets, func(i, j int) bool { return targets[i].bad > targets[j].bad })
-	summary := ui.OK(fmt.Sprintf("\u25cf обход %d из %d ", ok, total)) + ui.Dim("адресов идут мимо VPN")
+	d.Status = ui.Count(len(cfg.Hosts), "цель", "цели", "целей") + fmt.Sprintf(" \u00b7 %d из %d мимо VPN", ok, total)
+	d.Head = append(d.Head, netLine(phys, gw, guardWord()))
 	if ok < total {
-		summary += "   " + ui.Warn(fmt.Sprintf("\u25b2 %d через туннель", total-ok)) + ui.Dim("  f - починить")
+		d.Head = append(d.Head, ui.Warn(fmt.Sprintf("\u25b2 обход %d из %d: %s через туннель", ok, total, ui.Count(total-ok, "адрес идёт", "адреса идут", "адресов идут")))+
+			ui.Dim(" \u00b7 починка - sudo, tim закроется"))
 	}
-	d.Head = append(d.Head, summary)
-	addrW, labelW, anyBad := len("ЦЕЛЬ"), len("ПОМЕТКА"), false
+	if g := guardTrouble(); g != "" {
+		d.Head = append(d.Head, g)
+	}
+	counts := map[string]int{}
+	for i := range targets {
+		targets[i].group = groupOf(targets[i].row.ID)
+		counts[targets[i].group]++
+	}
+	sort.SliceStable(targets, func(i, j int) bool {
+		return slices.Index(groupOrder, targets[i].group) < slices.Index(groupOrder, targets[j].group)
+	})
+	addrW, labelW := len("ЦЕЛЬ"), len("ПОМЕТКА")
 	for _, t := range targets {
 		addrW = max(addrW, ui.Width(t.row.ID))
 		labelW = max(labelW, ui.Width(t.row.Sub))
-		anyBad = anyBad || t.state != ""
 	}
-	addrW, labelW = min(addrW, 28), min(labelW, 24)
-	// Состояние - только у отклонений: когда всё мимо VPN, столбец одинаковых строк не нужен.
-	head := ui.Pad("ЦЕЛЬ", addrW+2) + ui.Pad("ПОМЕТКА", labelW+2) + "АДРЕСОВ"
-	if anyBad {
-		head = ui.Pad(head, addrW+labelW+4+9) + "СОСТОЯНИЕ"
-	}
-	d.Columns = ui.Dim(head)
+	addrW, labelW = min(addrW, 20), min(labelW, 22)
+	d.Columns = ui.Pad("ЦЕЛЬ", addrW+2) + ui.Pad("ПОМЕТКА", labelW+2) + "АДРЕСОВ"
 	for _, t := range targets {
-		t.row.Cells = ui.Fit(t.row.ID, addrW) + "  " + ui.Fit(ui.Dim(t.row.Sub), labelW) + "  " + ui.Pad(strconv.Itoa(t.count), 9) + t.state
+		t.row.Group = t.group + " \u00b7 " + strconv.Itoa(counts[t.group])
+		t.row.Find = t.row.Sub
+		count := fmt.Sprintf("%7d", t.count)
+		switch {
+		case t.count == 0:
+			count = ui.Bad(fmt.Sprintf("%7s", "\u2715 0"))
+		case t.bad > 0:
+			// Часть адресов ушла в туннель: число янтарное с лампой, подробности - в карточке.
+			count = ui.Warn(fmt.Sprintf("%7s", "\u25b2 "+strconv.Itoa(t.count)))
+		}
+		t.row.Cells = ui.Fit(t.row.ID, addrW) + "  " + ui.Fit(ui.Dim(t.row.Sub), labelW) + "  " + count
 		d.Rows = append(d.Rows, t.row)
 	}
 	return d
 }
 
-// targetRow: строка цели с адресами в панели; dests - сколько адресов, fine - сколько идут мимо VPN.
+// netLine: туннель, шлюз и страж одной строкой, когда всё в порядке.
+func netLine(phys netinfo.Service, gw, guard string) string {
+	parts := []string{vpnLamp()}
+	if gw != "" {
+		parts = append(parts, ui.Dim("шлюз "+gw+" ("+phys.Name+" "+phys.Device+")"))
+	}
+	if guard != "" {
+		parts = append(parts, ui.Dim(guard))
+	}
+	return strings.Join(parts, ui.Dim(" \u00b7 "))
+}
+
+// targetRow: строка цели с адресами в карточке; dests - сколько адресов, fine - сколько идут мимо VPN.
 func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, probe bool) (t target, dests, fine int) {
-	t.row = tui.BoardRow{ID: h.Addr, Title: h.Addr, Sub: h.Label}
+	card := &tui.Card{Title: h.Addr, Sub: h.Label}
+	t.row = tui.BoardRow{ID: h.Addr, Sub: h.Label, Card: card}
 	if len(addrs) == 0 {
 		t.bad = 1
-		t.row.Pane = []string{ui.Bad("не раскрывается в адреса: домен не резолвится или AS без сетей")}
+		card.Facts = append(card.Facts, tui.Fact{Label: ui.Bad("\u2715 адресов"), Value: "нет: домен не резолвится или у AS нет сетей"})
 	}
+	var lines []string
 	for _, dest := range addrs {
 		state, bad := RouteState(dest, phys, gw)
 		if !bad && Bypassed(dest, phys, gw) {
@@ -120,22 +180,26 @@ func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, p
 				line += ui.Bad("  порт 22 молчит")
 			}
 		}
-		if len(t.row.Pane) < 8 {
-			t.row.Pane = append(t.row.Pane, line)
+		lines = append(lines, line)
+	}
+	card.Extra = lines
+	switch {
+	case len(addrs) == 1:
+		card.Extra = nil
+		card.Facts = append(card.Facts, tui.Fact{Label: "маршрут", Value: strings.TrimSpace(strings.TrimPrefix(lines[0], addrs[0]))})
+	case len(addrs) > 1:
+		card.Facts = append(card.Facts, tui.Fact{Label: "адресов", Value: strconv.Itoa(len(addrs)) + ui.Dim(fmt.Sprintf(" \u00b7 мимо VPN %d", fine))})
+		card.Extra = append([]string{}, lines[:min(6, len(lines))]...)
+		if len(lines) > 6 {
+			card.Extra = append(card.Extra, ui.Dim(fmt.Sprintf("и ещё %d", len(lines)-6)))
 		}
-	}
-	if rest := len(addrs) - 8; rest > 0 {
-		t.row.Pane = append(t.row.Pane, ui.Dim(fmt.Sprintf("и ещё %d", rest)))
-	}
-	if t.bad > 0 {
-		t.row.Pane = append(t.row.Pane, ui.Dim("\u2192 f снимет протухшие маршруты и заведёт все цели заново, нужен sudo"))
 	}
 	t.count = len(addrs)
 	switch {
 	case len(addrs) == 0:
 		t.state = ui.Bad("\u2715 нет адресов")
 	case t.bad > 0:
-		t.state = ui.Warn("\u25b2 " + ui.Count(t.bad, "адрес", "адреса", "адресов") + " через туннель")
+		t.state = ui.Warn("\u25b2 " + ui.Count(t.bad, "через туннель", "через туннель", "через туннель"))
 	}
 	return t, len(addrs), fine
 }
@@ -145,24 +209,32 @@ func vpnLamp() string {
 	inet := netinfo.InternetIface()
 	switch {
 	case netinfo.IsTunnelIface(inet):
-		return ui.OK("\u25cf VPN включён ") + ui.Dim(inet+", весь трафик в туннель")
+		return ui.OK("\u25cf VPN "+inet) + ", весь трафик в туннель"
 	case len(tunnels) > 0:
-		return ui.OK("\u25cf VPN включён ") + ui.Dim("раздельный туннель, интернет через "+ui.Dash(inet))
+		return ui.OK("\u25cf VPN") + ", раздельный туннель, интернет через " + ui.Dash(inet)
 	}
-	return ui.Dim("\u25cb VPN выключен, интернет напрямую через " + ui.Dash(inet))
+	return ui.Dim("\u25cb VPN выключен") + ", интернет напрямую через " + ui.Dash(inet)
 }
 
-func guardLamp() string {
+// guardWord: страж в строке ламп, когда он в порядке, - давность его проверки.
+func guardWord() string {
+	st, ok := GuardStatus()
+	if !GuardInstalled() || !GuardRunning() || !ok || time.Since(st.LastCheck) > time.Minute {
+		return ""
+	}
+	return "страж: " + ui.Short(time.Since(st.LastCheck))
+}
+
+// guardTrouble: страж - отдельной строкой, если с ним беда.
+func guardTrouble() string {
 	st, hasSt := GuardStatus()
 	switch {
 	case !GuardInstalled():
-		return ui.Warn("\u25b2 страж не установлен ") + ui.Dim("обход сам не починится: sudo tim route install")
+		return ui.Warn("\u25b2 страж: не установлен") + ui.Dim(" \u00b7 обход сам не починится: sudo tim route install")
 	case !GuardRunning():
-		return ui.Bad("\u2715 страж не работает ") + ui.Dim("tim route status")
-	case !hasSt:
-		return ui.OK("\u25cf страж работает ") + ui.Dim("отчёта пока нет")
-	case time.Since(st.LastCheck) > time.Minute:
-		return ui.Warn("\u25b2 страж молчит "+ui.Duration(time.Since(st.LastCheck))) + ui.Dim("  tim route status")
+		return ui.Bad("\u2715 страж: не работает") + ui.Dim(" \u00b7 журнал - в справке")
+	case hasSt && time.Since(st.LastCheck) > time.Minute:
+		return ui.Warn("\u25b2 страж: молчит "+ui.Short(time.Since(st.LastCheck))) + ui.Dim(" \u00b7 журнал - в справке")
 	}
-	return ui.OK("\u25cf страж работает ") + ui.Dim("проверка "+ui.Duration(time.Since(st.LastCheck))+" назад")
+	return ""
 }

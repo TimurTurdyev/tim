@@ -39,8 +39,16 @@ type tabs struct {
 	inited []bool
 }
 
+// inTabs: вкладке сказать, что строку поиска рисует строка вкладок.
+type inTabs interface{ setInTabs() }
+
 // NewTabs: экран title из вкладок; start - какая открыта первой.
 func NewTabs(title string, list []Tab, start int) Screen {
+	for _, t := range list {
+		if in, ok := t.(inTabs); ok {
+			in.setInTabs()
+		}
+	}
 	return &tabs{title: title, list: list, active: max(0, min(start, len(list)-1)), inited: make([]bool, len(list))}
 }
 
