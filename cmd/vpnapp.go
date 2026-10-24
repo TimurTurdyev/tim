@@ -14,6 +14,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/privileged"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -85,10 +86,10 @@ func novpnGID() (int, error) {
 	for used[gid] {
 		gid++
 	}
-	if _, err := rootRun("dscl", ".", "-create", "/Groups/"+novpnGroup, "PrimaryGroupID", strconv.Itoa(gid)); err != nil {
+	if _, err := privileged.Run("dscl", ".", "-create", "/Groups/"+novpnGroup, "PrimaryGroupID", strconv.Itoa(gid)); err != nil {
 		return 0, ui.Errorf("группа %s не завелась: %v", novpnGroup, err)
 	}
-	_, _ = rootRun("dscl", ".", "-create", "/Groups/"+novpnGroup, "RealName", "tim: мимо VPN")
+	_, _ = privileged.Run("dscl", ".", "-create", "/Groups/"+novpnGroup, "RealName", "tim: мимо VPN")
 	ui.Println(ui.Label("группа "+novpnGroup) + ui.Dim("  gid "+strconv.Itoa(gid)))
 	return gid, nil
 }
@@ -143,8 +144,8 @@ func novpnProxyUp(phys netinfo.Service) error {
 	if err != nil {
 		return err
 	}
-	resp, err := rootCall(rootReq{Launch: &launchReq{Path: exe, Args: []string{"novpn-proxy", "--iface", phys.Device, "--ip", ip, "--port", strconv.Itoa(novpnPort)},
-		Env: []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/root"}, Dir: "/"}})
+	resp, err := privileged.Launch(privileged.LaunchReq{Path: exe, Args: []string{"novpn-proxy", "--iface", phys.Device, "--ip", ip, "--port", strconv.Itoa(novpnPort)},
+		Env: []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/root"}, Dir: "/"})
 	if err != nil {
 		return err
 	}
@@ -184,10 +185,10 @@ func appRulesOn() (int, error) {
 	if runner.DryRun {
 		ui.Println(ui.Dim(strings.TrimRight(rules, "\n")))
 	}
-	if out, err := rootRunStdin(rules, "pfctl", "-q", "-a", pfAnchor, "-f", "-"); err != nil {
+	if out, err := privileged.RunStdin(rules, "pfctl", "-q", "-a", pfAnchor, "-f", "-"); err != nil {
 		return 0, ui.Errorf("pf не принял правила: %s", firstLine(out, err))
 	}
-	if out, err := rootRun("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
+	if out, err := privileged.Run("pfctl", "-q", "-e"); err != nil && !strings.Contains(out+err.Error(), "already enabled") {
 		return 0, ui.Errorf("pf не включился: %s", firstLine(out, err))
 	}
 	ui.Println(ui.Label("мимо VPN") + ui.Dim("  группа "+novpnGroup+", прокси 127.0.0.1:"+strconv.Itoa(novpnPort)+" через "+phys.Device+" "+ifaceIPv4(phys.Device)))
@@ -202,11 +203,11 @@ func firstLine(out string, err error) string {
 }
 
 func appRulesOff() error {
-	if _, err := rootRun("pfctl", "-q", "-a", pfAnchor, "-F", "all"); err != nil {
+	if _, err := privileged.Run("pfctl", "-q", "-a", pfAnchor, "-F", "all"); err != nil {
 		return ui.Errorf("снять правила не вышло: %v", err)
 	}
 	if pid := novpnProxyPID(); pid > 0 {
-		_, _ = rootRun("kill", strconv.Itoa(pid))
+		_, _ = privileged.Run("kill", strconv.Itoa(pid))
 	}
 	ui.Println(ui.Label("снято") + ui.Dim("  правила pf и прокси; запущенные под группой программы снова пойдут через VPN"))
 	return nil
@@ -215,7 +216,7 @@ func appRulesOff() error {
 // appStatusRun: включён ли pf, какие правила стоят, кто сейчас работает под группой.
 func appStatusRun() error {
 	// Без -q: с ним pfctl молчит и про правила, и про состояния.
-	if info, err := rootRun("pfctl", "-s", "info"); err == nil {
+	if info, err := privileged.Run("pfctl", "-s", "info"); err == nil {
 		for _, l := range strings.Split(info, "\n") {
 			if strings.HasPrefix(l, "Status:") {
 				ui.Println(ui.Label("pf ") + strings.TrimSpace(strings.TrimPrefix(l, "Status:")))
@@ -227,7 +228,7 @@ func appStatusRun() error {
 	} else {
 		ui.Println(ui.Dim("прокси не запущен"))
 	}
-	rules, err := rootRun("pfctl", "-a", pfAnchor, "-s", "all")
+	rules, err := privileged.Run("pfctl", "-a", pfAnchor, "-s", "all")
 	switch {
 	case err != nil:
 		ui.Println(ui.Dim("правил pf нет: " + firstLine(rules, err)))
@@ -245,7 +246,7 @@ func appStatusRun() error {
 	for _, t := range netinfo.Tunnels() {
 		tunIPs = append(tunIPs, t.IPv4...)
 	}
-	if states, err := rootRun("pfctl", "-s", "states"); err == nil {
+	if states, err := privileged.Run("pfctl", "-s", "states"); err == nil {
 		redir, tun := 0, 0
 		for _, l := range strings.Split(states, "\n") {
 			fromTunnel := false
@@ -299,8 +300,8 @@ func appCheckRun() error {
 		o, _ := runner.Output("curl", "-s", "--max-time", "8", "https://ifconfig.co/country")
 		return o
 	}())
-	resp, err := rootCall(rootReq{Launch: &launchReq{Path: "/usr/bin/curl", Args: []string{"-s", "--max-time", "8", "https://ifconfig.co/country"},
-		Env: os.Environ(), Dir: paths.Home(), UID: os.Getuid(), GID: gid, Groups: myGroups(), Wait: true}})
+	resp, err := privileged.Launch(privileged.LaunchReq{Path: "/usr/bin/curl", Args: []string{"-s", "--max-time", "8", "https://ifconfig.co/country"},
+		Env: os.Environ(), Dir: paths.Home(), UID: os.Getuid(), GID: gid, Groups: myGroups(), Wait: true})
 	if err != nil {
 		return err
 	}
@@ -389,8 +390,8 @@ func appLaunch(name string) error {
 			time.Sleep(time.Second)
 		}
 	}
-	resp, err := rootCall(rootReq{Launch: &launchReq{Path: exe, Env: os.Environ(), Dir: paths.Home(),
-		UID: os.Getuid(), GID: gid, Groups: myGroups()}})
+	resp, err := privileged.Launch(privileged.LaunchReq{Path: exe, Env: os.Environ(), Dir: paths.Home(),
+		UID: os.Getuid(), GID: gid, Groups: myGroups()})
 	if err != nil {
 		return err
 	}

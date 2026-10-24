@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/privileged"
 
 	"github.com/spf13/cobra"
 
@@ -400,10 +401,10 @@ func portOpen(addr, port string) bool {
 func setRoute(dest, gw, iface string) error {
 	if runtime.GOOS != "linux" {
 		// Старого маршрута обычно нет, и route ругается "not in table" - это не ошибка.
-		_, _ = rootRun(netinfo.DelRouteCmd(dest)...)
+		_, _ = privileged.Run(netinfo.DelRouteCmd(dest)...)
 	}
 	defer tableChanged()
-	_, err := rootRun(netinfo.AddRouteCmd(dest, gw, iface)...)
+	_, err := privileged.Run(netinfo.AddRouteCmd(dest, gw, iface)...)
 	return err
 }
 
@@ -486,7 +487,7 @@ func routeDown(dests []string) {
 	gone := 0
 	for _, d := range dests {
 		tableChanged()
-		if _, err := rootRun(netinfo.DelRouteCmd(d)...); err != nil {
+		if _, err := privileged.Run(netinfo.DelRouteCmd(d)...); err != nil {
 			if verbose {
 				ui.Println(ui.Dim(d + ": маршрута не было"))
 			}
@@ -531,7 +532,7 @@ func routeClean(all bool) error {
 	gone := 0
 	for _, r := range stale {
 		tableChanged()
-		if _, err := rootRun(netinfo.DelRouteCmd(r.Dest)...); err != nil {
+		if _, err := privileged.Run(netinfo.DelRouteCmd(r.Dest)...); err != nil {
 			ui.Println(ui.Bad(r.Dest + ": снять не удалось: " + err.Error()))
 			continue
 		}
