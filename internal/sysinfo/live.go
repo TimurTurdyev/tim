@@ -179,3 +179,12 @@ func ParseUnits(out string) []Unit {
 	}
 	return list
 }
+
+// GitStatus: состояние клона по git status -sb.
+func GitStatus(dir string) (GitState, bool) {
+	out, err := runner.Output("git", "-C", dir, "status", "-sb", "--porcelain")
+	if err != nil {
+		return GitState{}, false
+	}
+	return ParseGitStatusSB(out), true
+}

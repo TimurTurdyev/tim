@@ -208,14 +208,6 @@ func motdSystem() []string {
 	return append([]string{line1, line2}, machine.HogLines("")...)
 }
 
-func gitState(dir string) (sysinfo.GitState, bool) {
-	out, err := runner.Output("git", "-C", dir, "status", "-sb", "--porcelain")
-	if err != nil {
-		return sysinfo.GitState{}, false
-	}
-	return sysinfo.ParseGitStatusSB(out), true
-}
-
 func gitLine(g sysinfo.GitState) string {
 	parts := []string{g.Branch}
 	if g.Changes > 0 {
@@ -238,7 +230,7 @@ func motdProject() []string {
 	}
 	dir := cfg.ProjectDir(p)
 	line := ui.Label("проект   ") + p.Name + ui.Dim("  "+run.Stack(dir))
-	if g, ok := gitState(dir); ok {
+	if g, ok := sysinfo.GitStatus(dir); ok {
 		line += "  " + gitLine(g)
 	}
 	port := projectPort(p, dir)
@@ -365,7 +357,7 @@ func motdRepos() []string {
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if g, ok := gitState(dir); ok && (g.Changes > 0 || g.Ahead > 0) {
+			if g, ok := sysinfo.GitStatus(dir); ok && (g.Changes > 0 || g.Ahead > 0) {
 				mu.Lock()
 				rows = append(rows, row{p.Name, g})
 				mu.Unlock()

@@ -2,15 +2,13 @@ package cmd
 
 import (
 	"runtime"
-	"sort"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -68,13 +66,6 @@ var dnsServersCmd = &cobra.Command{
 	},
 }
 
-type sslRow struct {
-	host    string
-	expires time.Time
-	issuer  string
-	err     error
-}
-
 // certExpiries: сроки сертификатов списком; без доменов - сайты проектов из реестра.
 func certExpiries(args []string) error {
 	hosts := args
@@ -89,43 +80,20 @@ func certExpiries(args []string) error {
 	if len(hosts) == 0 {
 		return ui.Errorf("доменов нет: tim cert <домен> или поле url у проектов (tim proj add --url)")
 	}
-	rows := make([]sslRow, len(hosts))
-	var wg sync.WaitGroup
-	for i, h := range hosts {
-		wg.Go(func() {
-			host, port := netinfo.HostPort(h, "443")
-			rows[i].host = host
-			info, err := inspect.Cert(host, port)
-			if err != nil {
-				rows[i].err = err
-				return
-			}
-			rows[i].expires, rows[i].issuer = info.Leaf().NotAfter, info.Leaf().Issuer.CommonName
-			if info.VerifyErr != nil {
-				rows[i].err = info.VerifyErr
-			}
-		})
-	}
-	wg.Wait()
-	sort.SliceStable(rows, func(a, b int) bool {
-		if (rows[a].err != nil) != (rows[b].err != nil) {
-			return rows[a].err != nil
-		}
-		return rows[a].expires.Before(rows[b].expires)
-	})
+	rows := sites.Expiries(hosts)
 	bad := 0
 	for _, r := range rows {
-		if r.err != nil && r.expires.IsZero() {
+		if r.Err != nil && r.Expires.IsZero() {
 			bad++
-			ui.Println(ui.Bad(ui.Pad(r.host, 30)) + " " + ui.Dim(r.err.Error()))
+			ui.Println(ui.Bad(ui.Pad(r.Host, 30)) + " " + ui.Dim(r.Err.Error()))
 			continue
 		}
-		line := ui.Pad(r.host, 30) + " " + ui.DaysLeft(r.expires) + "  " + ui.Dim(r.issuer)
-		if r.err != nil || time.Until(r.expires) < 14*24*time.Hour {
+		line := ui.Pad(r.Host, 30) + " " + ui.DaysLeft(r.Expires) + "  " + ui.Dim(r.Issuer)
+		if r.Err != nil || time.Until(r.Expires) < 14*24*time.Hour {
 			bad++
 		}
-		if r.err != nil {
-			line += "  " + ui.Bad(ui.ShortErr(r.err))
+		if r.Err != nil {
+			line += "  " + ui.Bad(ui.ShortErr(r.Err))
 		}
 		ui.Println(line)
 	}
