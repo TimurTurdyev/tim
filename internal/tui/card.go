@@ -135,7 +135,11 @@ func (c Card) actionLines(w int) []string {
 		if a.Note != "" {
 			cell += styleDim.Render(" " + symSep + " " + a.Note)
 		}
-		width := (ui.Width(cell) + cardActionW) / cardActionW * cardActionW
+		// Короткий кап - в слот 15 колонок, длинный - своей шириной и три пробела.
+		width := cardActionW
+		if ui.Width(cell)+1 > cardActionW {
+			width = ui.Width(cell) + 3
+		}
 		if used+width > w+1 && used > 0 {
 			out = append(out, strings.TrimRight(line, " "))
 			line, used = "", 0

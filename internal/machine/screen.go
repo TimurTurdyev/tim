@@ -34,6 +34,11 @@ func ProcsScreen(query string) tui.Screen {
 	return tui.NewProcs(tui.ProcsOpts{Query: query, Load: loadProcs, Close: closeGroup})
 }
 
+// MemoryScreen: процессы по памяти; из беды памяти - курсор на держателе и беда над списком.
+func MemoryScreen(warning, holder string) tui.Screen {
+	return tui.NewProcs(tui.ProcsOpts{Load: loadProcs, Close: closeGroup, ByMem: true, Focus: holder, Warning: warning})
+}
+
 func loadProcs() tui.ProcsData {
 	var data tui.ProcsData
 	list, err := procs.All()

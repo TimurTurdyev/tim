@@ -15,8 +15,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Процессы, сложенные по приложениям: фильтр сверху, панель раскрывает выбранное, закрыть
-// можно бережно или принудительно - через общее окно подтверждения.
+// Процессы, сложенные по приложениям: по CPU - группы ЗАНЯТЫ и СПЯТ, по памяти - одним списком;
+// карточка раскрывает процессы выбранного, закрыть можно бережно или принудительно.
 
 // ProcRow: один процесс внутри группы.
 type ProcRow struct {
@@ -43,11 +43,15 @@ type ProcsData struct {
 	MemUsed, MemTotal int64
 }
 
-// ProcsOpts: источники экрана. Close ждёт закрытия до нескольких секунд - зовётся в фоне.
+// ProcsOpts: источники экрана. Close ждёт закрытия до нескольких секунд - зовётся в фоне. Из беды
+// памяти экран открывается по памяти, с курсором на держателе и текстом беды над списком.
 type ProcsOpts struct {
-	Load  func() ProcsData
-	Close func(g ProcGroup, force bool) (string, error)
-	Query string
+	Load    func() ProcsData
+	Close   func(g ProcGroup, force bool) (string, error)
+	Query   string
+	ByMem   bool
+	Focus   string
+	Warning string
 }
 
 type procsScreen struct {
@@ -60,6 +64,9 @@ type procsScreen struct {
 	loading  bool
 	closing  string
 	expanded bool
+	warning  string
+	focus    string
+	inTabs   bool
 }
 
 type (
@@ -82,14 +89,48 @@ func NewProcs(o ProcsOpts) Screen {
 	// Фильтр спит, пока не нажали "/": буквы - действия, а не текст. Иначе после
 	// tim ps chrome нажатие k дописывало бы букву в фильтр вместо закрытия.
 	in.Blur()
-	return &procsScreen{opts: o, input: in, loading: true}
+	return &procsScreen{opts: o, input: in, loading: true, byMem: o.ByMem, warning: o.Warning, focus: o.Focus}
 }
 
+func (p *procsScreen) setInTabs() { p.inTabs = true }
+
+// TabName: вкладка Машины.
+func (p *procsScreen) TabName() string {
+	n := 0
+	for _, g := range p.data.Groups {
+		n += len(g.Procs)
+	}
+	if n == 0 {
+		return "Процессы"
+	}
+	return "Процессы " + itoa(n)
+}
+
+func (p *procsScreen) SearchLine() string {
+	if p.input.Focused() || p.input.Value() != "" {
+		return p.input.View()
+	}
+	return styleHint.Render(symPointer + " найти")
+}
+
+func (p *procsScreen) OrderText() string {
+	if p.byMem {
+		return "по памяти"
+	}
+	return "по CPU"
+}
+
+// Escape: первый esc уходит из поиска, второй его очищает.
 func (p *procsScreen) Escape() bool {
-	if !p.input.Focused() {
+	switch {
+	case p.input.Focused():
+		p.input.Blur()
+	case p.input.Value() != "":
+		p.input.SetValue("")
+		p.refill()
+	default:
 		return false
 	}
-	p.input.Blur()
 	return true
 }
 
@@ -103,7 +144,7 @@ func (p *procsScreen) tick() tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg { return procsTickMsg{} })
 }
 
-func (p *procsScreen) Crumbs() []string { return []string{"Машина", "Процессы"} }
+func (p *procsScreen) Crumbs() []string { return []string{"Машина"} }
 
 func (p *procsScreen) Status() string {
 	if p.loading && len(p.data.Groups) == 0 {
@@ -125,7 +166,7 @@ func (p *procsScreen) Keys() []Key {
 	if p.input.Focused() {
 		return []Key{{"enter", "применить"}, {"esc", "закрыть фильтр"}}
 	}
-	return []Key{{"enter", "раскрыть"}, {"/", "найти"}, {"x", "закрыть"}, {"X", "принудительно"}, {"p", "порядок"}, {"r", "обновить"}}
+	return []Key{{"enter", "раскрыть"}, {"/", "найти"}, {"p", "порядок"}, {"r", "обновить"}}
 }
 
 func (p *procsScreen) refill() {
@@ -148,26 +189,50 @@ func (p *procsScreen) refill() {
 	// Стабильная сортировка: при обновлении раз в 3 с строки не должны прыгать от шума.
 	slices.SortStableFunc(p.shown, p.compare)
 	p.list.Rows = nil
+	busy := 0
 	for _, g := range p.shown {
-		g := g
-		p.list.Rows = append(p.list.Rows, Row{Text: g.Name, Render: func(sel bool, w int) string {
-			name := styleText.Render(ui.Fit(ui.Clip(g.Name, 27), 28))
-			if sel {
-				name = styleBold.Render(ui.Fit(ui.Clip(g.Name, 27), 28))
-			}
-			cpu := pctLevel(int(g.CPU / 2)).Render(fmt.Sprintf("%5.0f%%", g.CPU))
-			if g.CPU < 5 {
-				cpu = styleDim.Render(fmt.Sprintf("%5.0f%%", g.CPU))
-			}
-			tail := styleDim.Render(fmt.Sprintf("  %-13s %s", ui.Count(len(g.Procs), "процесс", "процесса", "процессов"), ui.Short(g.Age)))
-			if g.Protected {
-				tail = styleDim.Render("  системный")
-			}
-			return SelRow(sel, w, name+cpu+"  "+styleText.Render(ui.Fit(ui.Bytes(g.RSS), 8))+tail)
-		}})
+		if g.CPU >= 1 {
+			busy++
+		}
 	}
-	if p.list.Cursor >= len(p.list.Rows) {
-		p.list.Cursor = max(0, len(p.list.Rows)-1)
+	for i, g := range p.shown {
+		if !p.byMem && q == "" {
+			switch {
+			case i == 0 && g.CPU >= 1:
+				p.list.Rows = append(p.list.Rows, headerRow("ЗАНЯТЫ "+symSep+" "+itoa(busy)))
+			case g.CPU < 1 && (i == 0 || p.shown[i-1].CPU >= 1):
+				p.list.Rows = append(p.list.Rows, headerRow("СПЯТ "+symSep+" "+itoa(len(p.shown)-busy)+" по памяти, меньше 1% CPU"))
+			}
+		}
+		p.list.Rows = append(p.list.Rows, Row{Text: g.Name, Render: p.renderRow(g)})
+	}
+	p.list.Cursor = min(p.list.Cursor, max(0, len(p.list.Rows)-1))
+	p.list.Skip(1)
+}
+
+// renderRow: имя, числа вправо по колонкам; у спящих клетка CPU пустая - это сказано в заголовке.
+func (p *procsScreen) renderRow(g ProcGroup) func(bool, int) string {
+	return func(sel bool, w int) string {
+		name := styleText.Render(ui.Fit(g.Name, 28))
+		if sel {
+			name = styleBold.Render(ui.Fit(g.Name, 28))
+		}
+		cpu := pctLevel(int(g.CPU)).Render(fmt.Sprintf("%5.0f%%", g.CPU))
+		switch {
+		case g.CPU < 1 && !p.byMem:
+			cpu = "      "
+		case g.CPU < 1:
+			cpu = styleDim.Render(fmt.Sprintf("%5.0f%%", g.CPU))
+		}
+		mem := fmt.Sprintf("%9s", ui.Bytes(g.RSS))
+		count := fmt.Sprintf("%7d", len(g.Procs))
+		if g.Protected {
+			count = styleDim.Render(fmt.Sprintf("%7s", "сист."))
+		}
+		if p.byMem {
+			return SelRow(sel, w, name+mem+"  "+cpu+count)
+		}
+		return SelRow(sel, w, name+cpu+mem+count)
 	}
 }
 
@@ -176,14 +241,36 @@ func (p *procsScreen) compare(a, b ProcGroup) int {
 	if p.byMem {
 		return cmp.Compare(b.RSS, a.RSS)
 	}
+	// Спящие - ниже занятых и по памяти: между ними разница в долях процента - шум.
+	if (a.CPU >= 1) != (b.CPU >= 1) {
+		return cmp.Compare(b.CPU, a.CPU)
+	}
+	if a.CPU < 1 {
+		return cmp.Compare(b.RSS, a.RSS)
+	}
 	return cmp.Or(cmp.Compare(b.CPU, a.CPU), cmp.Compare(b.RSS, a.RSS))
 }
 
 func (p *procsScreen) current() *ProcGroup {
-	if p.list.Cursor < len(p.shown) {
-		return &p.shown[p.list.Cursor]
+	n := -1
+	for i, r := range p.list.Rows {
+		if !r.Header {
+			n++
+		}
+		if i == p.list.Cursor && !r.Header && n < len(p.shown) {
+			return &p.shown[n]
+		}
 	}
 	return nil
+}
+
+// selectName: курсор на приложение с этим именем.
+func (p *procsScreen) selectName(name string) {
+	for i, r := range p.list.Rows {
+		if !r.Header && r.Text == name {
+			p.list.Cursor = i
+		}
+	}
 }
 
 func (p *procsScreen) Update(msg tea.Msg, app *App) tea.Cmd {
@@ -195,12 +282,12 @@ func (p *procsScreen) Update(msg tea.Msg, app *App) tea.Cmd {
 			cur = c.Name
 		}
 		p.refill()
-		// Курсор остаётся на том же приложении, даже если оно уехало по списку.
-		for i, g := range p.shown {
-			if g.Name == cur {
-				p.list.Cursor = i
-			}
+		// Курсор остаётся на том же приложении, даже если оно уехало по списку; в первый раз - на
+		// держателе памяти, если экран открыт из беды.
+		if p.focus != "" {
+			cur, p.focus = p.focus, ""
 		}
+		p.selectName(cur)
 		return nil
 	case procsTickMsg:
 		var cmd tea.Cmd
@@ -233,12 +320,18 @@ func (p *procsScreen) Update(msg tea.Msg, app *App) tea.Cmd {
 		}
 		switch k {
 		case "/":
+			p.warning = ""
 			return p.input.Focus()
 		case "enter":
 			p.expanded = !p.expanded
 		case "p":
-			p.byMem = !p.byMem
+			p.byMem, p.warning = !p.byMem, ""
+			cur := ""
+			if c := p.current(); c != nil {
+				cur = c.Name
+			}
 			p.refill()
+			p.selectName(cur)
 		// k занят списком (вверх), поэтому закрыть - x, как убрать на экранах диска.
 		case "X":
 			return p.confirmClose(app, true)
@@ -281,74 +374,4 @@ func (p *procsScreen) confirmClose(app *App, force bool) tea.Cmd {
 		return app.Job("закрываю "+g.Name, func() (string, error) { return p.opts.Close(g, force) })
 	}
 	return app.Confirm(d)
-}
-
-func (p *procsScreen) View(width, height int) string {
-	order := "по CPU  " + symDot + "  tab память"
-	if p.byMem {
-		order = "по памяти  " + symDot + "  tab CPU"
-	}
-	filter := p.input.View()
-	if !p.input.Focused() && p.input.Value() == "" {
-		filter = styleHint.Render(symPointer + " / - фильтр по имени")
-	}
-	out := []string{"  " + ui.Fit(filter, 44) + "  " + styleHint.Render(order), ""}
-	if p.loading && len(p.data.Groups) == 0 {
-		out = append(out, "  "+styleEmpty.Render("смотрю, кто что занял..."))
-		return strings.Join(out, "\n")
-	}
-	var pane []string
-	if cur := p.current(); cur != nil {
-		var rows []string
-		limit := 3
-		if p.expanded {
-			limit = 12
-		}
-		for i, r := range cur.Procs {
-			if i >= limit {
-				rows = append(rows, styleDim.Render(fmt.Sprintf("ещё %d  %s  enter - раскрыть", len(cur.Procs)-limit, symDot)))
-				break
-			}
-			line := styleDim.Render(fmt.Sprintf("%4.0f%%", r.CPU)) + "  " + ui.Fit(ui.Bytes(r.RSS), 8) + "  " + ui.Fit(ui.Clip(r.Name, 40), 42) + styleDim.Render("pid "+r.PID)
-			if r.Note != "" {
-				line += "  " + styleAmber.Render(r.Note)
-			}
-			rows = append(rows, line)
-		}
-		if w := groupAdvice(*cur); w != "" {
-			rows = append(rows, styleAmber.Render(symWarn+" "+w))
-		}
-		sub := ui.Count(len(cur.Procs), "процесс", "процесса", "процессов") + " " + symDot + " " + ui.Short(cur.Age)
-		pane = Pane(cur.Name, sub, rows, width-4)
-	}
-	listH := max(3, height-len(out)-len(pane)-1)
-	out = append(out, p.list.View(width, listH)...)
-	if len(p.shown) == 0 {
-		out = append(out, "  "+styleDim.Render("ничего похожего не запущено"))
-	}
-	for len(out) < height-len(pane) {
-		out = append(out, "")
-	}
-	for _, l := range pane {
-		out = append(out, "  "+l)
-	}
-	return strings.Join(out, "\n")
-}
-
-// groupAdvice: что с этим приложением не так, словами.
-func groupAdvice(g ProcGroup) string {
-	switch {
-	case g.CPU >= 100 && g.IsApp:
-		return fmt.Sprintf("%s и %.0f%% CPU - обычно одна тяжёлая вкладка или задача: закрой её внутри, или приложение здесь", ui.Bytes(g.RSS), g.CPU)
-	case g.CPU >= 100:
-		return fmt.Sprintf("%.0f%% CPU - занято больше ядра; если это не сборка или индексация, стоит закрыть", g.CPU)
-	case g.RSS >= 4<<30:
-		return ui.Bytes(g.RSS) + " памяти - больше, чем обычно нужно; перезапуск вернёт память"
-	}
-	for _, r := range g.Procs {
-		if r.Note != "" {
-			return r.Note
-		}
-	}
-	return ""
 }

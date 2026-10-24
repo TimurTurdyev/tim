@@ -150,7 +150,7 @@ func (h *Home) machine() tui.HomeMachine {
 	out := tui.HomeMachine{Mood: m.Mood(time.Now()), Badges: map[string]string{}}
 	counts := map[string][2]int{}
 	for _, w := range m.Warnings() {
-		dest, key, open := h.trouble(w.Kind)
+		dest, key, open := h.trouble(w, m.MemHolder)
 		out.Attention = append(out.Attention, tui.Hit{Kind: tui.KindAttention, Title: ui.Warn("\u25b2 " + w.Text), Hint: dest, Open: open})
 		c := counts[key]
 		c[1]++
@@ -182,12 +182,12 @@ func badge(bad, warn int) string {
 }
 
 // trouble: куда ведёт беда машины - подпись, буква раздела для бейджа и переход.
-func (h *Home) trouble(kind health.Trouble) (string, string, func() tui.Action) {
-	switch kind {
+func (h *Home) trouble(w health.Warning, holder string) (string, string, func() tui.Action) {
+	switch w.Kind {
 	case health.DiskFull:
 		return "Диск", "d", func() tui.Action { return tui.Action{Push: diskScreen(h.env, nil)} }
 	case health.Memory:
-		return "Процессы", "m", func() tui.Action { return tui.Action{Push: machine.ProcsScreen("")} }
+		return "Процессы", "m", func() tui.Action { return tui.Action{Push: machine.MemoryScreen(w.Full(), holder)} }
 	}
 	return "Сеть", "n", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
 }
@@ -196,7 +196,7 @@ func (h *Home) trouble(kind health.Trouble) (string, string, func() tui.Action) 
 func (h *Home) lineDest(d motd.Dest) (string, func() tui.Action) {
 	switch d {
 	case motd.ToProcs:
-		return "Процессы по памяти", func() tui.Action { return tui.Action{Push: machine.ProcsScreen("")} }
+		return "Процессы по памяти", func() tui.Action { return tui.Action{Push: machine.MemoryScreen("", "")} }
 	case motd.ToDisk:
 		return "Диск", func() tui.Action { return tui.Action{Push: diskScreen(h.env, nil)} }
 	case motd.ToNet:
