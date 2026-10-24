@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -401,17 +400,11 @@ func portOpen(addr, port string) bool {
 func setRoute(dest, gw, iface string) error {
 	if runtime.GOOS != "linux" {
 		// Старого маршрута обычно нет, и route ругается "not in table" - это не ошибка.
-		_, _ = runner.SudoQuiet(netinfo.DelRouteCmd(dest)...)
+		_, _ = rootRun(netinfo.DelRouteCmd(dest)...)
 	}
 	defer tableChanged()
-	out, err := runner.SudoQuiet(netinfo.AddRouteCmd(dest, gw, iface)...)
-	if err != nil {
-		if out == "" {
-			out = err.Error()
-		}
-		return errors.New(out)
-	}
-	return nil
+	_, err := rootRun(netinfo.AddRouteCmd(dest, gw, iface)...)
+	return err
 }
 
 // fewDests: до стольких целей печатается строка на каждую, дальше - ход и итог.
@@ -493,7 +486,7 @@ func routeDown(dests []string) {
 	gone := 0
 	for _, d := range dests {
 		tableChanged()
-		if _, err := runner.SudoQuiet(netinfo.DelRouteCmd(d)...); err != nil {
+		if _, err := rootRun(netinfo.DelRouteCmd(d)...); err != nil {
 			if verbose {
 				ui.Println(ui.Dim(d + ": маршрута не было"))
 			}
@@ -538,8 +531,8 @@ func routeClean(all bool) error {
 	gone := 0
 	for _, r := range stale {
 		tableChanged()
-		if out, err := runner.SudoQuiet(netinfo.DelRouteCmd(r.Dest)...); err != nil {
-			ui.Println(ui.Bad(r.Dest + ": снять не удалось: " + out))
+		if _, err := rootRun(netinfo.DelRouteCmd(r.Dest)...); err != nil {
+			ui.Println(ui.Bad(r.Dest + ": снять не удалось: " + err.Error()))
 			continue
 		}
 		gone++
