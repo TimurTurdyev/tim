@@ -48,7 +48,7 @@ type rootResp struct {
 
 // rootAllowed: что помощник вообще запускает. Это не защита от злоумышленника (sudo и так у
 // пользователя), а страховка от ошибки в коде.
-var rootAllowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true}
+var rootAllowed = map[string]bool{"route": true, "ip": true, "pfctl": true, "dscl": true, "dseditgroup": true, "kill": true}
 
 var rootHelperCmd = &cobra.Command{
 	Use:    "root-helper",
@@ -134,11 +134,17 @@ type rootLink struct {
 	out *bufio.Scanner
 }
 
-var rootHelper *rootLink
+var (
+	rootHelper *rootLink
+	rootFailed error // sudo уже отказал: второй раз за запуск не спрашиваем
+)
 
 func rootStart() (*rootLink, error) {
 	if rootHelper != nil {
 		return rootHelper, nil
+	}
+	if rootFailed != nil {
+		return nil, rootFailed
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -190,7 +196,8 @@ func rootCall(req rootReq) (rootResp, error) {
 	}
 	if !l.out.Scan() {
 		rootHelper = nil
-		return rootResp{}, ui.Errorf("прав администратора не получил: sudo отказал или помощник упал")
+		rootFailed = ui.Errorf("прав администратора не получил: sudo отказал или помощник упал; нужен обычный терминал, где sudo может спросить пароль")
+		return rootResp{}, rootFailed
 	}
 	var resp rootResp
 	if err := json.Unmarshal(l.out.Bytes(), &resp); err != nil {
