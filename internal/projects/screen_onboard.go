@@ -6,11 +6,9 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
-	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/rcfile"
-	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/scan"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -20,19 +18,18 @@ import (
 
 // OnboardScreen: мастер первого запуска; next - экран после него, nil - выход.
 func OnboardScreen(env *app.Env, next func() tui.Screen) tui.Screen {
+	path, shell := rcfile.Path("")
 	o := tui.OnboardOpts{
-		Roots: onboardRoots,
-		Scan:  onboardScan,
-		Save:  func(root string, chosen []tui.FoundProject) (string, error) { return onboardSave(env, root, chosen) },
-		Shell: onboardShell,
-		ShellLine: func() string {
-			path, shell := rcfile.Path("")
-			return `строку eval "$(tim init ` + shell + `)" в ` + paths.Show(path)
-		}(),
-		Home: next,
-	}
-	if on, depth := ui.Colors(); on {
-		o.Art = brand.MascotLarge(brand.Look{Mood: brand.Calm, Light: ui.Light()}, depth)
+		Roots:     onboardRoots,
+		Count:     rootNote,
+		Scan:      onboardScan,
+		Save:      func(root string, chosen []tui.FoundProject) (string, error) { return onboardSave(env, root, chosen) },
+		Shell:     func(motd bool) (string, error) { return onboardShell(env, motd) },
+		ShellLine: `eval "$(tim init ` + shell + `)"`,
+		ShellFile: paths.Show(path),
+		Home:      next,
+		Build:     env.Build(),
+		Config:    paths.Show(config.Path()),
 	}
 	return tui.NewOnboard(o)
 }
@@ -47,18 +44,19 @@ func onboardRoots() []tui.RootChoice {
 		if st, err := os.Stat(p); err != nil || !st.IsDir() {
 			continue
 		}
-		out = append(out, tui.RootChoice{Path: paths.Show(p), Note: rootNote(p)})
+		out = append(out, tui.RootChoice{Path: paths.Show(p)})
 	}
 	for _, p := range []string{"/var/www", "/srv"} {
 		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			out = append(out, tui.RootChoice{Path: p, Note: rootNote(p)})
+			out = append(out, tui.RootChoice{Path: p})
 		}
 	}
 	return out
 }
 
+// rootNote: сколько репозиториев в папке и когда менялся последний.
 func rootNote(root string) string {
-	clones, err := scan.Clones(root, scanDepth)
+	clones, err := scan.Clones(config.ExpandHome(root), scanDepth)
 	if err != nil || len(clones) == 0 {
 		return "репозиториев не видно"
 	}
@@ -106,7 +104,7 @@ func onboardScan(root string) []tui.FoundProject {
 	for _, p := range found {
 		dir := c.ProjectDir(&p)
 		touched := gitTouched(dir)
-		fp := tui.FoundProject{Name: p.Name, Stack: ui.Dash(run.Stack(dir)), Dir: paths.Show(dir), Checked: true}
+		fp := tui.FoundProject{Name: p.Name, Stack: knownStack(dir), Dir: paths.Show(dir), Checked: true}
 		if !touched.IsZero() {
 			fp.Age = ui.Short(time.Since(touched))
 			// Год без изменений - скорее всего архив; галочку снимаем, вернуть можно пробелом.
@@ -133,14 +131,20 @@ func onboardSave(env *app.Env, root string, chosen []tui.FoundProject) (string, 
 		", конфиг " + paths.Show(config.Path()), nil
 }
 
-// onboardShell: та же строка, что дописывает tim init.
-func onboardShell() (string, error) {
+// onboardShell: та же строка, что дописывает tim init; motd - ещё и сводка в каждом новом окне.
+func onboardShell(env *app.Env, motd bool) (string, error) {
 	path, shell := rcfile.Path("")
+	if motd && env.Cfg != nil {
+		env.Cfg.Shell.Motd = true
+		if err := env.Save(); err != nil {
+			return "", err
+		}
+	}
 	if rcfile.Sourced(path, 2) {
 		return "оболочка уже подключена", nil
 	}
 	if err := rcfile.Append(path, `eval "$(tim init `+shell+`)"`); err != nil {
 		return "", err
 	}
-	return "подключено в " + paths.Show(path) + ", открой новый терминал", nil
+	return "подключено в " + paths.Show(path), nil
 }

@@ -163,7 +163,7 @@ func (a *App) View() tea.View {
 	if over {
 		// Экран под окном остаётся на местах, но серым: видно, к чему относится решение.
 		for i, l := range lines {
-			lines[i] = styleDim.Render(stripANSI(l))
+			lines[i] = styleDim.Render(ui.StripANSI(l))
 		}
 		lines = a.overlay.compose(lines, w, viewH)
 	}

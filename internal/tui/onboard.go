@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"math/rand/v2"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -10,8 +11,15 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Первый запуск: где проекты, что нашлось, подключить ли к оболочке. Три шага, каждый можно
-// пропустить - esc закрывает мастер, конфиг тогда не пишется.
+// Первый запуск: где проекты, что нашлось, подключить ли к оболочке, и финал. Корневой экран с
+// крупным маскотом - единственное его место в приложении; esc - позже, конфиг тогда не пишется.
+
+// shellChoices: подключить, подключить со сводкой, пропустить.
+var shellChoices = []struct{ name, note string }{
+	{"подключить", "одна строка"},
+	{"подключить со сводкой", "то же, и tim status в каждом новом окне терминала"},
+	{"пропустить", "настрою сам: $ tim init --help"},
+}
 
 // RootChoice: папка-кандидат с кодом.
 type RootChoice struct {
@@ -24,33 +32,39 @@ type FoundProject struct {
 	Checked               bool
 }
 
-// OnboardOpts: что мастеру нужно от раздела. Scan и Save могут быть долгими - зовутся в фоне.
+// OnboardOpts: что мастеру нужно от раздела. Count, Scan и Save могут быть долгими - зовутся в фоне.
 type OnboardOpts struct {
 	Roots func() []RootChoice
+	Count func(root string) string // сколько репозиториев в папке и когда менялся последний
 	Scan  func(root string) []FoundProject
 	Save  func(root string, chosen []FoundProject) (string, error)
-	Shell func() (string, error) // подключить к оболочке; пусто - уже подключено
-	// ShellLine: что и куда допишет Shell, например eval "$(tim init zsh)" в ~/.zshrc.
-	ShellLine string
-	Home      func() Screen // куда уйти после мастера
-	Art       []string
+	Shell func(motd bool) (string, error) // подключить к оболочке; motd - ещё и сводка в каждом окне
+	// ShellLine и ShellFile: точная строка и куда она допишется.
+	ShellLine, ShellFile string
+	Home                 func() Screen // куда уйти после мастера
+	Build                string        // сборка для лок-апа
+	Config               string        // где будет конфиг
 }
 
 type onboard struct {
-	opts    OnboardOpts
-	step    int
-	roots   []RootChoice
-	list    List
-	input   textinput.Model
-	root    string
-	found   []FoundProject
-	busy    string
-	saved   string
-	shellOK string
+	opts   OnboardOpts
+	step   int // 0 папки, 1 проекты, 2 оболочка, 3 финал
+	roots  []RootChoice
+	counts map[string]string
+	list   List
+	input  textinput.Model
+	root   string
+	found  []FoundProject
+	busy   string
+	saved  int
+	shell  string // что стало с оболочкой; пусто - пропущена
+	blink  bool
+	shutAt int
 }
 
 type (
 	onbRootsMsg []RootChoice
+	onbCountMsg struct{ root, note string }
 	onbFoundMsg []FoundProject
 	onbDoneMsg  struct {
 		text string
@@ -69,21 +83,26 @@ func NewOnboard(o OnboardOpts) Screen {
 	st.Focused.Placeholder = styleHint
 	st.Cursor.Color = colAccent
 	in.SetStyles(st)
-	return &onboard{opts: o, input: in, busy: "ищу папки с кодом"}
+	return &onboard{opts: o, input: in, busy: "ищу папки с кодом", counts: map[string]string{}}
+}
+
+// Animating: крупный маскот моргает, кадр "считаю" движется.
+func (o *onboard) Animating() bool { return true }
+
+func (o *onboard) Tick(frame int) {
+	o.blink = frame == o.shutAt
+	if frame > o.shutAt {
+		o.shutAt = frame + 12 + rand.IntN(16)
+	}
 }
 
 func (o *onboard) Init() tea.Cmd {
 	return func() tea.Msg { return onbRootsMsg(o.opts.Roots()) }
 }
 
-func (o *onboard) Crumbs() []string { return []string{"Первый запуск"} }
+func (o *onboard) Crumbs() []string { return nil }
 
-func (o *onboard) Status() string {
-	if o.busy != "" {
-		return o.busy + "..."
-	}
-	return "шаг " + itoa(o.step+1) + " из 3"
-}
+func (o *onboard) Status() string { return "" }
 
 func (o *onboard) Command() string { return "tim config init" }
 
@@ -94,7 +113,7 @@ func (o *onboard) Escape() bool {
 		o.input.Blur()
 		return true
 	}
-	if o.step > 0 && o.step < 2 {
+	if o.step == 1 {
 		o.step--
 		o.fillRoots()
 		return true
@@ -104,30 +123,37 @@ func (o *onboard) Escape() bool {
 
 func (o *onboard) Keys() []Key {
 	switch {
+	case o.busy != "":
+		return []Key{{"esc", "позже"}}
 	case o.input.Focused():
 		return []Key{{"enter", "выбрать папку"}, {"esc", "назад к списку"}}
 	case o.step == 0:
-		return []Key{{symUpDown, "выбор"}, {"enter", "дальше"}, {"esc", "позже"}}
+		return []Key{{"enter", "дальше"}, {"esc", "позже"}}
 	case o.step == 1:
 		return []Key{{"enter", "сохранить"}, {"space", "отметить"}, {"v", "все"}, {"esc", "назад"}}
+	case o.step == 2:
+		return []Key{{"enter", "выполнить"}, {"esc", "позже"}}
 	}
-	return []Key{{"enter", "выбрать"}}
+	return []Key{{"enter", "на главный"}, {"esc", "выход"}}
 }
 
 func (o *onboard) fillRoots() {
 	o.list.Rows = nil
 	for _, r := range o.roots {
-		r := r
 		o.list.Rows = append(o.list.Rows, Row{Text: r.Path, Render: func(sel bool, w int) string {
-			name := styleText.Render(ui.Fit(r.Path, 22))
+			name := styleText.Render(ui.Fit(r.Path, 17))
 			if sel {
-				name = styleBold.Render(ui.Fit(r.Path, 22))
+				name = styleBold.Render(ui.Fit(r.Path, 17))
 			}
-			return SelRow(sel, w, name+styleDim.Render(r.Note))
+			note, ok := o.counts[r.Path]
+			if !ok {
+				note = Spinner() + " считаю репозитории"
+			}
+			return SelRow(sel, w, name+styleDim.Render(note))
 		}})
 	}
 	o.list.Rows = append(o.list.Rows, Row{Text: "другая", Render: func(sel bool, w int) string {
-		return SelRow(sel, w, styleDim.Render(ui.Fit("другая папка...", 22)+"введи путь"))
+		return SelRow(sel, w, styleText.Render(ui.Fit("другая папка...", 17))+styleDim.Render("введи путь"))
 	}})
 	if o.list.Cursor >= len(o.list.Rows) {
 		o.list.Cursor = 0
@@ -137,18 +163,17 @@ func (o *onboard) fillRoots() {
 func (o *onboard) fillFound() {
 	o.list.Rows = nil
 	for i := range o.found {
-		i := i
 		o.list.Rows = append(o.list.Rows, Row{Text: o.found[i].Name, Render: func(sel bool, w int) string {
 			p := o.found[i]
-			box := styleDim.Render("[ ]")
+			mark := " "
 			if p.Checked {
-				box = styleGood.Render("[" + symCheck + "]")
+				mark = styleText.Render(symCheck)
 			}
-			name := styleText.Render(ui.Fit(p.Name, 22))
+			name := styleText.Render(ui.Fit(p.Name, 26))
 			if sel {
-				name = styleBold.Render(ui.Fit(p.Name, 22))
+				name = styleBold.Render(ui.Fit(p.Name, 26))
 			}
-			return SelRow(sel, w, box+" "+name+styleDim.Render(ui.Fit(p.Stack, 11)+ui.Fit(p.Age, 10)+ui.Clip(p.Dir, max(10, w-56))))
+			return SelRow(sel, w, mark+"  "+name+styleDim.Render(ui.Fit(p.Stack, 11)+ui.Fit(p.Age, 10)+ui.Clip(p.Dir, max(10, w-58))))
 		}})
 	}
 	o.list.Cursor = 0
@@ -170,11 +195,27 @@ func (o *onboard) scan(root string) tea.Cmd {
 	return func() tea.Msg { return onbFoundMsg(o.opts.Scan(root)) }
 }
 
+// count: репозитории каждой папки-кандидата считаются в фоне, по отдельности.
+func (o *onboard) count() tea.Cmd {
+	if o.opts.Count == nil {
+		return nil
+	}
+	var cmds []tea.Cmd
+	for _, r := range o.roots {
+		root := r.Path
+		cmds = append(cmds, func() tea.Msg { return onbCountMsg{root, o.opts.Count(root)} })
+	}
+	return tea.Batch(cmds...)
+}
+
 func (o *onboard) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch msg := msg.(type) {
 	case onbRootsMsg:
 		o.roots, o.busy = []RootChoice(msg), ""
 		o.fillRoots()
+		return o.count()
+	case onbCountMsg:
+		o.counts[msg.root] = msg.note
 		return nil
 	case onbFoundMsg:
 		o.found, o.busy, o.step = []FoundProject(msg), "", 1
@@ -185,15 +226,16 @@ func (o *onboard) Update(msg tea.Msg, app *App) tea.Cmd {
 		if msg.err != nil {
 			return app.Say(level.Bad, msg.err.Error())
 		}
-		switch o.step {
-		case 1:
-			o.saved, o.step = msg.text, 2
+		if o.step == 1 {
+			o.saved, o.step = len(o.chosen()), 2
 			o.fillShell()
 			return nil
-		default:
-			o.shellOK = msg.text
-			return o.finish(app)
 		}
+		o.shell, o.step = msg.text, 3
+		if msg.text != "" {
+			return app.Say(level.OK, "конфиг: записан, оболочка подключена")
+		}
+		return app.Say(level.OK, "конфиг: записан")
 	case tea.KeyPressMsg:
 		if o.busy != "" {
 			return nil
@@ -207,7 +249,11 @@ func (o *onboard) Update(msg tea.Msg, app *App) tea.Cmd {
 		case 1:
 			return o.pickProjects(k)
 		case 2:
-			return o.askShell(k, app)
+			return o.askShell(k)
+		case 3:
+			if k == "enter" && o.opts.Home != nil {
+				return app.Replace(o.opts.Home())
+			}
 		}
 	}
 	return nil
@@ -218,7 +264,7 @@ func (o *onboard) typePath(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	if msg.String() == "enter" {
 		path := strings.TrimSpace(o.input.Value())
 		if path == "" {
-			return app.Say(level.Warn, "введи путь к папке с проектами")
+			return app.Say(level.Warn, "путь: введи папку с проектами")
 		}
 		o.input.Blur()
 		return o.scan(path)
@@ -267,146 +313,35 @@ func (o *onboard) pickProjects(k string) tea.Cmd {
 }
 
 // askShell: шаг 3 - подключить ли tim к оболочке.
-func (o *onboard) askShell(k string, app *App) tea.Cmd {
-	if o.list.Key(k, 2) || k != "enter" {
+func (o *onboard) askShell(k string) tea.Cmd {
+	if o.list.Key(k, 3) || k != "enter" {
 		return nil
 	}
-	if o.list.Cursor != 0 || o.opts.Shell == nil {
-		return o.finish(app)
+	if o.list.Cursor == 2 || o.opts.Shell == nil {
+		return func() tea.Msg { return onbDoneMsg{} }
 	}
+	motd := o.list.Cursor == 1
 	o.busy = "подключаю к оболочке"
 	return func() tea.Msg {
-		text, err := o.opts.Shell()
+		text, err := o.opts.Shell(motd)
 		return onbDoneMsg{text, err}
 	}
 }
 
-// fillShell: шаг 3 - два варианта, подключить или пропустить.
 func (o *onboard) fillShell() {
 	o.list.Rows = nil
-	for _, s := range []string{"подключить", "пропустить, можно потом: tim init setup"} {
-		o.list.Rows = append(o.list.Rows, Row{Text: s, Render: func(sel bool, w int) string {
+	for i, c := range shellChoices {
+		note := c.note
+		if i == 0 {
+			note = o.opts.ShellFile + " " + symSep + " " + c.note
+		}
+		o.list.Rows = append(o.list.Rows, Row{Text: c.name, Render: func(sel bool, w int) string {
+			name := styleText.Render(ui.Fit(c.name, 26))
 			if sel {
-				return SelRow(sel, w, styleBold.Render(s))
+				name = styleBold.Render(ui.Fit(c.name, 26))
 			}
-			return SelRow(sel, w, styleText.Render(s))
+			return SelRow(sel, w, name+styleDim.Render(note))
 		}})
 	}
 	o.list.Cursor = 0
-}
-
-func (o *onboard) finish(app *App) tea.Cmd {
-	text := o.saved
-	if o.shellOK != "" {
-		text += "; " + o.shellOK
-	}
-	if o.opts.Home != nil {
-		return tea.Batch(app.Replace(o.opts.Home()), app.Say(level.OK, text))
-	}
-	return app.Pop()
-}
-
-func (o *onboard) View(width, height int) string {
-	var out []string
-	var head []string
-	switch o.step {
-	case 0:
-		head = []string{"",
-			"  " + stylePaneT.Render("Привет. Где лежат твои проекты?"),
-			"  " + styleDim.Render("tim заглянет в папку, найдёт репозитории и заведёт реестр: имя, стек, папка."),
-			"",
-			"  " + styleHead.Render("ПАПКИ С КОДОМ"),
-		}
-	case 1:
-		n := len(o.chosen())
-		head = []string{"",
-			"  " + stylePaneT.Render("Нашёл "+ui.Count(len(o.found), "репозиторий", "репозитория", "репозиториев")+" в "+o.root) +
-				styleDim.Render("  сними галочку с того, что не нужно в реестре"),
-			"",
-			"  " + styleHead.Render("    "+ui.Fit("ИМЯ", 22)+ui.Fit("СТЕК", 11)+ui.Fit("МЕНЯЛСЯ", 10)+"ПАПКА") + styleDim.Render("   отмечено "+itoa(n)),
-		}
-	default:
-		head = []string{"",
-			"  " + stylePaneT.Render("Готово: "+o.saved),
-			"",
-			"  " + styleText.Render("Подключить tim к оболочке?"),
-			"  " + styleDim.Render("Допишу "+o.opts.ShellLine+": tim go станет делать cd, появятся подсказки и дополнение."),
-			"",
-		}
-	}
-	if o.step == 0 && len(o.opts.Art) > 0 {
-		head = withArt(head, o.opts.Art, width)
-	}
-	out = append(out, head...)
-	if o.busy != "" {
-		out = append(out, "", "  "+styleEmpty.Render(o.busy+"..."))
-		return strings.Join(out, "\n")
-	}
-	if o.step == 2 {
-		out = append(out, o.list.View(width, 2)...)
-	}
-	if o.step < 2 {
-		listH := max(3, height-len(out)-5)
-		out = append(out, o.list.View(width, listH)...)
-		if o.step == 0 && o.input.Focused() {
-			out = append(out, "", "  "+o.input.View())
-		}
-		if o.step == 1 && len(o.found) == 0 {
-			out = append(out, "  "+styleDim.Render("репозиториев не нашёл; enter запишет конфиг с пустым реестром, esc - другая папка"))
-		}
-	}
-	note := ""
-	switch o.step {
-	case 0:
-		note = "Конфиг будет здесь: ~/.config/tim/config.toml. Его можно править руками, tim перечитывает сам."
-	case 1:
-		note = "Порты выдаются при запуске с 8000, чтобы проекты не толкались. Поменять: tim proj или правка конфига."
-	}
-	var tail []string
-	if note != "" {
-		tail = ui.Wrap(note, width-4)
-	}
-	for len(out) < height-1-len(tail) {
-		out = append(out, "")
-	}
-	for _, l := range tail {
-		out = append(out, "  "+styleDim.Render(l))
-	}
-	return strings.Join(out, "\n")
-}
-
-// withArt: картинка справа от заголовка, если влезает.
-func withArt(lines, art []string, width int) []string {
-	if width < 90 {
-		return lines
-	}
-	col := width - 4 - len([]rune(stripANSI(art[0])))
-	out := make([]string, max(len(lines), len(art)))
-	for i := range out {
-		l := ""
-		if i < len(lines) {
-			l = lines[i]
-		}
-		if i < len(art) {
-			l = ui.Fit(l, col) + art[i]
-		}
-		out[i] = l
-	}
-	return out
-}
-
-func stripANSI(s string) string {
-	var b strings.Builder
-	in := false
-	for _, r := range s {
-		switch {
-		case r == 0x1b:
-			in = true
-		case in && (r == 'm'):
-			in = false
-		case !in:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
