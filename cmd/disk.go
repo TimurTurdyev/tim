@@ -5,7 +5,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/shellq"
+	"github.com/TimurTurdyev/tim/internal/trash"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -234,63 +234,6 @@ func lastTouched(path string, commits func(dir string) time.Time) time.Time {
 	return t
 }
 
-func lastCommit(dir string) time.Time {
-	out, err := runner.Output("git", "-C", dir, "log", "-1", "--format=%ct")
-	if err != nil {
-		return time.Time{}
-	}
-	sec, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-	if err != nil {
-		return time.Time{}
-	}
-	return time.Unix(sec, 0)
-}
-
-// tracked: лежит ли в папке что-то под git - закоммиченный vendor или build пересоздать нельзя.
-func tracked(path string) bool {
-	out, err := runner.Output("git", "-C", filepath.Dir(path), "ls-files", "--", filepath.Base(path))
-	return err == nil && strings.TrimSpace(out) != ""
-}
-
-// moveToTrash: в Корзину, откуда можно вернуть, а не rm.
-func moveToTrash(path string) error {
-	switch {
-	case runner.Has("trash") && runtime.GOOS == "darwin":
-		return runner.Run("trash", path)
-	case runner.Has("gio"):
-		return runner.Run("gio", "trash", path)
-	case runner.Has("trash-put"):
-		return runner.Run("trash-put", path)
-	case runtime.GOOS == "linux":
-		return freedesktopTrash(path)
-	}
-	return ui.Errorf("не нашёл, чем класть в Корзину (trash на macOS, gio на Linux); %s не тронут", path)
-}
-
-// freedesktopTrash: Корзина по спецификации freedesktop - так её видят файловые менеджеры Linux
-// и trash-cli. Работает в пределах одного диска: перенос, а не копирование.
-func freedesktopTrash(path string) error {
-	dir := filepath.Join(paths.Home(), ".local", "share", "Trash")
-	name := filepath.Base(path) + "." + strconv.FormatInt(time.Now().Unix(), 10)
-	info := fmt.Sprintf("[Trash Info]\nPath=%s\nDeletionDate=%s\n", path, time.Now().Format("2006-01-02T15:04:05"))
-	ui.Println(ui.Dim("$ mv " + shellq.Join([]string{path, filepath.Join(dir, "files", name)})))
-	if runner.DryRun {
-		return nil
-	}
-	for _, sub := range []string{"files", "info"} {
-		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
-			return err
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "info", name+".trashinfo"), []byte(info), 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(path, filepath.Join(dir, "files", name)); err != nil {
-		return ui.Errorf("в Корзину не перенести (другой диск?): %v; %s не тронут", err, path)
-	}
-	return nil
-}
-
 func cleanStale(items []diskuse.Item, min int64) error {
 	touched := map[string]time.Time{}
 	var mu sync.Mutex
@@ -300,7 +243,7 @@ func cleanStale(items []diskuse.Item, min int64) error {
 		mu.Lock()
 		f, ok := commits[dir]
 		if !ok {
-			f = sync.OnceValue(func() time.Time { return lastCommit(dir) })
+			f = sync.OnceValue(func() time.Time { return diskuse.LastCommit(dir) })
 			commits[dir] = f
 		}
 		mu.Unlock()
@@ -319,7 +262,7 @@ func cleanStale(items []diskuse.Item, min int64) error {
 	}
 	wg.Wait()
 	stale := slices.DeleteFunc(diskuse.Stale(items, touched, time.Now(), diskDays, min), func(it diskuse.Item) bool {
-		if tracked(it.Path) {
+		if diskuse.Tracked(it.Path) {
 			ui.Println(ui.Dim("пропускаю " + it.Path + ": лежит в git"))
 			return true
 		}
@@ -339,7 +282,7 @@ func cleanStale(items []diskuse.Item, min int64) error {
 		if !runner.Confirm(q) {
 			continue
 		}
-		if err := moveToTrash(it.Path); err != nil {
+		if err := trash.Move(it.Path); err != nil {
 			ui.Println(ui.Bad(err.Error()))
 			continue
 		}
@@ -351,22 +294,6 @@ func cleanStale(items []diskuse.Item, min int64) error {
 	}
 	ui.Println(ui.Info("освобождено "+ui.Bytes(freed)) + ui.Dim("  вернуть можно из Корзины"))
 	return nil
-}
-
-// parseSize: 50M, 1G, 500K или байты.
-func parseSize(s string) (int64, error) {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	mult := int64(1)
-	for suf, m := range map[string]int64{"K": 1 << 10, "M": 1 << 20, "G": 1 << 30} {
-		if strings.HasSuffix(s, suf) {
-			mult, s = m, strings.TrimSuffix(s, suf)
-		}
-	}
-	n, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0, ui.Errorf("размер вида 50M: %s", s)
-	}
-	return int64(n * float64(mult)), nil
 }
 
 var diskCmd = &cobra.Command{
@@ -409,7 +336,7 @@ tim сам ничего не удаляет, кроме --clean, и то в Ко
 		if st, err := os.Stat(root); err != nil || !st.IsDir() {
 			return ui.Errorf("папки нет: %s", root)
 		}
-		min, err := parseSize(diskMin)
+		min, err := diskuse.ParseSize(diskMin)
 		if err != nil {
 			return err
 		}

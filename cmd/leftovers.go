@@ -1,17 +1,13 @@
 package cmd
 
 import (
-	"encoding/json"
-	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/TimurTurdyev/tim/internal/leftover"
-	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -19,70 +15,25 @@ import (
 
 var diskLeft bool
 
-// installedApps: программы из /Applications, ~/Applications и системные, с ID из Info.plist.
-func installedApps() []leftover.App {
-	var bundles []string
-	for _, dir := range []string{"/Applications", "/Applications/Utilities", "/System/Applications", "/System/Applications/Utilities",
-		filepath.Join(paths.Home(), "Applications")} {
-		found, _ := filepath.Glob(filepath.Join(dir, "*.app"))
-		nested, _ := filepath.Glob(filepath.Join(dir, "*", "*.app"))
-		bundles = append(append(bundles, found...), nested...)
-	}
-	apps := make([]leftover.App, len(bundles))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	for i, b := range bundles {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			id, _ := runner.Output("plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", filepath.Join(b, "Contents", "Info.plist"))
-			apps[i] = leftover.App{ID: strings.TrimSpace(id), Name: strings.TrimSuffix(filepath.Base(b), ".app")}
-		})
-	}
-	wg.Wait()
-	return apps
-}
-
-// libraryPlaces: где программы оставляют своё в ~/Library.
-var libraryPlaces = []string{"Application Support", "Caches", "Containers", "Group Containers", "Preferences",
-	"Saved Application State", "HTTPStorages", "WebKit", "Logs", "Cookies"}
-
-type leftItem struct {
-	path string
-	size int64
-	note string
-}
-
-type leftGroup struct {
-	owner   string
-	sure    bool
-	size    int64
-	items   []leftItem
-	agents  []string // метки агентов launchd, которые надо выгрузить
-	pids    []string
-	similar string
-	app     string // имя удалённой программы, если известно по пути её файла
-}
-
 func leftovers() error {
 	if tui.Available() && !diskClean {
 		return runScreen(leftScreen())
 	}
-	groups, err := gatherLeftovers()
+	groups, err := leftover.Gather(ownName, runningProcs())
 	if err != nil {
 		return err
 	}
-	var shown []*leftGroup
+	var shown []*leftover.Group
 	var total, smallSize int64
 	small := 0
 	for _, g := range groups {
-		if !diskAll && g.size < 50<<20 && len(g.agents) == 0 && len(g.pids) == 0 {
+		if !diskAll && g.Size < 50<<20 && len(g.Agents) == 0 && len(g.PIDs) == 0 {
 			small++
-			smallSize += g.size
+			smallSize += g.Size
 			continue
 		}
 		shown = append(shown, g)
-		total += g.size
+		total += g.Size
 	}
 	if len(shown) == 0 {
 		ui.Println(ui.Dim("хвостов удалённых программ не нашёл"))
@@ -104,156 +55,6 @@ func leftovers() error {
 	return nil
 }
 
-// gatherLeftovers: всё, что осталось от удалённых программ, по убыванию размера; мелочь по имени отброшена.
-func gatherLeftovers() ([]*leftGroup, error) {
-	if runtime.GOOS != "darwin" {
-		return nil, ui.Errorf("хвосты удалённых программ tim пока ищет только на macOS")
-	}
-	home := paths.Home()
-	lib := filepath.Join(home, "Library")
-	ix := leftover.NewIndex(installedApps())
-	projects := map[string]bool{}
-	for _, p := range cfg.Projects {
-		projects[strings.ToLower(p.Name)] = true
-		projects[strings.ToLower(filepath.Base(cfg.ProjectDir(&p)))] = true
-	}
-	groups := map[string]*leftGroup{}
-	add := func(v leftover.Verdict, it leftItem) *leftGroup {
-		g := groups[v.Owner]
-		if g == nil {
-			g = &leftGroup{owner: v.Owner}
-			groups[v.Owner] = g
-		}
-		g.sure = g.sure || v.Sure
-		g.items = append(g.items, it)
-		return g
-	}
-	for _, place := range libraryPlaces {
-		entries, _ := os.ReadDir(filepath.Join(lib, place))
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			v := ix.Judge(e.Name())
-			// Папка с именем проекта из реестра - его же данные: свои программы в разработке не хвост.
-			if !v.Sure && (projects[strings.ToLower(e.Name())] || devFolder(e.Name())) {
-				continue
-			}
-			// По одному имени, без ID, верим только папкам программ: в Caches и Group Containers
-			// такие имена у консольных утилит (go-build, playwright) и у групп с чужими командами.
-			if !v.Orphan || (!v.Sure && place != "Application Support") {
-				continue
-			}
-			g := add(v, leftItem{path: filepath.Join(lib, place, e.Name())})
-			if v.Similar != "" {
-				g.similar = v.Similar
-			}
-		}
-	}
-	// Агенты автозапуска, чья программа удалена, - хвост наверняка: они срабатывают при каждом входе.
-	for _, dir := range []string{filepath.Join(lib, "LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"} {
-		files, _ := filepath.Glob(filepath.Join(dir, "*.plist"))
-		for _, f := range files {
-			out, err := runner.Output("plutil", "-convert", "json", "-o", "-", f)
-			if err != nil {
-				continue
-			}
-			var a struct {
-				Label            string   `json:"Label"`
-				Program          string   `json:"Program"`
-				ProgramArguments []string `json:"ProgramArguments"`
-			}
-			if json.Unmarshal([]byte(out), &a) != nil {
-				continue
-			}
-			target := leftover.AgentTarget(a.Program, a.ProgramArguments)
-			if !filepath.IsAbs(target) {
-				continue
-			}
-			if _, err := os.Stat(target); err == nil {
-				continue
-			}
-			v := ix.Judge(a.Label)
-			v.Orphan, v.Sure = true, true
-			g := add(v, leftItem{path: f, note: "автозапуск без программы"})
-			g.app = appOf(target)
-			switch dir {
-			case filepath.Join(lib, "LaunchAgents"), "/Library/LaunchAgents":
-				g.agents = append(g.agents, "gui/"+strconv.Itoa(os.Getuid())+"/"+a.Label)
-			default:
-				g.agents = append(g.agents, "system/"+a.Label)
-			}
-		}
-	}
-	// Процессы, чей файл уже удалён, - работают с прошлого запуска удалённой программы.
-	if list, err := allProcs(); err == nil {
-		for _, p := range list {
-			if !filepath.IsAbs(p.Comm) || !strings.HasPrefix(p.Comm, home) {
-				continue
-			}
-			if _, err := os.Stat(p.Comm); err == nil {
-				continue
-			}
-			// Чей процесс - по папке программы, из которой он запущен: Application Support/Steam/... - Steam.
-			owner := filepath.Base(p.Comm)
-			if r, err := filepath.Rel(filepath.Join(lib, "Application Support"), p.Comm); err == nil && !strings.HasPrefix(r, "..") {
-				owner = strings.Split(r, "/")[0]
-			}
-			g := add(leftover.Verdict{Owner: owner, Orphan: true, Sure: true}, leftItem{note: "процесс " + p.PID + " ещё работает, хотя программа удалена"})
-			g.pids = append(g.pids, p.PID)
-		}
-	}
-	var all []*leftGroup
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	for _, g := range groups {
-		for i := range g.items {
-			if g.items[i].path == "" {
-				continue
-			}
-			wg.Go(func() {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				out, _ := runner.Output("du", "-sk", g.items[i].path)
-				kb, _ := strconv.ParseInt(strings.Fields(out + " 0")[0], 10, 64)
-				g.items[i].size = kb * 1024
-			})
-		}
-		all = append(all, g)
-	}
-	wg.Wait()
-	var out []*leftGroup
-	for _, g := range all {
-		for _, it := range g.items {
-			g.size += it.size
-		}
-		// По одному имени без ID - только крупное: мелких папок от утилит без .app слишком много.
-		if !g.sure && g.size < 1<<30 {
-			continue
-		}
-		out = append(out, g)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].size > out[j].size })
-	return out, nil
-}
-
-// groupTitle: имя программы по ID её файлов (Whisky, а не com.isaacmarovitz) и поставщик рядом.
-func groupTitle(g *leftGroup) string {
-	if g.app != "" {
-		return g.app + ui.Dim("  "+g.owner)
-	}
-	// Имя - по самому большому файлу: у Docker это com.docker.docker, а не служебный com.docker.install.
-	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
-	for _, it := range g.items {
-		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(it.path), ".plist"), ".savedState")
-		if leftover.BundleID(name) != "" {
-			parts := strings.Split(name, ".")
-			return parts[len(parts)-1] + ui.Dim("  "+g.owner)
-		}
-	}
-	return g.owner
-}
-
 // devFolder: папка с таким именем есть среди проектов в корне разработки (~/Dev/projects/my-app),
 // даже если её нет в реестре.
 func devFolder(name string) bool {
@@ -265,47 +66,30 @@ func devFolder(name string) bool {
 	return false
 }
 
-// appOf: имя программы по пути внутри её .app.
-func appOf(p string) string {
-	if i := strings.Index(p, ".app/"); i >= 0 {
-		return filepath.Base(p[:i])
-	}
-	return ""
-}
-
-// libPath: путь короче - от ~/Library, раз все хвосты там; остальное как есть.
-func libPath(p string) string {
-	lib := filepath.Join(paths.Home(), "Library") + "/"
-	if strings.HasPrefix(p, lib) {
-		return strings.TrimPrefix(p, lib)
-	}
-	return p
-}
-
-func printLeftGroup(g *leftGroup) {
-	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
-	title := groupTitle(g)
-	if !g.sure {
+func printLeftGroup(g *leftover.Group) {
+	sort.Slice(g.Items, func(i, j int) bool { return g.Items[i].Size > g.Items[j].Size })
+	title := g.Title()
+	if !g.Sure {
 		title += ui.Dim("  похоже, от удалённой программы - проверь")
 	}
-	ui.Println(ui.Label(ui.Pad(ui.Bytes(g.size), 10)) + title)
-	if g.similar != "" {
-		ui.Println("          " + ui.Warn("установлен другой "+g.similar+": это данные другой версии, проверь, что они не нужны"))
+	ui.Println(ui.Label(ui.Pad(ui.Bytes(g.Size), 10)) + title)
+	if g.Similar != "" {
+		ui.Println("          " + ui.Warn("установлен другой "+g.Similar+": это данные другой версии, проверь, что они не нужны"))
 	}
 	tiny, tinySize := 0, int64(0)
-	for _, it := range g.items {
+	for _, it := range g.Items {
 		// Мелочь вроде настроек и куки - одной строкой: смотреть на неё незачем, убирается вместе со всем.
-		if it.note == "" && it.size < 1<<20 && !diskAll {
+		if it.Note == "" && it.Size < 1<<20 && !diskAll {
 			tiny++
-			tinySize += it.size
+			tinySize += it.Size
 			continue
 		}
 		line := "          "
-		if it.path != "" {
-			line += ui.Pad(ui.Bytes(it.size), 10) + libPath(it.path)
+		if it.Path != "" {
+			line += ui.Pad(ui.Bytes(it.Size), 10) + leftover.LibPath(it.Path)
 		}
-		if it.note != "" {
-			line += "  " + ui.Warn(it.note)
+		if it.Note != "" {
+			line += "  " + ui.Warn(it.Note)
 		}
 		ui.Println(line)
 	}
@@ -315,38 +99,25 @@ func printLeftGroup(g *leftGroup) {
 	ui.Println()
 }
 
-func splitOwn(g *leftGroup) (mine, system []string) {
-	for _, it := range g.items {
-		switch {
-		case it.path == "":
-		case strings.HasPrefix(it.path, paths.Home()+"/"):
-			mine = append(mine, it.path)
-		default:
-			system = append(system, it.path)
-		}
-	}
-	return mine, system
-}
-
 // cleanLeftovers: в терминале - список с галочками, что убрать, и одно подтверждение; без него -
 // вопрос по каждой. Команды печатаются по мере выполнения, с --dry-run - только печатаются.
 // "Похоже" заранее не отмечено: узнано по одному имени.
-func cleanLeftovers(groups []*leftGroup) error {
+func cleanLeftovers(groups []*leftover.Group) error {
 	picked := groups
 	if tui.Available() && !runner.DryRun {
 		items := make([]tui.Item, len(groups))
 		for i, g := range groups {
 			hint := ""
-			if !g.sure {
+			if !g.Sure {
 				hint = "похоже, проверь"
 			}
-			if hint == "" && len(g.items) > 0 && g.items[0].path != "" {
-				hint = libPath(g.items[0].path)
-				if len(g.items) > 1 {
-					hint += " и ещё " + strconv.Itoa(len(g.items)-1)
+			if hint == "" && len(g.Items) > 0 && g.Items[0].Path != "" {
+				hint = leftover.LibPath(g.Items[0].Path)
+				if len(g.Items) > 1 {
+					hint += " и ещё " + strconv.Itoa(len(g.Items)-1)
 				}
 			}
-			items[i] = tui.Item{Title: ui.Pad(ui.Bytes(g.size), 10) + groupName(g), Hint: hint}
+			items[i] = tui.Item{Title: ui.Pad(ui.Bytes(g.Size), 10) + g.Name(), Hint: hint}
 		}
 		idx, err := tui.MultiSelect("Что убрать в Корзину?", items, nil)
 		if err != nil {
@@ -356,7 +127,7 @@ func cleanLeftovers(groups []*leftGroup) error {
 		var size int64
 		for _, i := range idx {
 			picked = append(picked, groups[i])
-			size += groups[i].size
+			size += groups[i].Size
 		}
 		if len(picked) == 0 {
 			ui.Println(ui.Dim("ничего не выбрано"))
@@ -369,13 +140,13 @@ func cleanLeftovers(groups []*leftGroup) error {
 	}
 	var freed int64
 	for _, g := range picked {
-		ui.Println(ui.Label(ui.Pad(ui.Bytes(g.size), 10)) + groupTitle(g))
-		if !tui.Available() && !runner.DryRun && !runner.ConfirmDefault("убрать "+groupName(g)+"?", false) {
+		ui.Println(ui.Label(ui.Pad(ui.Bytes(g.Size), 10)) + g.Title())
+		if !tui.Available() && !runner.DryRun && !runner.ConfirmDefault("убрать "+g.Name()+"?", false) {
 			ui.Println()
 			continue
 		}
-		if removeGroup(g) {
-			freed += g.size
+		if leftover.Remove(g) {
+			freed += g.Size
 		}
 		ui.Println()
 	}
@@ -388,34 +159,18 @@ func cleanLeftovers(groups []*leftGroup) error {
 	return nil
 }
 
-func groupName(g *leftGroup) string { return strings.Split(groupTitle(g), "  ")[0] }
+// ownName: папка с именем проекта из реестра или из корня разработки - свои данные, не хвост.
+func ownName(name string) bool {
+	l := strings.ToLower(name)
+	for _, p := range cfg.Projects {
+		if l == strings.ToLower(p.Name) || l == strings.ToLower(filepath.Base(cfg.ProjectDir(&p))) {
+			return true
+		}
+	}
+	return devFolder(name)
+}
 
-// removeGroup: агенты выгрузить, процессы остановить, файлы в Корзину; системные - через sudo.
-func removeGroup(g *leftGroup) bool {
-	sort.Slice(g.items, func(i, j int) bool { return g.items[i].size > g.items[j].size })
-	for _, a := range g.agents {
-		if strings.HasPrefix(a, "system/") {
-			_ = runner.Sudo("launchctl", "bootout", a)
-		} else {
-			_ = runner.Run("launchctl", "bootout", a)
-		}
-	}
-	if len(g.pids) > 0 {
-		_ = runner.Run("kill", g.pids...)
-	}
-	mine, system := splitOwn(g)
-	ok := true
-	for _, p := range mine {
-		if err := moveToTrash(p); err != nil {
-			ui.Println(ui.Bad(err.Error()))
-			ok = false
-		}
-	}
-	for _, p := range system {
-		if err := runner.Sudo("mv", p, filepath.Join(paths.Home(), ".Trash")+"/"); err != nil {
-			ui.Println(ui.Bad(p + ": не убрано"))
-			ok = false
-		}
-	}
-	return ok
+func runningProcs() []procs.Full {
+	list, _ := allProcs()
+	return list
 }
