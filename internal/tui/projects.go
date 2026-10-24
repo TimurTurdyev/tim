@@ -385,7 +385,7 @@ func (p *projects) card() *Card {
 func (p *projects) View(width, height int) string {
 	out := []string{""}
 	if len(p.opts.Rows) == 0 {
-		return strings.Join(append(out, emptyRegistry()...), "\n")
+		return strings.Join(emptyRegistry(width), "\n")
 	}
 	wide := width >= projWideW
 	head := ui.Fit("ПРОЕКТ", projNameW) + ui.Fit("ЗАХОДИЛ "+sortMark(!p.byName), 11) + "DEV-СЕРВЕР"
@@ -434,12 +434,10 @@ func sortMark(on bool) string {
 }
 
 // emptyRegistry: реестр пуст - что это и что делать.
-func emptyRegistry() []string {
-	return []string{
-		"   " + styleBold.Render("Реестр пока пуст"),
-		"   " + styleDim.Render("tim знает о проекте только то, что в реестре: папка, стек, порт, база, сервер"),
-		"   " + styleDim.Render("найти репозитории в папке с кодом и отметить нужные, или добавить текущую папку"),
-	}
+func emptyRegistry(width int) []string {
+	return Notice("Реестр пока пуст",
+		styleDim.Render("tim знает о проекте только то, что в реестре: папка, стек, порт, база, сервер"),
+		"найти репозитории в папке с кодом и отметить нужные, или добавить текущую папку", width)
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

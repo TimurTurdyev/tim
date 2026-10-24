@@ -408,8 +408,11 @@ func (b *board) View(width, height int) string {
 	}
 	out = append(out, b.head(width)...)
 	if len(b.data.Rows) == 0 {
-		for _, l := range ui.Wrap(b.data.Empty, width-6) {
-			out = append(out, "   "+styleBold.Render(l))
+		// Пусто - заметка: заголовок до двоеточия, пояснение - после.
+		title, rest, _ := strings.Cut(b.data.Empty, ": ")
+		out = append(out[:len(out)-len(b.head(width))], Notice(title, styleDim.Render(rest), "", width)...)
+		if len(b.data.Head) > 0 || len(b.data.Lamps) > 0 {
+			out = append(append(out, ""), b.head(width)...)
 		}
 		return strings.Join(out, "\n")
 	}
