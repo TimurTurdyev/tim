@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
@@ -70,14 +71,14 @@ func ensureBypass(ip string) {
 	if netinfo.IsPrivate(ip) {
 		return
 	}
-	phys, gw := physical()
-	state, bad := routeState(ip, phys, gw)
+	phys, gw := bypass.Physical()
+	state, bad := bypass.RouteState(ip, phys, gw)
 	if !bad {
 		return
 	}
 	ui.Println(ip + ": " + state)
 	if runner.Confirm("завести маршрут через " + gw + "?") {
-		_ = routeUp([]string{ip})
+		_ = bypass.Up(cfg, []string{ip})
 	}
 }
 

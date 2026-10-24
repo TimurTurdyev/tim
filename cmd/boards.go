@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/health"
@@ -67,7 +68,7 @@ func vpnScreen() tui.Screen {
 
 func vpnData(probe bool) tui.BoardData {
 	var d tui.BoardData
-	phys, gw := physical()
+	phys, gw := bypass.Physical()
 	d.Status = phys.Name + " " + phys.Device + " \u00b7 шлюз " + ui.Dash(gw)
 	tunnels := netinfo.Tunnels()
 	inet := netinfo.InternetIface()
@@ -81,11 +82,11 @@ func vpnData(probe bool) tui.BoardData {
 		vpn = ui.Dim("\u25cb VPN выключен, интернет напрямую через " + ui.Dash(inet))
 	}
 	var guard string
-	st, hasSt := guardStatus()
+	st, hasSt := bypass.GuardStatus()
 	switch {
-	case !guardInstalled():
+	case !bypass.GuardInstalled():
 		guard = ui.Warn("\u25b2 страж не установлен ") + ui.Dim("после смены сети обход сам не починится: sudo tim route install")
-	case !guardRunning():
+	case !bypass.GuardRunning():
 		guard = ui.Bad("\u2715 страж не работает ") + ui.Dim("tim route status")
 	case !hasSt:
 		guard = ui.OK("\u25cf страж работает ") + ui.Dim("отчёта пока нет")
@@ -108,7 +109,7 @@ func vpnData(probe bool) tui.BoardData {
 	var targets []target
 	total, ok := 0, 0
 	for _, h := range cfg.Hosts {
-		dests := expandAddr(h.Addr)
+		dests := bypass.ExpandAddr(h.Addr)
 		t := target{row: tui.BoardRow{ID: h.Addr, Title: h.Addr, Sub: h.Label}, dest: len(dests)}
 		if len(dests) == 0 {
 			t.bad = 1
@@ -116,8 +117,8 @@ func vpnData(probe bool) tui.BoardData {
 		}
 		for _, dest := range dests {
 			total++
-			state, bad := routeState(dest, phys, gw)
-			if !bad && bypassed(dest, phys, gw) {
+			state, bad := bypass.RouteState(dest, phys, gw)
+			if !bad && bypass.Bypassed(dest, phys, gw) {
 				ok++
 			}
 			if bad {
@@ -125,7 +126,7 @@ func vpnData(probe bool) tui.BoardData {
 			}
 			line := ui.Pad(dest, 20) + state
 			if probe && !strings.Contains(dest, "/") {
-				if portOpen(dest, "22") {
+				if bypass.PortOpen(dest, "22") {
 					line += ui.Dim("  порт 22 отвечает")
 				} else {
 					line += ui.Bad("  порт 22 молчит")

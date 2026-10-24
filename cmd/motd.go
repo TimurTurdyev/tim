@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -247,7 +248,7 @@ func motdProject() []string {
 }
 
 func motdNet() []string {
-	phys, gw := physical()
+	phys, gw := bypass.Physical()
 	if phys.Device == "" {
 		return []string{ui.Bad("сеть     ") + "активного интерфейса нет"}
 	}
@@ -275,9 +276,9 @@ func motdNet() []string {
 	if len(cfg.Hosts) > 0 && netinfo.IsTunnelIface(inet) {
 		total, ok := 0, 0
 		for _, h := range cfg.Hosts {
-			for _, d := range expandAddr(h.Addr) {
+			for _, d := range bypass.ExpandAddr(h.Addr) {
 				total++
-				if bypassed(d, phys, gw) {
+				if bypass.Bypassed(d, phys, gw) {
 					ok++
 				}
 			}

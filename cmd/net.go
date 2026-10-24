@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -37,7 +38,7 @@ var netCheckCmd = &cobra.Command{
 	Short: "Шлюз, интернет, DNS, внешний IP, VPN: что именно не работает",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		phys, gw := physical()
+		phys, gw := bypass.Physical()
 		steps := []step{
 			{"интерфейс", func() (string, error) {
 				if phys.Device == "" {

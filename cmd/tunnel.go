@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
@@ -39,7 +40,7 @@ var tunnelCmd = &cobra.Command{
 		if pid, ok := shuttlePID(); ok {
 			ui.Println(ui.Pad("all", 14) + " " + ui.Pad(ui.Label("работает"), 10) + " " + ui.Dim("sshuttle, pid "+pid+", весь IPv4 через ssh"))
 		}
-		if phys, _ := physical(); phys.Name != "" {
+		if phys, _ := bypass.Physical(); phys.Name != "" {
 			p := netinfo.SocksProxy(phys.Name)
 			if p.Enabled {
 				ui.Println(ui.Warn("системный SOCKS включён на " + phys.Name + ": " + p.Server + ":" + p.Port))
@@ -200,7 +201,7 @@ func systemProxy(on bool) {
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	phys, _ := physical()
+	phys, _ := bypass.Physical()
 	if phys.Name == "" {
 		ui.Println(ui.Warn("активная сетевая служба не найдена"))
 		return
