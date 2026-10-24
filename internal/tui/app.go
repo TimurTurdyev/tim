@@ -24,9 +24,6 @@ const animEvery = 250 * time.Millisecond
 // escWindow: сколько ждать второго esc на корневом экране.
 const escWindow = 2 * time.Second
 
-// globalKeys: то, что одинаково на всех экранах - для справки.
-var globalKeys = []Key{{"esc", "назад, на главном дважды - выход"}, {"?", "справка"}, {":", "любая команда tim"}, {"q", "выход"}}
-
 // animFrame: кадр общего тикера; экраны берут из него кадр работы через Spinner.
 var animFrame int
 
@@ -96,10 +93,11 @@ type Ask struct {
 	Done              func(text string) Action
 }
 
-// CommandEntry: подсказка для командной строки ":".
+// CommandEntry: подсказка для палитры ":".
 type CommandEntry struct {
 	Line, Desc string
-	Template   bool // пример с выдуманными аргументами: выбор подставляет его для правки, а не выполняет
+	Template   bool   // пример с выдуманными аргументами: выбор подставляет его для правки, а не выполняет
+	Group      string // недавнее, подстановка (настоящие имена); пусто - команды
 }
 
 // Options: что каркасу нужно от главного экрана.
@@ -109,9 +107,10 @@ type Options struct {
 	CdFile     string                             // куда записать папку для шима, если выбрали "перейти"
 }
 
+// overlay: окно поверх экрана; compose кладёт его на приглушённые строки экрана.
 type overlay interface {
 	update(msg tea.KeyPressMsg, app *App) tea.Cmd
-	view(width, height int) string
+	compose(base []string, width, height int) []string
 	keys() []Key
 }
 
@@ -341,7 +340,7 @@ func (a *App) key(msg tea.KeyPressMsg) tea.Cmd {
 			if h, ok := a.cur().(helpKeys); ok {
 				ks = h.HelpKeys()
 			}
-			a.overlay = &helpOverlay{ks: slices.DeleteFunc(ks, func(k Key) bool { return quietKey(k.K) })}
+			a.overlay = &helpOverlay{title: screenTitle(a.cur()), ks: slices.DeleteFunc(ks, func(k Key) bool { return quietKey(k.K) })}
 			return nil
 		}
 	case ":":

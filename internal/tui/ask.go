@@ -57,7 +57,7 @@ func (o *askOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	return cmd
 }
 
-func (o *askOverlay) view(int, int) string { return "" }
+func (o *askOverlay) compose(base []string, _, _ int) []string { return base }
 
 func (o *askOverlay) keys() []Key { return nil }
 

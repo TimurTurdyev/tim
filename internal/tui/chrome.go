@@ -15,6 +15,9 @@ import (
 // клавиши экрана - на подложке, общие (: ? esc) - серым без подложки и всегда последними.
 // Справа - то же самое командой для терминала.
 
+// dimmed: экран рисуется под окном - маскот лок-апа на это время не рисуется, место остаётся.
+var dimmed bool
+
 // keySlot: место клавиши в строке - enter, /, буквы экрана, space, tab, r.
 func keySlot(k string) int {
 	switch k {
@@ -148,19 +151,21 @@ func (a *App) View() tea.View {
 	}
 	// Тело - всё между верхней и нижней строками; его последняя строка - строка состояния.
 	viewH := max(1, h-len(rows)-2)
-	var body string
 	_, inlined := a.overlay.(inline)
-	if a.overlay != nil && !inlined {
-		body = a.overlay.view(w, viewH)
-	} else {
-		body = s.View(w, viewH)
-	}
-	lines := strings.Split(body, "\n")
+	over := a.overlay != nil && !inlined
+	lines := strings.Split(viewDimmed(s, w, viewH, over), "\n")
 	if len(lines) > viewH {
 		lines = lines[:viewH]
 	}
 	for len(lines) < viewH {
 		lines = append(lines, "")
+	}
+	if over {
+		// Экран под окном остаётся на местах, но серым: видно, к чему относится решение.
+		for i, l := range lines {
+			lines[i] = styleDim.Render(stripANSI(l))
+		}
+		lines = a.overlay.compose(lines, w, viewH)
 	}
 	// Терминал режет длинную строку молча; тильда хотя бы показывает, что там было ещё.
 	for i, l := range lines {
@@ -218,4 +223,19 @@ func statusText(s string) string {
 		return styleAmber.Render(s)
 	}
 	return styleStatus.Render(s)
+}
+
+// screenTitle: как назвать экран в шпаргалке.
+func screenTitle(s Screen) string {
+	if c := s.Crumbs(); len(c) > 0 {
+		return c[len(c)-1]
+	}
+	return "главный"
+}
+
+// viewDimmed: экран целиком, под окном - без маскота.
+func viewDimmed(s Screen, w, h int, on bool) string {
+	dimmed = on
+	defer func() { dimmed = false }()
+	return s.View(w, h)
 }

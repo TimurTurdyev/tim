@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"slices"
 	"strings"
+	"unicode"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -10,7 +12,23 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Наложения поверх экрана: подтверждение, справка, командная строка.
+// Наложения поверх приглушённого экрана: подтверждение по центру, шпаргалка ящиком снизу, палитра
+// ":" сверху. Экран под ними остаётся виден серым и на своих местах: решение принимается в контексте.
+
+// Группы палитры по порядку.
+const (
+	groupError    = "ошибка"
+	groupRecent   = "недавнее"
+	groupSubst    = "подстановка"
+	groupCommands = "команды"
+	groupTemplate = "шаблоны"
+)
+
+// listKeys и everywhere: колонки шпаргалки, одинаковые на всех экранах.
+var (
+	listKeys  = []Key{{symUpDown + " j k", "строка"}, {"pgup pgdn", "страница"}, {"home end g G", "начало, конец"}}
+	everyKeys = []Key{{":", "команда"}, {"?", "эта шпаргалка"}, {"esc", "назад"}, {"q", "выход"}}
+)
 
 // Dialog: окно подтверждения. Что именно, какой командой, можно ли вернуть - и одно действие.
 type Dialog struct {
@@ -52,17 +70,25 @@ func (c *confirmOverlay) keys() []Key {
 	return []Key{{"enter", "выбранная кнопка"}, {"tab", "другая"}, {"esc", "отмена"}}
 }
 
-func (c *confirmOverlay) view(width, height int) string {
+// compose: окно с рамкой по центру; строки экрана выше и ниже окна остаются видны.
+func (c *confirmOverlay) compose(base []string, width, height int) []string {
 	w := min(width-4, 92)
 	rows := []string{""}
 	for _, l := range c.d.Lines {
-		rows = append(rows, styleText.Render(l))
+		rows = append(rows, "  "+styleText.Render(l))
 	}
 	if c.d.Command != "" {
-		rows = append(rows, "", styleDim.Render("Выполнится:  "+c.d.Command))
+		rows = append(rows, "")
+		for i, l := range ui.Wrap(c.d.Command, w-18) {
+			label := "              "
+			if i == 0 {
+				label = "  Выполнится:  "
+			}
+			rows = append(rows, styleDim.Render(label)+l)
+		}
 	}
 	if c.d.Note != "" {
-		rows = append(rows, styleDim.Render(c.d.Note))
+		rows = append(rows, "  "+styleDim.Render(c.d.Note))
 	}
 	ok := c.d.OK
 	if ok == "" {
@@ -78,80 +104,129 @@ func (c *confirmOverlay) view(width, height int) string {
 	} else {
 		btnNo = styleBtnMain.Render("Отмена")
 	}
-	rows = append(rows, "", btnYes+"   "+btnNo, "")
+	rows = append(rows, "", "  "+btnYes+"   "+btnNo, "")
 	box := Pane(c.d.Title, "", rows, w)
-	pad := strings.Repeat(" ", max(0, (width-w)/2))
-	top := max(0, (height-len(box))/2)
-	var out []string
-	for i := 0; i < top; i++ {
-		out = append(out, "")
-	}
-	for _, l := range box {
-		out = append(out, pad+l)
-	}
-	return strings.Join(out, "\n")
+	return overlayAt(base, box, max(0, (height-len(box))/2), (width-w)/2)
 }
 
-// ---------- справка ----------
+// overlayAt: строки box поверх base с этой строки и колонки; слева от окна - пусто.
+func overlayAt(base, box []string, top, left int) []string {
+	out := append([]string{}, base...)
+	pad := strings.Repeat(" ", max(0, left))
+	for i, l := range box {
+		if top+i < len(out) {
+			out[top+i] = pad + l
+		}
+	}
+	return out
+}
 
-type helpOverlay struct{ ks []Key }
+// ---------- шпаргалка ----------
+
+type helpOverlay struct {
+	title string
+	ks    []Key
+}
 
 func (h *helpOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	app.overlay = nil
 	return nil
 }
 
-func (h *helpOverlay) keys() []Key { return []Key{{"esc", "закрыть"}} }
-
-func (h *helpOverlay) view(width, height int) string {
-	box := HelpBox(h.ks, width)
-	return "\n" + strings.Join(box, "\n")
+func (h *helpOverlay) keys() []Key {
+	return []Key{{"клавиша", "выполнить"}, {"esc", "закрыть"}}
 }
 
-// HelpBox: клавиши экрана в три колонки и общие внизу.
-func HelpBox(screenKeys []Key, width int) []string {
-	w := min(width-4, 96)
+// compose: ящик снизу над строкой клавиш - этот экран, список, везде; строка про раскладку.
+func (h *helpOverlay) compose(base []string, width, height int) []string {
+	w := width - 4
 	cols := 3
-	col := (w - 4) / cols
-	var rows []string
-	rows = append(rows, "")
-	for i := 0; i < len(screenKeys); i += cols {
-		line := ""
-		for j := i; j < i+cols && j < len(screenKeys); j++ {
-			k := screenKeys[j]
-			line += ui.Fit(styleKeyCap.Render(" "+k.K+" ")+"  "+styleText.Render(k.D), col)
+	if width < 100 {
+		cols = 2
+	}
+	colW := (w - 8) / cols
+	screen, list := []Key{}, slices.Clone(listKeys)
+	for _, k := range h.ks {
+		switch k.K {
+		case "/", "r", "space", "tab":
+			list = append(list, k)
+		default:
+			screen = append(screen, k)
+		}
+	}
+	columns := [][]string{keyColumn("ЭТОТ ЭКРАН", screen), keyColumn("СПИСОК", list)}
+	if cols == 3 {
+		columns = append(columns, keyColumn("ВЕЗДЕ", everyKeys))
+	}
+	n := 0
+	for _, c := range columns {
+		n = max(n, len(c))
+	}
+	rows := []string{""}
+	for i := range n {
+		line := "  "
+		for _, c := range columns {
+			cell := ""
+			if i < len(c) {
+				cell = c[i]
+			}
+			line += ui.Fit(cell, colW)
 		}
 		rows = append(rows, line)
 	}
 	rows = append(rows, "")
-	var g []string
-	for _, k := range globalKeys {
-		g = append(g, k.K+" "+k.D)
+	if ru := layoutLine(screen); ru != "" {
+		rows = append(rows, "  "+styleDim.Render(ui.Clip(ru, w-6)))
 	}
-	notes := "Везде:  " + strings.Join(g, "  "+symDot+"  ") + "\n" +
-		"Убрать - всегда в Корзину и с подтверждением. Команда для терминала - внизу справа."
-	for _, note := range strings.Split(notes, "\n") {
-		for _, l := range ui.Wrap(note, w-4) {
-			rows = append(rows, styleDim.Render(l))
+	rows = append(rows, "  "+styleDim.Render("убрать - всегда в Корзину и с подтверждением; команда для терминала - внизу справа"), "")
+	box := Pane("Клавиши: "+h.title, "", rows, w)
+	return overlayAt(base, box, max(0, height-len(box)), 2)
+}
+
+func keyColumn(title string, keys []Key) []string {
+	out := []string{styleHead.Render(title)}
+	for _, k := range keys {
+		out = append(out, styleKeyCap.Render(" "+k.K+" ")+" "+styleText.Render(k.D))
+	}
+	return out
+}
+
+// layoutLine: какие русские буквы работают на этом экране вместо латинских.
+func layoutLine(keys []Key) string {
+	back := map[rune]rune{}
+	for ru, lat := range ruLayout {
+		back[lat] = ru
+	}
+	var pairs []string
+	for _, k := range keys {
+		r := []rune(k.K)
+		if len(r) != 1 || !unicode.IsLower(r[0]) {
+			continue
+		}
+		if ru, ok := back[r[0]]; ok {
+			pairs = append(pairs, string(ru)+" = "+k.K)
 		}
 	}
-	rows = append(rows, "")
-	return Pane("Клавиши этого экрана", "", rows, w)
+	if len(pairs) == 0 {
+		return ""
+	}
+	return "русская раскладка работает позиционно: " + strings.Join(pairs, ", ")
 }
 
-// ---------- командная строка ----------
+// ---------- палитра ----------
 
 type cmdline struct {
-	input textinput.Model
-	list  List
-	hits  []CommandEntry
+	input   textinput.Model
+	list    List
+	hits    []CommandEntry
+	lastErr string
 }
 
-// newCmdline: строка ":"; text - что уже набрано, например пример для правки.
+// newCmdline: палитра ":"; text - что уже набрано, например пример для правки.
 func newCmdline(app *App, text string) *cmdline {
 	in := textinput.New()
 	in.Prompt = ": "
-	in.Placeholder = "команда tim - начни печатать, tab подставит подсказку"
+	in.Placeholder = "команда tim - начни печатать, tab дополнит"
 	in.SetWidth(60)
 	st := in.Styles()
 	st.Focused.Prompt = stylePrompt
@@ -161,16 +236,20 @@ func newCmdline(app *App, text string) *cmdline {
 	in.Focus()
 	in.SetValue(text)
 	in.CursorEnd()
-	c := &cmdline{input: in}
+	c := &cmdline{input: in, lastErr: app.lastErr}
 	c.refill(app)
 	return c
 }
 
 func (c *cmdline) refill(app *App) {
 	c.hits = nil
+	q := strings.TrimSpace(c.input.Value())
+	if q == "" && c.lastErr != "" {
+		c.hits = append(c.hits, CommandEntry{Line: c.lastErr, Group: groupError})
+	}
 	if app.opts.Commands != nil {
 		all := app.opts.Commands(c.input.Value())
-		if q := strings.TrimSpace(c.input.Value()); q != "" {
+		if q != "" {
 			names := make([]string, len(all))
 			for i, e := range all {
 				names[i] = e.Line
@@ -179,57 +258,90 @@ func (c *cmdline) refill(app *App) {
 				c.hits = append(c.hits, all[m.Index])
 			}
 		} else {
-			c.hits = all
+			c.hits = append(c.hits, all...)
 		}
 	}
+	// Настоящие подстановки первыми, шаблоны - последними.
+	rank := map[string]int{groupError: 0, groupRecent: 1, groupSubst: 2, "": 3, groupCommands: 3, groupTemplate: 4}
+	for i := range c.hits {
+		if c.hits[i].Template {
+			c.hits[i].Group = groupTemplate
+		}
+	}
+	slices.SortStableFunc(c.hits, func(a, b CommandEntry) int { return rank[a.Group] - rank[b.Group] })
 	if len(c.hits) > 8 {
 		c.hits = c.hits[:8]
 	}
 	c.list.Rows = nil
+	group := "-"
 	for _, h := range c.hits {
-		h := h
-		desc := h.Desc
-		if h.Template {
-			desc = strings.TrimSuffix("пример, "+desc, ", ")
+		g := h.Group
+		if g == "" {
+			g = groupCommands
 		}
-		c.list.Rows = append(c.list.Rows, Row{Text: h.Line, Render: func(sel bool, w int) string {
-			return SelRow(sel, w, ui.Fit(styleBold.Render(h.Line), 34)+styleDim.Render(desc))
-		}})
+		if g != group && g != groupError {
+			group = g
+			title := strings.ToUpper(g)
+			if g == groupTemplate {
+				title += " " + symSep + " enter подставит для правки"
+			}
+			c.list.Rows = append(c.list.Rows, headerRow(title))
+		}
+		c.list.Rows = append(c.list.Rows, Row{Text: h.Line, Render: c.render(h)})
 	}
 	c.list.Cursor = 0
+	c.list.Skip(1)
+}
+
+func (c *cmdline) render(h CommandEntry) func(bool, int) string {
+	return func(sel bool, w int) string {
+		if h.Group == groupError {
+			line := styleBad.Render(ui.Clip(symCross+" последняя ошибка: "+h.Line, w-30))
+			return SelRow(sel, w, line+"   "+styleDim.Render("enter - показать целиком"))
+		}
+		name := styleText.Render(ui.Fit(h.Line, 28))
+		if sel {
+			name = styleBold.Render(ui.Fit(h.Line, 28))
+		}
+		return SelRow(sel, w, name+styleDim.Render(h.Desc))
+	}
+}
+
+func (c *cmdline) current() *CommandEntry {
+	n := -1
+	for i, r := range c.list.Rows {
+		if !r.Header {
+			n++
+		}
+		if i == c.list.Cursor && !r.Header && n < len(c.hits) {
+			return &c.hits[n]
+		}
+	}
+	return nil
 }
 
 func (c *cmdline) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	switch msg.String() {
 	case "esc":
+		if c.input.Value() != "" {
+			c.input.SetValue("")
+			c.refill(app)
+			return nil
+		}
 		app.overlay = nil
 		return nil
 	case "up", "down":
 		c.list.Key(msg.String(), 8)
 		return nil
 	case "tab":
-		if c.list.Cursor < len(c.hits) {
-			c.input.SetValue(c.hits[c.list.Cursor].Line)
+		if hit := c.current(); hit != nil && hit.Group != groupError {
+			c.input.SetValue(hit.Line)
 			c.input.CursorEnd()
 			c.refill(app)
 		}
 		return nil
 	case "enter":
-		line := strings.TrimSpace(c.input.Value())
-		if line == "" && c.list.Cursor < len(c.hits) {
-			if hit := c.hits[c.list.Cursor]; hit.Template {
-				c.input.SetValue(hit.Line)
-				c.input.CursorEnd()
-				c.refill(app)
-				return nil
-			}
-			line = c.hits[c.list.Cursor].Line
-		}
-		app.overlay = nil
-		if line == "" || app.opts.RunCommand == nil {
-			return nil
-		}
-		return app.Do(app.opts.RunCommand(line))
+		return c.enter(app)
 	}
 	var cmd tea.Cmd
 	before := c.input.Value()
@@ -240,18 +352,47 @@ func (c *cmdline) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	return cmd
 }
 
+// enter выполняет выбранную подсказку; шаблон встаёт в строку для правки; похожего нет - набранное.
+func (c *cmdline) enter(app *App) tea.Cmd {
+	line := strings.TrimSpace(c.input.Value())
+	if hit := c.current(); hit != nil {
+		switch {
+		case hit.Group == groupError:
+			app.overlay = nil
+			text := hit.Line
+			return app.Push(NewResult("последняя ошибка", func() (string, error) { return text, nil }, ResultOpts{}))
+		case hit.Template:
+			c.input.SetValue(hit.Line)
+			c.input.CursorEnd()
+			c.refill(app)
+			return nil
+		}
+		line = hit.Line
+	}
+	app.overlay = nil
+	if line == "" || app.opts.RunCommand == nil {
+		return nil
+	}
+	return app.Do(app.opts.RunCommand(line))
+}
+
 func (c *cmdline) keys() []Key {
 	return []Key{{"enter", "выполнить"}, {"tab", "дополнить"}, {"esc", "закрыть"}}
 }
 
-func (c *cmdline) view(width, height int) string {
-	rows := c.list.View(width, len(c.hits))
-	var out []string
-	for i := 0; i < max(0, height-len(rows)-3); i++ {
-		out = append(out, "")
+// compose: палитра сверху - ввод, подсказки, линия; экран ниже остаётся на своих местах серым.
+func (c *cmdline) compose(base []string, width, height int) []string {
+	top := []string{" " + c.input.View()}
+	if len(c.hits) == 0 {
+		top = append(top, "   "+styleDim.Render("ничего похожего "+symSep+" enter выполнит как набрано"))
 	}
-	out = append(out, "  "+styleHead.Render("ПОДСКАЗКИ"))
-	out = append(out, rows...)
-	out = append(out, " "+c.input.View())
-	return strings.Join(out, "\n")
+	top = append(top, c.list.View(width, len(c.list.Rows))...)
+	top = append(top, "   "+styleLine.Render(strings.Repeat("\u2500", max(0, width-6))))
+	out := append([]string{}, base...)
+	for i, l := range top {
+		if i < len(out) {
+			out[i] = l
+		}
+	}
+	return out
 }

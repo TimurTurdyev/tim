@@ -293,7 +293,7 @@ func (h *home) View(width, height int) string {
 		out = append(out, "")
 	}
 	head := ui.Header(h.data.Header, ui.HeaderOpts{Look: h.look(), Indent: 2, Width: width,
-		Sprite: width >= 70, Keep: true})
+		Sprite: width >= 70 && !dimmed, Keep: true})
 	out = append(out, head...)
 	out = append(out, "")
 	h.inputRow = len(out)

@@ -82,7 +82,7 @@ func Notice(title, line2, line3 string, width int) []string {
 		}
 		return out
 	}
-	return append([]string{""}, ui.Header(lines, ui.HeaderOpts{Look: look, Indent: 2, Width: width, Sprite: true, Keep: true})...)
+	return append([]string{""}, ui.Header(lines, ui.HeaderOpts{Look: look, Indent: 2, Width: width, Sprite: !dimmed, Keep: true})...)
 }
 
 // progressLine: полоса хода 40 клеток и счётчик с идущими секундами; frac < 0 - доля неизвестна.

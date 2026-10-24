@@ -211,8 +211,30 @@ func (h *Home) resetFlags(args []string) {
 // commands: подсказки для строки ":" - команды с описанием и примеры из справки.
 // commands: подсказки для ":". После имени команды первыми идут её настоящие аргументы - из того же
 // автодополнения, что в оболочке: проекты, алиасы, фоновые серверы, а не образцы из справки.
+// commands: подсказки палитры; пустой ввод - сначала недавнее, иначе настоящие подстановки имён.
 func (h *Home) commands(prefix string) []tui.CommandEntry {
+	if strings.TrimSpace(prefix) == "" {
+		return append(h.recentEntries(), h.entries()...)
+	}
 	return append(h.argEntries(prefix), h.entries()...)
+}
+
+// recentEntries: команды, которые недавно набирал, - новые первыми.
+func (h *Home) recentEntries() []tui.CommandEntry {
+	type item struct {
+		line string
+		last time.Time
+	}
+	var items []item
+	for line, e := range visits.Commands() {
+		items = append(items, item{line, e.Last})
+	}
+	slices.SortFunc(items, func(a, b item) int { return b.last.Compare(a.last) })
+	var out []tui.CommandEntry
+	for _, it := range items[:min(4, len(items))] {
+		out = append(out, tui.CommandEntry{Line: it.line, Desc: ui.Short(time.Since(it.last)), Group: "недавнее"})
+	}
+	return out
 }
 
 func (h *Home) argEntries(prefix string) []tui.CommandEntry {
@@ -234,7 +256,7 @@ func (h *Home) argEntries(prefix string) []tui.CommandEntry {
 	for _, v := range vals {
 		name, desc, _ := strings.Cut(v, "\t")
 		if strings.HasPrefix(name, toComplete) {
-			out = append(out, tui.CommandEntry{Line: base + " " + name, Desc: desc})
+			out = append(out, tui.CommandEntry{Line: base + " " + name, Desc: desc, Group: "подстановка"})
 		}
 	}
 	return out

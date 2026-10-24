@@ -159,9 +159,11 @@ func checkKey(t *testing.T, fset *token.FileSet, lit *ast.CompositeLit, kd []str
 	if kd == nil {
 		return
 	}
-	switch kd[0] {
-	case "enter", "esc", "?", ":", "q", "любая клавиша":
+	switch {
+	case kd[0] == "enter", kd[0] == "esc", kd[0] == "?", kd[0] == ":", kd[0] == "q", kd[0] == "клавиша":
 		return
+	case strings.Contains(kd[0], " "):
+		return // группа клавиш в шпаргалке: "pgup pgdn"
 	}
 	allowed, ok := keyVerbs[kd[0]]
 	if !ok {
