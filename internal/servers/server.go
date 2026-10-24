@@ -24,6 +24,7 @@ func printServer(target string, asJSON bool) error {
 		return ui.Errorf("%s: %v; маршрут и вход проверит tim ssh %s", target, err, target)
 	}
 	findings := evaluate(target, r)
+	save(serverState{Target: target, Report: r, Findings: findings})
 	if asJSON {
 		return ui.JSON(struct {
 			Report   srvinfo.Report `json:"report"`
