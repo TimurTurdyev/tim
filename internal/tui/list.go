@@ -146,7 +146,7 @@ func (l *List) window(h int) (start, end int) {
 // подсветке серого нет: вторые колонки выбранной строки пишутся основным цветом.
 func SelRow(selected bool, width int, body string) string {
 	if selected {
-		return onShade(ui.Fit(styleAccent.Render(" "+symBar)+" "+body, width))
+		return onShade(ui.Pad(ui.TrimLine(styleAccent.Render(" "+symBar)+" "+body, width), width))
 	}
-	return ui.Fit("   "+body, width)
+	return ui.Pad(ui.TrimLine("   "+body, width), width)
 }

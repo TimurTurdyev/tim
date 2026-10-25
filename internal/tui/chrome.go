@@ -169,7 +169,7 @@ func (a *App) View() tea.View {
 	}
 	// Терминал режет длинную строку молча; тильда хотя бы показывает, что там было ещё.
 	for i, l := range lines {
-		lines[i] = ui.Clip(l, w)
+		lines[i] = ui.TrimLine(l, w)
 	}
 	rows = append(rows, lines...)
 	status := a.statusLine(w)

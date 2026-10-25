@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/TimurTurdyev/tim/internal/brand"
 )
 
@@ -89,4 +91,22 @@ func TrimSegments(segs []string, width int) string {
 		return ""
 	}
 	return Clip(segs[0], width)
+}
+
+// TrimLine: готовая строка не шире width. Лишние пробелы в конце срезаются молча, строка из сегментов
+// через точку теряет хвостовые сегменты целиком; тильда - только когда иначе нельзя.
+func TrimLine(s string, width int) string {
+	if Width(s) <= width {
+		return s
+	}
+	plain := StripANSI(s)
+	if Width(strings.TrimRight(plain, " ")) <= width {
+		return ansi.Truncate(s, width, "") + "\x1b[0m"
+	}
+	for i := strings.LastIndex(plain, sep); i > 0; i = strings.LastIndex(plain[:i], sep) {
+		if w := Width(plain[:i]); w <= width {
+			return ansi.Truncate(s, w, "") + "\x1b[0m"
+		}
+	}
+	return Clip(s, width)
 }
