@@ -318,6 +318,7 @@ func (o *onboard) askShell(k string) tea.Cmd {
 		return nil
 	}
 	if o.list.Cursor == 2 || o.opts.Shell == nil {
+		o.shell = ""
 		return func() tea.Msg { return onbDoneMsg{} }
 	}
 	motd := o.list.Cursor == 1
@@ -330,7 +331,11 @@ func (o *onboard) askShell(k string) tea.Cmd {
 
 func (o *onboard) fillShell() {
 	o.list.Rows = nil
-	for i, c := range shellChoices {
+	choices := shellChoices
+	if o.opts.Shell == nil {
+		choices = shellChoices[2:] // к этой оболочке tim не подключается - остаётся только пропуск
+	}
+	for i, c := range choices {
 		note := c.note
 		if i == 0 {
 			note = o.opts.ShellFile + " " + symSep + " " + c.note

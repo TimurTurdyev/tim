@@ -67,6 +67,13 @@ func (o *onboard) View(width, height int) string {
 			"   "+styleDim.Render("отмеченное попадёт в реестр; без отметки - то, что не менялось больше года"),
 			"", "   "+styleHead.Render("   "+ui.Fit("ИМЯ", 26)+ui.Fit("СТЕК", 11)+ui.Fit("МЕНЯЛСЯ", 10)+"ПАПКА")+styleDim.Render("   отмечено "+itoa(len(o.chosen()))))
 	case 2:
+		if o.opts.Shell == nil {
+			out = append(out, "   "+styleBold.Render("Подключить tim к оболочке?"),
+				"   "+styleAmber.Render(symWarn+" "+o.opts.ShellFile),
+				"   "+styleDim.Render("без подключения не будут работать tim go (переход в папку) и дополнение по tab; остальное работает"),
+				"", "   "+styleHead.Render("ОБОЛОЧКА"))
+			break
+		}
 		out = append(out, "   "+styleBold.Render("Подключить tim к оболочке?"),
 			"   "+styleDim.Render("В "+o.opts.ShellFile+" допишется одна строка, всё остальное tim держит у себя и обновляет сам:"),
 			"", "     "+styleText.Render(o.opts.ShellLine), "",
@@ -89,7 +96,7 @@ func (o *onboard) View(width, height int) string {
 	if o.step == 1 && len(o.found) == 0 {
 		out = append(out, "   "+styleDim.Render("репозиториев не нашёл: конфиг запишется с пустым реестром"))
 	}
-	if o.step == 2 {
+	if o.step == 2 && o.opts.Shell != nil {
 		out = append(out, "", "   "+styleDim.Render("Убрать подключение - стереть эту строку из "+o.opts.ShellFile+"; больше tim в оболочке ничего не трогает."))
 	}
 	return strings.Join(out, "\n")

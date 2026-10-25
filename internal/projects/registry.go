@@ -122,7 +122,10 @@ func goTarget(env *app.Env, args []string) (*config.Project, error) {
 
 // shimHint: почему cd не сработал - шим не подключён или оболочка открыта до подключения.
 func shimHint() string {
-	path, _ := rcfile.Path("")
+	path, _, err := rcfile.Path("")
+	if err != nil {
+		return err.Error()
+	}
 	if rcfile.Sourced(path, 2) {
 		return "эта оболочка открыта раньше подключения tim: открой новый терминал, и cd заработает"
 	}

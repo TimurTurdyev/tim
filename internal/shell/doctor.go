@@ -145,7 +145,12 @@ func checkShim(r *report) {
 		r.ok("шим tim init работает в этой оболочке")
 		return
 	}
-	if path, _ := rcfile.Path(""); rcfile.Sourced(path, 2) {
+	path, _, err := rcfile.Path("")
+	if err != nil {
+		r.warn(err.Error())
+		return
+	}
+	if rcfile.Sourced(path, 2) {
 		r.warn("шим подключён, но эта оболочка открыта раньше: открой новый терминал")
 		return
 	}

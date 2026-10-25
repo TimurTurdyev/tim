@@ -22,7 +22,10 @@ func printScript(env *app.Env, shell string) error {
 
 // setupShell дописывает подключение tim в файл настроек оболочки, если его там ещё нет.
 func setupShell(shell string) error {
-	path, name := rcfile.Path(shell)
+	path, name, err := rcfile.Path(shell)
+	if err != nil {
+		return err
+	}
 	if rcfile.Sourced(path, 2) {
 		ui.Println(ui.Label("уже подключено ") + ui.Dim(path))
 	} else {

@@ -18,7 +18,7 @@ import (
 
 // OnboardScreen: мастер первого запуска; next - экран после него, nil - выход.
 func OnboardScreen(env *app.Env, next func() tui.Screen) tui.Screen {
-	path, shell := rcfile.Path("")
+	path, shell, shellErr := rcfile.Path("")
 	o := tui.OnboardOpts{
 		Roots:     onboardRoots,
 		Count:     rootNote,
@@ -30,6 +30,10 @@ func OnboardScreen(env *app.Env, next func() tui.Screen) tui.Screen {
 		Home:      next,
 		Build:     env.Build(),
 		Config:    paths.Show(config.Path()),
+	}
+	// Оболочка, к которой tim не подключается: шаг остаётся, но только с пропуском и объяснением.
+	if shellErr != nil {
+		o.Shell, o.ShellLine, o.ShellFile = nil, "", shellErr.Error()
 	}
 	return tui.NewOnboard(o)
 }
@@ -133,7 +137,10 @@ func onboardSave(env *app.Env, root string, chosen []tui.FoundProject) (string, 
 
 // onboardShell: та же строка, что дописывает tim init; motd - ещё и сводка в каждом новом окне.
 func onboardShell(env *app.Env, motd bool) (string, error) {
-	path, shell := rcfile.Path("")
+	path, shell, err := rcfile.Path("")
+	if err != nil {
+		return "", err
+	}
 	if motd && env.Cfg != nil {
 		env.Cfg.Shell.Motd = true
 		if err := env.Save(); err != nil {

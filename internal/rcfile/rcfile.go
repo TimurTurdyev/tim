@@ -101,21 +101,32 @@ func Script(shell string, sh config.Shell) (string, error) {
 	return b.String(), nil
 }
 
-// Path: файл настроек оболочки и её имя; пустое shell - оболочка из $SHELL.
-func Path(shell string) (path, name string) {
+// Path: файл настроек оболочки и её имя; пустое shell - оболочка из $SHELL. tim подключается к zsh и
+// bash; другая оболочка (sh, dash, ash, fish) - ошибка с подсказкой, а не строка в ~/.zshrc, который
+// никто не читает. Без $SHELL (cron, голый ssh) - та, что есть в системе: сначала zsh, потом bash.
+func Path(shell string) (path, name string, err error) {
 	home := paths.Home()
 	if shell == "" {
 		shell = filepath.Base(os.Getenv("SHELL"))
 	}
-	if shell != "bash" {
-		return filepath.Join(home, ".zshrc"), "zsh"
-	}
-	for _, f := range []string{".bashrc", ".bash_profile"} {
-		if _, err := os.Stat(filepath.Join(home, f)); err == nil {
-			return filepath.Join(home, f), "bash"
+	if shell == "" || shell == "." {
+		shell = "bash"
+		if runner.Has("zsh") {
+			shell = "zsh"
 		}
 	}
-	return filepath.Join(home, ".bashrc"), "bash"
+	switch shell {
+	case "zsh":
+		return filepath.Join(home, ".zshrc"), "zsh", nil
+	case "bash":
+		for _, f := range []string{".bashrc", ".bash_profile"} {
+			if _, err := os.Stat(filepath.Join(home, f)); err == nil {
+				return filepath.Join(home, f), "bash", nil
+			}
+		}
+		return filepath.Join(home, ".bashrc"), "bash", nil
+	}
+	return "", shell, fmt.Errorf("оболочка %s: tim подключается к zsh и bash; сменить оболочку: chsh -s $(command -v bash)", shell)
 }
 
 // Sourced: строка подключения tim init уже есть в файле или в тех, что он подключает, не глубже depth.
