@@ -55,8 +55,8 @@ func (e *Env) Build() string {
 		}
 		return "сборка " + c
 	}
-	if v == "" || v == "dev" {
-		return "сборка dev"
+	if !strings.HasPrefix(v, "v") {
+		return "сборка " + v // коммит из make до первого тега или dev
 	}
 	return v
 }
