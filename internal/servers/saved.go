@@ -12,7 +12,7 @@ import (
 // Кэш состояния серверов: список Серверов и ВНИМАНИЕ на главном открываются из него, не заходя
 // по ssh на каждый алиас; ssh - по enter или r.
 
-func savedPath(target string) string { return cache.Path(paths.State("servers"), target) }
+func savedPath(target string) string { return cache.Path(paths.State("servers"), hostKey(target)) }
 
 // save запоминает состояние доступного сервера; недоступный не затирает последнее известное.
 func save(s serverState) {

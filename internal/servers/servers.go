@@ -109,6 +109,15 @@ type Server struct {
 	Projects []string
 }
 
+// hostKey: один хост под разными алиасами и пользователями - один ключ кэша.
+func hostKey(alias string) string {
+	t := sshx.Resolve(alias)
+	if t.Host == "" {
+		return alias
+	}
+	return t.Host + "-" + t.Port
+}
+
 // Targets: аргументы как есть, иначе ssh проектов реестра; all - ещё все алиасы ~/.ssh/config,
 // кроме git-хостов. Один хост под разными пользователями - один сервер.
 func Targets(env *app.Env, args []string, all bool) []Server {
@@ -160,7 +169,27 @@ func byHost(env *app.Env, aliases []string) []Server {
 			out[n].Alias = a
 		}
 	}
+	preferRoot(out, aliases, resolved)
 	return out
+}
+
+// preferRoot: если в ~/.ssh/config есть алиас root на тот же хост, сервер зовётся им - под root отчёт
+// полный, без "не проверено".
+func preferRoot(out []Server, aliases []string, resolved []sshx.Target) {
+	others := slices.DeleteFunc(sshx.Aliases(), func(a string) bool { return slices.Contains(aliases, a) || gitHost(a) })
+	extra := par.Map(others, serversLimit, sshx.Resolve)
+	for i := range out {
+		cur := resolved[slices.Index(aliases, out[i].Alias)]
+		if cur.User == "root" || cur.Host == "" {
+			continue
+		}
+		for j, t := range extra {
+			if t.User == "root" && t.Host == cur.Host && t.Port == cur.Port {
+				out[i].Alias = others[j]
+				break
+			}
+		}
+	}
 }
 
 func gitHost(alias string) bool {

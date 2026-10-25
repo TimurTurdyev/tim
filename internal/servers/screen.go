@@ -63,9 +63,13 @@ func serverData(s serverState) tui.BoardData {
 		d.Head = append(d.Head, ui.Label(ui.Pad("прогноз", 12))+text)
 	}
 	d.Head = append(d.Head, "", strings.Join(serverLamps(r), "   "))
-	d.Columns = ui.Pad("ЧТО", 21) + "НАХОДКА"
+	if ports := portsLine(r, s.Findings); ports != "" {
+		d.Head = append(d.Head, ports)
+	}
+	d.Columns = ui.Pad("ЧТО", 25) + "НАХОДКА"
 	d.Wide = true
-	groups := map[level.Level]string{level.Bad: "ВНИМАНИЕ", level.Warn: "ВНИМАНИЕ", level.OK: "БЕЗ ПОСЛЕДСТВИЙ", level.Skip: "НЕ ПРОВЕРЕНО"}
+	groups := map[level.Level]string{level.Bad: "ВНИМАНИЕ", level.Warn: "ВНИМАНИЕ", level.OK: "БЕЗ ПОСЛЕДСТВИЙ",
+		level.Info: "БЕЗ ПОСЛЕДСТВИЙ", level.Skip: "НЕ ПРОВЕРЕНО"}
 	counts := map[string]int{}
 	for _, c := range s.Findings {
 		counts[groups[c.Level]]++
@@ -126,33 +130,66 @@ func serverLamps(r srvinfo.Report) []string {
 	if r.UFW == "active" {
 		lamps = append(lamps, level.Lamp(level.OK, "ufw включён"))
 	}
+	return lamps
+}
+
+// portsLine: порты наружу одной строкой; те, о которых есть находка, - янтарные и в конце, чтобы лампа
+// не спорила с находками ниже.
+func portsLine(r srvinfo.Report, findings []health.Check) string {
+	risky := map[string]bool{}
+	for _, c := range findings {
+		if c.Name == "порт" && c.Level >= level.Warn {
+			for _, f := range strings.Fields(c.Text) {
+				if _, err := strconv.Atoi(f); err == nil {
+					risky[f] = true
+				}
+			}
+		}
+	}
 	var open []int
 	for _, l := range r.Listening {
 		if l.Public {
 			open = append(open, l.Port)
 		}
 	}
-	if len(open) > 0 {
-		slices.Sort(open)
-		ports := make([]string, len(open))
-		for i, p := range open {
-			ports[i] = strconv.Itoa(p)
-		}
-		lamps = append(lamps, level.Lamp(level.OK, "наружу ")+ui.Dim(strings.Join(slices.Compact(ports), ", ")))
+	if len(open) == 0 {
+		return ""
 	}
-	return lamps
+	slices.Sort(open)
+	var calm, warn []string
+	for _, p := range slices.Compact(open) {
+		if ps := strconv.Itoa(p); risky[ps] {
+			warn = append(warn, ui.Warn("\u25b2 "+ps))
+		} else {
+			calm = append(calm, ps)
+		}
+	}
+	line := level.Lamp(level.OK, "наружу ") + strings.Join(calm, " ")
+	if len(warn) > 0 {
+		line += "   " + strings.Join(warn, "   ")
+	}
+	return line
 }
 
 // findingRow: находка строкой; что делать - раскрывается под ней на месте.
 func findingRow(c health.Check) tui.BoardRow {
+	// В колонке ЧТО - предмет: порт с номером, остальное - именем находки.
 	what := c.Name
-	if c.Text != "" && c.Level >= level.Warn {
-		what += ", " + c.Text
+	if c.Name == "порт" {
+		what = "порт " + c.Text
+		if nums := strings.Fields(c.Text); len(nums) > 1 && isNumber(nums[1]) {
+			what = "порты " + strings.Join(nums, ", ")
+		}
 	}
 	row := tui.BoardRow{ID: c.Name + " " + c.Text,
-		Cells: ui.Pad(level.Lamp(c.Level, ui.Clip(what, 18)), 21) + c.Detail}
+		Cells: ui.Pad(level.Lamp(c.Level, ui.Clip(what, 22)), 25) + c.Detail}
 	if c.Fix != "" {
 		row.Inline = "что делать: " + c.Fix
 	}
 	return row
+}
+
+func isNumber(s string) bool {
+	_, err := strconv.Atoi(s)
+	return err == nil
 }

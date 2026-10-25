@@ -51,7 +51,12 @@ func ServersScreen(env *app.Env, targets []Server) tui.Screen {
 }
 
 func serversData(targets []Server) tui.BoardData {
-	d := tui.BoardData{Columns: ui.Pad("СЕРВЕР", 14) + ui.Pad("ОС", 20) + ui.Pad("РАБОТАЕТ", 10) + "НАХОДКИ"}
+	nameW := len("СЕРВЕР")
+	for _, t := range targets {
+		nameW = max(nameW, ui.Width(t.Alias))
+	}
+	nameW += 2
+	d := tui.BoardData{Columns: ui.Pad("СЕРВЕР", nameW) + ui.Pad("ОС", 20) + ui.Pad("РАБОТАЕТ", 10) + "НАХОДКИ"}
 	d.Empty = "Серверов нет: tim знает их из ~/.ssh/config и поля ssh у проектов"
 	var oldest time.Time
 	for _, t := range targets {
@@ -59,7 +64,7 @@ func serversData(targets []Server) tui.BoardData {
 		if ok && (oldest.IsZero() || at.Before(oldest)) {
 			oldest = at
 		}
-		d.Rows = append(d.Rows, serverRow(t, s, at, ok))
+		d.Rows = append(d.Rows, serverRow(t, s, at, ok, nameW))
 	}
 	d.Status = ui.Count(len(targets), "сервер", "сервера", "серверов")
 	if !oldest.IsZero() {
@@ -76,12 +81,12 @@ func ago(t time.Time) string {
 }
 
 // serverRow: строка из кэша; в карточке - находки, диск и память, когда снято.
-func serverRow(t Server, s serverState, at time.Time, ok bool) tui.BoardRow {
+func serverRow(t Server, s serverState, at time.Time, ok bool, nameW int) tui.BoardRow {
 	row := tui.BoardRow{ID: t.Alias, Find: strings.Join(t.Projects, " ")}
 	card := &tui.Card{Title: t.Alias, Sub: "ssh " + t.Alias}
 	row.Card = card
 	if !ok {
-		row.Cells = ui.Pad(t.Alias, 14) + ui.Dim("- не проверялся")
+		row.Cells = ui.Pad(t.Alias, nameW) + ui.Dim("- не проверялся")
 		card.Path = "не проверялся: enter соберёт состояние по ssh"
 		return row
 	}
@@ -98,7 +103,7 @@ func serverRow(t Server, s serverState, at time.Time, ok bool) tui.BoardRow {
 	if warn > 0 {
 		finds = level.Lamp(s.level(), strconv.Itoa(warn))
 	}
-	row.Cells = ui.Pad(t.Alias, 14) + ui.Fit(r.OS, 20) + ui.Pad(ui.Short(r.Uptime), 10) + finds
+	row.Cells = ui.Pad(t.Alias, nameW) + ui.Fit(r.OS, 20) + ui.Pad(ui.Short(r.Uptime), 10) + finds
 	card.Path = "проверялся " + ago(at)
 	if len(names) > 0 {
 		card.Facts = append(card.Facts, tui.Fact{Label: "находки", Value: level.Lamp(level.Warn, strings.Join(names, ", "))})

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -61,7 +63,7 @@ func (h *home) groupsView(w, room int) []string {
 func (h *home) attentionRow(i, w int) string {
 	e := h.hitAt(i)
 	sel := i == h.list.Cursor
-	text := ui.Fit(e.Title, homeNameW)
+	text := ui.Fit(trimList(e.Title, homeNameW-2), homeNameW)
 	dest := ""
 	if w >= homeLeftW {
 		dest = styleDim.Render(e.Hint)
@@ -210,4 +212,17 @@ func (h *home) thirdView(w int) []string {
 		}
 	}
 	return out
+}
+
+// trimList: перечисление через запятую короче width - хвостовые пункты уходят целиком.
+func trimList(s string, width int) string {
+	for ui.Width(s) > width {
+		plain := ui.StripANSI(s)
+		i := strings.LastIndex(plain, ", ")
+		if i < 0 {
+			return ui.Clip(s, width)
+		}
+		s = ansi.Truncate(s, ui.Width(plain[:i]), "") + "\x1b[0m"
+	}
+	return s
 }

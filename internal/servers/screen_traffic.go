@@ -12,7 +12,7 @@ import (
 // TrafficScreen: кто ходит на сайты сервера - находки, потом сайты; в панели сайта адреса, пути и ошибки.
 func TrafficScreen(target string, since time.Duration) tui.Screen {
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs:  []string{"Сервер", target, "трафик"},
+		Crumbs:  []string{"Серверы", target, "трафик"},
 		Loading: "читаю журналы запросов " + target + " за " + window(since) + ", только чтение",
 		Command: func(*tui.BoardRow) string { return "tim server " + target + " --traffic" },
 		Load:    func(bool) tui.BoardData { return trafficData(target, since) },
@@ -30,8 +30,11 @@ func trafficData(target string, since time.Duration) tui.BoardData {
 	}
 	d.Status = "за " + window(since)
 	d.Head = []string{ui.Dim(trafficSources(r.Traffic))}
+	d.Wide = true
 	for _, c := range r.Findings {
-		d.Rows = append(d.Rows, findingRow(c))
+		row := findingRow(c)
+		row.Group = "НАХОДКИ"
+		d.Rows = append(d.Rows, row)
 	}
 	var quiet []string
 	for _, s := range r.Traffic.Sites {
@@ -39,8 +42,8 @@ func trafficData(target string, since time.Duration) tui.BoardData {
 			quiet = append(quiet, s.Name)
 			continue
 		}
-		d.Rows = append(d.Rows, tui.BoardRow{ID: "site " + s.File, Title: s.Name, Sub: s.File,
-			Cells: "  " + siteLine(s, since), Pane: siteDetails(s, r.Owners)})
+		d.Rows = append(d.Rows, tui.BoardRow{ID: "site " + s.File, Title: s.Name, Sub: s.File, Group: "САЙТЫ",
+			Cells: siteLine(s, since), Pane: siteDetails(s, r.Owners)})
 	}
 	if len(quiet) > 0 {
 		d.Foot = []string{ui.Dim("без запросов: " + strings.Join(quiet, ", "))}
