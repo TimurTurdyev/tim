@@ -24,12 +24,14 @@ const (
 
 // Колонки главного экрана: левая - список, справа от неё разделы; у узкого окна всё уже.
 const (
-	homeLeftW      = 55 // левая колонка на обычном окне
-	homeLeftNarrow = 43 // и на 80 колонках
-	homeNameW      = 34 // имя недавнего, пометка "правка в :" внутри него
-	homeMinRecent  = 5  // меньше строк недавнего - блока нет
-	homeAir        = 3  // воздух под списком до МАШИНЫ
-	homeMachineW   = 55 // значение строки машины, по которому выравнивается "куда ведёт"
+	homeLeftW      = 55  // левая колонка на обычном окне
+	homeLeftNarrow = 43  // и на 80 колонках
+	homeNameW      = 34  // имя недавнего, пометка "правка в :" внутри него
+	homeMinRecent  = 5   // меньше строк недавнего - блока нет
+	homeAir        = 3   // воздух под списком до МАШИНЫ
+	homeMachineW   = 55  // значение строки машины, по которому выравнивается "куда ведёт"
+	homeWide       = 160 // от стольких колонок - третья колонка: сегодня и хозяйство
+	homeThirdAt    = 115 // третья колонка с 116-й, после бейджей разделов
 )
 
 // Hit: то, что находится поиском и лежит в группах главного - проект, команда, беда, строка машины.
@@ -55,19 +57,22 @@ type HomeData struct {
 	Sections []Section
 }
 
-// HomeMachine: медленная часть - беды, строки машины, настроение и бейджи разделов.
+// HomeMachine: медленная часть - беды, строки машины, настроение и бейджи разделов; хозяйство - для
+// третьей колонки широкого окна.
 type HomeMachine struct {
 	Mood      brand.Mood
 	Attention []Hit
 	Machine   []Hit
 	Badges    map[string]string // буква раздела -> бейдж
+	Household []string
 }
 
-// HomeOpts: источники главного экрана.
+// HomeOpts: источники главного экрана. Today - что сделано сегодня, только для широкого окна.
 type HomeOpts struct {
 	Load    func() HomeData
 	Machine func() HomeMachine
 	Search  func(q string) []Hit
+	Today   func() []string
 }
 
 type home struct {
@@ -84,11 +89,14 @@ type home struct {
 	shutAt   int // кадр общего тикера, на котором глаза закроются
 	inputRow int
 	hidden   map[int]bool // строки списка, которые не влезли: курсор их пропускает
+	today    []string
+	todayOK  bool
 }
 
 type (
 	homeDataMsg    HomeData
 	homeMachineMsg HomeMachine
+	homeTodayMsg   []string
 )
 
 // NewHome создаёт главный экран.
@@ -126,10 +134,14 @@ func (h *home) Init() tea.Cmd {
 
 func (h *home) reload() tea.Cmd {
 	h.machOK = false
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		func() tea.Msg { return homeDataMsg(h.opts.Load()) },
 		func() tea.Msg { return homeMachineMsg(h.opts.Machine()) },
-	)
+	}
+	if h.opts.Today != nil {
+		cmds = append(cmds, func() tea.Msg { return homeTodayMsg(h.opts.Today()) })
+	}
+	return tea.Batch(cmds...)
 }
 
 // Animating: маскот моргает, пока главный открыт; секунды сбора идут, пока он не закончен.
@@ -219,6 +231,9 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 	case homeMachineMsg:
 		h.mach, h.machOK = HomeMachine(msg), true
 		h.refill()
+		return nil
+	case homeTodayMsg:
+		h.today, h.todayOK = msg, true
 		return nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -313,16 +328,27 @@ func (h *home) View(width, height int) string {
 	}
 	left := h.groupsView(leftW, room)
 	right := h.sectionsView(width-leftW, width >= 110)
-	n := max(len(left), len(right))
+	var third []string
+	if width >= homeWide {
+		third = h.thirdView(width - homeThirdAt - 2)
+	}
+	n := max(len(left), len(right), len(third))
 	for i := range n {
-		l, r := "", ""
+		l, r, t := "", "", ""
 		if i < len(left) {
 			l = left[i]
 		}
 		if i < len(right) {
 			r = right[i]
 		}
-		out = append(out, strings.TrimRight(ui.Fit(l, leftW)+r, " "))
+		if i < len(third) {
+			t = third[i]
+		}
+		line := ui.Fit(l, leftW) + r
+		if t != "" {
+			line = ui.Fit(line, homeThirdAt) + t
+		}
+		out = append(out, strings.TrimRight(line, " "))
 	}
 	out = append(append(out, ""), mach...)
 	return strings.Join(out, "\n")

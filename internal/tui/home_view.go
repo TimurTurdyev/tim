@@ -188,3 +188,26 @@ func (h *home) searchView(width, height int) []string {
 	}
 	return out
 }
+
+// thirdView: третья колонка широкого окна - что сделано сегодня и хозяйство из кэша проверок.
+func (h *home) thirdView(w int) []string {
+	var out []string
+	switch {
+	case !h.todayOK:
+		out = append(out, styleHead.Render("СЕГОДНЯ"), styleDim.Render(Spinner()+" считаю коммиты"))
+	case len(h.today) == 0:
+		out = append(out, styleHead.Render("СЕГОДНЯ"), styleDim.Render("коммитов сегодня нет"))
+	default:
+		out = append(out, styleHead.Render("СЕГОДНЯ"))
+		for _, l := range h.today {
+			out = append(out, ui.Clip(l, w))
+		}
+	}
+	if len(h.mach.Household) > 0 {
+		out = append(out, "")
+		for _, l := range h.mach.Household {
+			out = append(out, ui.Clip(l, w))
+		}
+	}
+	return out
+}

@@ -43,9 +43,13 @@ var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": 
 var changingWords = map[string]bool{"kill": true, "rm": true, "stop": true, "fix": true, "add": true,
 	"--clean": true, "clean": true, "-y": true, "--yes": true}
 
+// todayTTL: сколько помнить "сегодня" - git log по всем проектам не бесплатен.
+const todayTTL = 5 * time.Minute
+
 func (h *Home) screen() tui.Screen {
 	index := sync.OnceValue(h.newIndex)
-	return tui.NewHome(tui.HomeOpts{Load: h.load, Machine: h.machine, Search: func(q string) []tui.Hit { return h.search(index(), q) }})
+	return tui.NewHome(tui.HomeOpts{Load: h.load, Machine: h.machine, Today: h.today,
+		Search: func(q string) []tui.Hit { return h.search(index(), q) }})
 }
 
 // runLine: набранная в ":" команда. Экраны открываются экранами, остальное - результатом или после выхода.
@@ -199,6 +203,7 @@ func (h *Home) machine() tui.HomeMachine {
 			return tui.Action{Push: servers.Screen(h.env, target)}
 		})
 	}
+	out.Household = append(sites.Household(h.env.Cfg), servers.Household(h.env)...)
 	// У Сайтов бейдж - число сайтов с бедой, а не строк ВНИМАНИЯ.
 	if bad, warn := sites.Troubled(h.env.Cfg); bad+warn > 0 {
 		counts["w"] = [2]int{bad, warn}
@@ -460,4 +465,19 @@ func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 		out = append(out, g.hits...)
 	}
 	return out
+}
+
+// today: свои коммиты за сегодня строками - третья колонка широкого главного экрана.
+func (h *Home) today() []string {
+	h.todayMu.Lock()
+	defer h.todayMu.Unlock()
+	if time.Since(h.todayAt) < todayTTL {
+		return h.todayLines
+	}
+	out, err := h.inside([]string{"today"})
+	if err != nil {
+		return nil
+	}
+	h.todayLines, h.todayAt = strings.Split(strings.TrimRight(out, "\n"), "\n"), time.Now()
+	return h.todayLines
 }

@@ -40,6 +40,10 @@ type Home struct {
 	prepare   func(args []string)
 	utils     []string
 	entries   func() []tui.CommandEntry
+
+	todayMu    sync.Mutex
+	todayAt    time.Time
+	todayLines []string
 }
 
 // Options: что экранному режиму нужно от корня.
