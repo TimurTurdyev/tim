@@ -7,37 +7,39 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-const usageTemplate = `{{h "Использование:"}}{{if .Runnable}}
+const usageTemplate = `{{h "Использование"}}{{if .Runnable}}
   {{useline .UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} {{dim "[команда]"}}{{end}}{{if gt (len .Aliases) 0}}
 
-{{h "Другие имена:"}}
+{{h "Другие имена"}}
   {{.NameAndAliases}}{{end}}{{if .HasExample}}
 
-{{h "Примеры:"}}
+{{h "Примеры"}}
 {{examples .Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
 
-{{h "Команды:"}}{{range $cmds}}{{if .IsAvailableCommand}}
+{{h "Команды"}}{{range $cmds}}{{if .IsAvailableCommand}}
   {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
 
 {{h .Title}}{{if eq .ID "util"}}
   {{utilLine}}{{else}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) .IsAvailableCommand)}}
   {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
-{{h "Ещё:"}}{{range $cmds}}{{if (and (eq .GroupID "") .IsAvailableCommand)}}
+{{h "Ещё"}}{{range $cmds}}{{if (and (eq .GroupID "") .IsAvailableCommand)}}
   {{name (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
-{{h "Флаги:"}}
+{{h "Флаги"}}
 {{flags (.LocalFlags.FlagUsages | trimTrailingWhitespaces)}}{{end}}{{if .HasAvailableInheritedFlags}}
 
-{{h "Общие флаги:"}}
+{{h "Общие флаги"}}
 {{flags (.InheritedFlags.FlagUsages | trimTrailingWhitespaces)}}{{end}}{{if not .HasParent}}
 
-{{h "Соглашения:"}}
+{{h "Соглашения"}}
   up/down - туннели и маршруты, on/off - переключатели, start/stop - службы, kill - процессы
   -y отвечает "да" на все вопросы, --no-input - "нет"; --dry-run печатает команды, ничего не делая
   сроки пишутся как 30m, 24h, 3d, 1w; --since принимает и дату 2025-10-01
@@ -176,7 +178,7 @@ func colorExamples(s string) string {
 func applyHelp() { helpOnce.Do(setupHelp) }
 
 func setupHelp() {
-	cobra.AddTemplateFunc("h", ui.Info)
+	cobra.AddTemplateFunc("h", ui.Strong)
 	cobra.AddTemplateFunc("name", ui.Label)
 	cobra.AddTemplateFunc("dim", ui.Dim)
 	cobra.AddTemplateFunc("flags", func(s string) string { return colorFlags(s, ui.Label) })
@@ -371,4 +373,65 @@ func similarCommands(typed string) []string {
 		}
 	}
 	return bestSuggestions(typed, out, 3)
+}
+
+// fail: ошибка в stderr - суть красным со знаком, под ней пример команды серым. Вывод команды остаётся
+// в stdout чистым для трубы.
+func fail(c *cobra.Command, msg string) {
+	ui.UseStderr()
+	applyHelp()
+	head, rest, _ := strings.Cut(msg, "\n")
+	ui.Println(ui.Bad("\u2715 ") + head)
+	for _, l := range strings.Split(rest, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			ui.Println("  " + ui.Dim(l))
+		}
+	}
+	if c == nil || c == root || rest != "" {
+		return
+	}
+	for i, ex := range strings.Split(strings.TrimSpace(c.Example), "\n") {
+		if i == 2 {
+			break
+		}
+		if ex = strings.TrimSpace(ex); ex != "" {
+			ex, _, _ = strings.Cut(ex, "  #")
+			ui.Println("  " + ui.Dim(strings.TrimSpace(ex)))
+		}
+	}
+}
+
+// helpWithHeader: русская справка всегда, даже когда cobra зовёт её сама (команда без аргументов);
+// у корня вместо абзаца - лок-ап.
+func helpWithHeader(def func(*cobra.Command, []string)) func(*cobra.Command, []string) {
+	return func(c *cobra.Command, args []string) {
+		applyHelp()
+		if c != root {
+			def(c, args)
+			return
+		}
+		for _, l := range lockup(helpLines()) {
+			ui.Println(l)
+		}
+		ui.Println()
+		long, short := root.Long, root.Short
+		root.Long, root.Short = "", ""
+		def(c, args)
+		root.Long, root.Short = long, short
+	}
+}
+
+// helpLines: имя и сборка; что умеет; где конфиг и как спросить про команду.
+func helpLines() [][]string {
+	place := []string{ui.Dim("конфиг " + paths.Show(config.Path()))}
+	cfg := env.Cfg
+	if cfg == nil {
+		cfg, _ = config.Load()
+	}
+	if cfg != nil {
+		place = append(place, ui.Dim(ui.Count(len(cfg.Projects), "проект", "проекта", "проектов")))
+	}
+	place = append(place, ui.Dim("по команде: tim <команда> --help"))
+	return [][]string{{ui.Strong(brand.Name) + "  " + ui.Dim(env.Build())},
+		{ui.Dim("помощник в терминале: проекты, сеть и туннели, машина, сайты, утилиты")}, place}
 }

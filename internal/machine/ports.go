@@ -176,9 +176,11 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 		return printJSON(rows)
 	}
 	printRows(rows)
+	tail := ui.Count(len(rows), "порт", "порта", "портов")
 	if !o.all {
-		ui.Println(ui.Dim("системные и эфемерные порты скрыты: --all"))
+		tail += " \u00b7 системные и эфемерные скрыты: --all"
 	}
+	ui.Println(ui.Dim(tail + " \u00b7 карточка и kill: tim port <n> [kill]"))
 	return nil
 }
 
@@ -312,11 +314,12 @@ func printJSON(rows []PortRow) error {
 func printRows(rows []PortRow) {
 	table := [][]string{{"ПОРТ", "ЧТО", "ПРОЕКТ", "РАБОТАЕТ", "PID"}}
 	for _, r := range rows {
-		project := ui.Dash(r.Project)
+		// Пустая ячейка - пустая: столбик прочерков в девяти строках из десяти - шум.
+		project := r.Project
 		if r.Guessed {
 			project += "?"
 		}
-		table = append(table, []string{strings.Join(r.Ports, ", "), ui.Dash(r.Kind), project, uptime(r.Uptime), ui.Dash(r.Listener.PID)})
+		table = append(table, []string{strings.Join(r.Ports, ", "), r.Kind, project, uptime(r.Uptime), r.Listener.PID})
 	}
 	widths := make([]int, len(table[0]))
 	for _, t := range table {
@@ -327,7 +330,10 @@ func printRows(rows []PortRow) {
 	for n, t := range table {
 		var cells []string
 		for i, c := range t {
-			if i < len(t)-1 {
+			switch {
+			case i == len(t)-1:
+				c = strings.Repeat(" ", max(0, widths[i]-ui.Width(c))) + c // PID - число, вправо
+			default:
 				c = ui.Pad(c, widths[i])
 			}
 			cells = append(cells, c)
@@ -342,7 +348,7 @@ func printRows(rows []PortRow) {
 
 func uptime(d time.Duration) string {
 	if d == 0 {
-		return "-"
+		return ""
 	}
-	return ui.Duration(d)
+	return ui.Short(d)
 }

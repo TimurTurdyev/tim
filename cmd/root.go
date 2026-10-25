@@ -61,12 +61,12 @@ var groups = []struct {
 	id, title string
 	cmds      []string
 }{
-	{"proj", "Проекты:", []string{"proj", "new", "go", "db", "each", "sync", "config", "init"}},
-	{"machine", "Машина:", []string{"status", "hw", "top", "ps", "kill", "disk", "stats"}},
-	{"net", "Сервер и сеть:", []string{"ssh", "server", "servers", "tunnel", "direct", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "audit", "domain", "mail", "http"}},
-	{"run", "Локальный запуск:", []string{"serve", "env", "logs", "open", "svc", "php"}},
-	{"util", "Утилиты:", utilCmds},
-	{"self", "Сам tim:", []string{"doctor", "version", "self-update"}},
+	{"proj", "Проекты", []string{"proj", "new", "go", "db", "each", "sync", "config", "init"}},
+	{"machine", "Машина", []string{"status", "hw", "top", "ps", "kill", "disk", "stats"}},
+	{"net", "Сервер и сеть", []string{"ssh", "server", "servers", "tunnel", "direct", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "audit", "domain", "mail", "http"}},
+	{"run", "Локальный запуск", []string{"serve", "env", "logs", "open", "svc", "php"}},
+	{"util", "Утилиты", utilCmds},
+	{"self", "Сам tim", []string{"doctor", "version", "self-update"}},
 }
 
 // utilCmds: мелкие утилиты. В общей справке они одной строкой - полный список: tim help utils.
@@ -210,6 +210,7 @@ func editDistance(a, b string) int {
 func Root() *cobra.Command {
 	mount()
 	assignGroups()
+	root.SetHelpFunc(helpWithHeader(root.HelpFunc()))
 	applyHelp()
 	root.DisableAutoGenTag = true
 	return root
@@ -241,6 +242,7 @@ func flagSuggestion(c *cobra.Command, err error) error {
 func Execute() error {
 	mount()
 	assignGroups()
+	root.SetHelpFunc(helpWithHeader(root.HelpFunc()))
 	root.SetFlagErrorFunc(flagSuggestion)
 	if needsHelp(os.Args[1:]) {
 		applyHelp()
@@ -253,11 +255,11 @@ func Execute() error {
 		msg := err.Error()
 		if strings.HasPrefix(msg, `unknown command "`) && strings.HasSuffix(strings.SplitN(msg, "\n", 2)[0], `for "tim"`) {
 			if hint := unknownHint(os.Args[1:]); hint != "" {
-				ui.Println(ui.Bad(hint))
+				fail(nil, hint)
 				return err
 			}
 		}
-		ui.Println(ui.Bad(translateError(msg)))
+		fail(c, translateError(msg))
 		return err
 	}
 	home.Remember(c, os.Args[1:], utilCmds)

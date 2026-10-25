@@ -37,12 +37,15 @@ func initCommand(env *app.Env) *cobra.Command {
 }
 
 func doctorCommand(env *app.Env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "doctor",
+	var all bool
+	c := &cobra.Command{
+		Use:   "doctor [--all]",
 		Short: "Проверка окружения: конфиг, реестр, шим, PATH, менеджеры версий, клиенты баз, сервисы",
 		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return diagnose(env) },
+		RunE:  func(cmd *cobra.Command, args []string) error { return diagnose(env, all) },
 	}
+	c.Flags().BoolVarP(&all, "all", "a", false, "и разделы без бед целиком")
+	return c
 }
 
 func selfUpdateCommand(env *app.Env) *cobra.Command {

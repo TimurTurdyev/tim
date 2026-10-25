@@ -29,16 +29,61 @@ var dbFamilies = map[string][]string{
 	"postgres": {"postgresql", "libpq"},
 }
 
-// report: раздел за разделом печатает находки и считает их.
-type report struct{ warns, errs int }
+// report: раздел за разделом печатает находки и считает их. Раздел без бед - одной строкой: столбик
+// зелёных ламп ничего не говорит.
+type report struct {
+	warns, errs int
+	section     string
+	lines       []string
+	trouble     bool
+	all         bool // --all: и здоровые разделы целиком
+}
 
-func (r *report) title(s string) { ui.Println(ui.Info(s)) }
-func (r *report) ok(s string)    { ui.Println("  " + ui.Label("ок ") + s) }
-func (r *report) warn(s string)  { r.warns++; ui.Println("  " + ui.Warn("!  ") + s) }
-func (r *report) bad(s string)   { r.errs++; ui.Println("  " + ui.Bad("x  ") + s) }
+func (r *report) title(s string) {
+	r.flush()
+	r.section, r.lines, r.trouble = s, nil, false
+}
 
-func diagnose(env *app.Env) error {
-	r := &report{}
+func (r *report) ok(s string)   { r.lines = append(r.lines, "  "+ui.OK("\u25cf ")+home(s)) }
+func (r *report) note(s string) { r.lines = append(r.lines, "    "+s) }
+
+func (r *report) warn(s string) {
+	r.warns++
+	r.trouble = true
+	r.lines = append(r.lines, "  "+ui.Warn("\u25b2 ")+home(s))
+}
+
+func (r *report) bad(s string) {
+	r.errs++
+	r.trouble = true
+	r.lines = append(r.lines, "  "+ui.Bad("\u2715 ")+home(s))
+}
+
+// flush печатает раздел: с бедой или по --all - целиком, иначе одной строкой.
+func (r *report) flush() {
+	if r.section == "" {
+		return
+	}
+	if !r.trouble && !r.all {
+		ui.Println(ui.Strong(ui.Pad(r.section, 18)) + ui.OK("\u25cf в порядке"))
+		return
+	}
+	ui.Println(ui.Strong(r.section))
+	for _, l := range r.lines {
+		ui.Println(l)
+	}
+}
+
+// home: домашняя папка тильдой - пути короче и читаются.
+func home(s string) string {
+	if h := paths.Home(); h != "" {
+		return strings.ReplaceAll(s, h, "~")
+	}
+	return s
+}
+
+func diagnose(env *app.Env, all bool) error {
+	r := &report{all: all}
 	checkConfig(r, env.Cfg)
 	checkRegistry(r, env.Cfg)
 	checkShim(r)
@@ -47,7 +92,9 @@ func diagnose(env *app.Env) error {
 	checkManagers(r, dirs)
 	checkDB(r)
 	checkServices(r)
-	summary := "ошибок " + strconv.Itoa(r.errs) + ", предупреждений " + strconv.Itoa(r.warns)
+	r.flush()
+	ui.Println()
+	summary := "ошибок " + strconv.Itoa(r.errs) + " \u00b7 предупреждений " + strconv.Itoa(r.warns)
 	if r.errs > 0 {
 		return ui.Errorf("%s", summary)
 	}
@@ -181,7 +228,7 @@ func checkManagers(r *report, dirs []string) {
 		if langs == "" {
 			langs = "языки не видны по PATH"
 		}
-		ui.Println("     " + ui.Pad(m.Name, 8) + " " + ui.Dim(langs))
+		r.note(ui.Pad(m.Name, 8) + " " + ui.Dim(langs))
 	}
 	conflicts := doctor.Conflicts(managers)
 	langs := make([]string, 0, len(conflicts))
