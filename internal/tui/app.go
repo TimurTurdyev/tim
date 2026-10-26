@@ -85,6 +85,8 @@ type Action struct {
 	// Command: открыть строку ":" с этим текстом для правки - пример с аргументами, утилита.
 	Command string
 	Ask     *Ask // спросить строку внизу экрана
+	// Confirm: сначала окно подтверждения; что сделать по согласию - его Yes или Then.
+	Confirm *Dialog
 }
 
 // Ask: строка ввода на месте строки состояния и что сделать с набранным.
@@ -241,6 +243,8 @@ func (a *App) Do(act Action) tea.Cmd {
 		return tea.Quit
 	case act.Command != "":
 		a.overlay = newCmdline(a, act.Command)
+	case act.Confirm != nil:
+		return a.Confirm(*act.Confirm)
 	case act.Ask != nil:
 		done := act.Ask.Done
 		return a.Ask(act.Ask.Placeholder, act.Ask.Hint, func(text string) tea.Cmd { return a.Do(done(text)) })

@@ -24,8 +24,17 @@ func (b *board) controlLine(width int) string {
 func (b *board) listLines(w, h int) []string {
 	cur := b.current()
 	inline := cur != nil && cur.Card == nil && cur.Title == "" && cur.Inline != ""
+	var caps []string
 	if inline {
 		h--
+		for _, a := range b.opts.Actions {
+			if !a.Free && !a.Hidden && a.Key != "enter" && a.When != nil && a.When(cur) {
+				caps = append(caps, styleKeyCap.Render(" "+a.Key+" ")+" "+styleText.Render(a.Label))
+			}
+		}
+		if len(caps) > 0 {
+			h--
+		}
 	}
 	lines := b.list.View(w, max(1, h))
 	if !inline {
@@ -35,8 +44,11 @@ func (b *board) listLines(w, h int) []string {
 	if sel < 0 {
 		return lines
 	}
-	note := "     " + styleDim.Render(ui.Clip(symArrow+" "+cur.Inline, w-6))
-	return slices.Insert(lines, sel+1, note)
+	note := []string{"     " + styleDim.Render(ui.Clip(symArrow+" "+cur.Inline, w-6))}
+	if len(caps) > 0 {
+		note = append(note, "     "+strings.Join(caps, "   "))
+	}
+	return slices.Insert(lines, sel+1, note...)
 }
 
 // head: шапка и лампы - всё, что над списком.

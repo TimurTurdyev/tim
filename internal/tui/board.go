@@ -55,6 +55,16 @@ type BoardAction struct {
 	Run        func(row *BoardRow) (string, error)
 	Free       bool
 	Hidden     bool // только в справке "?": нужно редко
+	// When: действие строки есть только у таких строк - например "отметить своим" у нового.
+	When func(row *BoardRow) bool
+}
+
+// fits: действие подходит к строке.
+func (a BoardAction) fits(row *BoardRow) bool {
+	if row == nil {
+		return a.Free
+	}
+	return a.When == nil || a.When(row)
 }
 
 // BoardOpts: источники доски.
@@ -354,7 +364,7 @@ func (b *board) key(msg tea.KeyPressMsg, app *App) tea.Cmd {
 	}
 	row := b.current()
 	for _, a := range b.opts.Actions {
-		if a.Key != k || (row == nil && !a.Free) {
+		if a.Key != k || !a.Free && !a.fits(row) {
 			continue
 		}
 		switch {
@@ -389,7 +399,7 @@ func (b *board) card(row *BoardRow) *Card {
 	}
 	if len(out.Actions) == 0 {
 		for _, a := range b.opts.Actions {
-			if !a.Free && !a.Hidden && a.Key != "enter" {
+			if !a.Free && !a.Hidden && a.Key != "enter" && a.fits(row) {
 				out.Actions = append(out.Actions, CardAction{a.Key, a.Label, a.Note})
 			}
 		}

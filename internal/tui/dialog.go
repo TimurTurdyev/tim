@@ -39,6 +39,17 @@ type Dialog struct {
 	OK      string   // подпись кнопки
 	Danger  bool     // красная кнопка
 	Yes     func() tea.Cmd
+	Then    *Action // вместо Yes: действие экрана - например закрыть tim и выполнить в терминале
+}
+
+func (d Dialog) yes(app *App) tea.Cmd {
+	if d.Then != nil {
+		return app.Do(*d.Then)
+	}
+	if d.Yes != nil {
+		return d.Yes()
+	}
+	return nil
 }
 
 type confirmOverlay struct {
@@ -56,11 +67,11 @@ func (c *confirmOverlay) update(msg tea.KeyPressMsg, app *App) tea.Cmd {
 		c.onYes = !c.onYes
 	case "y":
 		app.overlay = nil
-		return c.d.Yes()
+		return c.d.yes(app)
 	case "enter":
 		app.overlay = nil
 		if c.onYes {
-			return c.d.Yes()
+			return c.d.yes(app)
 		}
 	}
 	return nil
