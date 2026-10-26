@@ -40,6 +40,12 @@ motd = ["system", "project", "repos"]   # разделы tim status по умо�
   steps = ["mkdir -p {dir}", "cd {dir} && git init"]   # {dir}, {name}, {parent} подставляются
   port = true           # выдать проекту свой порт
 
+[[recipe]]              # своя заготовка: палитра ":" и tim server <алиас> --run disk-www
+  name = "disk-www"
+  desc = "место по сайтам"
+  run = "du -sh /var/www/* | sort -rh | head"   # {server}, {project}, {path}, {port}, {unit} подставляются
+  on = "server"         # server, project (tim run, в папке проекта) или machine
+
 [[project]]
   name = "shop"
   path = "shop/app"     # от dev; можно и абсолютный путь
