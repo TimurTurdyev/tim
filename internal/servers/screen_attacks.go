@@ -4,18 +4,20 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // AttacksScreen: кто ломится на сервер - находки по журналам, потом владельцы сетей.
-func AttacksScreen(target string, since time.Duration) tui.Screen {
+func AttacksScreen(env *app.Env, target string, since time.Duration) tui.Screen {
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs:  []string{"Серверы", target, "кто ломится"},
 		Loading: "читаю журналы " + target + " за " + window(since) + ", только чтение",
 		Command: func(*tui.BoardRow) string { return "tim server " + target + " --attacks" },
 		Load:    func(bool) tui.BoardData { return attacksData(target, since) },
+		Palette: func() (string, []tui.CommandEntry) { return recipePalette(env, target) },
 	})
 }
 

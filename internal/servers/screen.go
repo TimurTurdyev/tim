@@ -23,6 +23,7 @@ func Screen(env *app.Env, target string) tui.Screen {
 		Loading: "захожу по ssh на " + target + ", только чтение",
 		Refresh: true,
 		Command: func(*tui.BoardRow) string { return "tim server " + target },
+		Palette: func() (string, []tui.CommandEntry) { return recipePalette(env, target) },
 		Load: func(fresh bool) tui.BoardData {
 			if !fresh {
 				if s, _, ok := saved(target); ok {
@@ -37,10 +38,10 @@ func Screen(env *app.Env, target string) tui.Screen {
 				return tui.Action{Exit: func() { env.After([]string{"ssh", target}) }}
 			}},
 			{Key: "a", Label: "кто ломится", Free: true, Do: func(*tui.BoardRow) tui.Action {
-				return tui.Action{Push: AttacksScreen(target, 24*time.Hour)}
+				return tui.Action{Push: AttacksScreen(env, target, 24*time.Hour)}
 			}},
 			{Key: "t", Label: "трафик", Free: true, Do: func(*tui.BoardRow) tui.Action {
-				return tui.Action{Push: TrafficScreen(target, 24*time.Hour)}
+				return tui.Action{Push: TrafficScreen(env, target, 24*time.Hour)}
 			}},
 		},
 	})

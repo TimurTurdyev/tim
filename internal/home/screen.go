@@ -22,6 +22,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
+	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -145,6 +146,17 @@ func nextAfter(args []string) []tui.CommandEntry {
 		return nil
 	}
 	arg := args[1]
+	if i := slices.Index(args, "--run"); args[0] == "server" && i > 0 && i+1 < len(args) {
+		var out []tui.CommandEntry
+		if r, ok := srvinfo.FindRecipe(args[i+1], nil); ok {
+			for _, id := range r.Next {
+				if n, ok := srvinfo.FindRecipe(id, nil); ok && n.Param == "" {
+					out = append(out, tui.CommandEntry{Line: "server " + arg + " --run " + id, Name: n.Name})
+				}
+			}
+		}
+		return append(out, tui.CommandEntry{Line: "server " + arg})
+	}
 	switch args[0] {
 	case "cert", "site", "mail", "dns", "http":
 		return []tui.CommandEntry{{Line: "domain " + arg}, {Line: "mail " + arg}, {Line: "http " + arg}}
@@ -271,7 +283,7 @@ func (h *Home) sections() []tui.Section {
 		})},
 		{Key: "w", Title: "Сайты", Hint: "ответ, сертификат, почта, домен", Open: push(func() tui.Screen { return sites.SitesScreen(h.env) })},
 		{Key: "n", Title: "Сеть", Hint: "обход VPN, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
-		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(machine.HWScreen)},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(func() tui.Screen { return machine.HWScreen() })},
 		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: push(h.utilsScreen)},
 	}

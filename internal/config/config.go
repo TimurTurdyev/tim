@@ -61,6 +61,15 @@ type Template struct {
 	Port  bool     `toml:"port,omitempty"`
 }
 
+// Recipe: своя заготовка для палитры: on - server, project или machine (по умолчанию server);
+// в run подставляются {server}, {project}, {path}, {port}, {unit}.
+type Recipe struct {
+	Name string `toml:"name"`
+	Desc string `toml:"desc,omitempty"`
+	Run  string `toml:"run"`
+	On   string `toml:"on,omitempty"`
+}
+
 // Shell: что tim init добавляет в оболочку.
 type Shell struct {
 	Motd    bool              `toml:"motd,omitempty"`
@@ -91,6 +100,7 @@ type Config struct {
 	Tasks     []Task              `toml:"task,omitempty"`
 	Groups    map[string][]string `toml:"groups,omitempty"`
 	Templates []Template          `toml:"template,omitempty"`
+	Recipes   []Recipe            `toml:"recipe,omitempty"`
 	Tunnel    Tunnel              `toml:"tunnel,omitempty"`
 	Projects  []Project           `toml:"project"`
 	Hosts     []Host              `toml:"host"`

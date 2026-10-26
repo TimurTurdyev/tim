@@ -34,7 +34,7 @@ func ServersScreen(env *app.Env, targets []Server) tui.Screen {
 				return tui.Action{Exit: func() { env.After([]string{"ssh", row.ID}) }}
 			}},
 			{Key: "a", Label: "кто ломится", Do: func(row *tui.BoardRow) tui.Action {
-				return tui.Action{Push: AttacksScreen(row.ID, 24*time.Hour)}
+				return tui.Action{Push: AttacksScreen(env, row.ID, 24*time.Hour)}
 			}},
 			{Key: "r", Label: "обновить", Doing: "захожу по ssh", Free: true, Run: func(row *tui.BoardRow) (string, error) {
 				if row == nil {

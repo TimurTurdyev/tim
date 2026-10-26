@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/brew"
 	"github.com/TimurTurdyev/tim/internal/run"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // options: как запускать - на каком порту, в фоне ли, по https, открыть ли браузер.
@@ -94,17 +95,32 @@ func envCommand(env *app.Env) *cobra.Command {
 }
 
 func logsCommand(env *app.Env) *cobra.Command {
-	var follow bool
+	var follow, sum bool
 	var lines int
 	c := &cobra.Command{
-		Use:               "logs [проект] [-f] [-n 50]",
-		Short:             "Хвост самого свежего журнала проекта",
+		Use:   "logs [проект] [-f] [-n 50] [--sum]",
+		Short: "Хвост самого свежего журнала проекта",
+		Long: `Хвост самого свежего *.log проекта (storage/logs, logs, log, var/log).
+--sum сводит одинаковые строки в шаблон: числа, адреса и id заменены, у шаблона счётчик, первое
+и последнее время. Сотни одинаковых ошибок становятся несколькими строками; читает 5000 последних строк.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return projectLog(env, app.First(args), lines, follow) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if sum {
+				if follow {
+					return ui.Errorf("--sum сводит готовый хвост, вместе с -f не работает")
+				}
+				if !cmd.Flags().Changed("lines") {
+					lines = 5000
+				}
+				return projectLogSum(env, app.First(args), lines)
+			}
+			return projectLog(env, app.First(args), lines, follow)
+		},
 	}
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "следить за новыми строками")
 	c.Flags().IntVarP(&lines, "lines", "n", 50, "сколько строк")
+	c.Flags().BoolVar(&sum, "sum", false, "одинаковые строки одной строкой со счётчиком")
 	return c
 }
 

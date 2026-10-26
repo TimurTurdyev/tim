@@ -1,13 +1,17 @@
 package serve
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/logsum"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/newproj"
 	"github.com/TimurTurdyev/tim/internal/run"
@@ -255,6 +259,48 @@ func projectLog(env *app.Env, name string, lines int, follow bool) error {
 	}
 	ui.Println(ui.Dim(file))
 	return tail(lines, follow, file)
+}
+
+// projectLogSum: хвост журнала проекта шаблонами со счётчиком.
+func projectLogSum(env *app.Env, name string, lines int) error {
+	p, err := env.Project(name)
+	if err != nil {
+		return err
+	}
+	file := newestLog(env.Cfg.ProjectDir(p))
+	if file == "" {
+		return ui.Errorf("%s: журналов *.log не нашёл (storage/logs, logs, log, var/log)", p.Name)
+	}
+	last, err := tailLines(file, lines)
+	if err != nil {
+		return err
+	}
+	ui.Println(ui.Dim(file))
+	ui.Print(logsum.Format(logsum.Summarize(last), len(last)))
+	return nil
+}
+
+// tailLines: последние n строк файла; читается только конец, журнал бывает в гигабайты.
+func tailLines(file string, n int) ([]string, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	size := min(st.Size(), int64(n)*400+4096)
+	buf := make([]byte, size)
+	if _, err := f.ReadAt(buf, st.Size()-size); err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimRight(string(buf), "\n"), "\n")
+	if size < st.Size() && len(lines) > 0 {
+		lines = lines[1:] // первая строка обрезана посередине
+	}
+	return lines[max(0, len(lines)-n):], nil
 }
 
 func tail(lines int, follow bool, files ...string) error {

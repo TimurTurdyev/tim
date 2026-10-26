@@ -50,9 +50,9 @@ func sshCommand(env *app.Env) *cobra.Command {
 
 func serverCommand(env *app.Env) *cobra.Command {
 	var asJSON, attacks, traffic bool
-	var since string
+	var since, recipe string
 	c := &cobra.Command{
-		Use:   "server <алиас|проект|user@host> [--attacks | --traffic] [--since 24h] [--json]",
+		Use:   "server <алиас|проект|user@host> [--attacks | --traffic | --run заготовка] [--since 24h] [--json]",
 		Short: "Состояние Linux-сервера по ssh: место, память, юниты, обновления, порты наружу, sshd",
 		Long: `Один заход по ssh, только чтение: скрипт уходит через stdin и ничего не ставит и не меняет.
 То, что требует root (sshd -T, nginx -t, сертификаты), идёт через sudo -n: без пароля он не спрашивает,
@@ -61,11 +61,27 @@ func serverCommand(env *app.Env) *cobra.Command {
 перебор, пробы сайта (.env, .git, wp-login), файрвол, баны fail2ban и CrowdSec, владельцев сетей.
 --traffic читает журналы запросов nginx или apache: сколько запросов и в минуту, доли ответов,
 кто ходит и куда, ошибки 5xx, пути в пустоту, время ответа, если журнал его пишет.
+--run выполняет заготовку: disk, big, errors, oom, unit <юнит>, top, ports, who, cron, docker, sites
+и свои из [[recipe]] конфига. Встроенные только читают; своя перед первым запуском показывает команду
+и спрашивает, --dry-run печатает скрипт, не заходя на сервер.
 Журналы ssh и ядра читают root и группы adm и systemd-journal; журналы сайта панели держат в папке
 пользователя - их tim находит сам.`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.RangeArgs(1, 2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			names, _ := app.ProjectNames(cmd, args, toComplete)
+			return append(sshx.Aliases(), names...), cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := Target(env.Cfg, args[0])
+			if recipe != "" {
+				return runRecipe(env, target, recipe, app.First(args[1:]))
+			}
+			if len(args) > 1 {
+				return ui.Errorf("лишний аргумент %s: второй бывает только у --run unit <юнит>", args[1])
+			}
 			if attacks && traffic {
 				return ui.Errorf("--attacks и --traffic - два разных отчёта, по одному за раз")
 			}
@@ -76,14 +92,14 @@ func serverCommand(env *app.Env) *cobra.Command {
 			case attacks:
 				return withWindow(since, 24*time.Hour, func(w time.Duration) error {
 					if app.Interactive() && !asJSON {
-						return env.Open(AttacksScreen(target, w))
+						return env.Open(AttacksScreen(env, target, w))
 					}
 					return printAttacks(target, w, asJSON)
 				})
 			case traffic:
 				return withWindow(since, time.Hour, func(w time.Duration) error {
 					if app.Interactive() && !asJSON {
-						return env.Open(TrafficScreen(target, w))
+						return env.Open(TrafficScreen(env, target, w))
 					}
 					return printTraffic(target, w, asJSON)
 				})
@@ -97,6 +113,14 @@ func serverCommand(env *app.Env) *cobra.Command {
 	c.Flags().BoolVar(&attacks, "attacks", false, "кто ломится: перебор ssh, удачные входы, пробы сайта, баны - по журналам")
 	c.Flags().BoolVar(&traffic, "traffic", false, "кто ходит: запросы, ошибки, адреса, пути и время ответа - по журналам nginx")
 	c.Flags().StringVar(&since, "since", "", "окно назад: 30m, 24h, 3d, 1w; у --attacks по умолчанию 24h, у --traffic 1h")
+	c.Flags().StringVar(&recipe, "run", "", "заготовка: disk, big, errors, oom, unit, top, ports, who, cron, docker, sites или своя")
+	_ = c.RegisterFlagCompletionFunc("run", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		var out []string
+		for _, r := range serverRecipes(env.Cfg, "") {
+			out = append(out, r.ID+"\t"+r.Name)
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	})
 	return c
 }
 

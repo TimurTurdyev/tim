@@ -4,18 +4,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // TrafficScreen: кто ходит на сайты сервера - находки, потом сайты; в панели сайта адреса, пути и ошибки.
-func TrafficScreen(target string, since time.Duration) tui.Screen {
+func TrafficScreen(env *app.Env, target string, since time.Duration) tui.Screen {
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs:  []string{"Серверы", target, "трафик"},
 		Loading: "читаю журналы запросов " + target + " за " + window(since) + ", только чтение",
 		Command: func(*tui.BoardRow) string { return "tim server " + target + " --traffic" },
 		Load:    func(bool) tui.BoardData { return trafficData(target, since) },
+		Palette: func() (string, []tui.CommandEntry) { return recipePalette(env, target) },
 	})
 }
 
