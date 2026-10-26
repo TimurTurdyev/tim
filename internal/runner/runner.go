@@ -77,6 +77,17 @@ func OutputStdinWithin(limit time.Duration, stdin, name string, args ...string) 
 	return output(limit, strings.NewReader(stdin), name, args...)
 }
 
+// CombinedWithin: вывод вместе с stderr - для команд, которые пишут нужное туда (ssh -v); только чтение.
+func CombinedWithin(limit time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = time.Second
+	cmd.Env = parseEnv()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 func output(limit time.Duration, stdin io.Reader, name string, args ...string) (string, error) {
 	ctx := context.Background()
 	if limit > 0 {

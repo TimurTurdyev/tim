@@ -53,6 +53,8 @@ type Report struct {
 	Netplan             bool
 	Nginx               string // "ok", текст ошибки, "nosudo" или пусто, если nginx нет
 	Certs               []Cert
+	Watch               Watch
+	Outside             *Outside `json:",omitempty"` // проверки с этой машины; nil - не было
 }
 
 // Sections режет вывод Script по маркерам @@имя.
@@ -118,6 +120,7 @@ func Parse(out string) Report {
 	}
 	r.Nginx = nginxState(s["nginx"])
 	r.Certs = parseCerts(s["certs"])
+	r.Watch = parseWatch(s)
 	return r
 }
 

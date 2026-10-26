@@ -42,6 +42,8 @@ func Evaluate(r Report, now time.Time) []health.Check {
 	f.ports(r.Listening)
 	f.access(r)
 	f.services(r, now)
+	f.watch(r)
+	f.outside(r)
 	slices.SortStableFunc(f, func(a, b health.Check) int { return cmp.Compare(b.Level, a.Level) })
 	return f
 }
@@ -112,8 +114,14 @@ func (f *findings) system(r Report) {
 				break
 			}
 		}
-		f.add("перезагрузка", level.Warn, "нужна", "нужна: "+why+fmt.Sprintf("; сервер работает %d дн", int(r.Uptime.Hours()/24)),
-			"reboot в тихое время; до неё работает старое ядро или libc")
+		detail := "нужна: " + why + fmt.Sprintf("; сервер работает %d дн", int(r.Uptime.Hours()/24))
+		if st := staleText(r); st != "" {
+			detail += "; " + st
+		}
+		f.add("перезагрузка", level.Warn, "нужна", detail, "reboot в тихое время; до неё работает старое ядро или libc")
+	} else if st := staleText(r); st != "" {
+		f.add("перезапуск", level.Warn, strconv.Itoa(len(r.Watch.Stale))+" служб", st+": после обновления держат старые библиотеки",
+			"systemctl restart <служба> по каждой или needrestart -r a")
 	}
 	if n := len(r.SecurityUpdates); n > 0 {
 		list := strings.Join(r.SecurityUpdates[:min(5, n)], ", ")
@@ -160,10 +168,11 @@ func (f *findings) ports(listening []Listen) {
 // не бережёт.
 func (f *findings) access(r Report) {
 	password := PasswordLogin(r)
-	if r.NoSudoSSHD {
+	// Без sudo способы входа видны снаружи: тогда о них скажет проверка снаружи.
+	if r.NoSudoSSHD && (r.Outside == nil || len(r.Outside.Methods) == 0) {
 		f.add("sshd", level.Skip, "не проверено", "не проверен: настройки читаются только через sudo без пароля",
 			"проверить руками: sudo sshd -T | grep -Ei 'passwordauthentication|permitrootlogin'")
-	} else {
+	} else if !r.NoSudoSSHD {
 		if r.SSHD["permitrootlogin"] == "yes" && password {
 			f.add("sshd", level.Bad, "root по паролю", "PermitRootLogin yes и вход по паролю: пароль root можно подбирать", fixSSHD)
 		}
@@ -173,11 +182,21 @@ func (f *findings) access(r Report) {
 	}
 	switch {
 	case r.Fail2ban || r.CrowdSec:
-	case password || r.NoSudoSSHD:
+	case password || r.NoSudoSSHD && !KeyOnly(r):
 		f.add("защита", level.Warn, "нет fail2ban и CrowdSec", "перебор паролей по ssh ничем не ограничен: нет ни fail2ban, ни CrowdSec", fixProtect)
 	default:
 		f.add("защита", level.Info, "вход только по ключу", "нет ни fail2ban, ни CrowdSec, но вход только по ключу: перебор не опасен, fail2ban уберёт шум из журнала", fixProtect)
 	}
+}
+
+// KeyOnly: вход только по ключу - по sshd -T, а без sudo - по тому, какие способы sshd называет снаружи.
+func KeyOnly(r Report) bool {
+	if !r.NoSudoSSHD {
+		return !PasswordLogin(r)
+	}
+	o := r.Outside
+	return o != nil && len(o.Methods) > 0 &&
+		!slices.ContainsFunc(o.Methods, func(m string) bool { return m == "password" || m == "keyboard-interactive" })
 }
 
 // PasswordLogin: sshd пускает по паролю - напрямую или через keyboard-interactive.

@@ -8,12 +8,16 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
+
+// newPrefix: у строки нового ID начинается с него - по нему space отмечает своим.
+const newPrefix = "new "
 
 // Screen: сервер - полосы места, памяти и нагрузки, лампы одной строкой и находки по группам.
 // Последнее известное состояние видно сразу, свежее приходит по ssh следом.
@@ -34,6 +38,14 @@ func Screen(env *app.Env, target string) tui.Screen {
 		},
 		Actions: []tui.BoardAction{
 			{Key: "enter", Label: "отчёт", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"server", target}) }},
+			{Key: "c", Label: "проверить", Free: true, Doing: "глубокая проверка " + target + ": файлы сайтов и системы, около минуты",
+				Run: func(*tui.BoardRow) (string, error) {
+					d, err := runDeep(target)
+					if err != nil {
+						return "", err
+					}
+					return "глубокая проверка: " + srvinfo.EvaluateDeep(d)[0].Detail, nil
+				}},
 			{Key: "s", Label: "ssh", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"ssh", target}) }}
 			}},
@@ -43,6 +55,12 @@ func Screen(env *app.Env, target string) tui.Screen {
 			{Key: "t", Label: "трафик", Free: true, Do: func(*tui.BoardRow) tui.Action {
 				return tui.Action{Push: TrafficScreen(env, target, 24*time.Hour)}
 			}},
+			{Key: "space", Label: "отметить своим", Doing: "отмечаю своим",
+				When: func(row *tui.BoardRow) bool { return strings.HasPrefix(row.ID, newPrefix) },
+				Run: func(row *tui.BoardRow) (string, error) {
+					kind, key, _ := strings.Cut(strings.TrimPrefix(row.ID, newPrefix), " ")
+					return "отмечено своим, больше не новое", baseline.Accept(object(target), kind, key)
+				}},
 		},
 	})
 }
@@ -59,23 +77,42 @@ func serverData(s serverState) tui.BoardData {
 	}
 	r := s.Report
 	d.Status = osLine(r)
+	fresh := baseline.Pending(object(s.Target))
+	if len(fresh) > 0 {
+		d.Status += " \u00b7 " + strconv.Itoa(len(fresh)) + " " + ui.Plural(len(fresh), "новое", "новых", "новых")
+	}
 	d.Head = serverBars(r)
 	if text, lvl, ok := forecast(s.Target); ok && lvl == level.OK {
 		d.Head = append(d.Head, ui.Label(ui.Pad("прогноз", 12))+text)
 	}
-	d.Head = append(d.Head, "", strings.Join(serverLamps(r), "   "))
+	lamps := serverLamps(r)
+	if age := deepAge(s.Target); age != "" {
+		lamps = append(lamps, ui.Dim(age))
+	}
+	d.Head = append(d.Head, "", strings.Join(lamps, "   "))
 	if ports := portsLine(r, s.Findings); ports != "" {
 		d.Head = append(d.Head, ports)
 	}
+	if s.Remembered != "" && len(fresh) == 0 {
+		d.Head = append(d.Head, ui.Dim(s.Remembered))
+	}
 	d.Columns = ui.Pad("ЧТО", 25) + "НАХОДКА"
 	d.Wide = true
+	group := "НОВОЕ С " + baseline.Since(fresh).Local().Format("02.01 15:04") + " \u00b7 " + strconv.Itoa(len(fresh))
+	for _, it := range fresh {
+		d.Rows = append(d.Rows, tui.BoardRow{ID: newPrefix + it.Kind + " " + it.Key, Group: group,
+			Cells:  ui.Pad(level.Lamp(level.Warn, ui.Clip(newWhat(it), 22)), 25) + newText(it),
+			Inline: "что делать: " + newFix(s.Target, it)})
+	}
 	groups := map[level.Level]string{level.Bad: "ВНИМАНИЕ", level.Warn: "ВНИМАНИЕ", level.OK: "БЕЗ ПОСЛЕДСТВИЙ",
 		level.Info: "БЕЗ ПОСЛЕДСТВИЙ", level.Skip: "НЕ ПРОВЕРЕНО"}
+	all := append(append([]health.Check{}, s.Findings...), deepFindings(s.Target)...)
+	slices.SortStableFunc(all, func(a, b health.Check) int { return int(b.Level) - int(a.Level) })
 	counts := map[string]int{}
-	for _, c := range s.Findings {
+	for _, c := range all {
 		counts[groups[c.Level]]++
 	}
-	for _, c := range s.Findings {
+	for _, c := range all {
 		g := groups[c.Level]
 		row := findingRow(c)
 		row.Group = g + " \u00b7 " + strconv.Itoa(counts[g])
@@ -119,7 +156,7 @@ func serverLamps(r srvinfo.Report) []string {
 	if len(r.SecurityUpdates) == 0 && !r.Reboot && !r.NoApt {
 		lamps = append(lamps, level.Lamp(level.OK, "обновления безопасности стоят"))
 	}
-	if !r.NoSudoSSHD && !srvinfo.PasswordLogin(r) {
+	if srvinfo.KeyOnly(r) {
 		lamps = append(lamps, level.Lamp(level.OK, "ssh только по ключу"))
 	}
 	if r.Fail2ban {

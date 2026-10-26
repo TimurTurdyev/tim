@@ -49,8 +49,8 @@ func sshCommand(env *app.Env) *cobra.Command {
 }
 
 func serverCommand(env *app.Env) *cobra.Command {
-	var asJSON, attacks, traffic bool
-	var since, recipe string
+	var asJSON, attacks, traffic, accept, deep bool
+	var since, recipe, banIP string
 	c := &cobra.Command{
 		Use:   "server <алиас|проект|user@host> [--attacks | --traffic | --run заготовка] [--since 24h] [--json]",
 		Short: "Состояние Linux-сервера по ssh: место, память, юниты, обновления, порты наружу, sshd",
@@ -61,6 +61,12 @@ func serverCommand(env *app.Env) *cobra.Command {
 перебор, пробы сайта (.env, .git, wp-login), файрвол, баны fail2ban и CrowdSec, владельцев сетей.
 --traffic читает журналы запросов nginx или apache: сколько запросов и в минуту, доли ответов,
 кто ходит и куда, ошибки 5xx, пути в пустоту, время ответа, если журнал его пишет.
+Отчёт сравнивается с прошлым разом: новые ключи ssh, пользователи, порты, юниты, таймеры и строки крона
+держатся как новое, пока не отметишь своим (space на экране, --accept). Первый сбор всё запоминает своим.
+Заодно ищет признаки взлома (процесс из /tmp, ld.so.preload, майнер, оболочка на порту) и смотрит снаружи:
+способы входа и алгоритмы ssh, адрес в чёрных списках почты, порты Docker мимо ufw.
+--deep - глубокая проверка: веб-оболочки и php в загрузках, подменённые файлы пакетов, SUID; около минуты.
+--ban <адрес> - единственная запись на сервер: бан через CrowdSec, fail2ban или ufw, с подтверждением.
 --run выполняет заготовку: disk, big, errors, oom, unit <юнит>, top, ports, who, cron, docker, sites
 и свои из [[recipe]] конфига. Встроенные только читают; своя перед первым запуском показывает команду
 и спрашивает, --dry-run печатает скрипт, не заходя на сервер.
@@ -81,6 +87,15 @@ func serverCommand(env *app.Env) *cobra.Command {
 			}
 			if len(args) > 1 {
 				return ui.Errorf("лишний аргумент %s: второй бывает только у --run unit <юнит>", args[1])
+			}
+			if accept {
+				return acceptNew(target)
+			}
+			if deep {
+				return printDeep(target)
+			}
+			if banIP != "" {
+				return banCommand(target, banIP)
 			}
 			if attacks && traffic {
 				return ui.Errorf("--attacks и --traffic - два разных отчёта, по одному за раз")
@@ -113,6 +128,9 @@ func serverCommand(env *app.Env) *cobra.Command {
 	c.Flags().BoolVar(&attacks, "attacks", false, "кто ломится: перебор ssh, удачные входы, пробы сайта, баны - по журналам")
 	c.Flags().BoolVar(&traffic, "traffic", false, "кто ходит: запросы, ошибки, адреса, пути и время ответа - по журналам nginx")
 	c.Flags().StringVar(&since, "since", "", "окно назад: 30m, 24h, 3d, 1w; у --attacks по умолчанию 24h, у --traffic 1h")
+	c.Flags().StringVar(&banIP, "ban", "", "забанить адрес через CrowdSec, fail2ban или ufw - единственная запись на сервер, с подтверждением")
+	c.Flags().BoolVar(&deep, "deep", false, "глубокая проверка: веб-оболочки, php в загрузках, подменённые системные файлы, SUID; около минуты")
+	c.Flags().BoolVar(&accept, "accept", false, "новое с прошлого раза - своё: больше не показывать как новое")
 	c.Flags().StringVar(&recipe, "run", "", "заготовка: disk, big, errors, oom, unit, top, ports, who, cron, docker, sites или своя")
 	_ = c.RegisterFlagCompletionFunc("run", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var out []string

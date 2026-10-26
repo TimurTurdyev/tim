@@ -36,6 +36,8 @@ type serverState struct {
 	Report   srvinfo.Report `json:"report"`
 	Findings []health.Check `json:"findings"`
 	Err      string         `json:"error,omitempty"`
+	// Remembered: первый сбор запомнил всё своим - "запомнил 14 ключей ssh, 9 портов".
+	Remembered string `json:"remembered,omitempty"`
 }
 
 func (s serverState) level() level.Level {

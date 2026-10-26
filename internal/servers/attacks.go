@@ -3,10 +3,13 @@ package servers
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
+	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/reputation"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -17,9 +20,13 @@ const attacksTimeout = 3 * time.Minute
 
 // attackReport: журналы сервера, находки и владельцы сетей, откуда стучались.
 type attackReport struct {
-	Attacks  srvinfo.Attacks `json:"attacks"`
-	Findings []health.Check  `json:"findings"`
-	Owners   []srvinfo.Owner `json:"owners,omitempty"`
+	Attacks  srvinfo.Attacks    `json:"attacks"`
+	Findings []health.Check     `json:"findings"`
+	Owners   []srvinfo.Owner    `json:"owners,omitempty"`
+	Targeted []srvinfo.Attacker `json:"targeted,omitempty"`
+	Noise    srvinfo.NoiseSum   `json:"noise"`
+	Lists    bool               `json:"lists"`         // списки шума скачались
+	Nets     map[string]string  `json:"nets,omitempty"` // адрес -> "AS60729 DE"
 }
 
 // collectAttacks: один заход по ssh со скриптом журналов, потом владельцы самых активных адресов.
@@ -33,16 +40,66 @@ func collectAttacks(target string, since time.Duration) (*attackReport, error) {
 		return nil, err
 	}
 	a := srvinfo.ParseAttacks(out, time.Now(), since)
-	r := &attackReport{Attacks: a, Findings: srvinfo.EvaluateAttacks(a)}
+	r := &attackReport{Attacks: a, Findings: srvinfo.EvaluateAttacks(a), Nets: map[string]string{}}
 	counts := srvinfo.Attackers(a)
+	ips := make([]string, 0, len(counts)+len(a.Logins))
+	for _, c := range counts {
+		ips = append(ips, c.Key)
+	}
+	for _, l := range a.Logins {
+		ips = append(ips, l.IP)
+	}
+	owners := asn.Cymru(ips)
 	if len(counts) > 0 {
-		ips := make([]string, len(counts))
-		for i, c := range counts {
-			ips[i] = c.Key
+		r.Owners = srvinfo.GroupByOwner(counts, owners)
+	}
+	for ip, o := range owners {
+		if o.ASN != "" {
+			r.Nets[ip] = strings.TrimSpace("AS" + o.ASN + " " + o.Country)
 		}
-		r.Owners = srvinfo.GroupByOwner(counts, asn.Cymru(ips))
+	}
+	r.classify(srvinfo.ByIP(a))
+	if a.SSH == srvinfo.Read {
+		observeLogins(target, a.Logins)
 	}
 	return r, nil
+}
+
+// classify: кто в списках шума, кого спросить у GreyNoise, кто прицельный.
+func (r *attackReport) classify(all []srvinfo.Attacker) {
+	lists := reputation.Load()
+	r.Lists = !lists.Empty()
+	var wg sync.WaitGroup
+	asked := 0
+	for i := range all {
+		all[i].Lists = lists.In(all[i].IP)
+		if all[i].Candidate() && asked < 10 {
+			asked++
+			wg.Go(func() {
+				if n, ok := reputation.GreyNoise(all[i].IP); ok {
+					all[i].Noise = n.Noise
+				}
+			})
+		}
+	}
+	wg.Wait()
+	r.Targeted, r.Noise = srvinfo.Split(all)
+	// Скрипт присылает полсотни самых активных адресов перебора; остальные - тоже шум.
+	shown := 0
+	for _, c := range r.Attacks.SSHByIP {
+		shown += c.N
+	}
+	r.Noise.IPs += max(0, r.Attacks.SSHIPs-len(r.Attacks.SSHByIP))
+	r.Noise.Attempts += max(0, r.Attacks.SSHFailed-shown)
+}
+
+// observeLogins: сети удачных входов - "впервые из этой сети", пока не отмечено своим.
+func observeLogins(target string, logins []srvinfo.Login) {
+	items := []baseline.Item{}
+	for _, l := range logins {
+		items = append(items, baseline.Item{Key: srvinfo.Network(l.IP), Text: l.User + " с " + l.IP})
+	}
+	baseline.Observe(object(target), baseline.Snapshot{"login-net": items}, time.Now())
 }
 
 // printAttacks: что прочитано, находки, владельцы сетей и удачные входы.
@@ -58,6 +115,16 @@ func printAttacks(target string, since time.Duration, asJSON bool) error {
 	printFindings(r.Findings)
 	if len(r.Findings) == 0 {
 		ui.Println("  " + ui.Label("в журналах ничего тревожного"))
+	}
+	if len(r.Targeted) > 0 {
+		ui.Println(ui.Info("прицельно, не массовые сканеры:"))
+		for _, t := range r.Targeted[:min(8, len(r.Targeted))] {
+			ui.Println("  " + ui.Pad(t.IP, 17) + t.Doing() + ui.Dim(netNote(r, t.IP)))
+		}
+		ui.Println("  " + ui.Dim("забанить: tim server "+target+" --ban <адрес>"))
+	}
+	if n := r.Noise; n.IPs > 0 {
+		ui.Println(ui.Info("шум: ") + fmt.Sprintf("%d адресов, %d попыток", n.IPs, n.Attempts) + ui.Dim(" "+strings.Join(n.Sources, ", ")))
 	}
 	if len(r.Owners) > 0 {
 		ui.Println(ui.Info("откуда больше всего:"))

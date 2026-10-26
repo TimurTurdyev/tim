@@ -37,11 +37,12 @@ func collect(t Server) serverState {
 		return s
 	}
 	s.Report, s.Findings = r, evaluate(t.Alias, r)
+	s.Remembered = observe(t.Alias, r)
 	save(s)
 	return s
 }
 
 // srvinfoCollect: отчёт сервера по ssh с общим сроком.
 func srvinfoCollect(target string) (srvinfo.Report, error) {
-	return srvinfo.Collect(target, serverTimeout)
+	return collectFull(target)
 }

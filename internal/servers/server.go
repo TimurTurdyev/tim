@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
@@ -19,22 +20,25 @@ const serverTimeout = 15 * time.Second
 
 // printServer: отчёт о сервере строками или JSON.
 func printServer(target string, asJSON bool) error {
-	r, err := srvinfo.Collect(target, serverTimeout)
+	r, err := collectFull(target)
 	if err != nil {
 		return ui.Errorf("%s: %v; маршрут и вход проверит tim ssh %s", target, err, target)
 	}
 	findings := evaluate(target, r)
-	save(serverState{Target: target, Report: r, Findings: findings})
+	remembered := observe(target, r)
+	save(serverState{Target: target, Report: r, Findings: findings, Remembered: remembered})
 	if asJSON {
 		return ui.JSON(struct {
-			Report   srvinfo.Report `json:"report"`
-			Findings []health.Check `json:"findings"`
-		}{r, findings})
+			Report   srvinfo.Report  `json:"report"`
+			Findings []health.Check  `json:"findings"`
+			New      []baseline.Item `json:"new"`
+		}{r, findings, baseline.Pending(object(target))})
 	}
 	ui.Println(ui.Label(target) + "  " + ui.Dim(summaryLine(r)))
 	if text, lvl, ok := forecast(target); ok && lvl == level.OK {
 		ui.Println("  " + ui.Pad("прогноз", 14) + text)
 	}
+	printNew(target, remembered)
 	if len(findings) == 0 {
 		ui.Println("  " + ui.Label("замечаний нет"))
 		return nil
