@@ -33,10 +33,11 @@ type tabMsg struct {
 }
 
 type tabs struct {
-	crumbs []string
-	list   []Tab
-	active int
-	inited []bool
+	palette func() (string, []CommandEntry) // группа палитры, если у вкладки своей нет
+	crumbs  []string
+	list    []Tab
+	active  int
+	inited  []bool
 }
 
 // inTabs: вкладке сказать, что строку поиска рисует строка вкладок.
@@ -71,6 +72,26 @@ func (t *tabs) open(i int) tea.Cmd {
 func (t *tabs) Crumbs() []string { return t.crumbs }
 func (t *tabs) Status() string   { return t.cur().Status() }
 func (t *tabs) Command() string  { return t.cur().Command() }
+
+// Palette: группа палитры - у открытой вкладки, иначе общая для экрана.
+func (t *tabs) Palette() (string, []CommandEntry) {
+	if p, ok := t.cur().(Paletter); ok {
+		if title, list := p.Palette(); title != "" {
+			return title, list
+		}
+	}
+	if t.palette != nil {
+		return t.palette()
+	}
+	return "", nil
+}
+
+// SetPalette: общая группа палитры экрана из вкладок - например свои заготовки машины.
+func SetPalette(s Screen, f func() (string, []CommandEntry)) {
+	if t, ok := s.(*tabs); ok {
+		t.palette = f
+	}
+}
 
 func (t *tabs) Keys() []Key {
 	keys := t.cur().Keys()

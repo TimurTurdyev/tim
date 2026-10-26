@@ -157,7 +157,11 @@ func (r *result) View(width, height int) string {
 			if i >= 3 {
 				break
 			}
-			parts = append(parts, styleKeyCap.Render(" "+string(rune('1'+i))+" ")+" "+styleText.Render(n.Line))
+			shown := n.Line
+			if n.Name != "" {
+				shown = n.Name
+			}
+			parts = append(parts, styleKeyCap.Render(" "+string(rune('1'+i))+" ")+" "+styleText.Render(shown))
 		}
 		next = []string{"", "   " + strings.Join(parts, "     ")}
 	}

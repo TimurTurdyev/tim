@@ -220,6 +220,9 @@ type cmdline struct {
 	list    List
 	hits    []CommandEntry
 	lastErr string
+	// Группа экрана под палитрой: берётся один раз при открытии, а не на каждую букву.
+	screenTitle string
+	screen      []CommandEntry
 }
 
 // newCmdline: палитра ":"; text - что уже набрано, например пример для правки.
@@ -237,8 +240,34 @@ func newCmdline(app *App, text string) *cmdline {
 	in.SetValue(text)
 	in.CursorEnd()
 	c := &cmdline{input: in, lastErr: app.lastErr}
+	if p, ok := app.cur().(Paletter); ok {
+		c.screenTitle, c.screen = p.Palette()
+		for i := range c.screen {
+			c.screen[i].Group = c.screenTitle
+		}
+	}
 	c.refill(app)
 	return c
+}
+
+// screenHits: группа экрана по запросу - каждое слово есть в имени, строке или описании, либо имя похоже.
+func (c *cmdline) screenHits(q string) []CommandEntry {
+	if q == "" || c.screenTitle == "" {
+		return c.screen
+	}
+	words := strings.Fields(strings.ToLower(q))
+	var out []CommandEntry
+	for _, e := range c.screen {
+		text := strings.ToLower(e.Name + " " + e.Line + " " + e.Desc)
+		all := true
+		for _, w := range words {
+			all = all && strings.Contains(text, w)
+		}
+		if all || len(fuzzy.Filter(q, []string{e.Name})) > 0 {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (c *cmdline) refill(app *App) {
@@ -247,6 +276,7 @@ func (c *cmdline) refill(app *App) {
 	if q == "" && c.lastErr != "" {
 		c.hits = append(c.hits, CommandEntry{Line: c.lastErr, Group: groupError})
 	}
+	c.hits = append(c.hits, c.screenHits(q)...)
 	if app.opts.Commands != nil {
 		all := app.opts.Commands(c.input.Value())
 		if q != "" {
@@ -261,16 +291,23 @@ func (c *cmdline) refill(app *App) {
 			c.hits = append(c.hits, all...)
 		}
 	}
-	// Настоящие подстановки первыми, шаблоны - последними.
-	rank := map[string]int{groupError: 0, groupRecent: 1, groupSubst: 2, "": 3, groupCommands: 3, groupTemplate: 4}
+	// Группа экрана первой, за ней настоящие подстановки, шаблоны - последними.
+	rank := map[string]int{groupError: 0, groupRecent: 2, groupSubst: 3, "": 4, groupCommands: 4, groupTemplate: 5}
+	if c.screenTitle != "" {
+		rank[c.screenTitle] = 1
+	}
 	for i := range c.hits {
-		if c.hits[i].Template {
+		if c.hits[i].Template && c.hits[i].Group != c.screenTitle {
 			c.hits[i].Group = groupTemplate
 		}
 	}
 	slices.SortStableFunc(c.hits, func(a, b CommandEntry) int { return rank[a.Group] - rank[b.Group] })
-	if len(c.hits) > 8 {
-		c.hits = c.hits[:8]
+	limit := 8
+	if c.screenTitle != "" {
+		limit = 12 // группа экрана целиком и пара общих команд под ней
+	}
+	if len(c.hits) > limit {
+		c.hits = c.hits[:limit]
 	}
 	c.list.Rows = nil
 	group := "-"
@@ -285,12 +322,28 @@ func (c *cmdline) refill(app *App) {
 			if g == groupTemplate {
 				title += " " + symSep + " enter подставит для правки"
 			}
-			c.list.Rows = append(c.list.Rows, headerRow(title))
+			if g == c.screenTitle {
+				c.list.Rows = append(c.list.Rows, screenHeader(g))
+			} else {
+				c.list.Rows = append(c.list.Rows, headerRow(title))
+			}
 		}
 		c.list.Rows = append(c.list.Rows, Row{Text: h.Line, Render: c.render(h)})
 	}
 	c.list.Cursor = 0
 	c.list.Skip(1)
+}
+
+// screenHeader: заголовок группы экрана - имя заглавными, пояснение после точки серым.
+func screenHeader(title string) Row {
+	head, rest, _ := strings.Cut(title, " "+symSep+" ")
+	return Row{Header: true, Text: title, Render: func(bool, int) string {
+		line := "   " + styleHead.Render(strings.ToUpper(head))
+		if rest != "" {
+			line += styleDim.Render(" " + symSep + " " + rest)
+		}
+		return line
+	}}
 }
 
 func (c *cmdline) render(h CommandEntry) func(bool, int) string {
@@ -299,11 +352,15 @@ func (c *cmdline) render(h CommandEntry) func(bool, int) string {
 			line := styleBad.Render(ui.Clip(symCross+" последняя ошибка: "+h.Line, w-30))
 			return SelRow(sel, w, line+"   "+styleDim.Render("enter - показать целиком"))
 		}
-		name := styleText.Render(ui.Fit(h.Line, 28))
-		if sel {
-			name = styleBold.Render(ui.Fit(h.Line, 28))
+		shown := h.Line
+		if h.Name != "" {
+			shown = h.Name
 		}
-		return SelRow(sel, w, name+styleDim.Render(h.Desc))
+		name := styleText.Render(ui.Fit(shown, 28))
+		if sel {
+			name = styleBold.Render(ui.Fit(shown, 28))
+		}
+		return SelRow(sel, w, name+styleDim.Render(ui.Clip(h.Desc, max(10, w-34))))
 	}
 }
 
@@ -365,6 +422,17 @@ func (c *cmdline) enter(app *App) tea.Cmd {
 			c.input.SetValue(hit.Line)
 			c.input.CursorEnd()
 			c.refill(app)
+			return nil
+		case hit.Confirm != nil && app.opts.RunCommand != nil:
+			d, run := *hit.Confirm, hit.Line
+			yes := d.Yes
+			d.Yes = func() tea.Cmd {
+				if yes != nil {
+					yes()
+				}
+				return app.Do(app.opts.RunCommand(run))
+			}
+			app.overlay = &confirmOverlay{d: d}
 			return nil
 		}
 		line = hit.Line

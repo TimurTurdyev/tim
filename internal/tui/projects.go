@@ -52,6 +52,8 @@ type ProjectsOpts struct {
 	Running func() map[string]string  // проект -> порт по скану портов; зовётся в фоне
 	Empty   []Key                     // клавиши пустого реестра
 	OnEmpty func(key string) Action
+	// Palette: группа палитры для выбранного проекта - его задачи.
+	Palette func(p ProjectRow) (string, []CommandEntry)
 }
 
 type projects struct {
@@ -110,6 +112,13 @@ func (p *projects) Status() string {
 		return spinFrames[0] + " " + n + " " + symSep + " ищу порты"
 	}
 	return n + " " + symSep + " " + ui.Count(len(p.running), "запущен", "запущено", "запущено")
+}
+
+func (p *projects) Palette() (string, []CommandEntry) {
+	if row := p.current(); row != nil && p.opts.Palette != nil {
+		return p.opts.Palette(*row)
+	}
+	return "", nil
 }
 
 func (p *projects) Command() string {

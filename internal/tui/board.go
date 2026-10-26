@@ -75,6 +75,8 @@ type BoardOpts struct {
 	// Miss: что сделать с запросом, которого нет в списке - например проверить его как домен.
 	Miss  func(q string) (string, Action)
 	Enter func(row *BoardRow) string
+	// Palette: своя группа палитры ":" - заголовок и строки; см. Paletter.
+	Palette func() (string, []CommandEntry)
 }
 
 type board struct {
@@ -154,6 +156,13 @@ func (b *board) Status() string {
 		return spinFrames[0] + " обновляю"
 	}
 	return b.data.Status
+}
+
+func (b *board) Palette() (string, []CommandEntry) {
+	if b.opts.Palette == nil {
+		return "", nil
+	}
+	return b.opts.Palette()
 }
 
 func (b *board) Command() string {
