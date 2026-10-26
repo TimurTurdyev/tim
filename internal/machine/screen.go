@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/tui"
@@ -11,7 +12,13 @@ import (
 
 // HWScreen: Машина на вкладке Железо. Паспорт собирается при первом замере, уже в фоне - открытие
 // экрана не ждёт system_profiler.
-func HWScreen() tui.Screen { return machineScreen(0, tui.ProcsOpts{}) }
+func HWScreen(env *app.Env) tui.Screen {
+	s := machineScreen(0, tui.ProcsOpts{})
+	if env.MachinePalette != nil {
+		tui.SetPalette(s, env.MachinePalette)
+	}
+	return s
+}
 
 // ProcsScreen: Машина на вкладке Процессы; query - сразу отфильтровать.
 func ProcsScreen(query string) tui.Screen { return machineScreen(1, tui.ProcsOpts{Query: query}) }

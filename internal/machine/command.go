@@ -28,7 +28,7 @@ func hwCommand(env *app.Env) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if watch && app.Interactive() && !asJSON {
-				return env.Open(HWScreen())
+				return env.Open(HWScreen(env))
 			}
 			// Без терминала живому экрану негде жить - один снимок.
 			return printSnapshot(asJSON)

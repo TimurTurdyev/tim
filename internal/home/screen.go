@@ -20,6 +20,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/run"
+	"github.com/TimurTurdyev/tim/internal/serve"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
@@ -62,7 +63,8 @@ func (h *Home) runLine(line string) tui.Action {
 	if s := h.screenFor(args); s != nil {
 		return tui.Action{Push: s}
 	}
-	if exitCmds[args[0]] {
+	// Задача проекта бывает долгой и с вводом (npm run dev): ей нужен терминал; список - на экране.
+	if exitCmds[args[0]] || args[0] == "run" && len(args) > 1 {
 		return tui.Action{Exit: func() { h.after(args) }}
 	}
 	return h.result(args)
@@ -75,7 +77,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	case args[0] == "go" || args[0] == "proj":
 		return h.projectsScreen("", app.TabAll)
 	case args[0] == "hw":
-		return machine.HWScreen()
+		return machine.HWScreen(env)
 	case args[0] == "vpn" && one:
 		return bypass.Screen(env)
 	case args[0] == "check" && one:
@@ -104,7 +106,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 func (h *Home) projectsScreen(focus string, tab int) tui.Screen {
 	env := h.env
 	return tui.NewTabs([]string{"Проекты"}, []tui.Tab{
-		projects.AllTab(env, focus, func() map[string]string { return machine.RunningPorts(env.Cfg) }),
+		projects.AllTab(env, focus, func() map[string]string { return machine.RunningPorts(env.Cfg) }, serve.TaskPalette(env)),
 		machine.RunningTab(env),
 		sites.CheckTab(env),
 	}, tab)
@@ -283,7 +285,7 @@ func (h *Home) sections() []tui.Section {
 		})},
 		{Key: "w", Title: "Сайты", Hint: "ответ, сертификат, почта, домен", Open: push(func() tui.Screen { return sites.SitesScreen(h.env) })},
 		{Key: "n", Title: "Сеть", Hint: "обход VPN, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
-		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(func() tui.Screen { return machine.HWScreen() })},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(func() tui.Screen { return machine.HWScreen(h.env) })},
 		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: push(h.utilsScreen)},
 	}

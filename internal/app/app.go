@@ -42,6 +42,8 @@ type Env struct {
 	Inside func(args []string) (string, error)
 	// ProjectsScreen: экран проектов с вкладками; tab - какая открыта первой.
 	ProjectsScreen func(focus string, tab int) tui.Screen
+	// MachinePalette: свои заготовки машины - группа палитры на экране Машины; nil - группы нет.
+	MachinePalette func() (string, []tui.CommandEntry)
 }
 
 // Build: сборка для лок-апа - "сборка e3642b7" до первого тега, у релиза его версия. Версия go install

@@ -20,7 +20,7 @@ type options struct {
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
 	return []*cobra.Command{serveCommand(env), envCommand(env), logsCommand(env), openCommand(env),
-		svcCommand(), phpCommand(env), tlsProxyCommand()}
+		svcCommand(), phpCommand(env), tlsProxyCommand(), runTaskCommand(env)}
 }
 
 func serveCommand(env *app.Env) *cobra.Command {

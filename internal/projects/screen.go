@@ -27,7 +27,7 @@ func knownStack(dir string) string {
 
 // AllTab: вкладка "Все" - недавние сверху; focus - кого показать первым; running - запущенные по
 // скану портов, тот же источник, что у главного экрана.
-func AllTab(env *app.Env, focus string, running func() map[string]string) tui.Tab {
+func AllTab(env *app.Env, focus string, running func() map[string]string, palette func(tui.ProjectRow) (string, []tui.CommandEntry)) tui.Tab {
 	cfg := env.Cfg
 	seen, now := visits.Load(), time.Now()
 	rows := make([]tui.ProjectRow, 0, len(cfg.Projects))
@@ -60,6 +60,7 @@ func AllTab(env *app.Env, focus string, running func() map[string]string) tui.Ta
 		Card:    func(row tui.ProjectRow) tui.Card { return projectCard(cfg, row) },
 		Go:      func(p tui.ProjectRow) tui.Action { visits.Record(p.Name, time.Now()); return tui.Action{Dir: p.Dir} },
 		Actions: actions(env),
+		Palette: palette,
 		Empty:   []tui.Key{{K: "enter", D: "найти"}, {K: "n", D: "добавить"}},
 		OnEmpty: func(key string) tui.Action {
 			switch key {
