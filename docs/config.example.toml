@@ -46,6 +46,11 @@ motd = ["system", "project", "repos"]   # разделы tim status по умо�
   run = "du -sh /var/www/* | sort -rh | head"   # {server}, {project}, {path}, {port}, {unit} подставляются
   on = "server"         # server, project (tim run, в папке проекта) или machine
 
+[notify]                # итог обхода по расписанию: только новое и серьёзное
+  telegram = "123456:ABC..."   # токен бота от @BotFather
+  chat = "123456789"           # кому писать
+  ntfy = "https://ntfy.sh/my-topic"
+
 [[project]]
   name = "shop"
   path = "shop/app"     # от dev; можно и абсолютный путь
