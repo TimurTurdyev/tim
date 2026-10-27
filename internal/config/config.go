@@ -70,6 +70,13 @@ type Recipe struct {
 	On   string `toml:"on,omitempty"`
 }
 
+// Notify: куда слать итог обхода: бот Telegram (токен и chat) и ntfy (адрес с темой).
+type Notify struct {
+	Telegram string `toml:"telegram,omitempty"`
+	Chat     string `toml:"chat,omitempty"`
+	Ntfy     string `toml:"ntfy,omitempty"`
+}
+
 // Shell: что tim init добавляет в оболочку.
 type Shell struct {
 	Motd    bool              `toml:"motd,omitempty"`
@@ -101,6 +108,7 @@ type Config struct {
 	Groups    map[string][]string `toml:"groups,omitempty"`
 	Templates []Template          `toml:"template,omitempty"`
 	Recipes   []Recipe            `toml:"recipe,omitempty"`
+	Notify    Notify              `toml:"notify,omitempty"`
 	Tunnel    Tunnel              `toml:"tunnel,omitempty"`
 	Projects  []Project           `toml:"project"`
 	Hosts     []Host              `toml:"host"`

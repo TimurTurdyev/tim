@@ -46,6 +46,8 @@ type state struct {
 	Known map[string][]string `json:"known"`
 	New   []Item              `json:"new,omitempty"`
 	Last  time.Time           `json:"last"`
+	// Prev: прошлый снимок по видам - из него "было" у нового значения (запись DNS сменилась).
+	Prev map[string][]string `json:"prev,omitempty"`
 }
 
 func path(object string) string { return cache.Path(paths.State("baseline"), object) }
@@ -55,6 +57,9 @@ func load(object string) state {
 	s := e.Value
 	if s.Known == nil {
 		s.Known = map[string][]string{}
+	}
+	if s.Prev == nil {
+		s.Prev = map[string][]string{}
 	}
 	return s
 }
@@ -81,15 +86,23 @@ func Observe(object string, snap Snapshot, now time.Time) Result {
 		for _, it := range items {
 			present[it.Key] = true
 		}
+		keys := make([]string, 0, len(items))
+		for _, it := range items {
+			keys = append(keys, it.Key)
+		}
+		prev := s.Prev[kind]
+		s.Prev[kind] = keys
 		known, seen := s.Known[kind]
 		if !seen {
-			keys := make([]string, 0, len(items))
-			for _, it := range items {
-				keys = append(keys, it.Key)
-			}
 			s.Known[kind] = keys
 			res.First[kind] = len(items)
 			continue
+		}
+		var gone []string
+		for _, k := range prev {
+			if !present[k] {
+				gone = append(gone, k)
+			}
 		}
 		s.New = slices.DeleteFunc(s.New, func(it Item) bool { return it.Kind == kind && !present[it.Key] })
 		for _, it := range items {
@@ -97,6 +110,9 @@ func Observe(object string, snap Snapshot, now time.Time) Result {
 				continue
 			}
 			it.Kind, it.Seen, it.After = kind, now, s.Last
+			if it.Prev == "" {
+				it.Prev = strings.Join(gone, ", ")
+			}
 			s.New = append(s.New, it)
 		}
 	}

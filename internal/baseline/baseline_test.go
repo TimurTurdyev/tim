@@ -45,3 +45,13 @@ func TestObserve(t *testing.T) {
 		t.Fatalf("снова открытый свой порт: %+v", r.New)
 	}
 }
+
+func TestPrev(t *testing.T) {
+	t.Setenv("TIM_STATE_DIR", t.TempDir())
+	now := time.Now()
+	Observe("dom", Snapshot{"MX": items("MX", "mx.yandex.net")}, now)
+	r := Observe("dom", Snapshot{"MX": items("MX", "mx.relay.example")}, now.Add(time.Hour))
+	if len(r.New) != 1 || r.New[0].Prev != "mx.yandex.net" {
+		t.Fatalf("было: %+v", r.New)
+	}
+}
