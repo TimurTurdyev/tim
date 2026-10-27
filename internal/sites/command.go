@@ -18,8 +18,8 @@ type checkOptions struct {
 
 // domainOptions: сколько собирать о домене и куда выводить.
 type domainOptions struct {
-	fast, fresh, noNeighbors, json, openMap, all bool
-	mapOut                                       string
+	fast, fresh, noNeighbors, json, openMap, all, twins bool
+	mapOut                                              string
 }
 
 // corsOptions: что собирается сделать фронтенд.
@@ -38,7 +38,29 @@ type watchOptions struct {
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
 	return []*cobra.Command{checkCommand(env), certCommand(env), dnsCommand(), siteCommand(), auditCommand(env), domainCommand(env),
-		mailCommand(env), httpCommand(), ogCommand(), corsCommand(), watchCommand()}
+		mailCommand(env), httpCommand(), ogCommand(), corsCommand(), watchCommand(), notifyCommand(env)}
+}
+
+func notifyCommand(env *app.Env) *cobra.Command {
+	c := &cobra.Command{
+		Use:   "notify [test]",
+		Short: "Куда обход шлёт итог: Telegram и ntfy из [notify] конфига; test - пробное сообщение",
+		Long: `Обход по расписанию (tim check install) шлёт одно сообщение: только новое со степенью ✕ или ▲
+с прошлого раза. Кроме уведомления системы - в Telegram и ntfy, если они есть в конфиге:
+  [notify]
+  telegram = "123456:ABC..."   # токен бота от @BotFather
+  chat = "123456789"           # кому: свой id, его скажет @userinfobot
+  ntfy = "https://ntfy.sh/моя-тема"`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return notifyStatus(env.Cfg) },
+	}
+	c.AddCommand(&cobra.Command{
+		Use:   "test",
+		Short: "Пробное сообщение во все настроенные места",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return notifyTest(env.Cfg) },
+	})
+	return c
 }
 
 func checkCommand(env *app.Env) *cobra.Command {
@@ -179,12 +201,14 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 func domainCommand(env *app.Env) *cobra.Command {
 	var o domainOptions
 	c := &cobra.Command{
-		Use:   "domain [домен|проект] [--fast] [--map [--out файл]] [--json]",
+		Use:   "domain [домен|проект] [--fast] [--map [--out файл]] [--twins] [--json]",
 		Short: "Проверить домен целиком: записи, поддомены, адреса, живость, сертификаты",
 		Long: `Собирает по домену всё, что отдают публичные источники: регистрацию, записи DNS, поддомены из логов
 сертификатов и перебором частых имён, адреса с провайдером и страной, живость каждого имени, сертификаты
 и признаки связанных сайтов. Домен уходит в crt.sh, whois.cymru.com и (для соседей по IP) api.hackertarget.com.
-Только публичные записи и обычный запрос главной страницы.`,
+Только публичные записи и обычный запрос главной страницы.
+--twins ищет двойники: опечатки, похожие буквы и та же метка в других зонах, и какие из них
+зарегистрированы и принимают почту - так готовят фишинг под сайт и письма.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: app.ProjectNames,
 		RunE:              func(cmd *cobra.Command, args []string) error { return domain(env, app.First(args), o) },
@@ -199,6 +223,7 @@ func domainCommand(env *app.Env) *cobra.Command {
 	f.StringVar(&o.mapOut, "map-out", "", "")
 	_ = f.MarkHidden("map-out")
 	f.BoolVarP(&o.all, "all", "a", false, "кратко по всем доменам реестра")
+	f.BoolVar(&o.twins, "twins", false, "двойники домена: опечатки и другие зоны, которые зарегистрированы")
 	return c
 }
 

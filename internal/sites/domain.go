@@ -27,6 +27,9 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	if err != nil {
 		return err
 	}
+	if o.twins {
+		return printTwins(name, o.json)
+	}
 	if app.Interactive() && !o.json && !o.openMap && o.mapOut == "" && !o.fast {
 		return env.Open(DomainScreen(env, name))
 	}

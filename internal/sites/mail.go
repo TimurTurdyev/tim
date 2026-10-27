@@ -36,6 +36,12 @@ func printMail(arg string, selectors []string, asJSON bool) error {
 	for _, mx := range m.MX {
 		ui.Println("  " + mx)
 	}
+	if lvl, text := mxBlacklist(m.MX); lvl != level.Skip {
+		if lvl == level.Bad {
+			bad++
+		}
+		ui.Println("  " + level.Lamp(lvl, "чёрные списки: "+text))
+	}
 	ui.Println(ui.Info("SPF") + ui.Dim("  "+m.SPF))
 	bad += printFindings(m.SPFF)
 	printDKIM(m)

@@ -24,8 +24,14 @@ func Attention(env *app.Env) []health.Alert {
 				names = append(names, c.Name)
 			}
 		}
+		// Новое с прошлого раза - первым: перемена важнее вечной находки.
+		names = append(pendingWords(t.Alias), names...)
+		lvl := s.level()
+		if lvl < level.Warn && len(names) > 0 {
+			lvl = level.Warn
+		}
 		if len(names) > 0 {
-			out = append(out, health.Alert{Level: s.level(), Text: t.Alias + ": " + strings.Join(names, ", ")})
+			out = append(out, health.Alert{Level: lvl, Text: t.Alias + ": " + strings.Join(names, ", ")})
 		}
 	}
 	return out

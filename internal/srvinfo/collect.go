@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/health"
-	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
@@ -52,30 +50,4 @@ func (r Report) Root() (Disk, bool) {
 		}
 	}
 	return Disk{}, false
-}
-
-// CheckServer: сервер одной проверкой для обхода проектов - худшая находка в ячейке, подробность строкой.
-func CheckServer(target string) health.Check {
-	c := health.Check{Name: "сервер", Level: level.OK, Text: "ок"}
-	r, err := Collect(target, 15*time.Second)
-	if err != nil {
-		c.Level, c.Text, c.Detail = level.Bad, "не достучался", target+": "+err.Error()+"; маршрут и вход проверит tim ssh "+target
-		return c
-	}
-	findings := Evaluate(r, time.Now())
-	if len(findings) == 0 || findings[0].Level < level.Warn {
-		return c
-	}
-	worst := findings[0]
-	c.Level, c.Text, c.Detail, c.Fix = worst.Level, worst.Name+" "+worst.Text, target+": "+worst.Name+" "+worst.Detail, worst.Fix
-	more := 0
-	for _, f := range findings[1:] {
-		if f.Level >= level.Warn {
-			more++
-		}
-	}
-	if more > 0 {
-		c.Detail += fmt.Sprintf("; ещё %d - tim server %s", more, target)
-	}
-	return c
 }

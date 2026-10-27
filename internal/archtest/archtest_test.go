@@ -26,10 +26,10 @@ var (
 	sectionDeps = map[string][]string{
 		"home":    sections,
 		"motd":    {"bypass", "machine", "projects", "serve"},
-		"bypass":  {"machine"}, // приложение мимо VPN: открытый экземпляр сначала закрывается
-		"servers": {"bypass"},  // ssh и туннели заводят маршрут мимо VPN до сервера
-		"shell":   {"bypass"},  // self-update ждёт, пока страж перейдёт на новую версию
-		"sites":   {"machine"}, // обход заодно говорит о забытых dev-серверах и прожорливых процессах
+		"bypass":  {"machine"},            // приложение мимо VPN: открытый экземпляр сначала закрывается
+		"servers": {"bypass"},             // ssh и туннели заводят маршрут мимо VPN до сервера
+		"shell":   {"bypass"},             // self-update ждёт, пока страж перейдёт на новую версию
+		"sites":   {"machine", "servers"}, // обход говорит о забытых dev-серверах, серверы - тем же сбором, что экран
 	}
 	execAllowed = []string{"runner", "privileged"}
 )

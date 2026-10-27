@@ -17,7 +17,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
-	"github.com/TimurTurdyev/tim/internal/srvinfo"
+	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 )
 
@@ -52,7 +52,7 @@ type DomainChecks struct {
 // CheckRow: все проверки одного проекта. Сетевые идут параллельно; local и net оставляют только
 // локальные или только сетевые. servers - ещё и сервер проекта по ssh: один заход на хост, сколько бы
 // проектов на нём ни жило.
-func CheckRow(p *config.Project, dir string, local, net, servers bool, shared *DomainChecks) health.Row {
+func CheckRow(p *config.Project, dir string, local, net, withServers bool, shared *DomainChecks) health.Row {
 	var checks []func() health.Check
 	if !net {
 		checks = append(checks, func() health.Check { return GitCheck(dir) })
@@ -69,9 +69,9 @@ func CheckRow(p *config.Project, dir string, local, net, servers bool, shared *D
 			func() health.Check { return shared.reg.Get(base, reg) },
 		)
 	}
-	if servers && !local && p.SSH != "" {
+	if withServers && !local && p.SSH != "" {
 		checks = append(checks, func() health.Check {
-			return shared.server.Get(serverKey(p.SSH), func() health.Check { return srvinfo.CheckServer(p.SSH) })
+			return shared.server.Get(serverKey(p.SSH), func() health.Check { return servers.CheckServer(p.SSH) })
 		})
 	}
 	run := func(check func() health.Check) health.Check { return check() }

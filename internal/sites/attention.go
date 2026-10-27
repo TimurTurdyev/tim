@@ -82,3 +82,19 @@ func Household(cfg *config.Config) []string {
 	}
 	return out
 }
+
+// DomainAttention: домены проектов с неотмеченным новым - "lpack-spb.ru: сменилась запись MX". Из
+// хранилища, без сети: наблюдает обход и вкладки домена.
+func DomainAttention(cfg *config.Config) []health.Alert {
+	projects := make([]*config.Project, 0, len(cfg.Projects))
+	for i := range cfg.Projects {
+		projects = append(projects, &cfg.Projects[i])
+	}
+	var out []health.Alert
+	for _, d := range roundDomains(projects) {
+		if news := domainNews(d); len(news) > 0 {
+			out = append(out, health.Alert{Level: level.Warn, Text: d + ": " + strings.Join(news, ", ")})
+		}
+	}
+	return out
+}

@@ -3,7 +3,6 @@ package sites
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +55,14 @@ func check(env *app.Env, args []string, o checkOptions) error {
 		return ui.Errorf("в реестре нет проектов: tim proj scan")
 	}
 	rows := checkRows(env.Cfg, projects, o)
+	var domains, aliases []string
+	if !o.local {
+		domains = roundDomains(projects)
+		watchDomains(domains)
+	}
+	if o.servers && !o.local {
+		aliases = roundAliases(projects)
+	}
 	if len(rows) == 0 {
 		return ui.Errorf("проверять нечего: ни у одного проекта нет git и адреса сайта (tim sync --remote)")
 	}
@@ -64,7 +71,7 @@ func check(env *app.Env, args []string, o checkOptions) error {
 	}
 	printCheck(rows)
 	if o.notify {
-		notifyProblems(rows)
+		notifyRound(env.Cfg, rows, domains, aliases)
 	}
 	ok, warn, bad := health.Counts(rows)
 	ui.Println(ui.Dim(fmt.Sprintf("всего %d: ок %d, внимание %d", len(rows), ok, warn)))
@@ -194,34 +201,6 @@ func machineNotes(cfg *config.Config, older time.Duration) []string {
 	return out
 }
 
-// notifyProblems: уведомление системы о плохих строках. Тихо, если всё хорошо:
-// уведомление каждое утро "всё в порядке" быстро приучает его не читать.
-func notifyProblems(rows []health.Row) {
-	var lines []string
-	bad := 0
-	for _, r := range rows {
-		if r.Level() != level.Bad {
-			continue
-		}
-		bad++
-		if len(lines) < 3 {
-			lines = append(lines, firstBad(r))
-		}
-	}
-	if bad > 0 {
-		schedule.Notify("tim check: плохо в "+strconv.Itoa(bad), strings.Join(lines, "\n"))
-	}
-}
-
-func firstBad(r health.Row) string {
-	for _, c := range r.Problems() {
-		if c.Level == level.Bad {
-			return r.Name + ": " + c.Detail
-		}
-	}
-	return r.Name
-}
-
 func installCheck(at string, servers bool) error {
 	self, err := schedule.SelfPath()
 	if err != nil {
@@ -241,6 +220,6 @@ func installCheck(at string, servers bool) error {
 		return err
 	}
 	ui.Println(ui.Label("обход каждый день в " + at))
-	ui.Println(ui.Dim("уведомление придёт, только если что-то плохо; журнал: " + job.Log))
+	ui.Println(ui.Dim("уведомление придёт только о новом и серьёзном; Telegram и ntfy - [notify] в конфиге, tim notify test; журнал: " + job.Log))
 	return nil
 }

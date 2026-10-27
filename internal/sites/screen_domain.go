@@ -63,8 +63,8 @@ func (l *domainLoad) wait(width int) []string {
 	return tui.WaitNotice("Собираю всё по "+l.domain, -1, "обычно до минуты", started, stage+"; если уйти, сбор дойдёт до конца в фоне", width)
 }
 
-// DomainScreen: домен целиком вкладками - имена, адреса, почта; лампы сайта, сертификата,
-// регистрации и почты над таблицей.
+// DomainScreen: домен целиком вкладками - имена, адреса, записи, сертификат, почта, двойники; лампы сайта,
+// сертификата, регистрации и почты над таблицей.
 func DomainScreen(env *app.Env, domain string) tui.Screen {
 	load := &domainLoad{domain: domain, started: time.Now()}
 	mapAction := tui.BoardAction{Key: "w", Label: "браузер", Doing: "рисую карту домена", Free: true, Run: func(*tui.BoardRow) (string, error) {
@@ -99,7 +99,7 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 			{Key: "enter", Label: "подробно", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"mail", domain}) }},
 		},
 	}).(tui.Tab)
-	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, mail}, 0)
+	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
 }
 
 func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
@@ -188,6 +188,9 @@ func mailData(domain string) tui.BoardData {
 		d.Rows = append(d.Rows, tui.BoardRow{ID: name, Cells: ui.Pad(level.Lamp(lvl, name), 10) + value})
 	}
 	add("MX", strings.Join(m.MX, ", "), len(m.MX) > 0)
+	if lvl, text := mxBlacklist(m.MX); lvl != level.Skip {
+		d.Rows = append(d.Rows, tui.BoardRow{ID: "blacklist", Cells: ui.Pad(level.Lamp(lvl, "списки"), 10) + text})
+	}
 	add("SPF", m.SPF, len(m.SPFF) == 0)
 	add("DMARC", m.DMARC, len(m.DMRF) == 0)
 	var keys []string
