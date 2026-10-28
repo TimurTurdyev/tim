@@ -2,6 +2,7 @@ package sites
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -168,7 +169,7 @@ func checkData(cfg *config.Config, rows []health.Row, at time.Time) tui.BoardDat
 		for _, col := range cols {
 			c := r.Get(col.name)
 			cell := ""
-			if c.Level != level.Skip && (c.Level != level.OK || r.Level() >= level.Warn || col.name != "git") {
+			if c.Level != level.Skip && (c.Level != level.OK || r.Level() >= level.Warn && col.name == "git" || !slices.Contains(quietCols, col.name)) {
 				cell = level.Lamp(c.Level, ui.Clip(c.Text, col.width-3))
 			}
 			row.Cells += ui.Pad(cell, col.width)

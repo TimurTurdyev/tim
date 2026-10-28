@@ -3,6 +3,7 @@ package sites
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,11 +32,15 @@ var checkCols = []struct {
 	{"почта", 8},
 	{"домен", 10},
 	{"сервер", 20},
+	{"секреты", 14},
+	{"зависимости", 13},
 }
 
 // check: обход проектов. В терминале без аргументов - экран, иначе таблица и замечания о машине.
 func check(env *app.Env, args []string, o checkOptions) error {
 	switch {
+	case o.machine:
+		return machine.PrintProtection(env.Cfg)
 	case o.install:
 		return installCheck(o.at, o.servers)
 	case o.uninstall:
@@ -164,7 +169,7 @@ func usedCols(rows []health.Row) []struct {
 	cols := checkCols[:0:0]
 	for _, col := range checkCols {
 		for _, r := range rows {
-			if r.Get(col.name).Level != level.Skip {
+			if lvl := r.Get(col.name).Level; lvl != level.Skip && (lvl >= level.Warn || !slices.Contains(quietCols[1:], col.name)) {
 				cols = append(cols, col)
 				break
 			}

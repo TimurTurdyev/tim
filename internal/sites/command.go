@@ -11,9 +11,9 @@ import (
 
 // checkOptions: что проверять и как часто обходить по расписанию.
 type checkOptions struct {
-	local, net, servers, install, uninstall, notify, json bool
-	older                                                 time.Duration
-	at                                                    string
+	local, net, servers, install, uninstall, notify, json, machine bool
+	older                                                          time.Duration
+	at                                                             string
 }
 
 // domainOptions: сколько собирать о домене и куда выводить.
@@ -82,6 +82,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 	f.BoolVar(&o.local, "local", false, "только локальные проверки, без сети")
 	f.BoolVar(&o.net, "net", false, "только сетевые проверки")
 	f.BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh: место, юниты, обновления, sshd - только чтение")
+	f.BoolVar(&o.machine, "machine", false, "защита этой машины: FileVault, файрвол, ключи ssh без пароля, автозапуск, что видно в сети")
 	f.StringVar(&older, "older", "8h", "с какого возраста dev-сервер считается забытым: 8h, 2d")
 	f.BoolVar(&o.notify, "notify", false, "уведомление системы, если есть плохие строки")
 	f.BoolVar(&o.json, "json", false, "строки и проверки в JSON")

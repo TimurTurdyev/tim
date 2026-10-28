@@ -55,7 +55,10 @@ type DomainChecks struct {
 func CheckRow(p *config.Project, dir string, local, net, withServers bool, shared *DomainChecks) health.Row {
 	var checks []func() health.Check
 	if !net {
-		checks = append(checks, func() health.Check { return GitCheck(dir) })
+		checks = append(checks, func() health.Check { return GitCheck(dir) }, func() health.Check { return SecretsCheck(dir) })
+	}
+	if !local && dir != "" {
+		checks = append(checks, func() health.Check { return DepsCheck(dir) })
 	}
 	host, _ := netinfo.HostPort(p.URL, "")
 	if !local && p.URL != "" && host != "" && !fill.Local(host) {

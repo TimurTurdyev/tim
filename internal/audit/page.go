@@ -8,7 +8,6 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/TimurTurdyev/tim/internal/level"
-	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -154,24 +153,4 @@ func PageFindings(p Page) []Finding {
 			"ссылки на ресурсы без схемы (//host/...) или https://")
 	}
 	return out
-}
-
-// brokenLinks: внутренние ссылки главной, которые отвечают ошибкой.
-func brokenLinks(s *site) []Finding {
-	if len(s.page.Links) == 0 {
-		return nil
-	}
-	statuses := par.Map(s.page.Links, 8, func(u string) int { return s.get(u, true).status })
-	var broken []string
-	for i, st := range statuses {
-		if st >= 400 || st == 0 {
-			broken = append(broken, s.page.Links[i])
-		}
-	}
-	if len(broken) == 0 {
-		return nil
-	}
-	return []Finding{{Area: "ссылки", Level: level.Warn, Text: fmt.Sprintf("битые ссылки с главной: %d из %d", len(broken), len(s.page.Links)),
-		Why: "посетитель упирается в ошибку: " + strings.Join(broken[:min(3, len(broken))], ", "),
-		Fix: "поправить адреса или поставить редиректы"}}
 }
