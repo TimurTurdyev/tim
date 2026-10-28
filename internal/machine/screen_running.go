@@ -106,9 +106,16 @@ func runningRow(r PortRow) tui.BoardRow {
 	up := ui.Short(r.Uptime)
 	row := tui.BoardRow{ID: r.Project, Find: r.Dir,
 		Cells: ui.Fit(r.Project, 27) + ui.Fit(":"+r.Port, 8) + ui.Fit(how, 10) + ui.Dim(up)}
+	if r.Network {
+		row.Cells += ui.Warn("   ▲ в сети")
+	}
 	c := &tui.Card{Title: r.Project, Sub: strings.Join(nonEmptyParts(r.Kind, up), " \u00b7 "), Path: paths.Show(r.Dir),
 		Enter: "перейти в папку, tim закроется"}
 	c.Facts = append(c.Facts, tui.Fact{Label: "адрес", Value: ui.Info("http://localhost:" + r.Port)})
+	if r.Network {
+		c.Facts = append(c.Facts, tui.Fact{Label: "в сети", Value: ui.Warn("слушает все адреса: его видно всем в этой сети") +
+			ui.Dim(" · только себе - --host 127.0.0.1")})
+	}
 	if viaTim {
 		c.Facts = append(c.Facts, tui.Fact{Label: "команда", Value: st.Command}, tui.Fact{Label: "журнал", Value: ui.Dim(paths.Show(run.LogPath(r.Project)))})
 		if tail := logTail(run.LogPath(r.Project), 4); len(tail) > 0 {

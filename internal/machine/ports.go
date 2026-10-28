@@ -112,6 +112,7 @@ func merge(rows []PortRow) []PortRow {
 		key := r.Listener.PID + " " + r.Kind
 		if i, ok := at[key]; ok && r.Listener.PID != "" {
 			out[i].Ports = append(out[i].Ports, r.Port)
+			out[i].Network = out[i].Network || r.Network
 			continue
 		}
 		at[key] = len(out)
@@ -126,6 +127,12 @@ func merge(rows []PortRow) []PortRow {
 		return cmp.Or(cmp.Compare(portNum(a.Port), portNum(b.Port)), cmp.Compare(a.Listener.PID, b.Listener.PID))
 	})
 	return out
+}
+
+// devServer: dev-сервер проекта - его видимость в сети стоит показывать; системные службы macOS
+// (AirPlay, общий доступ) слушают все адреса по своей природе.
+func devServer(r PortRow) bool {
+	return r.Project != "" && !r.Guessed || r.Dir != ""
 }
 
 // kindOf: что это за процесс - известный сервер, иначе стек проекта, иначе понятное имя процесса.
@@ -319,7 +326,11 @@ func printRows(rows []PortRow) {
 		if r.Guessed {
 			project += "?"
 		}
-		table = append(table, []string{strings.Join(r.Ports, ", "), r.Kind, project, uptime(r.Uptime), r.Listener.PID})
+		kind := r.Kind
+		if r.Network && devServer(r) {
+			kind += " · в сети"
+		}
+		table = append(table, []string{strings.Join(r.Ports, ", "), kind, project, uptime(r.Uptime), r.Listener.PID})
 	}
 	widths := make([]int, len(table[0]))
 	for _, t := range table {

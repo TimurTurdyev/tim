@@ -2,6 +2,7 @@ package netinfo
 
 import (
 	"net"
+	"net/netip"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -66,10 +67,25 @@ type Listener struct {
 	Port    string
 	PID     string
 	Command string
+	// Network: слушает не только эту машину - все адреса или адрес в сети; такой dev-сервер виден
+	// всем в той же Wi-Fi, в кафе и в офисе.
+	Network bool
+}
+
+// exposed: адрес привязки виден из сети - всё, кроме loopback.
+func exposed(addr string) bool {
+	addr = strings.Trim(addr, "[]")
+	if addr == "*" || addr == "" {
+		return true
+	}
+	if a, err := netip.ParseAddr(strings.Split(addr, "%")[0]); err == nil {
+		return !a.IsLoopback()
+	}
+	return addr != "localhost"
 }
 
 func ParseLsof(out string) []Listener {
-	seen := map[string]bool{}
+	byPort := map[string]int{}
 	var list []Listener
 	for i, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
@@ -80,19 +96,21 @@ func ParseLsof(out string) []Listener {
 		if !strings.Contains(name, ":") {
 			name = f[len(f)-1]
 		}
-		port := name[strings.LastIndex(name, ":")+1:]
-		if seen[port] {
+		cut := strings.LastIndex(name, ":")
+		port, open := name[cut+1:], exposed(name[:cut])
+		if j, ok := byPort[port]; ok {
+			list[j].Network = list[j].Network || open
 			continue
 		}
-		seen[port] = true
-		list = append(list, Listener{Port: port, PID: f[1], Command: f[0]})
+		byPort[port] = len(list)
+		list = append(list, Listener{Port: port, PID: f[1], Command: f[0], Network: open})
 	}
 	return list
 }
 
 // ParseSS: ss -Hltnp -> слушающие порты; один порт на IPv4 и IPv6 - одной строкой.
 func ParseSS(out string) []Listener {
-	seen := map[string]bool{}
+	byPort := map[string]int{}
 	var list []Listener
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
@@ -100,12 +118,17 @@ func ParseSS(out string) []Listener {
 			continue
 		}
 		local := f[3]
-		port := local[strings.LastIndex(local, ":")+1:]
-		if port == "" || seen[port] {
+		cut := strings.LastIndex(local, ":")
+		port, open := local[cut+1:], exposed(local[:cut])
+		if port == "" {
 			continue
 		}
-		seen[port] = true
-		l := Listener{Port: port}
+		if j, ok := byPort[port]; ok {
+			list[j].Network = list[j].Network || open
+			continue
+		}
+		byPort[port] = len(list)
+		l := Listener{Port: port, Network: open}
 		if m := ssProcRe.FindStringSubmatch(line); m != nil {
 			l.Command, l.PID = m[1], m[2]
 		}

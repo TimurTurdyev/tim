@@ -91,9 +91,9 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	case args[0] == "servers" && one:
 		return servers.ServersScreen(env, servers.Targets(env, nil, false))
 	case args[0] == "top" && one:
-		return machine.ProcsScreen("")
+		return machine.ProcsScreen(env, "")
 	case (args[0] == "ps" || args[0] == "kill") && len(args) == 2:
-		return machine.ProcsScreen(args[1])
+		return machine.ProcsScreen(env, args[1])
 	case args[0] == "disk":
 		return diskScreen(env, args[1:])
 	}
@@ -180,7 +180,7 @@ func (h *Home) trouble(w health.Warning, holder string) (string, string, func() 
 	case health.DiskFull:
 		return "Диск", "d", func() tui.Action { return tui.Action{Push: diskScreen(h.env, nil)} }
 	case health.Memory:
-		return "Процессы", "m", func() tui.Action { return tui.Action{Push: machine.MemoryScreen(w.Full(), holder)} }
+		return "Процессы", "m", func() tui.Action { return tui.Action{Push: machine.MemoryScreen(h.env, w.Full(), holder)} }
 	}
 	return "Сеть", "n", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
 }
@@ -189,7 +189,7 @@ func (h *Home) trouble(w health.Warning, holder string) (string, string, func() 
 func (h *Home) lineDest(d motd.Dest) (string, func() tui.Action) {
 	switch d {
 	case motd.ToProcs:
-		return "Процессы по памяти", func() tui.Action { return tui.Action{Push: machine.MemoryScreen("", "")} }
+		return "Процессы по памяти", func() tui.Action { return tui.Action{Push: machine.MemoryScreen(h.env, "", "")} }
 	case motd.ToDisk:
 		return "Диск", func() tui.Action { return tui.Action{Push: diskScreen(h.env, nil)} }
 	case motd.ToNet:
@@ -212,7 +212,7 @@ func (h *Home) sections() []tui.Section {
 		})},
 		{Key: "w", Title: "Сайты", Hint: "ответ, сертификат, почта, домен", Open: push(func() tui.Screen { return sites.SitesScreen(h.env) })},
 		{Key: "n", Title: "Сеть", Hint: "обход VPN, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
-		{Key: "m", Title: "Машина", Hint: "железо, процессы", Open: push(func() tui.Screen { return machine.HWScreen(h.env) })},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы, защита", Open: push(func() tui.Screen { return machine.HWScreen(h.env) })},
 		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: push(h.utilsScreen)},
 	}

@@ -56,7 +56,7 @@ func topCommand(env *app.Env) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if app.Interactive() && o.by == "app" && !o.json {
-				return env.Open(ProcsScreen(""))
+				return env.Open(ProcsScreen(env, ""))
 			}
 			return printTop(env.Cfg, o)
 		},
@@ -75,7 +75,7 @@ func psCommand(env *app.Env) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if app.Interactive() {
-				return env.Open(ProcsScreen(args[0]))
+				return env.Open(ProcsScreen(env, args[0]))
 			}
 			return printFound(args[0])
 		},

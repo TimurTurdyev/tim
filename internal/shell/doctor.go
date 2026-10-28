@@ -12,6 +12,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/brew"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/doctor"
+	"github.com/TimurTurdyev/tim/internal/notify"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/rcfile"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -113,6 +114,11 @@ func checkConfig(r *report, cfg *config.Config) {
 		r.bad("корня проектов нет: " + cfg.Dev)
 	} else {
 		r.ok("корень проектов " + cfg.Dev)
+	}
+	if where := notify.Configured(cfg.Notify); len(where) > 0 {
+		r.ok("итог обхода уходит в " + strings.Join(where, ", ") + "; проверить - tim notify test")
+	} else if cfg.Notify != (config.Notify{}) {
+		r.warn("[notify] неполный: у Telegram нужны и telegram, и chat; tim notify --help")
 	}
 }
 
