@@ -47,6 +47,10 @@ func printMail(arg string, selectors []string, asJSON bool) error {
 	printDKIM(m)
 	ui.Println(ui.Info("DMARC") + ui.Dim("  "+m.DMARC))
 	bad += printFindings(m.DMRF)
+	if m.DMARC == "" && len(m.DMARCOther) > 0 {
+		ui.Println("  " + ui.Warn("!  ") + "на _dmarc." + domain + " лежат другие TXT: " + strings.Join(cut(m.DMARCOther, 2), ", ") +
+			ui.Dim(" - DMARC среди них нет, их положили не туда"))
+	}
 	printFixes(domain, m)
 	verdict, reasons := m.Verdict()
 	ui.Println()
@@ -61,7 +65,7 @@ func printMail(arg string, selectors []string, asJSON bool) error {
 		ui.Println(ui.Bad("итог ") + "есть проблемы: " + strings.Join(reasons, ", "))
 	}
 	if bad > 0 {
-		return ui.Errorf("ошибок: %d", bad)
+		return ui.Verdictf("ошибок: %d", bad)
 	}
 	return nil
 }
@@ -156,7 +160,7 @@ func printMailSummary(cfg *config.Config) error {
 	}
 	ui.Println(ui.Dim("подробно по домену: tim mail <домен>"))
 	if bad > 0 {
-		return ui.Errorf("требуют внимания: %d из %d", bad, len(rows))
+		return ui.Verdictf("требуют внимания: %d из %d", bad, len(rows))
 	}
 	return nil
 }

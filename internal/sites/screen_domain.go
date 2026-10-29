@@ -91,14 +91,7 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 		Load:    func(fresh bool) tui.BoardData { rep, _ := load.get(fresh); return addrsData(rep) },
 		Actions: []tui.BoardAction{mapAction},
 	}).(tui.Tab)
-	mail := tui.NewBoard(tui.BoardOpts{
-		Crumbs: []string{"Сайты", domain}, Tab: "Почта",
-		Command: func(*tui.BoardRow) string { return "tim mail " + domain },
-		Load:    func(bool) tui.BoardData { return mailData(domain) },
-		Actions: []tui.BoardAction{
-			{Key: "enter", Label: "подробно", Free: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"mail", domain}) }},
-		},
-	}).(tui.Tab)
+	mail := mailTab(env, domain)
 	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
 }
 
@@ -169,42 +162,6 @@ func addrsData(rep *domaudit.Report) tui.BoardData {
 	return d
 }
 
-// mailData: почта домена по частям - MX, SPF, DMARC, DKIM с тем, что не так.
-func mailData(domain string) tui.BoardData {
-	m := inspect.MailCheck(domain, inspect.DKIMSelectors)
-	verdict, reasons := m.Verdict()
-	d := tui.BoardData{Tab: "Почта", Status: "почта: " + mailWord(verdict)}
-	d.Columns = ui.Pad("ЗАПИСЬ", 10) + "ЗНАЧЕНИЕ"
-	d.Wide = true
-	add := func(name, value string, ok bool) {
-		lvl := level.OK
-		if !ok {
-			lvl = level.Warn
-		}
-		if value == "" {
-			value = "нет"
-			lvl = level.Bad
-		}
-		d.Rows = append(d.Rows, tui.BoardRow{ID: name, Cells: ui.Pad(level.Lamp(lvl, name), 10) + value})
-	}
-	add("MX", strings.Join(m.MX, ", "), len(m.MX) > 0)
-	if lvl, text := mxBlacklist(m.MX); lvl != level.Skip {
-		d.Rows = append(d.Rows, tui.BoardRow{ID: "blacklist", Cells: ui.Pad(level.Lamp(lvl, "списки"), 10) + text})
-	}
-	add("SPF", m.SPF, len(m.SPFF) == 0)
-	add("DMARC", m.DMARC, len(m.DMRF) == 0)
-	var keys []string
-	for sel := range m.DKIM {
-		keys = append(keys, sel)
-	}
-	sort.Strings(keys)
-	add("DKIM", strings.Join(keys, ", "), len(keys) > 0)
-	if len(reasons) > 0 {
-		d.Foot = append(d.Foot, level.Lamp(verdict, strings.Join(reasons, "; ")))
-	}
-	return d
-}
-
 func mailWord(l level.Level) string {
 	switch l {
 	case level.Bad:
@@ -222,6 +179,9 @@ func domainLamps(domain string) []string {
 	site := health.Site("https://" + domain)
 	cert := health.Cert(domain)
 	lamps := []string{level.Lamp(site.Level, "сайт "+site.Text), level.Lamp(cert.Level, "сертификат "+cert.Text)}
+	if cert.Level >= level.Warn {
+		lamps[1] += ui.Dim("  причина - вкладка Сертификат")
+	}
 	if reg, err := inspect.Registration(domain); err == nil && !reg.Expires.IsZero() {
 		c := health.Deadline("домен", reg.Expires, health.DomainWarnDays, health.DomainBadDays)
 		lamps = append(lamps, level.Lamp(c.Level, "домен "+c.Text)+ui.Dim("  "+reg.Registrar))
@@ -236,9 +196,9 @@ func domainLamps(domain string) []string {
 	case verdict == level.OK:
 		lamps = append(lamps, level.Lamp(level.OK, "почта настроена"))
 	case verdict == level.Warn:
-		lamps = append(lamps, level.Lamp(level.Warn, "почта: "+strings.Join(reasons, ", ")))
+		lamps = append(lamps, level.Lamp(level.Warn, "почта: "+strings.Join(reasons, ", "))+ui.Dim("  что сделать - вкладка Почта"))
 	default:
-		lamps = append(lamps, level.Lamp(level.Bad, "почта: "+strings.Join(reasons, ", "))+ui.Dim("  письма могут уходить в спам"))
+		lamps = append(lamps, level.Lamp(level.Bad, "почта: "+strings.Join(reasons, ", "))+ui.Dim("  письма могут уходить в спам, что сделать - вкладка Почта"))
 	}
 	return lamps
 }

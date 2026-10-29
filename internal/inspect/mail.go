@@ -131,6 +131,8 @@ type Mail struct {
 	DKIM     map[string]string
 	SPFF     []Finding
 	DMRF     []Finding
+	// DMARCOther: другие TXT на _dmarc - их кладут туда по ошибке, и DMARC среди них не видно.
+	DMARCOther []string
 }
 
 func lookupTXT(ctx context.Context, name string) []string {
@@ -159,7 +161,15 @@ func MailCheck(domain string, selectors []string) *Mail {
 		}
 	})
 	wg.Go(func() { m.SPF, m.SPFF = AnalyzeSPF(lookupTXT(ctx, domain)) })
-	wg.Go(func() { m.DMARC, m.DMRF = AnalyzeDMARC(lookupTXT(ctx, "_dmarc."+domain)) })
+	wg.Go(func() {
+		txt := lookupTXT(ctx, "_dmarc."+domain)
+		m.DMARC, m.DMRF = AnalyzeDMARC(txt)
+		for _, t := range txt {
+			if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(t)), "v=dmarc1") {
+				m.DMARCOther = append(m.DMARCOther, t)
+			}
+		}
+	})
 	for _, sel := range selectors {
 		wg.Go(func() {
 			for _, t := range lookupTXT(ctx, sel+"._domainkey."+domain) {
