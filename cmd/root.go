@@ -259,6 +259,10 @@ func Execute() error {
 				return err
 			}
 		}
+		if _, ok := errors.AsType[ui.Verdict](err); ok {
+			fail(nil, msg)
+			return err
+		}
 		fail(c, translateError(msg))
 		return err
 	}

@@ -87,7 +87,7 @@ func check(env *app.Env, args []string, o checkOptions) error {
 		}
 	}
 	if bad > 0 {
-		return ui.Errorf("требуют внимания: %d из %d", bad, len(rows))
+		return ui.Verdictf("требуют внимания: %d из %d", bad, len(rows))
 	}
 	return nil
 }

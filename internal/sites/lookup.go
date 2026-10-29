@@ -115,7 +115,7 @@ func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
 		ui.Println(line)
 	}
 	if bad > 0 {
-		return ui.Errorf("требуют внимания: %d из %d", bad, len(rows))
+		return ui.Verdictf("требуют внимания: %d из %d", bad, len(rows))
 	}
 	return nil
 }

@@ -163,6 +163,15 @@ func Errorf(format string, a ...any) error {
 	return fmt.Errorf(format, a...)
 }
 
+// Verdict: отчёт нашёл беды. Код выхода ненулевой - для скриптов, но вызов верный: примеры команды под
+// такой строкой только сбивают с толку.
+type Verdict struct{ Msg string }
+
+func (v Verdict) Error() string { return v.Msg }
+
+// Verdictf: итог отчёта с бедами.
+func Verdictf(format string, a ...any) error { return Verdict{fmt.Sprintf(format, a...)} }
+
 // Pad добивает строку пробелами до width колонок для таблиц; цвет и широкие символы учитываются.
 func Pad(s string, width int) string {
 	n := ansi.StringWidth(s)
