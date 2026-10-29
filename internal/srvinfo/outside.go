@@ -100,7 +100,7 @@ func (f *findings) outside(r Report) {
 		f.add("чёрный список", level.Warn, strings.Join(listed, ", "), "адрес сервера в чёрных списках почты: "+strings.Join(listed, ", ")+
 			" - письма с него будут отклонять", "узнать причину и снять: страница списка по адресу сервера; чаще всего - взломанная форма или ящик")
 	} else if len(unknown) > 0 {
-		f.add("чёрный список", level.Skip, "не всё проверено", "чёрные списки: "+strings.Join(unknown, "; "), "")
+		f.add("чёрный список", level.Skip, "не всё проверено", strings.Join(unknown, "; "), "")
 	}
 	for _, p := range r.Watch.Docker {
 		if open, ok := o.Ports[p.Port]; ok && open {
