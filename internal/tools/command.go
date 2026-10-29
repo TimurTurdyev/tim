@@ -147,10 +147,23 @@ func urlCommand() *cobra.Command {
 func passCommand() *cobra.Command {
 	var o passOptions
 	c := &cobra.Command{
-		Use:   "pass [длина] [-n 1] [--no-symbols] [--no-ambiguous] [--copy]",
+		Use:   "pass [длина] [-n 1] [--no-symbols] [--no-ambiguous] [--human [--short|--strong] [--sep -]] [--copy]",
 		Short: "Сгенерировать пароль (криптослучайный, все классы символов); длина по умолчанию 20",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Криптослучайный пароль: все классы символов, длина по умолчанию 20.
+--human - пароль, который читается вслух и набирается без Shift на символах: слова из случайных слогов
+(согласная и гласная) через дефис и две цифры, Kobira-tesuno-mapive-42, около 63 бит. Таких слов нет
+в словарях перебора. --short - два слова (~44 бита, для сайтов с ограничением попыток входа),
+--strong - четыре (~81 бит, для менеджера паролей и FileVault). Где символы запрещены - --sep "":
+KobiraTesunoMapive42.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			o.human = o.human || o.short || o.strong || cmd.Flags().Changed("sep")
+			if o.short && o.strong {
+				return ui.Errorf("--short и --strong - разные длины, по одной за раз")
+			}
+			if o.human && (len(args) == 1 || o.noSymbols || o.noAmbiguous) {
+				return ui.Errorf("у --human длина - --short или --strong, символов и похожих букв в нём нет")
+			}
 			if len(args) == 1 {
 				n, err := strconv.Atoi(args[0])
 				if err != nil || n < 4 {
@@ -166,6 +179,10 @@ func passCommand() *cobra.Command {
 	_ = c.Flags().MarkHidden("length")
 	c.Flags().BoolVar(&o.noSymbols, "no-symbols", false, "только буквы и цифры")
 	c.Flags().BoolVar(&o.noAmbiguous, "no-ambiguous", false, "без похожих 0 O o 1 l I")
+	c.Flags().BoolVar(&o.human, "human", false, "читается вслух: слова из слогов через дефис и две цифры")
+	c.Flags().BoolVar(&o.short, "short", false, "человеческий покороче: два слова, ~44 бита")
+	c.Flags().BoolVar(&o.strong, "strong", false, "человеческий посильнее: четыре слова, ~81 бит")
+	c.Flags().StringVar(&o.sep, "sep", "-", "разделитель слов у --human; пусто - слова с заглавной")
 	c.Flags().BoolVar(&o.copy, "copy", false, "сразу в буфер обмена (его история тоже запомнит пароль)")
 	return c
 }

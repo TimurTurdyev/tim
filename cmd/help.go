@@ -89,6 +89,7 @@ var examples = map[string]string{
 	"tim ports":       "  tim ports\n  tim port 5173          # карточка: что это, папка, кто запустил\n  tim port 8000 kill\n  tim ports --old --older 4h",
 	"tim php":         "  tim php\n  tim php use 8.3\n  tim php exec 8.1 composer install",
 	"tim disk":        "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --deps ~/Dev/clients --min 200M",
+	"tim pass":        "  tim pass                   # 20 случайных символов\n  tim pass --human           # Kobira-tesuno-mapive-42, читается вслух\n  tim pass --strong --copy   # для менеджера паролей, сразу в буфер",
 	"tim cron":        "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",
 	"tim jwt":         "  tim jwt eyJhbGciOi...\n  pbpaste | tim jwt",
 	"tim config init": "  tim config init\n  tim config init --root ~/code --all -y",

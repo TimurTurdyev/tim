@@ -132,8 +132,19 @@ func (h *Home) result(args []string) tui.Action {
 		}
 		return out, err
 	},
-		tui.ResultOpts{Copy: runner.ToClipboard, CopyOutput: len(args) == 1 && runsBare[args[0]] || slices.Contains(args, "--run"),
+		tui.ResultOpts{Copy: copier(args), CopyOutput: len(args) == 1 && runsBare[args[0]] || args[0] == "pass" || slices.Contains(args, "--run"),
 			Next: nextAfter(args)})}
+}
+
+// copier: у пароля y копирует только сам пароль - под ним строка о стойкости.
+func copier(args []string) func(string) {
+	if args[0] != "pass" {
+		return runner.ToClipboard
+	}
+	return func(out string) {
+		first, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+		runner.ToClipboard(first)
+	}
 }
 
 // Remember: команда, набранная руками в терминале, - в недавнее главного экрана. Скрипты и агенты

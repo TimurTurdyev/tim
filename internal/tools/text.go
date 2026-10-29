@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"sort"
@@ -29,6 +30,8 @@ const (
 type passOptions struct {
 	length, count                int
 	noSymbols, noAmbiguous, copy bool
+	human, short, strong         bool
+	sep                          string
 }
 
 func printQR(args []string, invert bool) error {
@@ -135,13 +138,30 @@ func urlParse(args []string) error {
 // printPasswords: пароли строками; с copy - ещё и в буфер, а отметка об этом в stderr, чтобы не попасть в трубу.
 func printPasswords(o passOptions) error {
 	var list []string
+	bits := 0.0
 	for range max(o.count, 1) {
-		p, err := conv.Password(o.length, !o.noSymbols, o.noAmbiguous)
+		var p string
+		var err error
+		if o.human {
+			p, bits = conv.HumanPassword(humanWords(o), o.sep)
+		} else {
+			p, err = conv.Password(o.length, !o.noSymbols, o.noAmbiguous)
+		}
 		if err != nil {
 			return ui.Errorf("%v", err)
 		}
-		fmt.Println(p)
+		ui.Println(p)
 		list = append(list, p)
+	}
+	if o.human {
+		n := int(math.Round(bits))
+		note := ui.Dim(fmt.Sprintf("~%d %s · %s", n, ui.Plural(n, "бит", "бита", "бит"), humanUse(bits)))
+		// В трубе stdout - только пароль: $(tim pass --human); стойкость - в stderr.
+		if st, err := os.Stdout.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
+			ui.Println(note)
+		} else {
+			fmt.Fprintln(os.Stderr, note)
+		}
 	}
 	if !o.copy {
 		return nil
@@ -152,6 +172,28 @@ func printPasswords(o passOptions) error {
 	runner.ToClipboard(strings.Join(list, "\n"))
 	fmt.Fprintln(os.Stderr, ui.Dim("скопировано в буфер"))
 	return nil
+}
+
+// humanWords: сколько слов из трёх слогов - короткий, обычный, сильный.
+func humanWords(o passOptions) int {
+	switch {
+	case o.short:
+		return 2
+	case o.strong:
+		return 4
+	}
+	return 3
+}
+
+// humanUse: для чего хватает такой стойкости.
+func humanUse(bits float64) string {
+	switch {
+	case bits < 50:
+		return "для сайтов, где число попыток входа ограничено"
+	case bits < 70:
+		return "для почты и сервисов; для менеджера паролей и FileVault - --strong"
+	}
+	return "хватит и для менеджера паролей, и для FileVault"
 }
 
 func printCron(args []string, runs int) error {
