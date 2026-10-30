@@ -1,7 +1,9 @@
 package sites
 
 import (
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/app"
@@ -120,7 +122,11 @@ func mailData(domain string) (tui.BoardData, map[string]string) {
 	if len(keys) == 0 {
 		dkLvl, dkWhy = level.Warn, "по частым селекторам не найден: без подписи письма чаще уходят в спам"
 	}
-	add("DKIM", strings.Join(keys, ", "), dkLvl, dkWhy)
+	value := strings.Join(keys, ", ")
+	if revoked := slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return !DKIMRevoked(m.DKIM[k]) }); len(keys) > 2 && len(revoked) == len(keys) {
+		value = "ключи отозваны на " + strconv.Itoa(len(keys)) + " селекторах - домен закрыт от подписанных подделок"
+	}
+	add("DKIM", value, dkLvl, dkWhy)
 	return d, records
 }
 

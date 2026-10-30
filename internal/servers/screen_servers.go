@@ -106,7 +106,8 @@ func serverRow(t Server, s serverState, at time.Time, ok bool, nameW int) tui.Bo
 	row.Cells = ui.Pad(t.Alias, nameW) + ui.Fit(r.OS, 20) + ui.Pad(ui.Short(r.Uptime), 10) + finds
 	card.Path = "проверялся " + ago(at)
 	if len(names) > 0 {
-		card.Facts = append(card.Facts, tui.Fact{Label: "находки", Value: level.Lamp(level.Warn, strings.Join(names, ", "))})
+		card.Facts = append(card.Facts, tui.Fact{Label: "находки", Value: level.Lamp(level.Warn, strings.Join(names, ", "))},
+			tui.Fact{Label: "что делать", Value: ui.Dim("enter - экран сервера: у каждой находки там написано, что делать")})
 	}
 	var load []string
 	if disk, ok := r.Root(); ok {

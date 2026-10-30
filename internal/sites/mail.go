@@ -2,6 +2,7 @@ package sites
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sort"
 	"strings"
@@ -91,6 +92,18 @@ func printDKIM(m *inspect.Mail) {
 		names = append(names, s)
 	}
 	sort.Strings(names)
+	revoked := 0
+	for _, s := range names {
+		if DKIMRevoked(m.DKIM[s]) {
+			revoked++
+		}
+	}
+	// Закрытый от почты домен отзывает ключи на всех селекторах сразу: это одна мысль, а не десяток строк.
+	if revoked == len(names) && revoked > 2 {
+		ui.Println("  " + ui.Label("ок ") + fmt.Sprintf("ключи на %d селекторах отозваны (пустой p=)", revoked) +
+			ui.Dim(" - так закрывают домен от подписанных подделок"))
+		return
+	}
 	for _, s := range names {
 		if DKIMRevoked(m.DKIM[s]) {
 			ui.Println("  " + ui.Warn("!  ") + s + "._domainkey  ключ отозван (пустой p=)")

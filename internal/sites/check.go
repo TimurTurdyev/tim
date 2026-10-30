@@ -157,6 +157,9 @@ func printCheck(rows []health.Row) {
 		ui.Println(strings.TrimRight(line, " "))
 		for _, c := range r.Problems() {
 			ui.Println("  " + ui.Dim(c.Detail))
+			if c.Fix != "" {
+				ui.Println("    " + ui.Dim("→ "+c.Fix))
+			}
 		}
 	}
 }

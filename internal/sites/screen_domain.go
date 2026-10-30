@@ -184,7 +184,11 @@ func domainLamps(domain string) []string {
 	}
 	if reg, err := inspect.Registration(domain); err == nil && !reg.Expires.IsZero() {
 		c := health.Deadline("домен", reg.Expires, health.DomainWarnDays, health.DomainBadDays)
-		lamps = append(lamps, level.Lamp(c.Level, "домен "+c.Text)+ui.Dim("  "+reg.Registrar))
+		lamp := level.Lamp(c.Level, "домен "+c.Text) + ui.Dim("  "+reg.Registrar)
+		if c.Level >= level.Warn {
+			lamp += ui.Dim(" - продлить там, лучше с автопродлением")
+		}
+		lamps = append(lamps, lamp)
 	}
 	m := inspect.MailCheck(domain, inspect.DKIMSelectors)
 	verdict, reasons := m.Verdict()
@@ -264,9 +268,11 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 		row.Pane = append(row.Pane, ui.Bad("можно захватить через "+h.Takeover.Service+": CNAME "+h.Takeover.Target+", "+h.Takeover.Why),
 			ui.Dim("\u2192 убрать CNAME в DNS или привязать имя в "+h.Takeover.Service))
 	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
-		row.Pane = append(row.Pane, ui.Warn("CNAME на "+h.CNAME+", а такого имени нет: запись устарела"))
+		row.Pane = append(row.Pane, ui.Warn("CNAME на "+h.CNAME+", а такого имени нет: запись устарела"),
+			ui.Dim("\u2192 удалить CNAME "+h.Name+" в DNS - висячую запись могут захватить"))
 	case h.Status == 0:
-		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"))
+		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"),
+			ui.Dim("\u2192 имя не нужно - удалить запись в DNS; нужно - поднять сайт или редирект"))
 	}
 	return row
 }

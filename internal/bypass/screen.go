@@ -103,7 +103,7 @@ func screenData(cfg *config.Config, probe bool) tui.BoardData {
 	d.Head = append(d.Head, netLine(phys, gw, guardWord()))
 	if ok < total {
 		d.Head = append(d.Head, ui.Warn(fmt.Sprintf("\u25b2 обход %d из %d: %s через туннель", ok, total, ui.Count(total-ok, "адрес идёт", "адреса идут", "адресов идут")))+
-			ui.Dim(" \u00b7 починка - sudo, tim закроется"))
+			ui.Dim(" \u00b7 f - починить, sudo, tim закроется"))
 	}
 	if g := guardTrouble(); g != "" {
 		d.Head = append(d.Head, g)
@@ -159,6 +159,7 @@ func targetRow(h config.Host, addrs []string, phys netinfo.Service, gw string, p
 	if len(addrs) == 0 {
 		t.bad = 1
 		card.Facts = append(card.Facts, tui.Fact{Label: ui.Bad("\u2715 адресов"), Value: "нет: домен не резолвится или у AS нет сетей"})
+		card.Facts = append(card.Facts, tui.Fact{Label: "что делать", Value: "опечатка в имени - x убрать цель и n добавить заново; домен живой - проверь tim dns " + h.Addr})
 	}
 	var lines []string
 	for _, dest := range addrs {
@@ -232,9 +233,9 @@ func guardTrouble() string {
 	case !GuardInstalled():
 		return ui.Warn("\u25b2 страж: не установлен") + ui.Dim(" \u00b7 обход сам не починится: sudo tim route install")
 	case !GuardRunning():
-		return ui.Bad("\u2715 страж: не работает") + ui.Dim(" \u00b7 журнал - в справке")
+		return ui.Bad("\u2715 страж: не работает") + ui.Dim(" \u00b7 l - его журнал; поставить заново: sudo tim route install")
 	case hasSt && time.Since(st.LastCheck) > time.Minute:
-		return ui.Warn("\u25b2 страж: молчит "+ui.Short(time.Since(st.LastCheck))) + ui.Dim(" \u00b7 журнал - в справке")
+		return ui.Warn("\u25b2 страж: молчит "+ui.Short(time.Since(st.LastCheck))) + ui.Dim(" \u00b7 l - его журнал")
 	}
 	return ""
 }
