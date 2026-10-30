@@ -45,27 +45,40 @@ func mailData(domain string) (tui.BoardData, map[string]string) {
 	m := inspect.MailCheck(domain, inspect.DKIMSelectors)
 	verdict, _ := m.Verdict()
 	d := tui.BoardData{Tab: "Почта", Status: "почта: " + mailWord(verdict)}
+	records := map[string]string{}
+	if noMail(m) {
+		d.Status = "почты нет"
+		d.Empty = "Почты на домене нет. Нужна - подключи домен в Яндекс 360, Mail.ru или Google и добавь MX, SPF, DKIM, DMARC; " +
+			"не нужна - закрой от подделки: MX 0 ., SPF -all, DMARC p=reject. Пошагово - enter"
+		return d, records
+	}
 	d.Columns = ui.Pad("ЗАПИСЬ", 10) + "ЗНАЧЕНИЕ"
 	d.Wide = true
-	records := map[string]string{}
-	add := func(name, value string, lvl level.Level, why, fix, record string, extra ...string) {
+	fixes := mailFixes(domain, m)
+	add := func(name, value string, lvl level.Level, why string, extra ...string) {
 		if value == "" {
 			value = "нет"
 		}
 		row := tui.BoardRow{ID: name, Cells: ui.Pad(level.Lamp(lvl, name), 10) + value}
 		var parts []string
-		if why = strings.TrimPrefix(why, name+" нет: "); why != "" {
+		if why = strings.TrimPrefix(why, name+" нет: "); why != "" && lvl >= level.Warn {
 			parts = append(parts, why)
 		}
-		switch {
-		case record != "":
-			parts = append(parts, "добавить: "+record)
-			records[name] = record
-		case fix != "":
-			parts = append(parts, fix)
+		// Запись раньше пояснения: строка под строкой обрезается по ширине, а запись - то, что копируют.
+		var dos []string
+		for _, f := range fixes {
+			if f.Part != name {
+				continue
+			}
+			dos = append(dos, f.Do)
+			if f.Record != "" && records[name] == "" {
+				parts = append(parts, f.Record)
+				records[name] = f.Record
+			}
 		}
+		parts = append(parts, dos...)
 		parts = append(parts, extra...)
-		if lvl >= level.Warn || lvl == level.Skip && len(parts) > 0 {
+		if len(parts) > 0 && (lvl >= level.Warn || records[name] != "") {
 			row.Inline = strings.Join(parts, "; ")
 		}
 		d.Rows = append(d.Rows, row)
@@ -73,38 +86,31 @@ func mailData(domain string) (tui.BoardData, map[string]string) {
 
 	switch {
 	case m.NullMX:
-		add("MX", "почты нет (null MX)", level.OK, "", "", "")
+		add("MX", "почты нет (null MX)", level.OK, "")
 	case len(m.MX) == 0:
-		add("MX", "", level.Bad, "письма на домен не приходят", "нужна запись MX почтового сервера: Яндекс 360, Mail.ru, свой", "")
+		add("MX", "", level.Bad, "письма на домен не приходят")
 	default:
-		add("MX", strings.Join(m.MX, ", "), level.OK, "", "", "")
+		add("MX", strings.Join(m.MX, ", "), level.OK, "")
 	}
 	if lvl, text := mxBlacklist(m.MX); lvl != level.Skip {
 		why := ""
 		if lvl == level.Bad {
-			why = "письма с этих адресов отклоняют"
+			why = "письма с этих адресов отклоняют; узнать причину и снять - страница списка по адресу сервера"
 		}
-		add("списки", text, lvl, why, "узнать причину и снять: страница списка по адресу сервера", "")
+		add("списки", text, lvl, why)
 	}
-
 	spfLvl, spfWhy := worst(m.SPFF)
-	spfRecord := ""
-	if m.SPF == "" && !m.NullMX {
-		spfLvl, spfWhy = level.Bad, "без SPF письма от домена легко подделать, и почтовики режут настоящие"
-		spfRecord = domain + ` TXT "v=spf1 include:<сервер отправки> ~all"`
+	add("SPF", m.SPF, spfLvl, spfWhy)
+	stray := ""
+	if m.DMARC == "" && len(m.DMARCOther) > 0 {
+		stray = "на _dmarc ещё " + ui.Count(len(m.DMARCOther), "чужая запись", "чужие записи", "чужих записей") + " - их положили не туда"
 	}
-	add("SPF", m.SPF, spfLvl, spfWhy, "поправить запись TXT домена: tim mail "+domain+" расскажет подробно", spfRecord)
-
 	dmLvl, dmWhy := worst(m.DMRF)
-	dmRecord, stray := "", ""
-	if m.DMARC == "" && !m.NullMX {
-		dmRecord = "_dmarc." + domain + ` TXT "v=DMARC1; p=none; rua=mailto:dmarc@` + domain + `"`
-		if len(m.DMARCOther) > 0 {
-			stray = "на _dmarc ещё " + ui.Count(len(m.DMARCOther), "чужая запись", "чужие записи", "чужих записей") + " - их положили не туда"
-		}
+	if stray != "" {
+		add("DMARC", m.DMARC, dmLvl, dmWhy, stray)
+	} else {
+		add("DMARC", m.DMARC, dmLvl, dmWhy)
 	}
-	add("DMARC", m.DMARC, dmLvl, dmWhy, "", dmRecord, stray)
-
 	var keys []string
 	for sel := range m.DKIM {
 		keys = append(keys, sel)
@@ -114,7 +120,7 @@ func mailData(domain string) (tui.BoardData, map[string]string) {
 	if len(keys) == 0 {
 		dkLvl, dkWhy = level.Warn, "по частым селекторам не найден: без подписи письма чаще уходят в спам"
 	}
-	add("DKIM", strings.Join(keys, ", "), dkLvl, dkWhy, "свой селектор: tim mail "+domain+" --selector <имя>; включается у почтового сервиса", "")
+	add("DKIM", strings.Join(keys, ", "), dkLvl, dkWhy)
 	return d, records
 }
 

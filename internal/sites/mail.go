@@ -1,6 +1,8 @@
 package sites
 
 import (
+	"errors"
+	"net"
 	"sort"
 	"strings"
 
@@ -23,6 +25,15 @@ func printMail(arg string, selectors []string, asJSON bool) error {
 			Verdict level.Level   `json:"verdict"`
 			Reasons []string      `json:"reasons,omitempty"`
 		}{domain, m, verdict, reasons})
+	}
+	if noMail(m) {
+		if _, err := net.LookupHost(domain); err != nil && len(m.DMARCOther) == 0 {
+			if dnsErr, ok := errors.AsType[*net.DNSError](err); ok && dnsErr.IsNotFound {
+				return ui.Errorf("%s: такого имени в DNS нет - проверь, нет ли опечатки", domain)
+			}
+		}
+		printMailGuide(domain)
+		return ui.Verdictf("почты нет")
 	}
 	bad := 0
 	ui.Println(ui.Info("MX"))
@@ -51,7 +62,7 @@ func printMail(arg string, selectors []string, asJSON bool) error {
 		ui.Println("  " + ui.Warn("!  ") + "на _dmarc." + domain + " лежат другие TXT: " + strings.Join(cut(m.DMARCOther, 2), ", ") +
 			ui.Dim(" - DMARC среди них нет, их положили не туда"))
 	}
-	printFixes(domain, m)
+	printMailFixes(mailFixes(domain, m))
 	verdict, reasons := m.Verdict()
 	ui.Println()
 	switch verdict {
@@ -109,29 +120,6 @@ func printFindings(fs []inspect.Finding) int {
 		}
 	}
 	return bad
-}
-
-// printFixes печатает готовые записи для того, чего не хватает: чтобы не искать синтаксис в интернете.
-func printFixes(domain string, m *inspect.Mail) {
-	var lines []string
-	if m.DMARC == "" && !m.NullMX {
-		lines = append(lines, "_dmarc."+domain+`  TXT  "v=DMARC1; p=none; rua=mailto:dmarc@`+domain+`"`)
-	}
-	if m.SPF == "" && !m.NullMX {
-		lines = append(lines, domain+`  TXT  "v=spf1 include:<сервер отправки> ~all"`)
-	}
-	if len(lines) == 0 {
-		return
-	}
-	ui.Println()
-	ui.Println(ui.Info("Что добавить в DNS"))
-	for _, l := range lines {
-		ui.Println("  " + l)
-	}
-	if m.DMARC == "" {
-		ui.Println(ui.Dim("  p=none только собирает отчёты и ничего не ломает; через пару недель по отчётам"))
-		ui.Println(ui.Dim("  переключают на p=quarantine, затем на p=reject"))
-	}
 }
 
 // printMailSummary: почта всех доменов реестра одной таблицей.
