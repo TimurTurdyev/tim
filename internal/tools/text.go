@@ -67,7 +67,7 @@ func printQR(args []string, invert bool) error {
 		}
 		b.WriteString("\n")
 	}
-	fmt.Print(b.String())
+	ui.Print(b.String())
 	return nil
 }
 
@@ -77,9 +77,9 @@ func urlEncode(args []string, path bool) error {
 		return err
 	}
 	if path {
-		fmt.Println(url.PathEscape(s))
+		ui.Println(url.PathEscape(s))
 	} else {
-		fmt.Println(url.QueryEscape(s))
+		ui.Println(url.QueryEscape(s))
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func urlDecode(args []string) error {
 			return ui.Errorf("не раскодировать: %v", err)
 		}
 	}
-	fmt.Println(out)
+	ui.Println(out)
 	return nil
 }
 
@@ -155,13 +155,8 @@ func printPasswords(o passOptions) error {
 	}
 	if o.human {
 		n := int(math.Round(bits))
-		note := ui.Dim(fmt.Sprintf("~%d %s · %s", n, ui.Plural(n, "бит", "бита", "бит"), humanUse(bits)))
-		// В трубе stdout - только пароль: $(tim pass --human); стойкость - в stderr.
-		if st, err := os.Stdout.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
-			ui.Println(note)
-		} else {
-			fmt.Fprintln(os.Stderr, note)
-		}
+		line := ui.Dim(fmt.Sprintf("~%d %s · %s", n, ui.Plural(n, "бит", "бита", "бит"), humanUse(bits)))
+		note(line)
 	}
 	if !o.copy {
 		return nil
@@ -170,8 +165,18 @@ func printPasswords(o passOptions) error {
 		return ui.Errorf("в буфер положить нечем: нужен pbcopy или xclip")
 	}
 	runner.ToClipboard(strings.Join(list, "\n"))
-	fmt.Fprintln(os.Stderr, ui.Dim("скопировано в буфер"))
+	note(ui.Dim("скопировано в буфер"))
 	return nil
+}
+
+// note: пояснение к результату. В терминале и на экране tim - под результатом; в трубе - в stderr, чтобы
+// $(tim pass) получил только сам пароль.
+func note(s string) {
+	if st, err := os.Stdout.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
+		ui.Println(s)
+		return
+	}
+	fmt.Fprintln(os.Stderr, s)
 }
 
 // humanWords: сколько слов из трёх слогов - короткий, обычный, сильный.

@@ -38,7 +38,7 @@ func printHex(args []string) error {
 		if b, ok := conv.Bin(n); ok {
 			line += "  " + ui.Dim(b)
 		}
-		fmt.Println(line)
+		ui.Println(line)
 	}
 	return nil
 }
@@ -53,7 +53,7 @@ func printDec(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(n.String())
+		ui.Println(n.String())
 	}
 	return nil
 }
@@ -68,18 +68,18 @@ func base64Text(args []string, decode, urlSafe bool) error {
 		if urlSafe {
 			enc = base64.RawURLEncoding
 		}
-		fmt.Println(enc.EncodeToString([]byte(s)))
+		ui.Println(enc.EncodeToString([]byte(s)))
 		return nil
 	}
 	out, err := conv.Base64Decode(s)
 	if err != nil {
 		return err
 	}
-	_, err = os.Stdout.Write(out)
+	ui.Print(string(out))
 	if len(out) > 0 && out[len(out)-1] != '\n' {
-		fmt.Println()
+		ui.Println()
 	}
-	return err
+	return nil
 }
 
 func printJWT(args []string) error {
@@ -140,9 +140,9 @@ func printTime(args []string, zone string) error {
 func printUUIDs(count int, v7 bool) {
 	for range max(count, 1) {
 		if v7 {
-			fmt.Println(conv.UUIDv7(time.Now()))
+			ui.Println(conv.UUIDv7(time.Now()))
 		} else {
-			fmt.Println(conv.UUIDv4())
+			ui.Println(conv.UUIDv4())
 		}
 	}
 }
@@ -174,7 +174,7 @@ func printHash(args []string, file string) error {
 			return err
 		}
 	}
-	fmt.Println(hex.EncodeToString(h.Sum(nil)))
+	ui.Println(hex.EncodeToString(h.Sum(nil)))
 	return nil
 }
 
@@ -211,17 +211,17 @@ func formatJSON(compact bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(strings.TrimRight(b.String(), "\n"))
+	ui.Println(strings.TrimRight(b.String(), "\n"))
 	return nil
 }
 
 func printJSON(raw []byte) {
 	var b bytes.Buffer
 	if err := json.Indent(&b, raw, "", "  "); err != nil {
-		fmt.Println(string(raw))
+		ui.Println(string(raw))
 		return
 	}
-	fmt.Println(b.String())
+	ui.Println(b.String())
 }
 
 // relative: "через 3 ч 5 мин" или "2 дн назад" - с точностью до секунд, в отличие от ui.Ago.
