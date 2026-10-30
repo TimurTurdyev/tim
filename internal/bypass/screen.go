@@ -54,7 +54,7 @@ func Screen(env *app.Env) tui.Screen {
 			{Key: "x", Label: "убрать", Note: "sudo, закроет tim", Do: func(row *tui.BoardRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"direct", "rm", row.ID}) }}
 			}},
-			{Key: "l", Label: "журнал", Free: true, Hidden: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
+			{Key: "L", Label: "журнал", Free: true, Hidden: true, Do: func(*tui.BoardRow) tui.Action { return env.Result([]string{"route", "status"}) }},
 		},
 	})
 }
@@ -233,9 +233,9 @@ func guardTrouble() string {
 	case !GuardInstalled():
 		return ui.Warn("\u25b2 страж: не установлен") + ui.Dim(" \u00b7 обход сам не починится: sudo tim route install")
 	case !GuardRunning():
-		return ui.Bad("\u2715 страж: не работает") + ui.Dim(" \u00b7 l - его журнал; поставить заново: sudo tim route install")
+		return ui.Bad("\u2715 страж: не работает") + ui.Dim(" \u00b7 L - его журнал; поставить заново: sudo tim route install")
 	case hasSt && time.Since(st.LastCheck) > time.Minute:
-		return ui.Warn("\u25b2 страж: молчит "+ui.Short(time.Since(st.LastCheck))) + ui.Dim(" \u00b7 l - его журнал")
+		return ui.Warn("\u25b2 страж: молчит "+ui.Short(time.Since(st.LastCheck))) + ui.Dim(" \u00b7 L - его журнал")
 	}
 	return ""
 }

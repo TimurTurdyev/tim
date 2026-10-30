@@ -129,7 +129,7 @@ func actions(env *app.Env) []tui.ProjectAction {
 				return "поднимаю dev-сервер " + p.Name
 			},
 			Run: func(p tui.ProjectRow) (string, error) { return devServer(env, p) }},
-		{Key: "l", Label: "журнал", Do: func(p tui.ProjectRow) tui.Action { return env.Result([]string{"logs", p.Name}) }},
+		{Key: "L", Label: "журнал", Do: func(p tui.ProjectRow) tui.Action { return env.Result([]string{"logs", p.Name}) }},
 		{Key: "b", Label: "база", Note: "закроет tim", When: has(func(p *config.Project) string { return p.DB }),
 			Do: func(p tui.ProjectRow) tui.Action {
 				return tui.Action{Exit: func() { env.After([]string{"db", p.Name}) }}

@@ -104,7 +104,7 @@ func NewHome(opts HomeOpts) Screen {
 	in := textinput.New()
 	in.Prompt = symPointer + " "
 	// Пробел первым: курсор стоит на нём, а не закрывает первую букву подсказки.
-	in.Placeholder = " проект, команда, домен, порт - начни печатать"
+	in.Placeholder = " / - найти проект, команду, домен, порт"
 	in.SetWidth(56)
 	st := in.Styles()
 	st.Focused.Prompt = stylePrompt
@@ -112,14 +112,14 @@ func NewHome(opts HomeOpts) Screen {
 	st.Cursor.Color = colAccent
 	in.SetStyles(st)
 	in.SetVirtualCursor(false)
-	in.Focus()
+	in.Blur()
 	return &home{opts: opts, input: in}
 }
 
 // Cursor: настоящий курсор в строке ввода; её строку знает View.
 func (h *home) Cursor() *tea.Cursor {
 	c := h.input.Cursor()
-	if c == nil {
+	if c == nil || !h.input.Focused() {
 		return nil
 	}
 	c.X += 3
@@ -155,11 +155,12 @@ func (h *home) Tick(frame int) {
 	}
 }
 
-// Escape: esc сначала стирает набранное.
+// Escape: esc закрывает поиск и стирает набранное; без поиска - дальше, к выходу.
 func (h *home) Escape() bool {
-	if h.input.Value() == "" {
+	if !h.input.Focused() && h.input.Value() == "" {
 		return false
 	}
+	h.input.Blur()
 	h.input.SetValue("")
 	h.refill()
 	return true
@@ -168,13 +169,13 @@ func (h *home) Escape() bool {
 func (h *home) Crumbs() []string { return nil }
 func (h *home) Status() string   { return "" }
 func (h *home) Command() string  { return "" }
-func (h *home) Typing() bool     { return h.input.Value() != "" }
+func (h *home) Typing() bool     { return h.input.Focused() }
 
 func (h *home) Keys() []Key {
 	if h.Typing() {
 		return []Key{{"enter", "открыть"}, {"tab", "дополнить"}, {"esc", "очистить"}}
 	}
-	return []Key{{"enter", "открыть"}}
+	return []Key{{"enter", "открыть"}, {"/", "найти"}}
 }
 
 // refill: в поиске - находки, иначе группы ВНИМАНИЕ, НЕДАВНЕЕ и МАШИНА; курсор - на недавнем.
@@ -255,14 +256,17 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 			return nil
 		case "enter":
 			if e := h.hitAt(h.list.Cursor); e != nil && e.Open != nil {
+				h.input.Blur()
 				return app.Do(e.Open())
 			}
 			return nil
 		case "ctrl+r":
 			return h.reload()
 		}
-		// Буквы идут в поиск, а не открывают раздел сразу: иначе не найти ssh или проект на s.
-		// Буква раздела в поиске ставит раздел первым - он открывается по enter.
+		// Без поиска буква - действие, как на остальных экранах: раздел сразу, j k - строка, / - поиск.
+		if !h.input.Focused() {
+			return h.key(msg, app)
+		}
 	}
 	var cmd tea.Cmd
 	before := h.input.Value()
@@ -271,6 +275,27 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 		h.refill()
 	}
 	return cmd
+}
+
+// key: клавиша без поиска.
+func (h *home) key(msg tea.KeyPressMsg, app *App) tea.Cmd {
+	switch k := msg.String(); k {
+	case "/":
+		return h.input.Focus()
+	case "j":
+		h.move(1)
+	case "k":
+		h.move(-1)
+	case "g", "G":
+		h.list.Key(k, 10)
+	default:
+		for _, s := range h.data.Sections {
+			if s.Key == k && s.Open != nil {
+				return app.Do(s.Open())
+			}
+		}
+	}
+	return nil
 }
 
 // move: курсор на соседнюю видимую строку; не влезшие строки групп пропускаются.

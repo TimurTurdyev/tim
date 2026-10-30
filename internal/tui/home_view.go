@@ -96,7 +96,7 @@ func (h *home) sectionsView(w int, hints bool) []string {
 	if len(h.data.Sections) == 0 {
 		return nil
 	}
-	out := []string{" " + styleHead.Render("РАЗДЕЛЫ "+symSep+" буква, потом enter")}
+	out := []string{" " + styleHead.Render("РАЗДЕЛЫ "+symSep+" буква")}
 	for _, sc := range h.data.Sections {
 		line := styleKeyCap.Render(" "+sc.Key+" ") + " " + styleText.Render(sc.Title)
 		if hints {

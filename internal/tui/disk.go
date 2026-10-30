@@ -132,7 +132,7 @@ func (d *disk) Keys() []Key {
 	if cur := d.current(); cur != nil && cur.Cmd != "" {
 		enter = Key{"enter", "выполнить"}
 	}
-	return []Key{enter, {"space", "отметить"}, {"x", "убрать"}, {"h", "хвосты"}, {"tab", "вкладка"}}
+	return []Key{enter, {"space", "отметить"}, {"x", "убрать"}, {"t", "хвосты"}, {"tab", "вкладка"}}
 }
 
 // HelpKeys: r и o - в справке: r подписан в строке полосы, o - в карточке.
@@ -231,7 +231,7 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 			}
 		case "x":
 			return d.confirmRemove(app)
-		case "h":
+		case "t":
 			if d.opts.Leftovers != nil {
 				return app.Push(d.opts.Leftovers())
 			}

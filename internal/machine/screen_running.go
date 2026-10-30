@@ -64,7 +64,7 @@ func RunningTab(env *app.Env) tui.Tab {
 				}
 				return row.ID + ": перезапущен через tim", nil
 			}},
-			{Key: "l", Label: "журнал", Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"serve", "logs", row.ID}) }},
+			{Key: "L", Label: "журнал", Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"serve", "logs", row.ID}) }},
 		},
 	}).(tui.Tab)
 }
@@ -121,7 +121,7 @@ func runningRow(r PortRow) tui.BoardRow {
 		if tail := logTail(run.LogPath(r.Project), 4); len(tail) > 0 {
 			c.Extra = append([]string{"", ui.Dim("ЖУРНАЛ \u00b7 последние " + strconv.Itoa(len(tail)))}, tail...)
 		}
-		c.Actions = []tui.CardAction{{Key: "w", Label: "браузер"}, {Key: "d", Label: "погасить"}, {Key: "u", Label: "перезапуск"}, {Key: "l", Label: "журнал"}}
+		c.Actions = []tui.CardAction{{Key: "w", Label: "браузер"}, {Key: "d", Label: "погасить"}, {Key: "u", Label: "перезапуск"}, {Key: "L", Label: "журнал"}}
 	} else {
 		c.Facts = append(c.Facts, tui.Fact{Label: "процесс", Value: "pid " + r.Proc.PID},
 			tui.Fact{Label: "журнал", Value: ui.Dim("нет: запущен не через tim, перезапуск поднимет через tim")})

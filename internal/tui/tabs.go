@@ -8,7 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Вкладки: один экран из нескольких, tab и shift+tab листают. Вторая строка тела - вкладки слева,
+// Вкладки: один экран из нескольких, tab и shift+tab листают, как и l и h. Вторая строка тела - вкладки слева,
 // поиск вкладки в середине, порядок справа. Крошки - только экран: вкладку видно подсветкой.
 
 // Tab: вкладка - экран без своей строки вкладок. TabName - название со счётчиком ("Все 62").
@@ -150,9 +150,9 @@ func (t *tabs) Update(msg tea.Msg, app *App) tea.Cmd {
 	case tea.KeyPressMsg:
 		if !t.Typing() {
 			switch m.String() {
-			case "tab":
+			case "tab", "l":
 				return t.Switch((t.active + 1) % len(t.list))
-			case "shift+tab":
+			case "shift+tab", "h":
 				return t.Switch((t.active + len(t.list) - 1) % len(t.list))
 			}
 		}

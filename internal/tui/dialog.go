@@ -26,7 +26,7 @@ const (
 
 // listKeys и everywhere: колонки шпаргалки, одинаковые на всех экранах.
 var (
-	listKeys  = []Key{{symUpDown + " j k", "строка"}, {"pgup pgdn", "страница"}, {"home end g G", "начало, конец"}}
+	listKeys  = []Key{{symUpDown + " j k", "строка"}, {"h l", "вкладка"}, {"pgup pgdn", "страница"}, {"home end g G", "начало, конец"}}
 	everyKeys = []Key{{":", "команда"}, {"?", "эта шпаргалка"}, {"esc", "назад"}, {"q", "выход"}}
 )
 
