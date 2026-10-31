@@ -177,6 +177,11 @@ func kindOf(r PortRow) string {
 	if s := procs.Service(r.Proc.Command, r.Args); s != "" {
 		return s
 	}
+	// ssh держит порт только пробросом: -L, -D или общее соединение с ними ("ssh: ... [mux]"). Раньше
+	// стека папки: проброс из папки Laravel - не Laravel.
+	if c := r.Proc.Command; filepath.Base(c) == "ssh" || strings.HasPrefix(c, "ssh: ") {
+		return "ssh-туннель"
+	}
 	if r.Dir != "" {
 		if s := stack.Name(r.Dir); s != "" {
 			return s
@@ -184,10 +189,6 @@ func kindOf(r PortRow) string {
 	}
 	if r.Proc.Command == "" {
 		return ""
-	}
-	// ssh держит порт только пробросом: -L, -D или общее соединение с ними ("ssh: ... [mux]").
-	if c := r.Proc.Command; filepath.Base(c) == "ssh" || strings.HasPrefix(c, "ssh: ") {
-		return "ssh-туннель"
 	}
 	return procs.Name(r.Proc.Command, r.Args)
 }
