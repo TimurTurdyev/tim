@@ -48,8 +48,8 @@ const (
 	ToRunning
 )
 
-// labelW: подпись карточки - 10 колонок и 2 пробела, значение с той же колонки, что текст лок-апа.
-const labelW = 12
+// labelW: подпись карточки и пробелы до значения - значение с той же колонки, что текст лок-апа.
+const labelW = brand.MascotCompactWidth + 2
 
 // Dest: экран, куда ведёт строка карточки.
 type Dest int
@@ -98,9 +98,8 @@ func show(cfg *config.Config, build string, want []string, all, full, timing boo
 	_, depth := ui.Colors()
 	look := brand.Look{Mood: h.Mood(time.Now()), Light: ui.Light()}
 	out := ui.Header(head, ui.HeaderOpts{Look: look, Indent: 1, Width: ui.Cols(), Sprite: depth != brand.Basic})
-	if full {
-		out = append(out, "")
-	}
+	// Пустая строка отделяет карточку от трёх строк лок-апа: последняя из них стоит вровень с ножками.
+	out = append(out, "")
 	for _, r := range rows {
 		out = append(out, "  "+r.Text())
 	}

@@ -2,22 +2,17 @@ package brand
 
 import "strings"
 
-// Маскот - импульсный контейнер: куб в три четверти, на крыше и боку рёбра, на передней грани экран
-// с глазами и полоса готовности. Рисунков два, под клетку терминала около 1:2.4 (JetBrains Mono с
-// интервалом 1.1; Menlo - 1:2), чтобы передняя грань была квадратной: значок - четвертинками клетки,
-// 10 колонок на 5 строк; крупный - полублоками, 26 на 11, с экраном 16x10, на котором видно настроение.
+// Маскот - импульсный контейнер анфас: крыша в рёбрах, ручки по бокам, ножки, на передней грани экран
+// с глазами и полоса готовности. Значок рисуется четвертинками клетки, 14 колонок на 4 строки: в клетке
+// терминала около 1:2.4 (JetBrains Mono с интервалом 1.1; Menlo - 1:2) корпус выходит шире, чем выше.
 var mascotPal = map[byte]RGB{
 	'U': {168, 176, 196}, // крыша
 	'u': {132, 140, 160}, // её рёбра
-	'h': {128, 136, 154}, // кромка крыши
 	'N': {104, 112, 131}, // передняя грань: светлее фона любого тёмного терминала
-	'n': {76, 82, 98},    // бок
-	'm': {60, 65, 79},    // его рёбра
-	'c': {78, 85, 101},   // уголки контейнера
+	'n': {76, 82, 98},    // ручки
 	'E': {12, 22, 19},    // экран
 	'k': {44, 48, 58},    // пустая полоса
 	'T': {52, 196, 184},  // глаза: ярче фирменного бирюзового, на тёмном экране светятся
-	'W': {220, 255, 250}, // блик в глазу
 	'q': {24, 100, 95},   // глаза во сне
 	'G': Dark[Green],     // полоса: готово
 	'y': Dark[Amber],     // полоса: тревога
@@ -29,63 +24,23 @@ var mascotPal = map[byte]RGB{
 
 // mascotLight: корпус для светлого фона - на белом светлая крыша пропадала.
 var mascotLight = map[byte]RGB{
-	'U': {118, 126, 148}, 'u': {94, 102, 122}, 'h': {92, 100, 118}, 'N': {82, 90, 108},
-	'n': {58, 64, 78}, 'm': {46, 50, 62}, 'c': {60, 66, 80},
+	'U': {118, 126, 148}, 'u': {94, 102, 122}, 'N': {82, 90, 108}, 'n': {58, 64, 78},
 	'G': Light[Green], 'y': Light[Amber], 'r': Light[Red],
 }
 
-// mascotCompact: значок для лок-апа - 10 колонок на 5 строк; глаза 2x2.
+// mascotCompact: значок для лок-апа - 14 колонок на 4 строки; глаза 2x2. В клетке 2x2 пикселя не больше
+// двух красок, считая пустоту: третью терминал не нарисует. Между глазами и полосой ряд экрана, иначе
+// у тревоги и ошибки они сливаются одним цветом.
 var mascotCompact = []string{
-	"....................",
-	"...UUUUUUUUUUUUUU...",
-	"..uuuuuuuuuuuuuuuu..",
-	".NNNNNNNNNNNNNNNNnm.",
-	".NEEEEEEEEEEEEEENnm.",
-	".NEEeeEEEEEEeeEENnm.",
-	".NEEeeEEEEEEeeEENnm.",
-	".NEEEEEEEEEEEEEENnm.",
-	".NkkkkkkkkkkkkkkN...",
-	".NNNNNNNNNNNNNNNN...",
+	"....uUuUuUuUuUuUuUuUuUuU....",
+	"..UUUUUUUUUUUUUUUUUUUUUUUU..",
+	"..NNEEEEEEEEEEEEEEEEEEEENN..",
+	"nnNNEEEEeeEEEEEEEEeeEEEENNnn",
+	".nNNEEEEeeEEEEEEEEeeEEEENNn.",
+	"..NNEEEEEEEEEEEEEEEEEEEENN..",
+	"..NNkkkkkkkkkkkkkkkkkkkkNN..",
+	"..NNNN................NNNN..",
 }
-
-// mascotLarge: полублоки - пиксель почти квадратный; крыша и бок со скосом, уголки контейнера,
-// экран E 16x10 со строки 8 и колонки 4, полоса k.
-var mascotLarge = []string{
-	"..........................",
-	"..........................",
-	"......UUUUUUUUUUUUUUUUUUUU",
-	".....uuuuuuuuuuuuuuuuuuuum",
-	"....UUUUUUUUUUUUUUUUUUUUnm",
-	"...uuuuuuuuuuuuuuuuuuuumnm",
-	"..hhhhhhhhhhhhhhhhhhhhnmnm",
-	"..ccNNNNNNNNNNNNNNNNccnmnm",
-	"..ccEEEEEEEEEEEEEEEEccnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNEEEEEEEEEEEEEEEENNnmnm",
-	"..NNNNNNNNNNNNNNNNNNNNnmn.",
-	"..NNkkkkkkkkkkkkkkkkNNnm..",
-	"..ccNNNNNNNNNNNNNNNNccn...",
-	"..ccNNNNNNNNNNNNNNNNcc....",
-}
-
-// mascotFaces: левый глаз на экране крупного, 4x5: # горит, W блик; правый - такой же, у тревоги отражён.
-var mascotFaces = map[Mood][]string{
-	Calm:    {".##.", "#W##", "####", "####", ".##."},
-	Happy:   {"....", ".##.", "#..#", "....", "...."},
-	Worried: {"..##", ".###", "####", "####", ".##."},
-	Upset:   {"#..#", ".##.", ".##.", "#..#", "...."},
-	Asleep:  {"....", "....", "#..#", ".##.", "...."},
-}
-
-// blinkFace: кадр моргания - глаза закрыты, цвет и полоса остаются от настроения.
-var blinkFace = []string{"....", "....", "....", "####", "...."}
 
 // mascotInk и mascotBar: цвет глаз и полосы по настроению; полосы нет - пустая.
 var (
@@ -96,15 +51,10 @@ var (
 // Четвертинки по битам: левый верх, правый верх, левый низ, правый низ.
 const quads = " \u2597\u2596\u2584\u259d\u2590\u259e\u259f\u2598\u259a\u258c\u2599\u2580\u259c\u259b\u2588"
 
+// MascotCompactWidth и MascotCompactHeight: размер значка в клетках терминала.
 const (
-	halfUp   = "\u2580"
-	halfDown = "\u2584"
-)
-
-// MascotCompactWidth и MascotLargeWidth: ширина значка и крупной картинки в колонках терминала.
-const (
-	MascotCompactWidth = 10
-	MascotLargeWidth   = 26
+	MascotCompactWidth  = 14
+	MascotCompactHeight = 4
 )
 
 // Mood: выражение лица.
@@ -199,48 +149,6 @@ func eyeRows(src []string, m Mood, rows int) [][]byte {
 	return g
 }
 
-// largeGrid: у крупного на экране рисуется лицо настроения.
-func largeGrid(m Mood) [][]byte {
-	m, shut := pose(m)
-	g := copyRows(mascotLarge)
-	left := mascotFaces[m]
-	if shut {
-		left = blinkFace
-	}
-	right := left
-	if m == Worried {
-		right = make([]string, len(left))
-		for i, r := range left {
-			b := []byte(r)
-			for a, z := 0, len(b)-1; a < z; a, z = a+1, z-1 {
-				b[a], b[z] = b[z], b[a]
-			}
-			right[i] = string(b)
-		}
-	}
-	ink := mascotInk[m]
-	for _, eye := range []struct {
-		rows []string
-		x    int
-	}{{left, 7}, {right, 13}} {
-		for dy, r := range eye.rows {
-			for dx, c := range r {
-				switch c {
-				case '#':
-					g[10+dy][eye.x+dx] = ink
-				case 'W':
-					g[10+dy][eye.x+dx] = 'W'
-				}
-			}
-		}
-	}
-	paintBar(g, m)
-	if m == Asleep {
-		g[0][24], g[1][25] = 'Z', 'Z'
-	}
-	return g
-}
-
 // palette: краски маскота под фон; экран, глаза и бегунок одинаковые в обеих темах.
 func palette(light bool) map[byte]RGB {
 	if !light {
@@ -270,47 +178,12 @@ func quadLines(g [][]byte, pal map[byte]RGB, d Depth) []string {
 	return lines
 }
 
-// MascotCompact: значок - 10 колонок на 5 строк, для лок-апа. Без хотя бы 256 цветов рисовать
-// нечем - пусто.
+// MascotCompact: значок для лок-апа. Без хотя бы 256 цветов рисовать нечем - пусто.
 func MascotCompact(l Look, d Depth) []string {
 	if d == Basic {
 		return nil
 	}
 	return quadLines(compactGrid(l), palette(l.Light), d)
-}
-
-// MascotLarge: крупная картинка - полублоками, два пикселя на клетку по высоте. Без 256 цветов - пусто.
-func MascotLarge(l Look, d Depth) []string {
-	if d == Basic {
-		return nil
-	}
-	g := largeGrid(l.Mood)
-	pal := palette(l.Light)
-	var lines []string
-	for y := 0; y+1 < len(g); y += 2 {
-		var b strings.Builder
-		for x := range g[y] {
-			b.WriteString(halfCell(g[y][x], g[y+1][x], pal, d))
-		}
-		b.WriteString("\x1b[0m")
-		lines = append(lines, b.String())
-	}
-	return lines
-}
-
-// halfCell: верхний пиксель символом, нижний фоном; одинаковые - пробел цветом фона, без символа.
-func halfCell(top, bot byte, pal map[byte]RGB, d Depth) string {
-	switch {
-	case top == '.' && bot == '.':
-		return "\x1b[0m "
-	case top == bot:
-		return "\x1b[0m\x1b[" + pal[top].BG(d) + "m "
-	case bot == '.':
-		return "\x1b[0m\x1b[" + pal[top].FG(d, "") + "m" + halfUp
-	case top == '.':
-		return "\x1b[0m\x1b[" + pal[bot].FG(d, "") + "m" + halfDown
-	}
-	return "\x1b[" + pal[top].FG(d, "") + ";" + pal[bot].BG(d) + "m" + halfUp
 }
 
 // quadCell: клетка из четырёх пикселей - самая частая краска символом, вторая фоном.

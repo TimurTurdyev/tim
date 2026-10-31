@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -146,7 +147,8 @@ func (h *home) machineView(width int, compact bool) []string {
 	out := []string{"   " + styleHead.Render("МАШИНА")}
 	for _, i := range rows {
 		e := h.hitAt(i)
-		line := ui.Fit(styleAccent.Render(e.Title), 12) + ui.Pad(e.Note, valueW) + "  "
+		// Значение с той же колонки, что текст лок-апа над ним.
+		line := ui.Fit(styleAccent.Render(e.Title), brand.MascotCompactWidth+2) + ui.Pad(e.Note, valueW) + "  "
 		if !compact && ui.Width(line)+ui.Width(e.Hint)+3 <= width {
 			line += styleDim.Render(e.Hint)
 		}
