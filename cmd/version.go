@@ -55,7 +55,7 @@ func versionText() string {
 	return strings.Join(lockup(versionLines()), "\n") + "\n"
 }
 
-// versionLines: имя и сборка; движок и дата сборки; конфиг и реестр.
+// versionLines: имя и сборка; движок и дата сборки; конфиг и сайты.
 func versionLines() [][]string {
 	engine := []string{ui.Dim(runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH)}
 	if t, ok := buildTime(); ok {
@@ -68,7 +68,9 @@ func versionLines() [][]string {
 		cfg, _ = config.Load()
 	}
 	if cfg != nil {
-		place = append(place, ui.Dim(ui.Count(len(cfg.Projects), "проект", "проекта", "проектов")))
+		if n := len(cfg.SiteList()); n > 0 {
+			place = append(place, ui.Dim(ui.Count(n, "сайт", "сайта", "сайтов")))
+		}
 	}
 	place = append(place, ui.Dim("обновить: tim self-update"))
 	return [][]string{{ui.Strong(brand.Name) + "  " + ui.Dim(env.Build())}, engine, place}

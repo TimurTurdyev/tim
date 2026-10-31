@@ -34,9 +34,9 @@ const (
 	homeThirdAt    = 115 // третья колонка с 116-й, после бейджей разделов
 )
 
-// Hit: то, что находится поиском и лежит в группах главного - проект, команда, беда, строка машины.
+// Hit: то, что находится поиском и лежит в группах главного - команда, сервер, беда, строка машины.
 type Hit struct {
-	Kind  string // группа: внимание, недавнее, машина, команды, проекты...
+	Kind  string // группа: внимание, недавнее, машина, команды, серверы...
 	Title string
 	Hint  string // серым справа; у беды и строки машины - куда ведёт
 	Note  string // цветное справа, например лампа и порт; у строки машины - значение
@@ -67,12 +67,11 @@ type HomeMachine struct {
 	Household []string
 }
 
-// HomeOpts: источники главного экрана. Today - что сделано сегодня, только для широкого окна.
+// HomeOpts: источники главного экрана.
 type HomeOpts struct {
 	Load    func() HomeData
 	Machine func() HomeMachine
 	Search  func(q string) []Hit
-	Today   func() []string
 }
 
 type home struct {
@@ -89,14 +88,11 @@ type home struct {
 	shutAt   int // кадр общего тикера, на котором глаза закроются
 	inputRow int
 	hidden   map[int]bool // строки списка, которые не влезли: курсор их пропускает
-	today    []string
-	todayOK  bool
 }
 
 type (
 	homeDataMsg    HomeData
 	homeMachineMsg HomeMachine
-	homeTodayMsg   []string
 )
 
 // NewHome создаёт главный экран.
@@ -104,7 +100,7 @@ func NewHome(opts HomeOpts) Screen {
 	in := textinput.New()
 	in.Prompt = symPointer + " "
 	// Пробел первым: курсор стоит на нём, а не закрывает первую букву подсказки.
-	in.Placeholder = " / - найти проект, команду, домен, порт"
+	in.Placeholder = " / - найти команду, сервер, домен, раздел"
 	in.SetWidth(56)
 	st := in.Styles()
 	st.Focused.Prompt = stylePrompt
@@ -137,9 +133,6 @@ func (h *home) reload() tea.Cmd {
 	cmds := []tea.Cmd{
 		func() tea.Msg { return homeDataMsg(h.opts.Load()) },
 		func() tea.Msg { return homeMachineMsg(h.opts.Machine()) },
-	}
-	if h.opts.Today != nil {
-		cmds = append(cmds, func() tea.Msg { return homeTodayMsg(h.opts.Today()) })
 	}
 	return tea.Batch(cmds...)
 }
@@ -232,9 +225,6 @@ func (h *home) Update(msg tea.Msg, app *App) tea.Cmd {
 	case homeMachineMsg:
 		h.mach, h.machOK = HomeMachine(msg), true
 		h.refill()
-		return nil
-	case homeTodayMsg:
-		h.today, h.todayOK = msg, true
 		return nil
 	case tea.KeyPressMsg:
 		switch msg.String() {

@@ -16,20 +16,20 @@ import (
 const module = "github.com/TimurTurdyev/tim/internal/"
 
 // Ядро ничего не знает о предметной области; разделы - то, что видит человек; остальное - библиотеки.
-// app - связка корня и разделов: окружение, выбор проекта, запуск экранов; ей можно в библиотеки.
+// app - связка корня и разделов: окружение, запуск экранов; ей можно в библиотеки.
 var (
 	core = []string{"brand", "cache", "config", "fuzzy", "gitx", "level", "par", "paths", "privileged",
 		"runner", "schedule", "shellq", "tui", "ui"}
-	sections = []string{"bypass", "disk", "home", "local", "machine", "motd", "projects", "serve",
-		"servers", "shell", "sites", "tools"}
+	sections = []string{"bypass", "disk", "home", "local", "machine", "motd", "servers", "shell", "sites",
+		"tools"}
 	// Разрешённые зависимости раздела от раздела: строго в одну сторону.
 	sectionDeps = map[string][]string{
 		"home":    sections,
-		"motd":    {"bypass", "machine", "projects", "serve"},
+		"motd":    {"bypass", "machine"},
 		"bypass":  {"machine"},            // приложение мимо VPN: открытый экземпляр сначала закрывается
 		"servers": {"bypass"},             // ssh и туннели заводят маршрут мимо VPN до сервера
 		"shell":   {"bypass"},             // self-update ждёт, пока страж перейдёт на новую версию
-		"sites":   {"machine", "servers"}, // обход говорит о забытых dev-серверах, серверы - тем же сбором, что экран
+		"sites":   {"machine", "servers"}, // обход говорит о забытых процессах, серверы - тем же сбором, что экран
 	}
 	execAllowed = []string{"runner", "privileged"}
 )

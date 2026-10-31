@@ -193,7 +193,7 @@ func Profiles(entries []Entry) ([]string, map[string][2]int) {
 	return names, counts
 }
 
-// LocalName: локальное имя проекта по умолчанию - shop.test.
+// LocalName: локальное имя папки по умолчанию - shop.test.
 func LocalName(project string) string { return strings.ToLower(project) + ".test" }
 
 // Path: обычно /etc/hosts, но TIM_HOSTS позволяет работать с другим файлом -

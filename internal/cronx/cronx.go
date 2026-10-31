@@ -22,6 +22,12 @@ var monRu = []string{"", "январь", "февраль", "март", "апре
 
 var dowRu = []string{"воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"}
 
+// dowDat: "по понедельникам".
+var dowDat = []string{"воскресеньям", "понедельникам", "вторникам", "средам", "четвергам", "пятницам", "субботам"}
+
+// monPrep: "в январе".
+var monPrep = []string{"", "январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"}
+
 type field struct {
 	vals map[int]bool
 	any  bool
@@ -208,9 +214,6 @@ func (s Schedule) days() string {
 	return strings.Join(parts, " или ")
 }
 
-// dowDat: "по понедельникам".
-var dowDat = []string{"воскресеньям", "понедельникам", "вторникам", "средам", "четвергам", "пятницам", "субботам"}
-
 func weekdays(d []int, f field) string {
 	switch {
 	case slices.Equal(d, []int{1, 2, 3, 4, 5}):
@@ -226,9 +229,6 @@ func weekdays(d []int, f field) string {
 	}
 	return "по дням: " + list(f, dowRu, "")
 }
-
-// monPrep: "в январе".
-var monPrep = []string{"", "январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"}
 
 func months(f field) string {
 	m := values(f, 12)
@@ -285,7 +285,6 @@ func contiguous(v []int) bool {
 	return len(v) > 1
 }
 
-
 func clock(h, m int) string { return pad(h) + ":" + pad(m) }
 
 func pad(n int) string {
@@ -293,15 +292,6 @@ func pad(n int) string {
 		return "0" + strconv.Itoa(n)
 	}
 	return strconv.Itoa(n)
-}
-
-func first(f field) int {
-	for v := 0; v <= 59; v++ {
-		if f.vals[v] {
-			return v
-		}
-	}
-	return 0
 }
 
 func list(f field, names []string, every string) string {

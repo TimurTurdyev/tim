@@ -37,12 +37,12 @@ func setupShell(shell string) error {
 		}
 	}
 	if _, err := os.Stat(config.Path()); err != nil {
-		ui.Println(ui.Warn("конфига нет") + ui.Dim("  собрать реестр проектов: tim config init"))
+		ui.Println(ui.Dim("конфига нет, работают значения по умолчанию: " + config.Path()))
 	} else {
 		ui.Println(ui.Dim("конфиг на месте: " + config.Path()))
 	}
 	if os.Getenv("TIM_SHIM") == "" {
-		ui.Println(ui.Dim("открой новый терминал, чтобы заработали tim go и tim php use"))
+		ui.Println(ui.Dim("открой новый терминал: заработают дополнение команд и переход в папку из экранов"))
 	}
 	return nil
 }

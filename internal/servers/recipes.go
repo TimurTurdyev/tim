@@ -14,7 +14,7 @@ import (
 // serverRecipes: встроенные заготовки и свои для сервера; {server} в своих уже подставлен.
 func serverRecipes(cfg *config.Config, target string) []srvinfo.Recipe {
 	out := append([]srvinfo.Recipe{}, srvinfo.Recipes...)
-	for _, r := range recipes.Own(cfg, recipes.OnServer) {
+	for _, r := range recipes.Own(cfg) {
 		out = append(out, srvinfo.OwnRecipe(r.Name, r.Desc, recipes.Expand(r.Run, map[string]string{"server": target})))
 	}
 	return out

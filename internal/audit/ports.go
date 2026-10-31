@@ -24,7 +24,7 @@ func PortFindings(open []int) []Finding {
 	for _, p := range open {
 		out = append(out, Finding{Area: "порты", Level: level.Bad, Text: fmt.Sprintf("наружу отвечает %s (%d)", DBPorts[p], p),
 			Why: "базу перебирают и ломают из интернета; Docker API без TLS - это root на сервере",
-			Fix: "слушать на 127.0.0.1, снаружи ходить через ssh-туннель: tim tunnel db"})
+			Fix: fmt.Sprintf("слушать на 127.0.0.1, снаружи ходить через ssh-туннель: tim tunnel port %d <сервер>", p)})
 	}
 	return out
 }

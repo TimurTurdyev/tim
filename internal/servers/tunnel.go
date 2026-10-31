@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/TimurTurdyev/tim/internal/app"
-	"github.com/TimurTurdyev/tim/internal/dbx"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
@@ -29,7 +28,7 @@ type allOptions struct {
 func printTunnels() {
 	list := sshx.Known()
 	if len(list) == 0 {
-		ui.Println(ui.Dim("туннелей нет: tim tunnel up | port | db"))
+		ui.Println(ui.Dim("туннелей нет: tim tunnel up | port | all"))
 	}
 	for _, t := range list {
 		state := ui.Label("работает")
@@ -55,7 +54,7 @@ func (t *tunnels) socksPort() string {
 	return strconv.Itoa(t.env.Cfg.Tunnel.Port)
 }
 
-// server: аргумент (алиас, проект, user@host) или tunnel.host из конфига.
+// server: аргумент (алиас, user@host) или tunnel.host из конфига.
 func (t *tunnels) server(arg string) (string, error) {
 	if arg == "" {
 		arg = t.env.Cfg.Tunnel.Host
@@ -174,47 +173,6 @@ func (t *tunnels) forward(args []string) error {
 	}
 	k := sshx.Tunnel{Name: "port-" + f.Local, Host: server, Desc: fmt.Sprintf("127.0.0.1:%s -> %s:%s на стороне %s", f.Local, f.Host, f.Remote, server)}
 	return t.start(k, "-L", f.Arg())
-}
-
-// database: туннель к базе проекта для GUI-клиента; живёт до tunnel down.
-func (t *tunnels) database(name, via string) error {
-	p, err := t.env.Project(name)
-	if err != nil {
-		return err
-	}
-	c, err := dbx.Load(t.env.Cfg.ProjectDir(p))
-	if err != nil {
-		return ui.Errorf("%s: %v", p.Name, err)
-	}
-	if c.Driver == "sqlite" {
-		return ui.Errorf("у %s sqlite, туннель не нужен", p.Name)
-	}
-	if via == "" {
-		via = p.SSH
-	}
-	if via == "" {
-		return ui.Errorf("у %s нет ssh в конфиге: --via <сервер>", p.Name)
-	}
-	server, err := sshTarget(t.env.Cfg, via)
-	if err != nil {
-		return err
-	}
-	local := strconv.Itoa(t.port)
-	if t.port == 0 {
-		if local, err = netinfo.FreePort(); err != nil {
-			return err
-		}
-	}
-	if err := localFree(local); err != nil {
-		return err
-	}
-	k := sshx.Tunnel{Name: "db-" + p.Name, Host: server, Desc: fmt.Sprintf("127.0.0.1:%s -> %s:%s на стороне %s", local, c.Host, c.Port, server)}
-	if err := t.start(k, "-L", "127.0.0.1:"+local+":"+c.Host+":"+c.Port); err != nil {
-		return err
-	}
-	ui.Println(ui.Label("для клиента ") + fmt.Sprintf("%s  host 127.0.0.1  port %s  база %s  пользователь %s", c.Driver, local, c.Name, c.User))
-	ui.Println(ui.Dim("пароль - в .env проекта; снять: tim tunnel down db-" + p.Name))
-	return nil
 }
 
 // all: весь трафик через sshuttle; off - выключить.

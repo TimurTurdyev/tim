@@ -33,8 +33,8 @@ var dbKinds = []string{"MySQL", "MariaDB", "PostgreSQL", "Redis", "MongoDB", "Me
 
 // Protection: лампы защиты и находки.
 type Protection struct {
-	Lamps    []health.Check `json:"lamps"`
-	Findings []health.Check `json:"findings"`
+	Lamps    []health.Check  `json:"lamps"`
+	Findings []health.Check  `json:"findings"`
 	New      []baseline.Item `json:"new,omitempty"`
 }
 

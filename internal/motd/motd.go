@@ -13,13 +13,12 @@ import (
 	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
-	"github.com/TimurTurdyev/tim/internal/run"
+	"github.com/TimurTurdyev/tim/internal/stack"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -28,18 +27,18 @@ import (
 // задерживать открытие терминала.
 var sections = []section{
 	{"system", 800 * time.Millisecond, system},
-	{"project", 800 * time.Millisecond, project},
 	{"net", 800 * time.Millisecond, network},
 	{"ports", 800 * time.Millisecond, ports},
 	{"services", 800 * time.Millisecond, services},
-	{"repos", 2500 * time.Millisecond, repos},
 	{"procs", 800 * time.Millisecond, hogs},
 	{"versions", 800 * time.Millisecond, versions},
 }
 
-// defaultSections: проект текущей папки уже в третьей строке лок-апа, службы не меняются неделями -
-// они в --full.
+// defaultSections: службы не меняются неделями - они в --full.
 var defaultSections = []string{"system", "net", "ports"}
+
+// goneSections: разделы, которых больше нет; в ключе motd конфига они пропускаются, а не роняют сводку.
+var goneSections = []string{"project", "repos"}
 
 // Куда ведёт строка карточки на главном экране.
 const (
@@ -223,31 +222,14 @@ func batteryText(b sysinfo.Battery) string {
 	return ui.Dim(text)
 }
 
-// placeLine: папка, откуда запущен tim, и - если она в реестре - проект, стек и git.
+// placeLine: папка, откуда запущен tim, и её стек.
 func placeLine(cfg *config.Config) []string {
 	cwd, _ := os.Getwd()
 	segs := []string{ui.Dim(paths.Show(cwd))}
-	p, ok := cfg.ProjectHere(cwd)
-	if !ok {
-		return segs
-	}
-	dir := cfg.ProjectDir(p)
-	segs = append(segs, ui.Dim(p.Name))
-	if st := run.Stack(dir); st != "" {
+	if st := stack.Name(cwd); st != "" {
 		segs = append(segs, ui.Dim(st))
 	}
-	if g, ok := gitx.Status(dir); ok {
-		segs = append(segs, ui.Dim(g.Branch)+gitDelta(g))
-	}
 	return segs
-}
-
-// gitDelta: что не так с веткой, через пробел после её имени.
-func gitDelta(g gitx.State) string {
-	if d := g.Delta(); d != "" {
-		return " " + d
-	}
-	return ""
 }
 
 // Troubles: признаки беды для маскота и предупреждений - память, диск, страж, обход. Обход - по
@@ -287,10 +269,11 @@ func choose(cfg *config.Config, want []string, all bool) (map[string]bool, error
 	switch {
 	case all:
 		want = names()
-	case len(want) == 0 && len(cfg.Motd) > 0:
-		want = cfg.Motd
 	case len(want) == 0:
-		want = defaultSections
+		want = slices.DeleteFunc(slices.Clone(cfg.Motd), func(w string) bool { return slices.Contains(goneSections, w) })
+		if len(want) == 0 {
+			want = defaultSections
+		}
 	}
 	known := names()
 	chosen := map[string]bool{}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -149,4 +150,19 @@ func SelRow(selected bool, width int, body string) string {
 		return onShade(ui.Pad(ui.TrimLine(styleAccent.Render(" "+symBar)+" "+body, width), width))
 	}
 	return ui.Pad(ui.TrimLine("   "+body, width), width)
+}
+
+// headerRow: строка-заголовок группы в списке.
+func headerRow(text string) Row {
+	return Row{Header: true, Text: text, Render: func(bool, int) string { return "   " + styleHead.Render(text) }}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+// sortMark: знак сортировки у колонки, по которой отсортировано.
+func sortMark(on bool) string {
+	if on {
+		return "\u25be"
+	}
+	return ""
 }

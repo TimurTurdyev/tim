@@ -36,7 +36,6 @@ func protectTab(env *app.Env) tui.Tab {
 	}).(tui.Tab)
 }
 
-
 func protectData(p Protection) tui.BoardData {
 	d := tui.BoardData{Tab: "Защита"}
 	var lamps []string

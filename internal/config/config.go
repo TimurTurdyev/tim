@@ -3,26 +3,23 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
-var (
-	// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
-	backedUp bool
-	// hereMu: индекс папок строится лениво и из нескольких горутин сразу (обход диска, процессы).
-	hereMu sync.Mutex
-)
+// backedUp: копия .bak делается один раз за запуск, иначе вторая запись затрёт исходный файл с комментариями.
+var backedUp bool
 
+// Project: запись старого реестра проектов. tim её больше не читает, но и не теряет: при записи конфига
+// она уходит обратно как была, а url пока служит списком сайтов.
 type Project struct {
 	Name   string `toml:"name"`
 	Path   string `toml:"path"`
@@ -35,7 +32,7 @@ type Project struct {
 	Serve  string `toml:"serve,omitempty"`
 }
 
-// Task: команда, которую tim each выполняет во всех проектах с файлом-маркером.
+// Task: задача старого tim each; хранится как была.
 type Task struct {
 	Name       string `toml:"name"`
 	Marker     string `toml:"marker"`
@@ -45,24 +42,15 @@ type Task struct {
 	Scan       bool   `toml:"scan,omitempty"`
 }
 
-func (c *Config) Task(name string) (*Task, bool) {
-	for i := range c.Tasks {
-		if c.Tasks[i].Name == name {
-			return &c.Tasks[i], true
-		}
-	}
-	return nil, false
-}
-
-// Template: свои шаги создания проекта для tim new; {dir}, {name}, {parent} подставляются.
+// Template: шаблон старого tim new; хранится как был.
 type Template struct {
 	Name  string   `toml:"name"`
 	Steps []string `toml:"steps"`
 	Port  bool     `toml:"port,omitempty"`
 }
 
-// Recipe: своя заготовка для палитры: on - server, project или machine (по умолчанию server);
-// в run подставляются {server}, {project}, {path}, {port}, {unit}.
+// Recipe: своя заготовка сервера для палитры и tim server --run; в run подставляются {server} и {unit}.
+// on = "project" и "machine" остались от tim run и не работают.
 type Recipe struct {
 	Name string `toml:"name"`
 	Desc string `toml:"desc,omitempty"`
@@ -83,9 +71,6 @@ type Shell struct {
 	CdInfo  *bool             `toml:"cd_info,omitempty"`
 	Aliases map[string]string `toml:"aliases,omitempty"`
 }
-
-// CdInfoOn: подсказка о проекте при входе в папку, по умолчанию включена.
-func (s Shell) CdInfoOn() bool { return s.CdInfo == nil || *s.CdInfo }
 
 // Host: цель обхода VPN - адрес, подсеть CIDR или домен.
 type Host struct {
@@ -110,19 +95,9 @@ type Config struct {
 	Recipes   []Recipe            `toml:"recipe,omitempty"`
 	Notify    Notify              `toml:"notify,omitempty"`
 	Tunnel    Tunnel              `toml:"tunnel,omitempty"`
+	Sites     []string            `toml:"sites,omitempty"`
 	Projects  []Project           `toml:"project"`
 	Hosts     []Host              `toml:"host"`
-
-	here *dirIndex
-}
-
-// dirIndex: настоящая папка проекта -> его номер. Строится один раз и заново, только когда
-// поменялся реестр или корень проектов.
-type dirIndex struct {
-	dev   string
-	first *Project
-	n     int
-	dirs  map[string]int
 }
 
 // Path отдаёт путь к конфигу: TIM_CONFIG, иначе $XDG_CONFIG_HOME/tim/config.toml или ~/.config/tim/config.toml.
@@ -276,112 +251,52 @@ func ExpandHome(p string) string {
 	return p
 }
 
-func (c *Config) Project(name string) (*Project, bool) {
-	for i := range c.Projects {
-		if c.Projects[i].Name == name {
-			return &c.Projects[i], true
-		}
+// SiteList: сайты для Сайтов и обхода - список sites, а пока он пуст, хосты из url старых [[project]].
+func (c *Config) SiteList() []string {
+	if len(c.Sites) > 0 {
+		return c.Sites
 	}
-	return nil, false
-}
-
-// ProjectsLike: имена проектов, в которых встречается part - для подсказок, когда набрали не то.
-func (c *Config) ProjectsLike(part string) []string {
 	var out []string
-	for i := range c.Projects {
-		if strings.Contains(c.Projects[i].Name, part) {
-			out = append(out, c.Projects[i].Name)
+	for _, p := range c.Projects {
+		host := strings.TrimPrefix(strings.TrimPrefix(p.URL, "https://"), "http://")
+		host, _, _ = strings.Cut(host, "/")
+		host, _, _ = strings.Cut(host, ":")
+		if host != "" && !slices.Contains(out, host) {
+			out = append(out, host)
 		}
 	}
 	return out
 }
 
-// ProjectDir: абсолютный путь к клону проекта.
-func (c *Config) ProjectDir(p *Project) string {
-	if filepath.IsAbs(p.Path) {
-		return p.Path
-	}
-	return filepath.Join(c.Dev, p.Path)
-}
-
-// ProjectHere ищет проект, в чью папку входит cwd, самый глубокий из подходящих: подъём от cwd
-// к корню по индексу папок, первое совпадение и есть самое глубокое.
-func (c *Config) ProjectHere(cwd string) (*Project, bool) {
-	cwd, err := filepath.EvalSymlinks(cwd)
-	if err != nil {
-		return nil, false
-	}
-	dirs := c.dirs()
-	for d := cwd; ; d = filepath.Dir(d) {
-		if i, ok := dirs[d]; ok {
-			return &c.Projects[i], true
-		}
-		if parent := filepath.Dir(d); parent == d {
-			return nil, false
+// Legacy: разделы конфига, которые tim больше не читает: "62 [[project]], 3 [[task]]"; пусто - таких нет.
+func (c *Config) Legacy() string {
+	var parts []string
+	add := func(n int, name string) {
+		if n > 0 {
+			parts = append(parts, strconv.Itoa(n)+" "+name)
 		}
 	}
-}
-
-func (c *Config) dirs() map[string]int {
-	hereMu.Lock()
-	defer hereMu.Unlock()
-	var first *Project
-	if len(c.Projects) > 0 {
-		first = &c.Projects[0]
-	}
-	if h := c.here; h != nil && h.dev == c.Dev && h.first == first && h.n == len(c.Projects) {
-		return h.dirs
-	}
-	h := &dirIndex{dev: c.Dev, first: first, n: len(c.Projects), dirs: map[string]int{}}
-	for i := range c.Projects {
-		dir, err := filepath.EvalSymlinks(c.ProjectDir(&c.Projects[i]))
-		if _, dup := h.dirs[dir]; err == nil && !dup {
-			h.dirs[dir] = i
+	add(len(c.Projects), "[[project]]")
+	add(len(c.Tasks), "[[task]]")
+	add(len(c.Templates), "[[template]]")
+	add(len(c.Groups), "[groups]")
+	local := 0
+	for _, r := range c.Recipes {
+		if r.On != "" && r.On != "server" {
+			local++
 		}
 	}
-	c.here = h
-	return h.dirs
-}
-
-// Relative: путь от корня проектов, если проект внутри него, иначе абсолютный.
-func (c *Config) Relative(dir string) string {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return dir
+	add(local, "[[recipe]] не для сервера")
+	if c.Wrapper != "" {
+		parts = append(parts, "wrapper")
 	}
-	if rel, err := filepath.Rel(c.Dev, abs); err == nil && !strings.HasPrefix(rel, "..") {
-		return rel
+	if c.Editor != "" {
+		parts = append(parts, "editor")
 	}
-	return abs
-}
-
-// Ports: порты, уже закреплённые за проектами реестра.
-func (c *Config) Ports() []int {
-	var used []int
-	for _, p := range c.Projects {
-		if p.Port > 0 {
-			used = append(used, p.Port)
-		}
+	if c.Shell.CdInfo != nil {
+		parts = append(parts, "shell.cd_info")
 	}
-	return used
-}
-
-func (c *Config) AddProject(p Project) error {
-	if _, ok := c.Project(p.Name); ok {
-		return errors.New("проект " + p.Name + " уже есть в реестре")
-	}
-	c.Projects = append(c.Projects, p)
-	return nil
-}
-
-func (c *Config) RemoveProject(name string) bool {
-	for i := range c.Projects {
-		if c.Projects[i].Name == name {
-			c.Projects = append(c.Projects[:i], c.Projects[i+1:]...)
-			return true
-		}
-	}
-	return false
+	return strings.Join(parts, ", ")
 }
 
 // AddHost добавляет цель обхода; повтор адреса обновляет пометку, если она задана. false - уже была.
@@ -443,23 +358,4 @@ func HasComments() bool {
 		}
 	}
 	return false
-}
-
-// Pick: проект по имени, а без имени по текущей папке.
-func (cfg *Config) Pick(name string) (*Project, error) {
-	if name != "" {
-		p, ok := cfg.Project(name)
-		if !ok {
-			return nil, fmt.Errorf("нет проекта %s в конфиге: tim proj list", name)
-		}
-		return p, nil
-	}
-	if len(cfg.Projects) == 0 {
-		return nil, fmt.Errorf("реестр пуст: tim config init или tim proj scan")
-	}
-	cwd, _ := os.Getwd()
-	if p, ok := cfg.ProjectHere(cwd); ok {
-		return p, nil
-	}
-	return nil, fmt.Errorf("укажи проект или зайди в его папку: tim proj list")
 }

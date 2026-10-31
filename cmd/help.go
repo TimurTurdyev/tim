@@ -40,7 +40,7 @@ const usageTemplate = `{{h "Использование"}}{{if .Runnable}}
 {{flags (.InheritedFlags.FlagUsages | trimTrailingWhitespaces)}}{{end}}{{if not .HasParent}}
 
 {{h "Соглашения"}}
-  up/down - туннели и маршруты, on/off - переключатели, start/stop - службы, kill - процессы
+  up/down - туннели и маршруты, on/off - переключатели, kill - процессы
   -y отвечает "да" на все вопросы, --no-input - "нет"; --dry-run печатает команды, ничего не делая
   сроки пишутся как 30m, 24h, 3d, 1w; --since принимает и дату 2025-10-01
   у отчётов есть --json - для скриптов и агентов{{end}}{{if .HasAvailableSubCommands}}
@@ -52,47 +52,34 @@ const usageTemplate = `{{h "Использование"}}{{if .Runnable}}
 var helpOnce sync.Once
 
 var examples = map[string]string{
-	"tim go":          "  tim go                     # выбор проекта из реестра и переход\n  tim go shop .              # в папку над клоном",
-	"tim proj":        "  tim proj list clients\n  tim proj scan --add\n  tim proj add . --name shop --url https://shop.example.com",
-	"tim serve":       "  tim serve                  # проект текущей папки\n  tim serve shop             # по части имени\n  tim serve shop -d          # в фоне\n  tim serve @work            # группа из [groups]\n  tim serve list\n  tim serve stop all",
-	"tim ssh":         "  tim ssh                    # выбор алиаса\n  tim ssh prod uptime\n  tim ssh shop               # по ssh-полю проекта",
-	"tim direct":      "  tim direct example.org     # сайт целиком: плеер, видео, счётчики\n  tim direct Firefox         # всё приложение\n  tim direct git.example.com --label git\n  tim direct example.org --owner   # все сети владельца\n  tim direct                 # что сейчас идёт напрямую\n  tim direct rm example.org\n  tim direct off             # снять правила приложений",
-	"tim route":       "  tim route                  # цели и их маршруты\n  tim route fix              # после смены сети\n  sudo tim route install     # страж: чинит обход сам\n  tim route status",
-	"tim vpn":         "  tim vpn                    # туннель, страж и цели одним экраном",
-	"tim tunnel":      "  tim tunnel up prod          # SOCKS на 127.0.0.1:1080\n  tim tunnel all prod         # весь трафик через ssh\n  tim tunnel port 15432:5432 prod\n  tim tunnel db shop\n  tim tunnel expose 8000",
-	"tim db":          "  tim db                     # клиент по .env проекта\n  tim db shop dump\n  tim db shop --via prod",
-	"tim status":      "  tim status\n  tim status repos versions\n  tim status --all --time",
-	"tim site":        "  tim site example.com\n  tim site https://shop.example.com --json",
-	"tim audit":       "  tim audit example.com\n  tim audit shop          # проект с адресом сайта в реестре\n  tim audit example.com --json",
-	"tim mail":        "  tim mail example.com\n  tim mail example.com --selector s2024",
-	"tim http":        "  tim http example.com\n  tim http -L http://example.com",
-	"tim each":        "  tim each                   # задачи из конфига\n  tim each deps --list\n  tim each --marker go.mod -- go mod tidy",
-	"tim new":         "  tim new shop --stack laravel --in clients\n  tim new tool --stack go\n  tim new site --stack static   # свой шаблон из конфига",
-	"tim doctor":      "  tim doctor",
-	"tim host":        "  tim host                   # записи tim в /etc/hosts\n  tim host add shop.test --profile dev\n  tim host off dev           # выключить профиль, не удаляя\n  tim host resolver test     # вся зона *.test на 127.0.0.1",
-	"tim cert":        "  tim cert example.com       # чужой сертификат\n  tim cert new shop.test     # свой, для локальной разработки\n  tim cert ca install        # чтобы браузер ему доверял",
-	"tim env":         "  tim env shop\n  tim env diff shop          # против .env.example\n  tim env diff shop --server # состав ключей против сервера",
-	"tim kill":        "  tim kill chrome            # Cmd+Q, не помогло - спросит про принудительно\n  tim kill goglehrome        # опечатки прощаются\n  tim kill 4242              # по номеру\n  tim kill node --force      # сразу SIGKILL",
-	"tim hw":          "  tim hw                     # паспорт машины и загрузка\n  tim hw --watch             # обновлять раз в секунду",
-	"tim ps":          "  tim ps chrome              # что запущено и как закрыть",
-	"tim today":       "  tim today                  # свои коммиты за сегодня\n  tim today --week\n  tim today shop --since 2025-10-01 --md",
-	"tim link":        "  tim link shop              # shop.test: hosts, сертификат, url\n  tim serve shop --https     # https://shop.test:8443\n  tim unlink shop",
-	"tim setup":       "  tim setup shop             # доделать склонированный проект\n  tim setup git@github.com:me/shop.git\n  tim setup shop --dry-run   # посмотреть, что будет сделано",
-	"tim check":       "  tim check                  # все проекты реестра\n  tim check shop             # один проект\n  tim check example.com      # домен не из реестра\n  tim check --local          # без сети\n  tim check --servers        # и серверы проектов по ssh\n  tim check install --at 09:30 --servers   # каждый день, уведомление только о новом\n  tim check --machine        # FileVault, файрвол, ключи без пароля, автозапуск",
-	"tim domain":      "  tim domain example.com\n  tim domain example.com --twins   # опечатки и другие зоны, которые зарегистрированы\n  tim domain shop --map",
-	"tim notify":      "  tim notify                 # куда уходит итог обхода\n  tim notify test",
-	"tim server":      "  tim server prod            # алиас из ~/.ssh/config или проект\n  tim server prod --attacks  # кто ломится, за сутки\n  tim server prod --traffic  # кто ходит на сайты, за час\n  tim server prod --traffic --since 1d\n  tim server prod --run disk  # заготовка: что растёт на диске\n  tim server prod --deep      # веб-оболочки, файлы пакетов, SUID\n  tim server prod --ban 203.0.113.5 --dry-run\n  tim server prod --run unit nginx",
-	"tim run":         "  tim run                    # задачи проекта текущей папки\n  tim run test               # make, just, task, npm или composer\n  tim run build --in shop",
-	"tim logs":        "  tim logs shop -f\n  tim logs shop --sum         # одинаковые строки одной строкой со счётчиком",
-	"tim servers":     "  tim servers                # серверы проектов из реестра\n  tim servers --all          # все алиасы ~/.ssh/config\n  tim servers install        # замер раз в 6 часов для прогноза диска",
-	"tim sync":        "  tim sync                   # порт и база из .env\n  tim sync --remote          # боевые домены из nginx на серверах\n  tim sync shop --force",
-	"tim ports":       "  tim ports\n  tim port 5173          # карточка: что это, папка, кто запустил\n  tim port 8000 kill\n  tim ports --old --older 4h",
-	"tim php":         "  tim php\n  tim php use 8.3\n  tim php exec 8.1 composer install",
-	"tim disk":        "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --deps ~/Dev/clients --min 200M",
-	"tim pass":        "  tim pass                   # 20 случайных символов\n  tim pass --human           # Kobira-tesuno-mapive-42, читается вслух\n  tim pass --strong --copy   # для менеджера паролей, сразу в буфер",
-	"tim cron":        "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",
-	"tim jwt":         "  tim jwt eyJhbGciOi...\n  pbpaste | tim jwt",
-	"tim config init": "  tim config init\n  tim config init --root ~/code --all -y",
+	"tim ssh":     "  tim ssh                    # выбор алиаса\n  tim ssh prod uptime",
+	"tim direct":  "  tim direct example.org     # сайт целиком: плеер, видео, счётчики\n  tim direct Firefox         # всё приложение\n  tim direct git.example.com --label git\n  tim direct example.org --owner   # все сети владельца\n  tim direct                 # что сейчас идёт напрямую\n  tim direct rm example.org\n  tim direct off             # снять правила приложений",
+	"tim route":   "  tim route                  # цели и их маршруты\n  tim route fix              # после смены сети\n  sudo tim route install     # страж: чинит обход сам\n  tim route status",
+	"tim vpn":     "  tim vpn                    # туннель, страж и цели одним экраном",
+	"tim tunnel":  "  tim tunnel up prod          # SOCKS на 127.0.0.1:1080\n  tim tunnel all prod         # весь трафик через ssh\n  tim tunnel port 15432:5432 prod   # база сервера на localhost:15432\n  tim tunnel expose 8000",
+	"tim status":  "  tim status\n  tim status ports versions\n  tim status --all --time",
+	"tim site":    "  tim site example.com\n  tim site https://shop.example.com --json",
+	"tim audit":   "  tim audit example.com\n  tim audit example.com --md   # отчёт для клиента файлом\n  tim audit example.com --json",
+	"tim mail":    "  tim mail example.com\n  tim mail example.com --selector s2024",
+	"tim http":    "  tim http example.com\n  tim http -L http://example.com",
+	"tim doctor":  "  tim doctor",
+	"tim host":    "  tim host                   # записи tim в /etc/hosts\n  tim host add shop.test --profile dev\n  tim host off dev           # выключить профиль, не удаляя\n  tim host resolver test     # вся зона *.test на 127.0.0.1",
+	"tim cert":    "  tim cert example.com       # чужой сертификат\n  tim cert new shop.test     # свой, для локальной разработки\n  tim cert ca install        # чтобы браузер ему доверял",
+	"tim kill":    "  tim kill chrome            # Cmd+Q, не помогло - спросит про принудительно\n  tim kill goglehrome        # опечатки прощаются\n  tim kill 4242              # по номеру\n  tim kill node --force      # сразу SIGKILL",
+	"tim hw":      "  tim hw                     # паспорт машины и загрузка\n  tim hw --watch             # обновлять раз в секунду",
+	"tim ps":      "  tim ps chrome              # что запущено и как закрыть",
+	"tim link":    "  tim link                   # <папка>.test в /etc/hosts и сертификат своим CA\n  tim link shop              # shop.test\n  tim link --name shop.local\n  tim unlink shop",
+	"tim check":   "  tim check                  # все сайты из sites в конфиге\n  tim check example.com      # один домен\n  tim check --servers        # и серверы из ~/.ssh/config по ssh\n  tim check install --at 09:30 --servers   # каждый день, уведомление только о новом\n  tim check --machine        # FileVault, файрвол, ключи без пароля, автозапуск",
+	"tim domain":  "  tim domain example.com\n  tim domain example.com --twins   # опечатки и другие зоны, которые зарегистрированы\n  tim domain example.com --map",
+	"tim notify":  "  tim notify                 # куда уходит итог обхода\n  tim notify test",
+	"tim server":  "  tim server prod            # алиас из ~/.ssh/config\n  tim server prod --attacks  # кто ломится, за сутки\n  tim server prod --traffic  # кто ходит на сайты, за час\n  tim server prod --traffic --since 1d\n  tim server prod --run disk  # заготовка: что растёт на диске\n  tim server prod --deep      # веб-оболочки, файлы пакетов, SUID\n  tim server prod --ban 203.0.113.5 --dry-run\n  tim server prod --run unit nginx",
+	"tim servers": "  tim servers                # все серверы из ~/.ssh/config\n  tim servers prod web       # только эти\n  tim servers install        # замер раз в 6 часов для прогноза диска",
+	"tim ports":   "  tim ports                  # что слушает порты, в какой папке и кто запустил\n  tim port 5173              # карточка: что это, папка, сессия агента\n  tim port 8000 kill\n  tim ports --old --kill     # забытое: закрыть по одному\n  tim ports --json           # с полями agent и forgotten - для агентов",
+	"tim disk":    "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --deps ~/Dev/clients --min 200M",
+	"tim pass":    "  tim pass                   # 20 случайных символов\n  tim pass --human           # Kobira-tesuno-mapive-42, читается вслух\n  tim pass --strong --copy   # для менеджера паролей, сразу в буфер",
+	"tim cron":    "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",
+	"tim jwt":     "  tim jwt eyJhbGciOi...\n  pbpaste | tim jwt",
+	"tim config":  "  tim config                 # где конфиг, сайты, цели обхода\n  tim config --raw",
 }
 
 // overviewSections: самое ходовое по разделам - то, что видно на tim без аргументов.
@@ -100,28 +87,21 @@ var overviewSections = []struct {
 	title string
 	cmds  [][2]string
 }{
-	{"Проекты", [][2]string{
-		{"tim go", "перейти в проект, недавние сверху"},
-		{"tim serve -d", "поднять dev-сервер в фоне"},
-		{"tim setup <проект>", "от клона до работающего локально"},
-		{"tim check", "обход всех проектов одной таблицей"},
-		{"tim today --week", "что сделано за неделю"},
-	}},
 	{"Сеть и серверы", [][2]string{
-		{"tim ssh", "ssh мимо VPN, выбор алиаса"},
 		{"tim direct <сайт|приложение>", "пустить мимо VPN целиком"},
+		{"tim ssh", "ssh мимо VPN, выбор алиаса"},
 		{"tim tunnel all <сервер>", "весь трафик через ssh"},
-		{"tim server <алиас>", "что с сервером: место, порты, sshd"},
+		{"tim server <алиас>", "что с сервером: место, порты, sshd, кто ломится"},
 		{"tim servers", "все серверы одной таблицей"},
 	}},
 	{"Сайты", [][2]string{
 		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},
-		{"tim audit <домен|проект>", "аудит снаружи: открытые файлы, заголовки, куки"},
+		{"tim audit <домен>", "аудит снаружи: открытые файлы, заголовки, куки"},
 		{"tim mail <домен>", "почта: SPF, DKIM, DMARC"},
-		{"tim og <url>", "превью ссылки в мессенджерах"},
+		{"tim check", "обход всех сайтов одной таблицей"},
 	}},
 	{"Машина", [][2]string{
-		{"tim status", "сводка: машина, проект, сеть"},
+		{"tim ports", "что запущено и кем: забытое агентом - сверху"},
 		{"tim top", "кто съел память и CPU"},
 		{"tim disk", "куда ушло место и что можно убрать"},
 		{"tim hw", "железо и загрузка: процессор, видеокарта, память"},
@@ -134,6 +114,17 @@ var overviewSections = []struct {
 var renamed = []struct{ old, now string }{
 	{"vpn exclude", "direct"}, {"route add", "direct"}, {"route clear", "direct rm"}, {"vpn clear", "direct rm"},
 	{"vpn fix", "route fix"}, {"ssl", "cert"}, {"wifi", "net wifi"}, {"battery", "hw battery"}, {"stale", "ports --old"},
+}
+
+// removed: команды, которых больше нет, и чем это делать теперь.
+var removed = map[string]string{
+	"go": "переход в папку - cd с дополнением оболочки", "proj": "реестра проектов больше нет: сайты - sites в конфиге, серверы - ~/.ssh/config",
+	"sync": "реестра проектов больше нет: сайты - sites в конфиге", "new": "новый проект - инструментом стека: composer create-project, npm create",
+	"setup": "зависимости и .env - инструментами стека", "each": "команда во всех папках - for d in ~/Dev/*/; do ...; done",
+	"today": "свои коммиты - git log --author", "serve": "dev-сервер - npm run dev, php artisan serve; что запущено - tim ports",
+	"run": "задачи - make, npm run, just", "env": ".env - в редакторе", "db": "база - mysql, psql или GUI-клиент; туннель - tim tunnel port",
+	"open": "папка в редакторе - его команда, например code .", "svc": "службы - brew services list",
+	"php": "версии PHP - brew list | grep php", "logs": "журнал - tail -f storage/logs/laravel.log",
 }
 
 // cobraErrors компилируются только при ошибке, чтобы не тратить на это старт.
@@ -302,7 +293,7 @@ func printUtils() {
 	ui.Println(ui.Dim("подробнее: tim <утилита> --help"))
 }
 
-// unknownHint: на неизвестную команду - куда она переехала, что это проект или на что она похожа.
+// unknownHint: на неизвестную команду - куда она переехала, чем её заменить или на что она похожа.
 // Пусто - подсказать нечего, остаётся обычная ошибка.
 func unknownHint(args []string) string {
 	var words []string
@@ -317,7 +308,7 @@ func unknownHint(args []string) string {
 	if hint := renamedHint(words); hint != "" {
 		return hint
 	}
-	if hint := projectHint(words[0]); hint != "" {
+	if hint := removedHint(words[0]); hint != "" {
 		return hint
 	}
 	if sugg := similarCommands(words[0]); len(sugg) > 0 {
@@ -336,26 +327,12 @@ func renamedHint(words []string) string {
 	return ""
 }
 
-// projectHint: вместо команды набрано имя проекта или его часть. Конфиг читается только здесь, на ошибке.
-func projectHint(name string) string {
-	cfg, err := config.Load()
-	if err != nil || len(name) < 3 {
-		return ""
+// removedHint: набрана команда, которой больше нет, - сказать, чем это делать теперь.
+func removedHint(name string) string {
+	if how, ok := removed[name]; ok {
+		return "tim " + name + " больше нет: " + how
 	}
-	if _, ok := cfg.Project(name); ok {
-		return name + " - это проект: tim go " + name + " - перейти, tim proj info " + name + " - карточка, tim audit " + name + " - сайт"
-	}
-	like := cfg.ProjectsLike(name)
-	if head, _, ok := strings.Cut(name, "-"); ok && len(like) == 0 && len(head) >= 3 {
-		like = cfg.ProjectsLike(head)
-	}
-	if len(like) == 0 {
-		return ""
-	}
-	if len(like) > 6 {
-		like = append(like[:6], "...")
-	}
-	return "нет команды " + name + "; похожие проекты: " + strings.Join(like, ", ") + " - tim go <проект>"
+	return ""
 }
 
 // similarCommands: команды и псевдонимы с тем же началом или в одной-двух правках, самые близкие.
@@ -434,9 +411,11 @@ func helpLines() [][]string {
 		cfg, _ = config.Load()
 	}
 	if cfg != nil {
-		place = append(place, ui.Dim(ui.Count(len(cfg.Projects), "проект", "проекта", "проектов")))
+		if n := len(cfg.SiteList()); n > 0 {
+			place = append(place, ui.Dim(ui.Count(n, "сайт", "сайта", "сайтов")))
+		}
 	}
 	place = append(place, ui.Dim("по команде: tim <команда> --help"))
 	return [][]string{{ui.Strong(brand.Name) + "  " + ui.Dim(env.Build())},
-		{ui.Dim("помощник в терминале: проекты, сеть и туннели, машина, сайты, утилиты")}, place}
+		{ui.Dim("помощник в терминале: сеть мимо VPN, серверы, сайты, машина, утилиты")}, place}
 }

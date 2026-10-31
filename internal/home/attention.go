@@ -7,6 +7,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/motd"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
@@ -31,7 +32,7 @@ func (h *Home) machine() tui.HomeMachine {
 		counts[key] = c
 		out.Attention = append(out.Attention, tui.Hit{Kind: tui.KindAttention, Title: title, Hint: dest, Open: open})
 	}
-	// Порядок: память и диск машины, сайты, обход и страж, серверы.
+	// Порядок: память и диск машины, сайты, обход и страж, забытые процессы, серверы.
 	sitesOpen := func() tui.Action { return tui.Action{Push: sites.SitesScreen(h.env)} }
 	sitesDone := false
 	for _, w := range m.Warnings() {
@@ -52,6 +53,10 @@ func (h *Home) machine() tui.HomeMachine {
 	for _, a := range sites.DomainAttention(h.env.Cfg) {
 		domain, _, _ := strings.Cut(a.Text, ":")
 		add(a.Level, a.Text, "Сайты", "w", func() tui.Action { return tui.Action{Push: sites.DomainScreen(h.env, domain)} })
+	}
+	if n := len(machine.Forgotten(machine.PortsFull(h.env.Cfg), machine.ForgottenAfter)); n > 0 {
+		add(level.Warn, ui.Count(n, "забытый процесс", "забытых процесса", "забытых процессов")+" на портах", "Запущенные", "m",
+			func() tui.Action { return tui.Action{Push: machine.RunningScreen(h.env)} })
 	}
 	for _, a := range servers.Attention(h.env) {
 		target, _, _ := strings.Cut(a.Text, ":")

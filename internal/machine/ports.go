@@ -3,6 +3,8 @@ package machine
 import (
 	"cmp"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,9 +13,10 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/procs"
-	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/stack"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -26,11 +29,11 @@ type PortRow struct {
 	netinfo.Listener // Port - первый из Ports
 	procs.Proc
 	Ports     []string // все порты процесса по возрастанию
-	Project   string
-	Guessed   bool   // проект угадан по порту из реестра, а не по папке процесса
-	Dir       string // папка проекта
-	Kind      string // что это: Vite, PostgreSQL, имя контейнера
+	Folder    string   // имя папки, где запущен: корень git-репозитория или сама папка
+	Dir       string   // её путь
+	Kind      string   // что это: Vite, PostgreSQL, имя контейнера
 	Container *sysinfo.Container
+	Agent     *procs.Agent // процесс поднял агент; есть только в PortsFull
 }
 
 type portsOptions struct {
@@ -42,7 +45,10 @@ type portsOptions struct {
 type portJSON struct {
 	Ports     []int              `json:"ports"`
 	Kind      string             `json:"kind,omitempty"`
-	Project   string             `json:"project,omitempty"`
+	Folder    string             `json:"folder,omitempty"`
+	Dir       string             `json:"dir,omitempty"`
+	Agent     *procs.Agent       `json:"agent,omitempty"`
+	Forgotten bool               `json:"forgotten"`
 	PID       int                `json:"pid,omitempty"`
 	Uptime    int64              `json:"uptime_seconds,omitempty"`
 	Memory    int64              `json:"memory_bytes,omitempty"`
@@ -51,15 +57,16 @@ type portJSON struct {
 	Container *sysinfo.Container `json:"container,omitempty"`
 }
 
-// Ports: кто слушает TCP-порты и чей это проект; порты одного процесса - одной строкой, по номеру.
-// Без имён контейнеров: docker ps дорог для сводки, которая идёт в каждом новом терминале.
-func Ports(cfg *config.Config) []PortRow { return merge(listeners(cfg, false)) }
+// Ports: кто слушает TCP-порты и в какой папке запущен; порты одного процесса - одной строкой, по номеру.
+// Без имён контейнеров и агентов: docker ps и окружение процессов дороги для сводки, которая идёт в каждом
+// новом терминале.
+func Ports(cfg *config.Config) []PortRow { return merge(listeners(false)) }
 
-// PortsFull: то же с именами контейнеров на проброшенных портах.
-func PortsFull(cfg *config.Config) []PortRow { return merge(listeners(cfg, true)) }
+// PortsFull: то же с именами контейнеров на проброшенных портах и агентами, которые подняли процессы.
+func PortsFull(cfg *config.Config) []PortRow { return merge(listeners(true)) }
 
 // listeners: строка на каждый слушающий порт.
-func listeners(cfg *config.Config, containers bool) []PortRow {
+func listeners(full bool) []PortRow {
 	ls := netinfo.Listening()
 	// Один процесс слушает несколько портов, чужие - без pid: ps и lsof зовутся по уникальным.
 	var pids []string
@@ -75,23 +82,27 @@ func listeners(cfg *config.Config, containers bool) []PortRow {
 		if r.Proc.Command == "" {
 			r.Proc.Command = l.Command
 		}
-		// Приложения из .app стартуют в папке, откуда их открыли, это не делает их частью проекта.
-		if r.Cwd != "" && r.Cwd != "/" && !strings.Contains(r.Proc.Command, ".app/Contents/") {
-			if p, ok := cfg.ProjectHere(r.Cwd); ok {
-				r.Project, r.Dir = p.Name, cfg.ProjectDir(p)
-			}
-		}
-		if r.Project == "" {
-			for _, p := range cfg.Projects {
-				if strconv.Itoa(p.Port) == l.Port {
-					r.Project, r.Guessed = p.Name, true
-				}
+		// Приложения из .app стартуют в папке, откуда их открыли, это не делает их частью папки. Python
+		// из brew тоже запускается из Python.app, но внутри Python.framework - это обычная программа.
+		if !strings.Contains(r.Proc.Command, ".app/Contents/") || strings.Contains(r.Proc.Command, ".framework/") {
+			r.Dir = folderOf(r.Cwd)
+			if r.Dir != "" {
+				r.Folder = filepath.Base(r.Dir)
 			}
 		}
 		r.Kind = kindOf(r)
 		rows = append(rows, r)
 	}
-	if containers && slices.ContainsFunc(rows, func(r PortRow) bool { return sysinfo.DockerProxy(r.Proc.Command) }) {
+	if !full {
+		return rows
+	}
+	agents := procs.Agents(pids)
+	for i := range rows {
+		if a, ok := agents[rows[i].Listener.PID]; ok {
+			rows[i].Agent = &a
+		}
+	}
+	if slices.ContainsFunc(rows, func(r PortRow) bool { return sysinfo.DockerProxy(r.Proc.Command) }) {
 		byPort := sysinfo.Containers()
 		for i := range rows {
 			port, _ := strconv.Atoi(rows[i].Port)
@@ -129,10 +140,36 @@ func merge(rows []PortRow) []PortRow {
 	return out
 }
 
-// devServer: dev-сервер проекта - его видимость в сети стоит показывать; системные службы macOS
-// (AirPlay, общий доступ) слушают все адреса по своей природе.
-func devServer(r PortRow) bool {
-	return r.Project != "" && !r.Guessed || r.Dir != ""
+// folderOf: папка, где запущен процесс, - корень git-репозитория над cwd, иначе сама cwd внутри домашней
+// папки. Домашняя папка, всё вне её, скрытые папки (~/.gradle, ~/.nvm) и ~/Library - не папка работы.
+func folderOf(cwd string) string {
+	home := paths.Home()
+	rel, err := filepath.Rel(home, cwd)
+	if err != nil || strings.HasPrefix(rel, ".") || strings.Contains(rel, "/.") || rel == "Library" || strings.HasPrefix(rel, "Library/") {
+		return ""
+	}
+	for d := cwd; d != home && d != "/"; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			return d
+		}
+	}
+	return cwd
+}
+
+// devServer: процесс, запущенный в папке работы, - его видимость в сети стоит показывать; системные
+// службы macOS (AirPlay, общий доступ) слушают все адреса по своей природе.
+func devServer(r PortRow) bool { return r.Dir != "" }
+
+// Forgotten: процесс, который, похоже, забыли: сессия агента закрыта; или агент молчит, а процесс
+// работает дольше limit; или процесс в папке работы, запущенный вручную, работает дольше limit.
+func (r PortRow) Forgotten(limit time.Duration) bool {
+	switch {
+	case r.Agent != nil && !r.Agent.Alive:
+		return true
+	case r.Agent != nil:
+		return r.Uptime >= limit && time.Since(r.Agent.Active) >= limit
+	}
+	return r.Dir != "" && r.Uptime >= limit
 }
 
 // kindOf: что это за процесс - известный сервер, иначе стек проекта, иначе понятное имя процесса.
@@ -141,12 +178,16 @@ func kindOf(r PortRow) string {
 		return s
 	}
 	if r.Dir != "" {
-		if s := run.StackName(r.Dir); s != "" {
+		if s := stack.Name(r.Dir); s != "" {
 			return s
 		}
 	}
 	if r.Proc.Command == "" {
 		return ""
+	}
+	// ssh держит порт только пробросом: -L, -D или общее соединение с ними ("ssh: ... [mux]").
+	if c := r.Proc.Command; filepath.Base(c) == "ssh" || strings.HasPrefix(c, "ssh: ") {
+		return "ssh-туннель"
 	}
 	return procs.Name(r.Proc.Command, r.Args)
 }
@@ -156,11 +197,11 @@ func portNum(p string) int {
 	return n
 }
 
-// Forgotten: dev-серверы проектов, которые работают дольше limit: их обычно забыли остановить.
+// Forgotten: забытые процессы из списка - см. PortRow.Forgotten.
 func Forgotten(rows []PortRow, limit time.Duration) []PortRow {
 	var out []PortRow
 	for _, r := range rows {
-		if r.Project != "" && !r.Guessed && r.Uptime >= limit {
+		if r.Forgotten(limit) {
 			out = append(out, r)
 		}
 	}
@@ -174,7 +215,7 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 	var rows []PortRow
 	for _, r := range PortsFull(cfg) {
 		port, _ := strconv.Atoi(r.Port)
-		if !o.all && r.Project == "" && (procs.System(r.Proc.Command) || port > 49151) {
+		if !o.all && r.Dir == "" && r.Agent == nil && (procs.System(r.Proc.Command) || port > 49151) {
 			continue
 		}
 		rows = append(rows, r)
@@ -192,12 +233,12 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 }
 
 func printForgotten(cfg *config.Config, o portsOptions) error {
-	rows := Forgotten(Ports(cfg), o.older)
+	rows := Forgotten(PortsFull(cfg), o.older)
 	if o.json && !o.kill {
 		return printJSON(rows)
 	}
 	if len(rows) == 0 {
-		ui.Println(ui.Dim("процессов проектов старше " + ui.Short(o.older) + " нет"))
+		ui.Println(ui.Dim("забытых процессов нет: ни сессий агентов, которые закрылись, ни запущенного старше " + ui.Short(o.older)))
 		return nil
 	}
 	printRows(rows)
@@ -306,8 +347,8 @@ func checkPorts(addrs []string) error {
 func printJSON(rows []PortRow) error {
 	out := make([]portJSON, 0, len(rows))
 	for _, r := range rows {
-		j := portJSON{Kind: r.Kind, Project: r.Project, Uptime: int64(r.Uptime.Seconds()), Memory: r.RSS,
-			Command: cmp.Or(r.Args, r.Proc.Command), Cwd: r.Cwd, Container: r.Container}
+		j := portJSON{Kind: r.Kind, Folder: r.Folder, Dir: r.Dir, Agent: r.Agent, Forgotten: r.Forgotten(ForgottenAfter),
+			Uptime: int64(r.Uptime.Seconds()), Memory: r.RSS, Command: cmp.Or(r.Args, r.Proc.Command), Cwd: r.Cwd, Container: r.Container}
 		j.PID, _ = strconv.Atoi(r.Listener.PID)
 		for _, p := range r.Ports {
 			j.Ports = append(j.Ports, portNum(p))
@@ -317,20 +358,31 @@ func printJSON(rows []PortRow) error {
 	return ui.JSON(out)
 }
 
+// whoShort: кто запустил - для колонки: "агент", "агент, сессия закрыта"; руками - пусто.
+func whoShort(r PortRow) string {
+	switch {
+	case r.Agent == nil:
+		return ""
+	case !r.Agent.Alive:
+		return "агент, сессия закрыта"
+	case !r.Agent.Active.IsZero() && time.Since(r.Agent.Active) >= ForgottenAfter:
+		return "агент молчит " + ui.Short(time.Since(r.Agent.Active))
+	case r.Agent.Title != "":
+		return "агент: " + ui.Clip(r.Agent.Title, 28)
+	}
+	return "агент"
+}
+
 // printRows: колонки по самому длинному значению; команда целиком - в карточке tim port <n>.
 func printRows(rows []PortRow) {
-	table := [][]string{{"ПОРТ", "ЧТО", "ПРОЕКТ", "РАБОТАЕТ", "PID"}}
+	table := [][]string{{"ПОРТ", "ЧТО", "ПАПКА", "КТО", "РАБОТАЕТ", "PID"}}
 	for _, r := range rows {
 		// Пустая ячейка - пустая: столбик прочерков в девяти строках из десяти - шум.
-		project := r.Project
-		if r.Guessed {
-			project += "?"
-		}
 		kind := r.Kind
 		if r.Network && devServer(r) {
 			kind += " · в сети"
 		}
-		table = append(table, []string{strings.Join(r.Ports, ", "), kind, project, uptime(r.Uptime), r.Listener.PID})
+		table = append(table, []string{strings.Join(r.Ports, ", "), kind, r.Folder, whoShort(r), uptime(r.Uptime), r.Listener.PID})
 	}
 	widths := make([]int, len(table[0]))
 	for _, t := range table {

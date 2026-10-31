@@ -1,5 +1,4 @@
-// Package recipes: свои заготовки из конфига ([[recipe]]) и задачи проекта - цели Makefile, justfile,
-// Taskfile, scripts в package.json и composer.json. Палитра показывает их группой экрана.
+// Package recipes: свои заготовки сервера из конфига ([[recipe]]) и согласие на их запуск.
 package recipes
 
 import (
@@ -15,39 +14,18 @@ import (
 	"github.com/TimurTurdyev/tim/internal/shellq"
 )
 
-// Где показывается своя заготовка.
-const (
-	OnServer  = "server"
-	OnProject = "project"
-	OnMachine = "machine"
-)
-
-// Own: свои заготовки для места on; без on в конфиге заготовка - для сервера.
-func Own(cfg *config.Config, on string) []config.Recipe {
+// Own: свои заготовки сервера; on = "project" и "machine" запускал tim run, их больше нет.
+func Own(cfg *config.Config) []config.Recipe {
 	var out []config.Recipe
 	for _, r := range cfg.Recipes {
-		where := r.On
-		if where == "" {
-			where = OnServer
-		}
-		if where == on && r.Name != "" && r.Run != "" {
+		if (r.On == "" || r.On == "server") && r.Name != "" && r.Run != "" {
 			out = append(out, r)
 		}
 	}
 	return out
 }
 
-// Find: своя заготовка по имени для места on.
-func Find(cfg *config.Config, on, name string) (config.Recipe, bool) {
-	i := slices.IndexFunc(Own(cfg, on), func(r config.Recipe) bool { return r.Name == name })
-	if i < 0 {
-		return config.Recipe{}, false
-	}
-	return Own(cfg, on)[i], true
-}
-
-// Expand: {server} {project} {path} {port} {unit} - значения в кавычках оболочки; чего нет в vars,
-// остаётся как написано.
+// Expand: {server} {unit} - значения в кавычках оболочки; чего нет в vars, остаётся как написано.
 func Expand(run string, vars map[string]string) string {
 	for k, v := range vars {
 		run = strings.ReplaceAll(run, "{"+k+"}", shellq.Quote(v))

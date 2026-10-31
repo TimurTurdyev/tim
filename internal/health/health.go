@@ -1,4 +1,4 @@
-// Package health: сведение частных проверок проекта в одну строку обхода.
+// Package health: сведение частных проверок сайта или сервера в одну строку обхода.
 package health
 
 import (
@@ -20,7 +20,7 @@ type Check struct {
 	Fix    string `json:",omitempty"`
 }
 
-// Row: все проверки одного проекта.
+// Row: все проверки одного сайта или сервера.
 type Row struct {
 	Name   string
 	Checks []Check

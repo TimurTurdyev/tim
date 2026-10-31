@@ -108,7 +108,7 @@ func Rows(spots []Spot, home string, owner func(path string) string) []Row {
 		}
 		who := owner(s.Path)
 		if who == "" && ok && l.Deps {
-			// Папка не в реестре: без имени три строки "зависимости .venv" не отличить.
+			// Репозиторий не нашёлся: без имени три строки "зависимости .venv" не отличить.
 			who = dirOwner(s.Path)
 		}
 		r.Name = placeName(r.Name, s.Path, who)
@@ -118,7 +118,7 @@ func Rows(spots []Spot, home string, owner func(path string) string) []Row {
 	return rows
 }
 
-// dirOwner: чья папка зависимостей, если проект не в реестре - репозиторий или папка над ней.
+// dirOwner: чья папка зависимостей - репозиторий или папка над ней.
 // Безликое имя (app, src) - взять папку выше: клон часто лежит в обёртке shop/app.
 func dirOwner(path string) string {
 	dir := filepath.Dir(path)

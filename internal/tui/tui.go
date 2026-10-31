@@ -37,7 +37,7 @@ func Available() bool {
 	return true
 }
 
-// Рисуем в /dev/tty, чтобы работать внутри $(tim go --print).
+// Рисуем в /dev/tty, чтобы экран работал и когда stdout ушёл в трубу.
 func openTTY() (*os.File, error) {
 	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
 }

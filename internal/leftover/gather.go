@@ -60,7 +60,7 @@ func Installed() []App {
 }
 
 // Gather: всё, что осталось от удалённых программ, по убыванию размера; мелочь по имени отброшена.
-// own - свои имена в нижнем регистре (проекты, папки разработки): папка с таким именем не хвост.
+// own - свои имена в нижнем регистре (папки с кодом): папка с таким именем не хвост.
 func Gather(own map[string]bool, running []procs.Full) ([]*Group, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, ui.Errorf("хвосты удалённых программ tim пока ищет только на macOS")
@@ -100,7 +100,7 @@ func (g *gathering) libraryDirs(own map[string]bool) {
 				continue
 			}
 			v := g.index.Judge(e.Name())
-			// Папка с именем проекта из реестра - его же данные: свои программы в разработке не хвост.
+			// Папка с именем своего проекта - его же данные: свои программы в разработке не хвост.
 			if !v.Sure && own[strings.ToLower(e.Name())] {
 				continue
 			}

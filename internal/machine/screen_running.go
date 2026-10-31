@@ -1,179 +1,191 @@
 package machine
 
 import (
-	"os"
+	"cmp"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
-	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/paths"
-	"github.com/TimurTurdyev/tim/internal/run"
+	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// Проекты, вкладка Запущенные: проекты, которые слушают порты, по тому же скану, что у главного
-// экрана и сводки. Поднятые через tim и вручную - с честными действиями для каждого.
+// Машина, вкладка Запущенные: всё, что слушает порт, кроме системного, - в какой папке, кто запустил
+// (ты в терминале или агент и его сессия) и сколько работает. Забытое - группой сверху: сессия агента
+// закрыта, агент молчит, а процесс всё работает, или запущенное вручную висит дольше 8 часов.
 
-// otherPorts: строка "N портов не у проектов" - ведёт в tim ports.
-const otherPorts = "\x00ports"
-
-// RunningPorts: проект -> его порт по скану портов.
-func RunningPorts(cfg *config.Config) map[string]string {
-	out := map[string]string{}
-	for _, r := range Ports(cfg) {
-		if r.Project != "" && !r.Guessed {
-			if _, ok := out[r.Project]; !ok {
-				out[r.Project] = r.Port
-			}
-		}
+// runningTab: вкладка Запущенные; строки - по pid, действия берут строку из последнего скана.
+func runningTab(env *app.Env) tui.Tab {
+	byID := map[string]PortRow{}
+	row := func(b *tui.BoardRow) (PortRow, bool) {
+		r, ok := byID[b.ID]
+		return r, ok
 	}
-	return out
-}
-
-// RunningTab: вкладка Запущенные.
-func RunningTab(env *app.Env) tui.Tab {
-	stop := func(row *tui.BoardRow) (string, error) { return stopServer(env, row.ID) }
 	return tui.NewBoard(tui.BoardOpts{
-		Crumbs: []string{"Проекты"},
-		Tab:    "Запущенные",
-		Search: true,
-		Command: func(*tui.BoardRow) string {
-			return "tim serve list"
+		Crumbs: []string{"Машина"}, Tab: "Запущенные", Search: true,
+		Loading: "смотрю, кто слушает порты и кто их запустил",
+		Command: func(*tui.BoardRow) string { return "tim ports" },
+		Load: func(bool) tui.BoardData {
+			rows := PortsFull(env.Cfg)
+			clear(byID)
+			for _, r := range rows {
+				byID[rowID(r)] = r
+			}
+			return runningData(rows)
 		},
-		Load: func(bool) tui.BoardData { return runningData(env.Cfg) },
 		Actions: []tui.BoardAction{
-			{Key: "enter", Label: "перейти", Do: func(row *tui.BoardRow) tui.Action {
-				if row.ID == otherPorts {
-					return env.Result([]string{"ports"})
-				}
-				return tui.Action{Dir: row.Find}
+			{Key: "enter", Label: "перейти", When: func(b *tui.BoardRow) bool { r, _ := row(b); return r.Dir != "" },
+				Do: func(b *tui.BoardRow) tui.Action { r, _ := row(b); return tui.Action{Dir: r.Dir} }},
+			{Key: "w", Label: "браузер", Doing: "открываю в браузере", Run: func(b *tui.BoardRow) (string, error) {
+				r, _ := row(b)
+				return ":" + r.Port + " открыт в браузере", runner.OpenBrowser("http://localhost:" + r.Port)
 			}},
-			{Key: "w", Label: "браузер", Doing: "открываю в браузере", Run: func(row *tui.BoardRow) (string, error) {
-				return row.ID + ": открыт в браузере", runner.OpenBrowser("http://localhost:" + portOf(env.Cfg, row.ID))
-			}},
-			{Key: "d", Label: "погасить", Doing: "гашу dev-сервер", Run: stop},
-			{Key: "u", Label: "перезапуск", Doing: "перезапускаю dev-сервер", Run: func(row *tui.BoardRow) (string, error) {
-				if _, err := stopServer(env, row.ID); err != nil {
-					return "", err
+			{Key: "x", Label: "закрыть", Doing: "закрываю", Run: func(b *tui.BoardRow) (string, error) {
+				r, ok := row(b)
+				if !ok {
+					return "", nil
 				}
-				if _, err := env.Inside([]string{"serve", row.ID, "-d"}); err != nil {
-					return "", err
-				}
-				return row.ID + ": перезапущен через tim", nil
+				return closeRow(r, false)
 			}},
-			{Key: "L", Label: "журнал", Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"serve", "logs", row.ID}) }},
+			{Key: "X", Label: "принудительно", Doing: "закрываю принудительно", Hidden: true, Run: func(b *tui.BoardRow) (string, error) {
+				r, ok := row(b)
+				if !ok {
+					return "", nil
+				}
+				return closeRow(r, true)
+			}},
 		},
 	}).(tui.Tab)
 }
 
-func runningData(cfg *config.Config) tui.BoardData {
+func rowID(r PortRow) string {
+	if r.Listener.PID != "" {
+		return r.Listener.PID
+	}
+	return "port " + r.Port
+}
+
+// shown: что показывать во вкладке - то же, что tim ports без --all.
+func shown(r PortRow) bool {
+	port, _ := strconv.Atoi(r.Port)
+	return r.Dir != "" || r.Agent != nil || !procs.System(r.Proc.Command) && port <= 49151
+}
+
+func runningData(rows []PortRow) tui.BoardData {
 	var d tui.BoardData
-	rows := Ports(cfg)
-	others := 0
+	var forgotten, working, services []PortRow
 	for _, r := range rows {
-		if r.Project == "" || r.Guessed {
-			others++
-			continue
+		switch {
+		case !shown(r):
+		case r.Forgotten(ForgottenAfter):
+			forgotten = append(forgotten, r)
+		case r.Dir != "" || r.Agent != nil:
+			working = append(working, r)
+		default:
+			services = append(services, r)
 		}
-		d.Rows = append(d.Rows, runningRow(r))
 	}
-	seen := map[string]bool{}
-	for _, r := range d.Rows {
-		seen[r.ID] = true
-	}
-	n := len(seen)
-	d.Status = ui.Count(n, "запущен", "запущено", "запущено")
+	n := len(forgotten) + len(working) + len(services)
 	d.Tab = "Запущенные " + strconv.Itoa(n)
-	d.Columns = ui.Fit("ПРОЕКТ", 27) + ui.Fit("ПОРТ", 8) + ui.Fit("КАК", 10) + "РАБОТАЕТ"
-	d.Empty = "Запущенных проектов нет"
-	if others > 0 && n > 0 {
-		d.Rows = append(d.Rows, tui.BoardRow{ID: otherPorts, Cells: ui.Dim(ui.Count(others, "порт", "порта", "портов") + " не у проектов"),
-			Inline: "enter - кто слушает: tim ports"})
+	d.Status = ui.Count(n, "процесс", "процесса", "процессов")
+	if len(forgotten) > 0 {
+		d.Status += " · " + strconv.Itoa(len(forgotten)) + " забыто"
 	}
+	d.Columns = ui.Fit("ПОРТ", 15) + ui.Fit("ЧТО", 18) + ui.Fit("ПАПКА", 20) + ui.Fit("КТО", 40) + "РАБОТАЕТ"
+	d.Wide = true
+	add := func(list []PortRow, group string) {
+		for _, r := range list {
+			b := runningRow(r)
+			b.Group = group + " · " + strconv.Itoa(len(list))
+			d.Rows = append(d.Rows, b)
+		}
+	}
+	add(forgotten, "ЗАБЫТЫЕ")
+	add(working, "РАБОТАЮТ")
+	add(services, "СЛУЖБЫ")
+	d.Empty = "Ничего не запущено: ни dev-серверов, ни служб"
 	return d
 }
 
 func runningRow(r PortRow) tui.BoardRow {
-	st, viaTim := run.LoadState(r.Project)
-	viaTim = viaTim && st.Alive() && st.Port == r.Port
-	how := ui.Dim("вручную")
-	if viaTim {
-		how = "tim"
+	ports := ":" + strings.Join(r.Ports, ", :")
+	lead := ports
+	if r.Forgotten(ForgottenAfter) {
+		lead = ui.Warn("▲ ") + ports
 	}
-	up := ui.Short(r.Uptime)
-	row := tui.BoardRow{ID: r.Project, Find: r.Dir,
-		Cells: ui.Fit(r.Project, 27) + ui.Fit(":"+r.Port, 8) + ui.Fit(how, 10) + ui.Dim(up)}
-	if r.Network {
-		row.Cells += ui.Warn("   ▲ в сети")
+	who := whoShort(r)
+	if who == "" && r.Dir != "" {
+		who = ui.Dim("ты")
 	}
-	c := &tui.Card{Title: r.Project, Sub: strings.Join(nonEmptyParts(r.Kind, up), " \u00b7 "), Path: paths.Show(r.Dir),
-		Enter: "перейти в папку, tim закроется"}
-	c.Facts = append(c.Facts, tui.Fact{Label: "адрес", Value: ui.Info("http://localhost:" + r.Port)})
-	if r.Network {
-		c.Facts = append(c.Facts, tui.Fact{Label: "в сети", Value: ui.Warn("слушает все адреса: его видно всем в этой сети") +
-			ui.Dim(" · только себе - --host 127.0.0.1")})
+	b := tui.BoardRow{ID: rowID(r), Find: r.Folder + " " + r.Kind + " " + r.Dir,
+		Cells: ui.Fit(lead, 15) + ui.Fit(ui.Dash(r.Kind), 18) + ui.Fit(r.Folder, 20) + ui.Fit(who, 40) + ui.Dim(ui.Short(r.Uptime))}
+	c := &tui.Card{Title: ports + "  " + ui.Dash(r.Kind), Sub: paths.Show(cmp.Or(r.Dir, r.Cwd))}
+	if r.Dir != "" {
+		c.Enter = "перейти в папку, tim закроется"
 	}
-	if viaTim {
-		c.Facts = append(c.Facts, tui.Fact{Label: "команда", Value: st.Command}, tui.Fact{Label: "журнал", Value: ui.Dim(paths.Show(run.LogPath(r.Project)))})
-		if tail := logTail(run.LogPath(r.Project), 4); len(tail) > 0 {
-			c.Extra = append([]string{"", ui.Dim("ЖУРНАЛ \u00b7 последние " + strconv.Itoa(len(tail)))}, tail...)
-		}
-		c.Actions = []tui.CardAction{{Key: "w", Label: "браузер"}, {Key: "d", Label: "погасить"}, {Key: "u", Label: "перезапуск"}, {Key: "L", Label: "журнал"}}
-	} else {
-		c.Facts = append(c.Facts, tui.Fact{Label: "процесс", Value: "pid " + r.Proc.PID},
-			tui.Fact{Label: "журнал", Value: ui.Dim("нет: запущен не через tim, перезапуск поднимет через tim")})
-		c.Actions = []tui.CardAction{{Key: "w", Label: "браузер"}, {Key: "d", Label: "погасить"}, {Key: "u", Label: "перезапуск"}}
-	}
-	row.Card = c
-	return row
-}
-
-// stopServer: свой сервер tim гасит группой процессов, чужой - как tim port N kill.
-func stopServer(env *app.Env, name string) (string, error) {
-	if st, ok := run.LoadState(name); ok && st.Alive() {
-		if err := runner.StopGroup(st.PID); err != nil {
-			return "", err
-		}
-		st.Remove()
-		return name + ": остановлен", nil
-	}
-	port := portOf(env.Cfg, name)
-	if port == "" {
-		return "", ui.Errorf("%s уже не слушает порт", name)
-	}
-	if _, err := env.Inside([]string{"port", port, "kill", "-y"}); err != nil {
-		return "", err
-	}
-	return "порт " + port + ": свободен", nil
-}
-
-func portOf(cfg *config.Config, name string) string { return RunningPorts(cfg)[name] }
-
-// logTail: последние строки журнала как есть.
-func logTail(path string, n int) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	for i, l := range lines {
-		lines[i] = strings.TrimRight(l, "\r")
-	}
-	return lines
-}
-
-func nonEmptyParts(parts ...string) []string {
-	var out []string
-	for _, p := range parts {
-		if p != "" {
-			out = append(out, p)
+	fact := func(label, value string) {
+		if value != "" {
+			c.Facts = append(c.Facts, tui.Fact{Label: label, Value: value})
 		}
 	}
-	return out
+	fact("запустил", starter(r))
+	fact("работает", ui.Short(r.Uptime)+ui.Dim(" · память "+ui.Bytes(r.RSS)))
+	fact("команда", ui.Clip(shortArgs(r), 110))
+	if out, _ := procs.Outputs(r.Listener.PID); out != "" {
+		fact("вывод", ui.Dim(paths.Show(out)))
+	}
+	if r.Network && devServer(r) {
+		fact("в сети", ui.Warn("слушает все адреса: его видно всем в этой сети")+ui.Dim(" · только себе - --host 127.0.0.1"))
+	}
+	if r.Forgotten(ForgottenAfter) {
+		fact("забыт", ui.Warn(forgottenWhy(r))+ui.Dim(" · x - закрыть"))
+	}
+	c.Actions = []tui.CardAction{{Key: "w", Label: "браузер"}, {Key: "x", Label: "закрыть"}}
+	b.Card = c
+	return b
 }
+
+// shortArgs: команда без длинного пути к программе - в карточке важнее аргументы, полный путь - в tim port.
+func shortArgs(r PortRow) string {
+	cmd, args := r.Proc.Command, cmp.Or(r.Args, r.Proc.Command)
+	if rest, ok := strings.CutPrefix(args, cmd); ok && strings.Contains(cmd, "/") {
+		return filepath.Base(cmd) + rest
+	}
+	return args
+}
+
+// forgottenWhy: почему процесс считается забытым.
+func forgottenWhy(r PortRow) string {
+	switch {
+	case r.Agent != nil && !r.Agent.Alive:
+		return "сессия агента, которая его подняла, закрыта"
+	case r.Agent != nil && !r.Agent.Active.IsZero():
+		return "агент молчит " + ui.Short(time.Since(r.Agent.Active)) + ", а процесс работает " + ui.Short(r.Uptime)
+	}
+	return "работает " + ui.Short(r.Uptime) + " - обычно такой забывают остановить"
+}
+
+// closeRow: остановить процесс строки - SIGTERM, принудительно - SIGKILL; контейнер - docker stop.
+func closeRow(r PortRow, force bool) (string, error) {
+	if r.Container != nil {
+		_, err := runner.Quiet("docker", "stop", r.Container.Name)
+		return r.Container.Name + ": остановлен", err
+	}
+	if r.Listener.PID == "" {
+		return "", ui.Errorf("процесс чужого пользователя: sudo lsof -nP -iTCP:%s -sTCP:LISTEN", r.Port)
+	}
+	sig := "-TERM"
+	if force {
+		sig = "-KILL"
+	}
+	_, err := runner.Quiet("kill", sig, r.Listener.PID)
+	return ui.Dash(r.Kind) + " :" + r.Port + " закрыт", err
+}
+
+// RunningScreen: Машина сразу на вкладке Запущенные.
+func RunningScreen(env *app.Env) tui.Screen { return machineScreen(env, tabRunning, tui.ProcsOpts{}) }

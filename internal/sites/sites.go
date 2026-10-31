@@ -3,90 +3,56 @@ package sites
 
 import (
 	"net"
-	"os"
-	"path/filepath"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/fill"
-	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/servers"
-	"github.com/TimurTurdyev/tim/internal/sshx"
 )
 
-// EnvGit: два вопроса к git про .env; ответ "нет" при любой ошибке, чтобы не шуметь.
-func EnvGit(dir string) health.EnvGit {
-	env := filepath.Join(dir, ".env")
-	e := health.EnvGit{Tracked: gitx.Tracked(env)}
-	if _, err := os.Stat(env); err == nil {
-		e.Exists, e.Ignored = true, gitx.Ignored(env)
-	}
-	return e
-}
-
-// GitCheck: состояние клона. Сам запуск git остаётся здесь, решение об уровне - в health.
-func GitCheck(dir string) health.Check {
-	if !gitx.IsRepo(dir) {
-		return health.Check{Name: "git", Level: level.Skip, Text: "-"}
-	}
-	g, ok := gitx.Status(dir)
-	if !ok {
-		return health.Check{Name: "git", Level: level.Skip, Text: "-"}
-	}
-	return health.GitCheck(g, EnvGit(dir))
-}
-
-// DomainChecks: почта и регистрация домена на один обход - у проектов на поддоменах домен общий,
-// и спрашивать его DNS и whois по разу на проект незачем.
+// DomainChecks: почта и регистрация домена на один обход - у поддоменов домен общий, и спрашивать его
+// DNS и whois по разу на каждый незачем.
 type DomainChecks struct {
-	mail, reg, server par.Memo[string, health.Check]
+	mail, reg par.Memo[string, health.Check]
 }
 
-// CheckRow: все проверки одного проекта. Сетевые идут параллельно; local и net оставляют только
-// локальные или только сетевые. servers - ещё и сервер проекта по ssh: один заход на хост, сколько бы
-// проектов на нём ни жило.
-func CheckRow(p *config.Project, dir string, local, net, withServers bool, shared *DomainChecks) health.Row {
-	var checks []func() health.Check
-	if !net {
-		checks = append(checks, func() health.Check { return GitCheck(dir) }, func() health.Check { return SecretsCheck(dir) })
-	}
-	if !local && dir != "" {
-		checks = append(checks, func() health.Check { return DepsCheck(dir) })
-	}
-	host, _ := netinfo.HostPort(p.URL, "")
-	if !local && p.URL != "" && host != "" && !fill.Local(host) {
-		base := inspect.Registrable(host)
-		mail := func() health.Check { return health.Mail(base) }
-		reg := func() health.Check { return health.DomainReg(base) }
-		checks = append(checks,
-			func() health.Check { return health.Site(p.URL) },
-			func() health.Check { return health.Cert(host) },
-			func() health.Check { return shared.mail.Get(base, mail) },
-			func() health.Check { return shared.reg.Get(base, reg) },
-		)
-	}
-	if withServers && !local && p.SSH != "" {
-		checks = append(checks, func() health.Check {
-			return shared.server.Get(serverKey(p.SSH), func() health.Check { return servers.CheckServer(p.SSH) })
-		})
+// SiteRow: проверки сайта - ответ, сертификат, почта и срок регистрации его домена; параллельно.
+func SiteRow(host string, shared *DomainChecks) health.Row {
+	base := inspect.Registrable(host)
+	checks := []func() health.Check{
+		func() health.Check { return health.Site("https://" + host) },
+		func() health.Check { return health.Cert(host) },
+		func() health.Check { return shared.mail.Get(base, func() health.Check { return health.Mail(base) }) },
+		func() health.Check {
+			return shared.reg.Get(base, func() health.Check { return health.DomainReg(base) })
+		},
 	}
 	run := func(check func() health.Check) health.Check { return check() }
-	return health.Row{Name: p.Name, Checks: par.Map(checks, len(checks), run)}
+	return health.Row{Name: host, Checks: par.Map(checks, len(checks), run)}
 }
 
-// serverKey: один хост под разными алиасами проверяется один раз.
-func serverKey(alias string) string {
-	if t := sshx.Resolve(alias); t.Host != "" {
-		return t.Host + ":" + t.Port
+// ServerRow: сервер строкой обхода - тем же сбором, что экран сервера.
+func ServerRow(alias string) health.Row {
+	return health.Row{Name: alias, Checks: []health.Check{servers.CheckServer(alias)}}
+}
+
+// localHost: имя, которого нет в интернете, - проверять его снаружи бессмысленно.
+func localHost(host string) bool {
+	if a, err := netip.ParseAddr(host); err == nil {
+		return a.IsPrivate() || a.IsLoopback()
 	}
-	return alias
+	for _, z := range []string{"localhost", ".localhost", ".test", ".local", ".lan", ".internal", ".example"} {
+		if host == strings.TrimPrefix(z, ".") || strings.HasSuffix(host, z) {
+			return true
+		}
+	}
+	return !strings.Contains(host, ".")
 }
 
 // Report: что за сайт - адреса, регистрация, сертификат, ответ HTTP.

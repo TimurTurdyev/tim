@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -18,57 +17,6 @@ const (
 	DomainWarnDays = 30
 	DomainBadDays  = 10
 )
-
-// EnvGit: что git знает про .env проекта.
-type EnvGit struct {
-	Exists  bool // файл есть в папке
-	Tracked bool // лежит в репозитории
-	Ignored bool // попадает под .gitignore
-}
-
-// GitCheck: незакоммиченное - обычное состояние работы, а неотправленное живёт только на этой машине.
-// .env в репозитории - утечка секретов, хуже всего остального в колонке.
-func GitCheck(g gitx.State, env EnvGit) Check {
-	c := Check{Name: "git", Level: level.OK}
-	var parts, fixes []string
-	if g.Changes > 0 {
-		parts = append(parts, strconv.Itoa(g.Changes)+" изм")
-	}
-	if g.Ahead > 0 {
-		parts = append(parts, strconv.Itoa(g.Ahead)+" не отпр")
-		fixes = append(fixes, "git push - пока не отправлено, оно живёт только на этой машине")
-		c.Level = level.Warn
-	}
-	if g.Behind > 0 {
-		parts = append(parts, strconv.Itoa(g.Behind)+" позади")
-		fixes = append(fixes, "git pull")
-		c.Level = level.Warn
-	}
-	switch {
-	case env.Tracked:
-		parts = append([]string{".env в git"}, parts...)
-		c.Level = level.Bad
-		c.Detail = ".env лежит в репозитории: секреты уже в истории"
-		fixes = append([]string{"сменить пароли из .env, файл убрать из git: git rm --cached .env и строка .env в .gitignore"}, fixes...)
-	case env.Exists && !env.Ignored:
-		parts = append([]string{".env не в ignore"}, parts...)
-		if c.Level < level.Warn {
-			c.Level = level.Warn
-		}
-		c.Detail = ".env не в .gitignore: один git add . - и секреты в репозитории"
-		fixes = append([]string{"echo .env >> .gitignore"}, fixes...)
-	}
-	if len(parts) == 0 {
-		c.Text = "чисто"
-		return c
-	}
-	c.Text = strings.Join(parts, ", ")
-	c.Fix = strings.Join(fixes, "; ")
-	if c.Detail == "" && c.Level >= level.Warn {
-		c.Detail = "git: " + c.Text
-	}
-	return c
-}
 
 // SiteCheck переводит ответ сайта в уровень. Ошибка запроса хуже любого кода.
 func SiteCheck(status int, err error) Check {
@@ -117,7 +65,7 @@ func Site(url string) Check {
 	c := SiteCheck(page.Status, nil)
 	switch {
 	case page.Status >= 500:
-		c.Fix = "ошибка на сервере сайта: журнал - tim logs <проект> или tim server <алиас> --run errors"
+		c.Fix = "ошибка на сервере сайта: журнал - tim server <алиас> --run errors"
 	case page.Status >= 400:
 		c.Fix = "куда ведёт и что отвечает: tim http " + url + " -L"
 	}

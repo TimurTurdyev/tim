@@ -1,4 +1,4 @@
-// Package servers: свои серверы - ssh мимо VPN, отчёт о состоянии, туннели, базы, приёмник вебхуков.
+// Package servers: свои серверы - ssh мимо VPN, отчёт о состоянии, туннели, приёмник вебхуков.
 package servers
 
 import (
@@ -26,14 +26,14 @@ type hookOptions struct {
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
-	return []*cobra.Command{sshCommand(env), serverCommand(env), serversCommand(env), tunnelCommand(env), dbCommand(env), hookCommand(env)}
+	return []*cobra.Command{sshCommand(env), serverCommand(env), serversCommand(env), tunnelCommand(env), hookCommand(env)}
 }
 
 func sshCommand(env *app.Env) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ssh [алиас|проект|user@host] [аргументы ssh]",
+		Use:   "ssh [алиас|user@host] [аргументы ssh]",
 		Short: "ssh с обходом VPN: если адрес уходит в туннель, предложит маршрут",
-		Long: `Цель может быть алиасом из ~/.ssh/config, именем проекта из конфига или user@host.
+		Long: `Цель - алиас из ~/.ssh/config или user@host.
 Перед подключением tim смотрит, куда уходит адрес. Если в туннель VPN или на шлюз
 прежней сети, предлагает завести host-маршрут через физический шлюз и только потом
 подключается. Без аргументов открывает выбор алиаса, ssh list печатает их списком.`,
@@ -41,8 +41,7 @@ func sshCommand(env *app.Env) *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveDefault
 			}
-			names, _ := app.ProjectNames(cmd, args, toComplete)
-			return append(sshx.Aliases(), names...), cobra.ShellCompDirectiveNoFileComp
+			return sshx.Aliases(), cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error { return ssh(env, args) },
 	}
@@ -52,7 +51,7 @@ func serverCommand(env *app.Env) *cobra.Command {
 	var asJSON, attacks, traffic, accept, deep bool
 	var since, recipe, banIP string
 	c := &cobra.Command{
-		Use:   "server <алиас|проект|user@host> [--attacks | --traffic | --run заготовка] [--since 24h] [--json]",
+		Use:   "server <алиас|user@host> [--attacks | --traffic | --run заготовка] [--since 24h] [--json]",
 		Short: "Состояние Linux-сервера по ssh: место, память, юниты, обновления, порты наружу, sshd",
 		Long: `Один заход по ssh, только чтение: скрипт уходит через stdin и ничего не ставит и не меняет.
 То, что требует root (sshd -T, nginx -t, сертификаты), идёт через sudo -n: без пароля он не спрашивает,
@@ -77,8 +76,7 @@ func serverCommand(env *app.Env) *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
-			names, _ := app.ProjectNames(cmd, args, toComplete)
-			return append(sshx.Aliases(), names...), cobra.ShellCompDirectiveNoFileComp
+			return sshx.Aliases(), cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := Target(env.Cfg, args[0])
@@ -157,10 +155,10 @@ func withWindow(since string, def time.Duration, run func(time.Duration) error) 
 func serversCommand(env *app.Env) *cobra.Command {
 	var o serversOptions
 	c := &cobra.Command{
-		Use:   "servers [алиас...] [--all] [--json] | servers record | install | uninstall",
+		Use:   "servers [алиас...] [--json] | servers record | install | uninstall",
 		Short: "Все серверы одной таблицей: состояние, uptime, нагрузка, память, диск",
-		Long: `Те же отчёты, что tim server, по всем серверам сразу: без аргументов - по ssh проектов из реестра,
---all - по всем алиасам ~/.ssh/config. По 6 серверов за раз, каждому 15 секунд, только чтение.
+		Long: `Те же отчёты, что tim server, по всем серверам сразу: без аргументов - по всем алиасам ~/.ssh/config,
+кроме git-хостов. По 6 серверов за раз, каждому 15 секунд, только чтение.
 --record дописывает замер в журнал каждого сервера, по нему tim server показывает, с какой скоростью
 уходит место и когда кончится. --install ставит такой замер раз в 6 часов (launchd, на Linux - systemd).`,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -169,20 +167,20 @@ func serversCommand(env *app.Env) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return runServers(env, args, o) },
 	}
 	f := c.Flags()
-	f.BoolVarP(&o.all, "all", "a", false, "все алиасы ~/.ssh/config, а не только серверы проектов")
 	f.BoolVar(&o.json, "json", false, "отчёты в JSON")
-	// Прежние флаги остаются скрытыми: их знают поставленные задания launchd.
+	// Прежние флаги остаются скрытыми: их знают поставленные задания launchd и привычка.
+	f.BoolVarP(&o.all, "all", "a", false, "")
 	f.BoolVar(&o.record, "record", false, "")
 	f.BoolVar(&o.install, "install", false, "")
 	f.BoolVar(&o.uninstall, "uninstall", false, "")
-	for _, name := range []string{"record", "install", "uninstall"} {
+	for _, name := range []string{"all", "record", "install", "uninstall"} {
 		_ = f.MarkHidden(name)
 	}
 	c.AddCommand(&cobra.Command{
 		Use:   "record [алиас...]",
 		Short: "Записать замер каждого сервера в журнал - для прогноза места",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServers(env, args, serversOptions{record: true, all: o.all})
+			return runServers(env, args, serversOptions{record: true})
 		},
 	}, &cobra.Command{
 		Use:   "install",
@@ -206,7 +204,7 @@ func tunnelCommand(env *app.Env) *cobra.Command {
 	t := &tunnels{env: env}
 	c := &cobra.Command{
 		Use:   "tunnel",
-		Short: "Туннели через ssh: SOCKS, системный прокси, порты, база, expose",
+		Short: "Туннели через ssh: SOCKS, системный прокси, порты, expose",
 		Run:   func(cmd *cobra.Command, args []string) { printTunnels() },
 	}
 	up := &cobra.Command{
@@ -231,16 +229,6 @@ func tunnelCommand(env *app.Env) *cobra.Command {
 		RunE:      func(cmd *cobra.Command, args []string) error { return t.system(args) },
 	}
 	system.Flags().IntVar(&t.port, "port", 0, "локальный порт SOCKS")
-	var via string
-	db := &cobra.Command{
-		Use:               "db [проект] [--via сервер] [--port L]",
-		Short:             "Туннель к базе проекта для GUI-клиента; живёт до tunnel down",
-		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return t.database(app.First(args), via) },
-	}
-	db.Flags().StringVar(&via, "via", "", "сервер вместо ssh проекта")
-	db.Flags().IntVar(&t.port, "port", 0, "локальный порт (по умолчанию свободный)")
 	var all allOptions
 	allCmd := &cobra.Command{
 		Use:   "all [сервер|off] [--no-dns] [-x подсеть...]",
@@ -264,7 +252,7 @@ IPv6 sshuttle не перехватывает. sudo спросит пароль 
 		Short: "Пробросить порт с сервера на 127.0.0.1 (ssh -L)",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE:  func(cmd *cobra.Command, args []string) error { return t.forward(args) },
-	}, db, exposeCommand(env))
+	}, exposeCommand(env))
 	return c
 }
 
@@ -279,19 +267,6 @@ func exposeCommand(env *app.Env) *cobra.Command {
 	c.Flags().StringVar(&o.frp, "frp", "", "сервер frps host[:port]")
 	c.Flags().StringVar(&o.ssh, "ssh", "", "сервер для ssh -R")
 	c.Flags().IntVar(&o.remote, "remote", 0, "порт снаружи (по умолчанию тот же)")
-	return c
-}
-
-func dbCommand(env *app.Env) *cobra.Command {
-	var via string
-	c := &cobra.Command{
-		Use:               "db [имя] [dump|restore <файл>]",
-		Short:             "Клиент, дамп или восстановление базы по .env проекта",
-		Long:              "С --via <алиас> база открывается через ssh-туннель к серверу: локальный порт подбирается, туннель снимается на выходе.",
-		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return database(env, args, via) },
-	}
-	c.Flags().StringVar(&via, "via", "", "ssh-алиас или проект: открыть базу через туннель к серверу")
 	return c
 }
 

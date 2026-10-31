@@ -8,13 +8,9 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/audit"
-	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
-
-// noURLHint: у проектов редко заполнен адрес сайта - в .env обычно локальный APP_URL.
-const noURLHint = "tim sync --remote найдёт домены в конфигах nginx серверов, или tim audit <домен>"
 
 // auditOptions: как отдать отчёт - на экран, JSON, файлом для клиента.
 type auditOptions struct {
@@ -22,7 +18,7 @@ type auditOptions struct {
 	out            string
 }
 
-// runAudit: проверка сайта снаружи; цель - домен, url или проект, без цели - проект текущей папки.
+// runAudit: проверка сайта снаружи; цель - домен или url.
 func runAudit(env *app.Env, arg string, o auditOptions) error {
 	target, err := auditTarget(env, arg)
 	if err != nil {
@@ -69,35 +65,12 @@ func auditTarget(env *app.Env, arg string) (string, error) {
 	switch {
 	case strings.Contains(arg, "://"):
 		return arg, nil
-	case arg == "":
-		p, err := env.Project("")
-		if err != nil {
-			return "", err
-		}
-		return projectURL(p)
-	}
-	if p, ok := env.Cfg.Project(arg); ok {
-		return projectURL(p)
-	}
-	if strings.Contains(arg, ".") {
+	case strings.Contains(arg, "."):
 		return "https://" + arg, nil
+	case arg == "":
+		return "", ui.Errorf("укажи сайт: tim audit example.ru")
 	}
-	like := env.Cfg.ProjectsLike(arg)
-	if len(like) == 1 {
-		p, _ := env.Cfg.Project(like[0])
-		return projectURL(p)
-	}
-	if len(like) == 0 {
-		return "", ui.Errorf("%s - не домен и не проект: tim audit example.ru", arg)
-	}
-	return "", ui.Errorf("%s - не проект, похожие: %s; выбери один или проверь домен: tim audit <домен>", arg, strings.Join(like, ", "))
-}
-
-func projectURL(p *config.Project) (string, error) {
-	if p.URL == "" {
-		return "", ui.Errorf("у проекта %s нет адреса сайта: %s", p.Name, noURLHint)
-	}
-	return p.URL, nil
+	return "", ui.Errorf("%s - не домен: tim audit example.ru", arg)
 }
 
 // printAudit: вердикт строкой, потом находки - худшие сверху, у каждой почему и что сделать.

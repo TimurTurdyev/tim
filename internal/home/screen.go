@@ -9,16 +9,11 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/bypass"
-	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/disk"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/motd"
-	"github.com/TimurTurdyev/tim/internal/paths"
-	"github.com/TimurTurdyev/tim/internal/projects"
-	"github.com/TimurTurdyev/tim/internal/run"
-	"github.com/TimurTurdyev/tim/internal/serve"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
@@ -32,23 +27,19 @@ import (
 const recentRows = 15
 
 // layoutKeys: буквы разделов в русской раскладке.
-var layoutKeys = map[string]string{"з": "p", "в": "d", "ь": "m", "т": "n", "ы": "s", "ц": "w", "г": "u"}
+var layoutKeys = map[string]string{"в": "d", "ь": "m", "т": "n", "ы": "s", "ц": "w", "г": "u"}
 
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
-var exitCmds = map[string]bool{"ssh": true, "db": true, "tunnel": true, "open": true, "serve": true, "php": true, "direct": true,
-	"disk": true, "setup": true, "new": true, "sync": true, "each": true, "watch": true, "hook": true,
+var exitCmds = map[string]bool{"ssh": true, "tunnel": true, "direct": true, "disk": true, "watch": true, "hook": true,
 	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true}
 
 // changingWords: слова, после которых команда меняет систему.
 var changingWords = map[string]bool{"kill": true, "rm": true, "stop": true, "fix": true, "add": true,
 	"--clean": true, "clean": true, "-y": true, "--yes": true}
 
-// todayTTL: сколько помнить "сегодня" - git log по всем проектам не бесплатен.
-const todayTTL = 5 * time.Minute
-
 func (h *Home) screen() tui.Screen {
 	index := sync.OnceValue(h.newIndex)
-	return tui.NewHome(tui.HomeOpts{Load: h.load, Machine: h.machine, Today: h.today,
+	return tui.NewHome(tui.HomeOpts{Load: h.load, Machine: h.machine,
 		Search: func(q string) []tui.Hit { return h.search(index(), q) }})
 }
 
@@ -61,8 +52,7 @@ func (h *Home) runLine(line string) tui.Action {
 	if s := h.screenFor(args); s != nil {
 		return tui.Action{Push: s}
 	}
-	// Задача проекта бывает долгой и с вводом (npm run dev): ей нужен терминал; список - на экране.
-	if exitCmds[args[0]] || args[0] == "run" && len(args) > 1 {
+	if exitCmds[args[0]] {
 		return tui.Action{Exit: func() { h.after(args) }}
 	}
 	return h.result(args)
@@ -72,16 +62,14 @@ func (h *Home) runLine(line string) tui.Action {
 func (h *Home) screenFor(args []string) tui.Screen {
 	env, one := h.env, len(args) == 1
 	switch {
-	case args[0] == "go" || args[0] == "proj":
-		return h.projectsScreen("", app.TabAll)
 	case args[0] == "hw":
 		return machine.HWScreen(env)
 	case args[0] == "vpn" && one:
 		return bypass.Screen(env)
 	case args[0] == "check" && one:
-		return sites.CheckScreen(env)
-	case args[0] == "serve" && len(args) == 2 && args[1] == "list":
-		return h.projectsScreen("", app.TabRunning)
+		return sites.SitesScreen(env)
+	case args[0] == "ports" && one:
+		return machine.RunningScreen(env)
 	case args[0] == "domain" && len(args) == 2:
 		if d, err := sites.DomainOf(env, args[1]); err == nil {
 			return sites.DomainScreen(env, d)
@@ -89,7 +77,7 @@ func (h *Home) screenFor(args []string) tui.Screen {
 	case args[0] == "server" && len(args) == 2:
 		return servers.Screen(env, servers.Target(env.Cfg, args[1]))
 	case args[0] == "servers" && one:
-		return servers.ServersScreen(env, servers.Targets(env, nil, false))
+		return servers.ServersScreen(env, servers.Targets(env, nil))
 	case args[0] == "top" && one:
 		return machine.ProcsScreen(env, "")
 	case (args[0] == "ps" || args[0] == "kill") && len(args) == 2:
@@ -98,16 +86,6 @@ func (h *Home) screenFor(args []string) tui.Screen {
 		return diskScreen(env, args[1:])
 	}
 	return nil
-}
-
-// projectsScreen: проекты вкладками - Все, Запущенные, Проверка; focus - кого показать первым.
-func (h *Home) projectsScreen(focus string, tab int) tui.Screen {
-	env := h.env
-	return tui.NewTabs([]string{"Проекты"}, []tui.Tab{
-		projects.AllTab(env, focus, func() map[string]string { return machine.RunningPorts(env.Cfg) }, serve.TaskPalette(env)),
-		machine.RunningTab(env),
-		sites.CheckTab(env),
-	}, tab)
 }
 
 func diskScreen(env *app.Env, flags []string) tui.Screen {
@@ -195,7 +173,7 @@ func (h *Home) lineDest(d motd.Dest) (string, func() tui.Action) {
 	case motd.ToNet:
 		return "Сеть", func() tui.Action { return tui.Action{Push: bypass.Screen(h.env)} }
 	case motd.ToRunning:
-		return "Проекты " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: h.projectsScreen("", app.TabRunning)} }
+		return "Машина " + "\u203a" + " Запущенные", func() tui.Action { return tui.Action{Push: machine.RunningScreen(h.env)} }
 	}
 	return "", nil
 }
@@ -206,35 +184,25 @@ func (h *Home) sections() []tui.Section {
 		return func() tui.Action { return tui.Action{Push: screen()} }
 	}
 	return []tui.Section{
-		{Key: "p", Title: "Проекты", Hint: "go, serve, запущенные, проверка", Open: push(func() tui.Screen { return h.projectsScreen("", app.TabAll) })},
 		{Key: "s", Title: "Серверы", Hint: "состояние, кто ломится, ssh", Open: push(func() tui.Screen {
-			return servers.ServersScreen(h.env, servers.Targets(h.env, nil, false))
+			return servers.ServersScreen(h.env, servers.Targets(h.env, nil))
 		})},
 		{Key: "w", Title: "Сайты", Hint: "ответ, сертификат, почта, домен", Open: push(func() tui.Screen { return sites.SitesScreen(h.env) })},
 		{Key: "n", Title: "Сеть", Hint: "обход VPN, страж, туннели", Open: push(func() tui.Screen { return bypass.Screen(h.env) })},
-		{Key: "m", Title: "Машина", Hint: "железо, процессы, защита", Open: push(func() tui.Screen { return machine.HWScreen(h.env) })},
+		{Key: "m", Title: "Машина", Hint: "железо, процессы, запущенные, защита", Open: push(func() tui.Screen { return machine.HWScreen(h.env) })},
 		{Key: "d", Title: "Диск", Hint: "обзор, папки, хвосты", Open: push(func() tui.Screen { return diskScreen(h.env, nil) })},
 		{Key: "u", Title: "Утилиты", Hint: "jwt, uuid, base64, cron", Open: push(h.utilsScreen)},
 	}
 }
 
-// recent: проекты, куда заходил, и команды, которые набирал, - вперемешку по времени. Команда по enter
-// встаёт в строку ":", а не выполняется: среди них бывают и меняющие систему.
+// recent: команды, которые набирал, свежие первыми. Меняющая систему команда по enter встаёт в строку
+// ":", а не выполняется.
 func (h *Home) recent() []tui.Hit {
 	type item struct {
 		hit  tui.Hit
 		last time.Time
 	}
-	cfg := h.env.Cfg
 	var items []item
-	v := visits.Load()
-	for i := range cfg.Projects {
-		p := &cfg.Projects[i]
-		if e, ok := v[p.Name]; ok {
-			hit := h.projectHit(p, age(e.Last)+" \u00b7 проект")
-			items = append(items, item{hit, e.Last})
-		}
-	}
 	for line, e := range visits.Commands() {
 		hit := tui.Hit{Title: line, Hint: age(e.Last), Open: func() tui.Action { return h.runLine(line) }}
 		// Меняющая команда не выполняется с одного enter: она встаёт в ":" для правки.
@@ -280,23 +248,11 @@ func changing(line string) bool {
 	return false
 }
 
-func (h *Home) projectHit(p *config.Project, hint string) tui.Hit {
-	name := p.Name
-	note := ""
-	if st, ok := run.LoadState(name); ok && st.Alive() {
-		note = ui.OK("\u25cf :" + st.Port)
-	}
-	return tui.Hit{Kind: "проекты", Title: name, Hint: hint, Note: note, Open: func() tui.Action {
-		return tui.Action{Push: h.projectsScreen(name, app.TabAll)}
-	}}
-}
-
 // searchIndex: то, по чему ищет главный экран; собирается раз на экран, а не на каждую букву.
 type searchIndex struct {
 	cmds     []tui.CommandEntry
 	cmdNames []string
 	lines    []string // команда, её описание и слова
-	names    []string
 	aliases  []string
 	domains  []string
 	sections []tui.Section
@@ -304,14 +260,10 @@ type searchIndex struct {
 }
 
 func (h *Home) newIndex() *searchIndex {
-	cfg := h.env.Cfg
-	ix := &searchIndex{cmds: h.commands(""), aliases: sshx.Aliases(), domains: sites.Domains(cfg)}
+	ix := &searchIndex{cmds: h.commands(""), aliases: sshx.Aliases(), domains: h.env.Cfg.SiteList()}
 	for _, c := range ix.cmds {
 		ix.cmdNames = append(ix.cmdNames, c.Line)
 		ix.lines = append(ix.lines, searchLine(c.Line, c.Desc))
-	}
-	for _, p := range cfg.Projects {
-		ix.names = append(ix.names, p.Name)
 	}
 	ix.sections = h.sections()
 	for _, s := range ix.sections {
@@ -354,10 +306,9 @@ func exactness(q, title string) int {
 	return 0
 }
 
-// search: команды, проекты, серверы и домены по запросу; внутри группы - самые похожие первыми.
+// search: команды, серверы, домены и разделы по запросу; внутри группы - самые похожие первыми.
 func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
-	cfg := h.env.Cfg
-	groups := make([]hitGroup, 5)
+	groups := make([]hitGroup, 4)
 	for _, i := range rankCommands(q, ix.cmdNames, ix.lines, 4) {
 		c := ix.cmds[i]
 		hit := tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }}
@@ -368,19 +319,15 @@ func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 		}
 		groups[0].add(hit, q)
 	}
-	for _, m := range fuzzy.FilterTop(q, ix.names, 5) {
-		p := &cfg.Projects[m.Index]
-		groups[1].add(h.projectHit(p, paths.Show(cfg.ProjectDir(p))), q)
-	}
 	for _, m := range fuzzy.FilterTop(q, ix.aliases, 3) {
 		a := ix.aliases[m.Index]
-		groups[2].add(tui.Hit{Kind: "серверы", Title: a, Hint: "ssh мимо VPN", Open: func() tui.Action {
+		groups[1].add(tui.Hit{Kind: "серверы", Title: a, Hint: "ssh мимо VPN", Open: func() tui.Action {
 			return tui.Action{Exit: func() { h.after([]string{"ssh", a}) }}
 		}}, q)
 	}
 	for _, m := range fuzzy.FilterTop(q, ix.domains, 3) {
 		d := ix.domains[m.Index]
-		groups[3].add(tui.Hit{Kind: "сайты", Title: d, Hint: "домен: имена, адреса, сертификат, почта", Open: func() tui.Action {
+		groups[2].add(tui.Hit{Kind: "сайты", Title: d, Hint: "домен: имена, адреса, сертификат, почта", Open: func() tui.Action {
 			return h.runLine("domain " + d)
 		}}, q)
 	}
@@ -391,13 +338,13 @@ func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 	for _, sec := range ix.sections {
 		if sectionKey(q) == sec.Key {
 			byKey = sec.Key
-			groups[4].hits = append(groups[4].hits, secHit(sec))
-			groups[4].exact = 4 // буква раздела: раздел первым, enter его открывает
+			groups[3].hits = append(groups[3].hits, secHit(sec))
+			groups[3].exact = 4 // буква раздела: раздел первым, enter его открывает
 		}
 	}
 	for _, m := range fuzzy.FilterTop(q, ix.secLines, 3) {
 		if sec := ix.sections[m.Index]; sec.Key != byKey {
-			groups[4].add(secHit(sec), q)
+			groups[3].add(secHit(sec), q)
 		}
 	}
 	slices.SortStableFunc(groups, func(a, b hitGroup) int { return cmp.Compare(b.exact, a.exact) })
@@ -406,19 +353,4 @@ func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 		out = append(out, g.hits...)
 	}
 	return out
-}
-
-// today: свои коммиты за сегодня строками - третья колонка широкого главного экрана.
-func (h *Home) today() []string {
-	h.todayMu.Lock()
-	defer h.todayMu.Unlock()
-	if time.Since(h.todayAt) < todayTTL {
-		return h.todayLines
-	}
-	out, err := h.inside([]string{"today"})
-	if err != nil {
-		return nil
-	}
-	h.todayLines, h.todayAt = strings.Split(strings.TrimRight(out, "\n"), "\n"), time.Now()
-	return h.todayLines
 }

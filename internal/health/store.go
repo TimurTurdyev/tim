@@ -11,9 +11,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
-// Кэш проверок: последняя проверка каждого проекта с её временем. Пишут check, экраны Сайтов и
-// Проверки; читают ВНИМАНИЕ на главном, бейджи разделов и Сайты, чтобы открываться сразу, а не
-// ждать сети.
+// Кэш проверок: последняя проверка каждого сайта и сервера с её временем. Пишут check и экран Сайтов;
+// читают ВНИМАНИЕ на главном, бейджи разделов и Сайты, чтобы открываться сразу, а не ждать сети.
 
 // StaleAfter: проверка старше суток показывается янтарной давностью - её пора повторить.
 const StaleAfter = 24 * time.Hour
@@ -26,8 +25,8 @@ type Saved struct {
 
 func checksDir() string { return paths.State("checks") }
 
-// SaveRows запоминает проверки; в dry-run ничего не пишет. Проверка без сети (--local) не стирает
-// сетевые: несделанная проверка оставляет прежний ответ.
+// SaveRows запоминает проверки; в dry-run ничего не пишет. Несделанная проверка оставляет прежний
+// ответ, а проверки, которых в строке больше нет (git, секреты), из кэша уходят.
 func SaveRows(rows []Row) {
 	if runner.DryRun {
 		return
@@ -42,30 +41,16 @@ func SaveRows(rows []Row) {
 
 func merge(old, fresh Row) Row {
 	out := Row{Name: fresh.Name}
-	for _, c := range old.Checks {
-		if n := fresh.Get(c.Name); n.Level != level.Skip {
-			c = n
+	for _, c := range fresh.Checks {
+		if prev := old.Get(c.Name); c.Level == level.Skip && prev.Level != level.Skip {
+			c = prev
 		}
 		out.Checks = append(out.Checks, c)
-	}
-	for _, c := range fresh.Checks {
-		if !hasCheck(old, c.Name) {
-			out.Checks = append(out.Checks, c)
-		}
 	}
 	return out
 }
 
-func hasCheck(r Row, name string) bool {
-	for _, c := range r.Checks {
-		if c.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-// SavedRow: последняя проверка проекта.
+// SavedRow: последняя проверка сайта или сервера.
 func SavedRow(name string) (Saved, bool) {
 	e, ok := cache.Load[Row](cache.Path(checksDir(), name))
 	if !ok {

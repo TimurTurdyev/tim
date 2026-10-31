@@ -2,6 +2,7 @@ package machine
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -62,22 +63,21 @@ func printTop(cfg *config.Config, o topOptions) error {
 			ui.Pad(strconv.FormatFloat(g.CPU, 'f', 1, 64)+"%", 8) + ui.Dim(strconv.Itoa(g.Count)))
 	}
 	if o.by == "project" {
-		ui.Println(ui.Dim("всего у проектов " + ui.Bytes(total)))
+		ui.Println(ui.Dim("всего у папок работы " + ui.Bytes(total)))
 	}
 	return nil
 }
 
-// projectOf: проект по рабочей папке процесса; приложения из .app в проекты не записываем -
-// они стартуют в той папке, откуда их открыли.
+// projectOf: папка работы по рабочей папке процесса - корень git-репозитория или сама папка;
+// приложения из .app не записываем - они стартуют в той папке, откуда их открыли.
 func projectOf(cfg *config.Config) func(procs.Sample) string {
 	cwd := procs.Cwds(nil)
 	return func(s procs.Sample) string {
-		dir := cwd[s.PID]
-		if dir == "" || dir == "/" || strings.Contains(s.Comm, ".app/") {
+		if strings.Contains(s.Comm, ".app/") {
 			return ""
 		}
-		if p, ok := cfg.ProjectHere(dir); ok {
-			return p.Name
+		if dir := folderOf(cwd[s.PID]); dir != "" {
+			return filepath.Base(dir)
 		}
 		return ""
 	}

@@ -14,49 +14,19 @@ import (
 	"github.com/TimurTurdyev/tim/internal/shellq"
 )
 
-// Шим нужен командам, которые меняют состояние самой оболочки: cd (go) и PATH (php use).
+// Шим нужен экранам: перейти в папку может только сама оболочка, tim пишет её в TIM_CD_FILE.
 const shim = `export TIM_SHIM=1
 tim() {
-  case "$1" in
-    go)
-      local d
-      d=$(command tim go --print "${@:2}") || return $?
-      [[ -n "$d" ]] && cd "$d" ;;
-    php)
-      if [[ "$2" == use && -n "$3" ]]; then
-        local e
-        e=$(command tim php use --print "$3") || return $?
-        eval "$e"
-      else
-        command tim "$@"
-      fi ;;
-    "")
-      local f d
-      f=$(mktemp -t tim-cd) || { command tim; return $?; }
-      TIM_CD_FILE=$f command tim; local r=$?
-      d=$(cat "$f" 2>/dev/null); rm -f "$f"
-      [[ -n "$d" ]] && cd "$d"
-      return $r ;;
-    *) command tim "$@" ;;
-  esac
+  local f d r
+  f=$(mktemp "${TMPDIR:-/tmp}/tim-cd.XXXXXX") || { command tim "$@"; return $?; }
+  TIM_CD_FILE=$f command tim "$@"; r=$?
+  d=$(cat "$f" 2>/dev/null); rm -f "$f"
+  [[ -n "$d" ]] && cd "$d"
+  return $r
 }
 `
 
-const zshHook = `_tim_cd() { _TIM_PROJECT=$(command tim hook cd --last "$_TIM_PROJECT") }
-autoload -Uz add-zsh-hook
-add-zsh-hook chpwd _tim_cd
-`
-
-const bashHook = `_tim_prompt() {
-  if [[ "$PWD" != "$_TIM_PWD" ]]; then
-    _TIM_PWD=$PWD
-    _TIM_PROJECT=$(command tim hook cd --last "$_TIM_PROJECT")
-  fi
-}
-case ";$PROMPT_COMMAND;" in *";_tim_prompt;"*) ;; *) PROMPT_COMMAND="_tim_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;; esac
-`
-
-// Script: код для eval "$(tim init zsh)" - шим, completion, подсказка о проекте, алиасы и сводка.
+// Script: код для eval "$(tim init zsh)" - шим, completion, алиасы и сводка.
 func Script(shell string, sh config.Shell) (string, error) {
 	var b strings.Builder
 	b.WriteString(shim)
@@ -65,15 +35,9 @@ func Script(shell string, sh config.Shell) (string, error) {
 	case "zsh":
 		b.WriteString("if (( $+functions[compdef] )); then source <(command tim completion zsh); compdef _tim tim; fi\n")
 		b.WriteString("if [[ -o interactive ]]; then\n")
-		if sh.CdInfoOn() {
-			b.WriteString(zshHook)
-		}
 	case "bash":
 		b.WriteString("source <(command tim completion bash)\n")
 		b.WriteString("if [[ $- == *i* ]]; then\n")
-		if sh.CdInfoOn() {
-			b.WriteString(bashHook)
-		}
 	default:
 		return "", fmt.Errorf("поддерживаются zsh и bash")
 	}
@@ -87,15 +51,9 @@ func Script(shell string, sh config.Shell) (string, error) {
 			fmt.Fprintf(&b, "alias %s=%s\n", n, shellq.Quote(sh.Aliases[n]))
 		}
 	}
-	switch {
-	case sh.Motd:
+	if sh.Motd {
 		// Один раз на окно: вложенные оболочки наследуют переменную и сводку не повторяют.
 		b.WriteString("if [[ -z \"$TIM_MOTD_SHOWN\" ]]; then export TIM_MOTD_SHOWN=1; command tim status; fi\n")
-		if sh.CdInfoOn() {
-			b.WriteString("_TIM_PROJECT=$(command tim hook cd --quiet)\n")
-		}
-	case sh.CdInfoOn() && shell == "zsh":
-		b.WriteString("_tim_cd\n")
 	}
 	b.WriteString("fi\n")
 	return b.String(), nil

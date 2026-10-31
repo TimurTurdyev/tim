@@ -9,7 +9,19 @@ import (
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
-	return []*cobra.Command{initCommand(env), doctorCommand(env), selfUpdateCommand(env)}
+	return []*cobra.Command{initCommand(env), doctorCommand(env), selfUpdateCommand(env), configCommand(env)}
+}
+
+func configCommand(env *app.Env) *cobra.Command {
+	var raw bool
+	c := &cobra.Command{
+		Use:   "config",
+		Short: "Где лежит конфиг и что в нём",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return printConfig(env.Cfg, raw) },
+	}
+	c.Flags().BoolVar(&raw, "raw", false, "весь файл целиком")
+	return c
 }
 
 func initCommand(env *app.Env) *cobra.Command {
@@ -22,7 +34,7 @@ func initCommand(env *app.Env) *cobra.Command {
 	c := &cobra.Command{
 		Use:       "init [zsh|bash]",
 		Short:     "Подключить tim к оболочке; с zsh или bash печатает код для eval",
-		Long:      "Добавляет функцию tim (cd для tim go, PATH для tim php use), completion, подсказку о проекте при входе\nв его папку, алиасы и сводку из секции [shell] конфига.",
+		Long:      "Добавляет функцию tim (cd, когда в экране выбрали папку), completion, алиасы и сводку из секции [shell]\nконфига.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"zsh", "bash"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,7 +52,7 @@ func doctorCommand(env *app.Env) *cobra.Command {
 	var all bool
 	c := &cobra.Command{
 		Use:   "doctor [--all]",
-		Short: "Проверка окружения: конфиг, реестр, шим, PATH, менеджеры версий, клиенты баз, сервисы",
+		Short: "Проверка окружения: конфиг, шим, PATH, менеджеры версий, клиенты баз, сервисы",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return diagnose(env, all) },
 	}

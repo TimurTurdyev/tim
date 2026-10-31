@@ -6,14 +6,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // checkOptions: что проверять и как часто обходить по расписанию.
 type checkOptions struct {
-	local, net, servers, install, uninstall, notify, json, machine bool
-	older                                                          time.Duration
-	at                                                             string
+	servers, install, uninstall, notify, json, machine bool
+	older                                              time.Duration
+	at                                                 string
 }
 
 // domainOptions: сколько собирать о домене и куда выводить.
@@ -39,6 +40,15 @@ type watchOptions struct {
 func Commands(env *app.Env) []*cobra.Command {
 	return []*cobra.Command{checkCommand(env), certCommand(env), dnsCommand(), siteCommand(), auditCommand(env), domainCommand(env),
 		mailCommand(env), httpCommand(), ogCommand(), corsCommand(), watchCommand(), notifyCommand(env)}
+}
+
+// siteNames: сайты из списка sites - для дополнения в оболочке.
+func siteNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	return siteHosts(cfg, nil), cobra.ShellCompDirectiveNoFileComp
 }
 
 func notifyCommand(env *app.Env) *cobra.Command {
@@ -68,8 +78,8 @@ func checkCommand(env *app.Env) *cobra.Command {
 	var older string
 	var hours float64
 	c := &cobra.Command{
-		Use:   "check [проект...] | check install [--at 09:30] | uninstall",
-		Short: "Обход хозяйства: git, сайт, сертификат, почта, срок домена по всем проектам",
+		Use:   "check [сайт...] [--servers] | check install [--at 09:30] | uninstall",
+		Short: "Обход: ответ, сертификат, почта и срок домена у сайтов, с --servers - ещё серверы",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			if o.older, err = olderFlag(cmd, older, hours); err != nil {
@@ -79,11 +89,9 @@ func checkCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	f := c.Flags()
-	f.BoolVar(&o.local, "local", false, "только локальные проверки, без сети")
-	f.BoolVar(&o.net, "net", false, "только сетевые проверки")
-	f.BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh: место, юниты, обновления, sshd - только чтение")
+	f.BoolVar(&o.servers, "servers", false, "и серверы из ~/.ssh/config: место, юниты, обновления, sshd - только чтение")
 	f.BoolVar(&o.machine, "machine", false, "защита этой машины: FileVault, файрвол, ключи ssh без пароля, автозапуск, что видно в сети")
-	f.StringVar(&older, "older", "8h", "с какого возраста dev-сервер считается забытым: 8h, 2d")
+	f.StringVar(&older, "older", "8h", "с какого возраста процесс на порту считается забытым: 8h, 2d")
 	f.BoolVar(&o.notify, "notify", false, "уведомление системы, если есть плохие строки")
 	f.BoolVar(&o.json, "json", false, "строки и проверки в JSON")
 	// Прежние флаги остаются скрытыми: их знают поставленные задания и чужие скрипты.
@@ -91,7 +99,9 @@ func checkCommand(env *app.Env) *cobra.Command {
 	f.BoolVar(&o.install, "install", false, "")
 	f.BoolVar(&o.uninstall, "uninstall", false, "")
 	f.StringVar(&o.at, "at", "09:30", "")
-	for _, name := range []string{"hours", "install", "uninstall", "at"} {
+	f.Bool("local", false, "")
+	f.Bool("net", false, "")
+	for _, name := range []string{"hours", "install", "uninstall", "at", "local", "net"} {
 		_ = f.MarkHidden(name)
 	}
 	install := &cobra.Command{
@@ -103,7 +113,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	install.Flags().StringVar(&o.at, "at", "09:30", "во сколько обходить")
-	install.Flags().BoolVar(&o.servers, "servers", false, "и серверы проектов по ssh")
+	install.Flags().BoolVar(&o.servers, "servers", false, "и серверы из ~/.ssh/config")
 	c.AddCommand(install, &cobra.Command{
 		Use:   "uninstall",
 		Short: "Убрать ежедневный обход",
@@ -177,7 +187,7 @@ func siteCommand() *cobra.Command {
 func auditCommand(env *app.Env) *cobra.Command {
 	var o auditOptions
 	c := &cobra.Command{
-		Use:   "audit [домен|url|проект] [--json] [--md|--html [--out файл]]",
+		Use:   "audit [домен|url] [--json] [--md|--html [--out файл]]",
 		Short: "Аудит сайта снаружи: открытые файлы, заголовки, куки, переход на https",
 		Long: `Смотрит сайт так, как его видит любой бот: главную, переход с http на https, заголовки безопасности,
 флаги кук, страницу ошибки и пути, которые не должны открываться (.env, .git, дампы базы, журналы, phpinfo,
@@ -189,7 +199,7 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 ответа, а не по коду 200: заглушки отдают главную на любой путь. --md и --html пишут отчёт для клиента:
 у каждой находки почему это важно и что сделать. Проверяй свои сайты и те, что попросили проверить.`,
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: app.ProjectNames,
+		ValidArgsFunction: siteNames,
 		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(env, app.First(args), o) },
 	}
 	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
@@ -202,7 +212,7 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 func domainCommand(env *app.Env) *cobra.Command {
 	var o domainOptions
 	c := &cobra.Command{
-		Use:   "domain [домен|проект] [--fast] [--map [--out файл]] [--twins] [--json]",
+		Use:   "domain [домен] [--fast] [--map [--out файл]] [--twins] [--json]",
 		Short: "Проверить домен целиком: записи, поддомены, адреса, живость, сертификаты",
 		Long: `Собирает по домену всё, что отдают публичные источники: регистрацию, записи DNS, поддомены из логов
 сертификатов и перебором частых имён, адреса с провайдером и страной, живость каждого имени, сертификаты
@@ -211,7 +221,7 @@ func domainCommand(env *app.Env) *cobra.Command {
 --twins ищет двойники: опечатки, похожие буквы и та же метка в других зонах, и какие из них
 зарегистрированы и принимают почту - так готовят фишинг под сайт и письма.`,
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: app.ProjectNames,
+		ValidArgsFunction: siteNames,
 		RunE:              func(cmd *cobra.Command, args []string) error { return domain(env, app.First(args), o) },
 	}
 	f := c.Flags()
@@ -223,7 +233,7 @@ func domainCommand(env *app.Env) *cobra.Command {
 	f.StringVar(&o.mapOut, "out", "", "сохранить карту в файл, не открывая")
 	f.StringVar(&o.mapOut, "map-out", "", "")
 	_ = f.MarkHidden("map-out")
-	f.BoolVarP(&o.all, "all", "a", false, "кратко по всем доменам реестра")
+	f.BoolVarP(&o.all, "all", "a", false, "кратко по всем доменам из списка sites")
 	f.BoolVar(&o.twins, "twins", false, "двойники домена: опечатки и другие зоны, которые зарегистрированы")
 	return c
 }
@@ -240,12 +250,12 @@ func mailCommand(env *app.Env) *cobra.Command {
 			case all:
 				return printMailSummary(env.Cfg)
 			case len(args) == 0:
-				return ui.Errorf("укажи домен: tim mail example.com (или --all по доменам реестра)")
+				return ui.Errorf("укажи домен: tim mail example.com (или --all по списку sites)")
 			}
 			return printMail(args[0], selectors, asJSON)
 		},
 	}
-	c.Flags().BoolVarP(&all, "all", "a", false, "сводка по доменам реестра")
+	c.Flags().BoolVarP(&all, "all", "a", false, "сводка по доменам из списка sites")
 	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
 	c.Flags().StringSliceVar(&selectors, "selector", nil, "свой DKIM-селектор (можно несколько)")
 	return c

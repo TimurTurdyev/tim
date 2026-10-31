@@ -4,13 +4,11 @@ import (
 	"cmp"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 
-	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/procs"
-	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -21,8 +19,8 @@ var shells = map[string]bool{"zsh": true, "bash": true, "fish": true, "sh": true
 // Строки без данных не печатаются.
 func printCard(r PortRow) {
 	title := ":" + strings.Join(r.Ports, ", :") + "  " + ui.Dash(r.Kind)
-	if r.Project != "" {
-		title += "  " + r.Project
+	if r.Folder != "" {
+		title += "  " + r.Folder
 	}
 	ui.Println(ui.Label(title))
 	line := func(k, v string) {
@@ -40,12 +38,7 @@ func printCard(r PortRow) {
 		line("процесс", "чужого пользователя: sudo lsof -nP -iTCP:"+r.Port+" -sTCP:LISTEN")
 		return
 	}
-	folder := paths.Show(r.Cwd)
-	// Ветка - только у проекта: /opt/homebrew тоже репозиторий, и его ветка ничего не говорит.
-	if st, ok := gitx.Status(r.Dir); r.Dir != "" && ok && st.Branch != "" {
-		folder += ui.Dim("   ветка ") + st.Branch
-	}
-	line("папка", folder)
+	line("папка", paths.Show(r.Cwd))
 	line("процесс", fmt.Sprintf("%s %s, работает %s, память %s", filepath.Base(r.Proc.Command), r.Listener.PID, uptime(r.Uptime), ui.Bytes(r.RSS)))
 	width := 1 << 20
 	if cols := ui.Cols(); cols > 0 {
@@ -58,30 +51,25 @@ func printCard(r PortRow) {
 			ui.Println(strings.Repeat(" ", 12) + l)
 		}
 	}
-	who, log := starter(r)
-	line("запустил", who)
-	if log == "" {
-		out, errs := procs.Outputs(r.Listener.PID)
-		log = out
-		if errs != "" && errs != out {
-			log = strings.TrimSpace(out + "  ошибки: " + errs)
-		}
+	line("запустил", starter(r))
+	out, errs := procs.Outputs(r.Listener.PID)
+	log := out
+	if errs != "" && errs != out {
+		log = strings.TrimSpace(out + "  ошибки: " + errs)
 	}
 	line("журнал", paths.Show(log))
 	ui.Println(ui.Dim("  остановить: tim port " + r.Port + " kill"))
 }
 
-// starter: кто запустил процесс и, если это tim serve, где его журнал. Сервер из tim serve - часто
-// внук записанного процесса (sh -> php artisan serve -> php -S), поэтому предки проверяются на три шага.
-func starter(r PortRow) (who, log string) {
-	states := run.ListStates()
-	pid, ppid := r.Listener.PID, r.PPID
+// starter: кто запустил процесс - агент и его сессия, терминал или родитель. Сервер часто внук того, что
+// запускали (sh -> php artisan serve -> php -S), поэтому предки проверяются на три шага.
+func starter(r PortRow) string {
+	if a := r.Agent; a != nil {
+		return AgentText(*a)
+	}
+	var who, pid string
+	ppid := r.PPID
 	for range 3 {
-		for _, s := range states {
-			if strconv.Itoa(s.PID) == pid {
-				return "tim serve " + s.Name, s.Log
-			}
-		}
 		if ppid == "" || ppid == "0" || ppid == "1" {
 			break
 		}
@@ -91,16 +79,33 @@ func starter(r PortRow) (who, log string) {
 			break
 		}
 		if name := filepath.Base(parent.Command); shells[name] {
-			return "терминал (" + strings.TrimPrefix(name, "-") + " " + pid + ")", ""
+			return "терминал (" + strings.TrimPrefix(name, "-") + " " + pid + ")"
 		}
 		if who == "" {
 			who = shortCommand(parent) + " " + pid
 		}
 	}
 	if r.PPID == "1" {
-		return "без терминала, работает сам по себе", ""
+		return "без терминала, работает сам по себе"
 	}
-	return who, ""
+	return who
+}
+
+// AgentText: кто из агентов и в какой сессии запустил - имя, начало первой просьбы, открыта ли сессия.
+func AgentText(a procs.Agent) string {
+	out := a.Name
+	if a.Title != "" {
+		out += ", сессия «" + ui.Clip(a.Title, 48) + "»"
+	} else if a.Session != "" {
+		out += ", сессия " + a.Session[:min(8, len(a.Session))]
+	}
+	switch {
+	case !a.Alive:
+		out += ", закрыта"
+	case !a.Active.IsZero():
+		out += ", последний раз " + ui.Short(time.Since(a.Active)) + " назад"
+	}
+	return out
 }
 
 // shortCommand: начало команды без пути - php artisan serve, npm run dev.

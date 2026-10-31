@@ -2,21 +2,17 @@ package motd
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/gitx"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/procs"
-	"github.com/TimurTurdyev/tim/internal/run"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
@@ -68,24 +64,6 @@ func system(*config.Config) []Line {
 	return out
 }
 
-func project(cfg *config.Config) []Line {
-	cwd, _ := os.Getwd()
-	p, ok := cfg.ProjectHere(cwd)
-	if !ok {
-		return nil
-	}
-	dir := cfg.ProjectDir(p)
-	parts := []string{p.Name, ui.Dim(run.Stack(dir))}
-	if g, ok := gitx.Status(dir); ok {
-		parts = append(parts, g.Line())
-	}
-	port := run.ProjectPort(p, dir)
-	if l, busy := netinfo.PortBusy(port); busy {
-		parts = append(parts, ui.Info("порт "+port+" занят "+l.Command))
-	}
-	return []Line{{Label: "проект", Value: strings.Join(parts, ui.Dim(" \u00b7 "))}}
-}
-
 // network: интерфейс и адрес; VPN и обход, если включён; живые туннели. Шлюз покажет tim net.
 func network(cfg *config.Config) []Line {
 	phys, _ := netinfo.Physical()
@@ -128,15 +106,16 @@ func network(cfg *config.Config) []Line {
 	return []Line{{"сеть", strings.Join(parts, ui.Dim(" \u00b7 ")), ToNet}}
 }
 
+// ports: что запущено в папках работы - по папке, с портами; давнее - янтарным.
 func ports(cfg *config.Config) []Line {
-	byProject := map[string][]string{}
+	byFolder := map[string][]string{}
 	var names []string
 	for _, r := range machine.Ports(cfg) {
-		if r.Project == "" || r.Guessed {
+		if r.Folder == "" {
 			continue
 		}
-		if _, ok := byProject[r.Project]; !ok {
-			names = append(names, r.Project)
+		if _, ok := byFolder[r.Folder]; !ok {
+			names = append(names, r.Folder)
 		}
 		item := ":" + strings.Join(r.Ports, ", :")
 		if r.Kind != "" {
@@ -146,7 +125,7 @@ func ports(cfg *config.Config) []Line {
 		if r.Uptime >= machine.ForgottenAfter {
 			item += ui.Warn(" " + ui.Short(r.Uptime))
 		}
-		byProject[r.Project] = append(byProject[r.Project], item)
+		byFolder[r.Folder] = append(byFolder[r.Folder], item)
 	}
 	if len(names) == 0 {
 		return nil
@@ -154,7 +133,7 @@ func ports(cfg *config.Config) []Line {
 	sort.Strings(names)
 	items := make([]string, len(names))
 	for i, n := range names {
-		items[i] = n + "  " + ui.Dim(strings.Join(byProject[n], ", "))
+		items[i] = n + "  " + ui.Dim(strings.Join(byFolder[n], ", "))
 	}
 	return []Line{{"запущено", strings.Join(items, ui.Dim(" \u00b7 ")), ToRunning}}
 }
@@ -173,7 +152,7 @@ func services(*config.Config) []Line {
 		parts = append(parts, strings.Join(up, "  "))
 	}
 	if len(bad) > 0 {
-		parts = append(parts, ui.Bad("упали: "+strings.Join(bad, ", "))+ui.Dim("  (tim svc)"))
+		parts = append(parts, ui.Bad("упали: "+strings.Join(bad, ", "))+ui.Dim("  (brew services list)"))
 	}
 	if len(containers) > 0 {
 		var names []string
@@ -189,42 +168,6 @@ func services(*config.Config) []Line {
 		return nil
 	}
 	return []Line{{Label: "службы", Value: strings.Join(parts, "  ")}}
-}
-
-func repos(cfg *config.Config) []Line {
-	type repoRow struct {
-		name string
-		g    gitx.State
-	}
-	var clones []*config.Project
-	for i := range cfg.Projects {
-		if gitx.IsRepo(cfg.ProjectDir(&cfg.Projects[i])) {
-			clones = append(clones, &cfg.Projects[i])
-		}
-	}
-	states := par.Map(clones, par.Limit, func(p *config.Project) repoRow {
-		g, _ := gitx.Status(cfg.ProjectDir(p))
-		return repoRow{p.Name, g}
-	})
-	var rows []repoRow
-	for _, r := range states {
-		if r.g.Changes > 0 || r.g.Ahead > 0 {
-			rows = append(rows, r)
-		}
-	}
-	if len(rows) == 0 {
-		return []Line{{Label: "репо", Value: ui.Dim("всё закоммичено и отправлено")}}
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
-	out := []Line{{Label: "репо", Value: strconv.Itoa(len(rows)) + ui.Dim(" с изменениями или неотправленным")}}
-	for i, r := range rows {
-		if i == 6 {
-			out = append(out, Line{Value: ui.Dim(fmt.Sprintf("и ещё %d", len(rows)-6))})
-			break
-		}
-		out = append(out, Line{Value: ui.Pad(r.name, 22) + " " + r.g.Line()})
-	}
-	return out
 }
 
 func hogs(*config.Config) []Line {

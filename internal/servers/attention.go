@@ -13,7 +13,7 @@ import (
 // Attention: беды серверов из кэша последнего состояния - "timcode: перезагрузка, порт".
 func Attention(env *app.Env) []health.Alert {
 	var out []health.Alert
-	for _, t := range Targets(env, nil, false) {
+	for _, t := range Targets(env, nil) {
 		s, _, ok := saved(t.Alias)
 		if !ok {
 			continue
@@ -41,7 +41,7 @@ func Attention(env *app.Env) []health.Alert {
 func Household(env *app.Env) []string {
 	var out []string
 	var unchecked []string
-	for _, t := range Targets(env, nil, false) {
+	for _, t := range Targets(env, nil) {
 		s, _, ok := saved(t.Alias)
 		if !ok {
 			unchecked = append(unchecked, t.Alias)

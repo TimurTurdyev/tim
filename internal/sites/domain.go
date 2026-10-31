@@ -50,27 +50,15 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	return nil
 }
 
-// DomainOf: домен из аргумента, поля url проекта или проекта текущей папки.
+// DomainOf: домен из аргумента - имя, адрес сайта или url.
 func DomainOf(env *app.Env, arg string) (string, error) {
-	if arg != "" {
-		if p, ok := env.Cfg.Project(arg); ok && p.URL != "" {
-			h, _ := netinfo.HostPort(p.URL, "")
-			return inspect.Registrable(h), nil
-		}
-		h, _ := netinfo.HostPort(arg, "")
-		if !strings.Contains(h, ".") {
-			return "", ui.Errorf("не домен и не проект с полем url: %s", arg)
-		}
-		return h, nil
-	}
-	p, err := env.Project("")
-	if err != nil {
+	if arg == "" {
 		return "", ui.Errorf("укажи домен: tim domain example.com")
 	}
-	if p.URL == "" {
-		return "", ui.Errorf("у проекта %s нет поля url: tim domain <домен>", p.Name)
+	h, _ := netinfo.HostPort(arg, "")
+	if !strings.Contains(h, ".") {
+		return "", ui.Errorf("%s - не домен: tim domain example.com", arg)
 	}
-	h, _ := netinfo.HostPort(p.URL, "")
 	return h, nil
 }
 
@@ -243,11 +231,11 @@ func cut(list []string, n int) []string {
 	return append(list[:n:n], "и ещё "+strconv.Itoa(len(list)-n))
 }
 
-// printDomains: кратко по всем доменам реестра.
+// printDomains: кратко по всем доменам сайтов.
 func printDomains(cfg *config.Config) error {
-	domains := Domains(cfg)
+	domains := roundDomains(siteHosts(cfg, nil))
 	if len(domains) == 0 {
-		return ui.Errorf("ни у одного проекта нет поля url: tim proj add --url")
+		return ui.Errorf("сайтов нет: добавь их в конфиг - sites = [\"example.com\"]")
 	}
 	sort.Strings(domains)
 	for _, d := range domains {

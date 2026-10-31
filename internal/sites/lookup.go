@@ -83,13 +83,13 @@ func printCert(arg string, asJSON bool) error {
 	return nil
 }
 
-// printExpiries: сроки сертификатов списком; без доменов - сайты проектов из реестра.
+// printExpiries: сроки сертификатов списком; без доменов - сайты из списка sites.
 func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
 	if len(hosts) == 0 {
-		hosts = Domains(cfg)
+		hosts = siteHosts(cfg, nil)
 	}
 	if len(hosts) == 0 {
-		return ui.Errorf("доменов нет: tim cert <домен> или поле url у проектов (tim proj add --url)")
+		return ui.Errorf("доменов нет: tim cert <домен> или список sites в конфиге")
 	}
 	if asJSON {
 		return ui.JSON(par.Map(hosts, par.Limit, func(h string) certJSON {
@@ -118,17 +118,6 @@ func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
 		return ui.Verdictf("требуют внимания: %d из %d", bad, len(rows))
 	}
 	return nil
-}
-
-// Domains: хосты сайтов проектов из реестра - у кого есть поле url.
-func Domains(cfg *config.Config) []string {
-	var out []string
-	for _, p := range cfg.Projects {
-		if h, _ := netinfo.HostPort(p.URL, ""); h != "" {
-			out = append(out, h)
-		}
-	}
-	return out
 }
 
 func printDNS(arg, server string, asJSON bool) error {

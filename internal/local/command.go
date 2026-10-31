@@ -1,5 +1,5 @@
 // Package local: локальная разработка - имена в /etc/hosts, зона *.test через dnsmasq,
-// локальный домен проекту и сертификаты своим CA.
+// локальный домен папке и сертификаты своим CA.
 package local
 
 import (
@@ -94,29 +94,27 @@ func resolverCommand() *cobra.Command {
 func linkCommand(env *app.Env) *cobra.Command {
 	var name string
 	c := &cobra.Command{
-		Use:   "link [проект] [--name shop.test]",
-		Short: "Локальный домен проекту: имя в /etc/hosts, сертификат и url в реестре",
-		Long: `Три шага одной командой: имя (по умолчанию <проект>.test) в /etc/hosts в профиле link,
-сертификат своим CA в ~/.local/share/tim/certs и url = "https://имя" в реестре.
-Дальше tim serve <проект> --https отдаёт проект по этому адресу. Убрать всё обратно: tim unlink.`,
-		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return link(env, app.First(args), name) },
+		Use:   "link [имя] [--name shop.test]",
+		Short: "Локальный домен папке: имя в /etc/hosts и сертификат своим CA",
+		Long: `Два шага одной командой: имя (по умолчанию <папка>.test, папка - текущая) в /etc/hosts в профиле
+link и сертификат своим CA в ~/.local/share/tim/certs. Сертификат и ключ подключаются к dev-серверу:
+vite --https, php artisan serve за прокси и так далее. Убрать всё обратно: tim unlink.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return link(app.First(args), name) },
 	}
-	c.Flags().StringVar(&name, "name", "", "имя вместо <проект>.test")
+	c.Flags().StringVar(&name, "name", "", "имя целиком вместо <папка>.test")
 	return c
 }
 
 func unlinkCommand(env *app.Env) *cobra.Command {
 	var name string
 	c := &cobra.Command{
-		Use:               "unlink [проект] [--name shop.test]",
-		Short:             "Убрать то, что сделал tim link",
-		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: app.ProjectNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return unlink(env, app.First(args), name) },
+		Use:   "unlink [имя] [--name shop.test]",
+		Short: "Убрать то, что сделал tim link",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  func(cmd *cobra.Command, args []string) error { return unlink(app.First(args), name) },
 	}
-	c.Flags().StringVar(&name, "name", "", "имя вместо <проект>.test")
+	c.Flags().StringVar(&name, "name", "", "имя целиком вместо <папка>.test")
 	return c
 }
 

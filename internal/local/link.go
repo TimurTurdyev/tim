@@ -2,30 +2,26 @@ package local
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/hostsfile"
 	"github.com/TimurTurdyev/tim/internal/localca"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// linkProfile: профиль в /etc/hosts, куда link кладёт имена проектов.
+// linkProfile: профиль в /etc/hosts, куда link кладёт локальные имена папок.
 const linkProfile = "link"
 
-// link: имя в /etc/hosts, сертификат своим CA и url = "https://имя" в реестре.
-func link(env *app.Env, project, name string) error {
-	p, err := env.Project(project)
-	if err != nil {
-		return err
-	}
-	host := linkHost(p.Name, name)
+// link: имя в /etc/hosts и сертификат своим CA.
+func link(base, name string) error {
+	host := linkHost(base, name)
 	text, entries, err := hostsfile.Load()
 	if err != nil {
 		return err
 	}
-	ui.Println(ui.Label(p.Name) + "  https://" + host)
+	ui.Println(ui.Label("https://" + host))
 	if err := save(text, hostsfile.Add(entries, "127.0.0.1", []string{host}, linkProfile)); err != nil {
 		return err
 	}
@@ -45,23 +41,16 @@ func link(env *app.Env, project, name string) error {
 	if err := leaf.Save(certPath, keyPath); err != nil {
 		return err
 	}
-	p.URL = "https://" + host
-	if err := env.Save(); err != nil {
-		return err
-	}
 	ui.Println(ui.Dim("  сертификат " + certPath))
+	ui.Println(ui.Dim("  ключ       " + keyPath))
 	warnUntrusted()
-	ui.Println(ui.Dim("дальше: tim serve " + p.Name + " --https"))
+	ui.Println(ui.Dim("дальше: подключи сертификат и ключ к dev-серверу, например vite --https с server.https в конфиге"))
 	return nil
 }
 
-// unlink убирает то, что сделал link: имя, сертификат и url.
-func unlink(env *app.Env, project, name string) error {
-	p, err := env.Project(project)
-	if err != nil {
-		return err
-	}
-	host := linkHost(p.Name, name)
+// unlink убирает то, что сделал link: имя и сертификат.
+func unlink(base, name string) error {
+	host := linkHost(base, name)
 	text, entries, err := hostsfile.Load()
 	if err != nil {
 		return err
@@ -74,19 +63,18 @@ func unlink(env *app.Env, project, name string) error {
 		_ = os.Remove(certPath)
 		_ = os.Remove(keyPath)
 	}
-	if p.URL == "https://"+host {
-		p.URL = ""
-		if err := env.Save(); err != nil {
-			return err
-		}
-	}
 	ui.Println(ui.Label("убрано") + ui.Dim("  "+host))
 	return nil
 }
 
-func linkHost(project, name string) string {
+// linkHost: имя целиком из --name, иначе <имя>.test, а без имени - по текущей папке.
+func linkHost(base, name string) string {
 	if name != "" {
 		return strings.TrimSuffix(name, ".")
 	}
-	return hostsfile.LocalName(project)
+	if base == "" {
+		cwd, _ := os.Getwd()
+		base = filepath.Base(cwd)
+	}
+	return hostsfile.LocalName(base)
 }

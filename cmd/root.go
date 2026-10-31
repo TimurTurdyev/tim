@@ -20,9 +20,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/local"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/motd"
-	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/serve"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/shell"
 	"github.com/TimurTurdyev/tim/internal/sites"
@@ -39,9 +37,9 @@ var screens *home.Home
 
 var root = &cobra.Command{
 	Use:   "tim",
-	Short: "Помощник в терминале: проекты, сеть, туннели, запуск, утилиты",
-	Long: `tim держит под рукой проекты из реестра, ssh и маршруты мимо VPN, туннели, локальный запуск,
-сводку по машине и мелкие утилиты разработчика. Конфиг: ~/.config/tim/config.toml (TIM_CONFIG).
+	Short: "Помощник в терминале: сеть мимо VPN, серверы, сайты, машина, утилиты",
+	Long: `tim держит под рукой ssh и маршруты мимо VPN, туннели, серверы и сайты, сводку по машине, запущенное
+агентами и мелкие утилиты разработчика. Конфиг: ~/.config/tim/config.toml (TIM_CONFIG).
 TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие систему, вместо запуска.`,
 	SilenceUsage:  true,
 	Args:          cobra.NoArgs,
@@ -61,12 +59,12 @@ var groups = []struct {
 	id, title string
 	cmds      []string
 }{
-	{"proj", "Проекты", []string{"proj", "new", "go", "db", "each", "sync", "config", "init"}},
-	{"machine", "Машина", []string{"status", "hw", "top", "ps", "kill", "disk", "stats"}},
-	{"net", "Сервер и сеть", []string{"ssh", "server", "servers", "tunnel", "direct", "route", "vpn", "net", "ip", "ports", "port", "dns", "cert", "site", "audit", "domain", "mail", "http"}},
-	{"run", "Локальный запуск", []string{"serve", "run", "env", "logs", "open", "svc", "php"}},
+	{"machine", "Машина", []string{"status", "hw", "top", "ps", "kill", "ports", "port", "disk", "stats"}},
+	{"servers", "Серверы", []string{"server", "servers", "ssh", "tunnel"}},
+	{"net", "Сеть", []string{"vpn", "route", "direct", "net", "ip"}},
+	{"sites", "Сайты", []string{"site", "audit", "domain", "mail", "dns", "cert", "http", "check", "notify"}},
 	{"util", "Утилиты", utilCmds},
-	{"self", "Сам tim", []string{"doctor", "version", "self-update"}},
+	{"self", "Сам tim", []string{"init", "config", "doctor", "version", "self-update"}},
 }
 
 // utilCmds: мелкие утилиты. В общей справке они одной строкой - полный список: tim help utils.
@@ -108,10 +106,8 @@ func sectionCommands() [][]*cobra.Command {
 		machine.Commands(env),
 		disk.Commands(env),
 		bypass.Commands(env),
-		serve.Commands(env),
 		servers.Commands(env),
 		sites.Commands(env),
-		projects.Commands(env),
 		motd.Commands(env),
 		{screens.Command()},
 	}

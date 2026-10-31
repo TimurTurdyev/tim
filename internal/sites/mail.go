@@ -135,11 +135,11 @@ func printFindings(fs []inspect.Finding) int {
 	return bad
 }
 
-// printMailSummary: почта всех доменов реестра одной таблицей.
+// printMailSummary: почта всех доменов из списка сайтов одной таблицей.
 func printMailSummary(cfg *config.Config) error {
-	domains := Domains(cfg)
+	domains := roundDomains(siteHosts(cfg, nil))
 	if len(domains) == 0 {
-		return ui.Errorf("ни у одного проекта нет поля url: tim proj add --url")
+		return ui.Errorf("сайтов нет: добавь их в конфиг - sites = [\"example.com\"]")
 	}
 	sort.Strings(domains)
 	rows := MailVerdicts(domains)

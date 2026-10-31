@@ -25,7 +25,7 @@ type attackReport struct {
 	Owners   []srvinfo.Owner    `json:"owners,omitempty"`
 	Targeted []srvinfo.Attacker `json:"targeted,omitempty"`
 	Noise    srvinfo.NoiseSum   `json:"noise"`
-	Lists    bool               `json:"lists"`         // списки шума скачались
+	Lists    bool               `json:"lists"`          // списки шума скачались
 	Nets     map[string]string  `json:"nets,omitempty"` // адрес -> "AS60729 DE"
 }
 

@@ -38,9 +38,9 @@ clean:
 bench: build
 	@printf 'dev = "/tmp"\n' > $(BENCHCFG)
 	@if command -v hyperfine >/dev/null; then \
-		TIM_CONFIG=$(BENCHCFG) hyperfine -N -w 5 -r 50 './$(BIN) --version' './$(BIN) proj here' './$(BIN) init zsh'; \
+		TIM_CONFIG=$(BENCHCFG) hyperfine -N -w 5 -r 50 './$(BIN) --version' './$(BIN) config' './$(BIN) init zsh'; \
 	else \
-		for c in '--version' 'proj here' 'init zsh'; do \
+		for c in '--version' 'config' 'init zsh'; do \
 			s=$$(perl -MTime::HiRes=time -e 'print time'); \
 			for i in $$(seq 50); do TIM_CONFIG=$(BENCHCFG) ./$(BIN) $$c >/dev/null 2>&1; done; \
 			e=$$(perl -MTime::HiRes=time -e 'print time'); \

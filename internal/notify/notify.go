@@ -72,7 +72,7 @@ func post(u, contentType, body string) error {
 // redact: в ошибке net/http есть адрес целиком, а в адресе Telegram - токен.
 func redact(err error) error {
 	if ue, ok := errors.AsType[*url.Error](err); ok {
-		return fmt.Errorf("%s: %v", host(ue.URL), ue.Err)
+		return fmt.Errorf("%s: %w", host(ue.URL), ue.Err)
 	}
 	return err
 }

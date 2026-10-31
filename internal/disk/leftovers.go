@@ -66,14 +66,10 @@ func minor(g *leftover.Group) bool {
 	return g.Size < 50<<20 && len(g.Agents) == 0 && len(g.PIDs) == 0
 }
 
-// ownNames: имена проектов реестра и папок в корне разработки (~/Dev/projects/my-app), в нижнем
-// регистре - папка с таким именем в ~/Library своя, а не хвост.
+// ownNames: имена папок в корне разработки (~/Dev/projects/my-app) в нижнем регистре - папка с таким
+// именем в ~/Library своя, а не хвост.
 func ownNames(cfg *config.Config) map[string]bool {
 	own := map[string]bool{}
-	for i := range cfg.Projects {
-		own[strings.ToLower(cfg.Projects[i].Name)] = true
-		own[strings.ToLower(filepath.Base(cfg.ProjectDir(&cfg.Projects[i])))] = true
-	}
 	for _, pat := range []string{filepath.Join(cfg.Dev, "*"), filepath.Join(cfg.Dev, "*", "*")} {
 		dirs, _ := filepath.Glob(pat)
 		for _, d := range dirs {

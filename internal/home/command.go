@@ -14,10 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/TimurTurdyev/tim/internal/app"
-	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/projects"
 	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/serve"
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -41,10 +38,6 @@ type Home struct {
 	prepare   func(args []string)
 	utils     []string
 	entries   func() []tui.CommandEntry
-
-	todayMu    sync.Mutex
-	todayAt    time.Time
-	todayLines []string
 }
 
 // Options: что экранному режиму нужно от корня.
@@ -62,9 +55,8 @@ func New(env *app.Env, root *cobra.Command, o Options) *Home {
 		prepare: o.Prepare, utils: o.Utils}
 	// Дерево команд не меняется после запуска: подсказки собираются один раз, а не на каждую букву.
 	h.entries = sync.OnceValue(h.collectCommands)
-	env.Result, env.After, env.Open, env.Home = h.result, h.after, h.open, h.screen
-	env.Inside, env.ProjectsScreen = h.inside, h.projectsScreen
-	env.MachinePalette = serve.MachinePalette(env)
+	env.Result, env.After, env.Open = h.result, h.after, h.open
+	env.Inside = h.inside
 	return h
 }
 
@@ -72,23 +64,19 @@ func New(env *app.Env, root *cobra.Command, o Options) *Home {
 func (h *Home) Command() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ui",
-		Short: "Главный экран: поиск по проектам и командам, состояние машины",
+		Short: "Главный экран: беды машины, серверов и сайтов, разделы, поиск по командам",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return h.Run() },
 	}
 }
 
-// Run открывает главный экран, а без конфига - мастер первого запуска; без терминала - заставка.
+// Run открывает главный экран; без терминала - заставка.
 func (h *Home) Run() error {
 	if !tui.Available() {
 		h.overview()
 		return nil
 	}
-	first := h.screen()
-	if _, err := os.Stat(config.Path()); err != nil {
-		first = projects.OnboardScreen(h.env, h.screen)
-	}
-	dir, err := tui.Run(first, h.options())
+	dir, err := tui.Run(h.screen(), h.options())
 	if errors.Is(err, tui.ErrNoTTY) {
 		h.overview()
 		return nil
@@ -96,27 +84,28 @@ func (h *Home) Run() error {
 	if err != nil || dir == "" {
 		return err
 	}
-	// Шим читает папку из файла и делает cd; без шима подсказываем команду.
-	if f := os.Getenv("TIM_CD_FILE"); f != "" {
-		return os.WriteFile(f, []byte(dir), 0o600)
-	}
-	ui.Println(ui.Dim("перейти: cd ") + shellq.Quote(dir) + ui.Dim("  (tim init zsh - и tim сам сделает cd)"))
-	return nil
+	return cdTo(dir)
 }
 
 func (h *Home) options() tui.Options {
 	return tui.Options{Commands: h.commands, RunCommand: h.runLine}
 }
 
-// open: один экран на весь терминал; выбранную папку для cd отдаёт шиму.
+// open: один экран на весь терминал.
 func (h *Home) open(s tui.Screen) error {
 	dir, err := tui.Run(s, h.options())
 	if err != nil || dir == "" {
 		return err
 	}
+	return cdTo(dir)
+}
+
+// cdTo: папку для cd шим читает из файла; без шима подсказываем команду.
+func cdTo(dir string) error {
 	if f := os.Getenv("TIM_CD_FILE"); f != "" {
 		return os.WriteFile(f, []byte(dir), 0o600)
 	}
+	ui.Println(ui.Dim("перейти: cd ") + shellq.Quote(dir) + ui.Dim("  (tim init zsh - и tim сам сделает cd)"))
 	return nil
 }
 
@@ -226,10 +215,8 @@ func (h *Home) resetFlags(args []string) {
 	})
 }
 
-// commands: подсказки для строки ":" - команды с описанием и примеры из справки.
-// commands: подсказки для ":". После имени команды первыми идут её настоящие аргументы - из того же
-// автодополнения, что в оболочке: проекты, алиасы, фоновые серверы, а не образцы из справки.
-// commands: подсказки палитры; пустой ввод - сначала недавнее, иначе настоящие подстановки имён.
+// commands: подсказки палитры; пустой ввод - сначала недавнее. После имени команды первыми идут её
+// настоящие аргументы из автодополнения оболочки - алиасы, домены, - а не образцы из справки.
 func (h *Home) commands(prefix string) []tui.CommandEntry {
 	if strings.TrimSpace(prefix) == "" {
 		return append(h.recentEntries(), h.entries()...)
@@ -317,7 +304,7 @@ func (h *Home) collectCommands() []tui.CommandEntry {
 	return out
 }
 
-// hasSample: в примере есть значения для образца - проект shop, домен example.com, адрес. Такой
+// hasSample: в примере есть значения для образца - алиас prod, домен example.com, адрес. Такой
 // пример - шаблон: его подставляют и правят, а не выполняют как есть. Флаги без значений не в счёт.
 func (h *Home) hasSample(line string) bool {
 	c, rest, err := h.root.Find(strings.Fields(line))

@@ -11,7 +11,7 @@ import (
 type Level int
 
 const (
-	Skip Level = iota // проверить нечем, например у проекта нет url
+	Skip Level = iota // проверить нечем, например у домена нет почты
 	Info              // к сведению: не плохо и не хорошо
 	OK
 	Warn

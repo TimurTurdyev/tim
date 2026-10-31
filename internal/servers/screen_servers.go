@@ -57,7 +57,7 @@ func serversData(targets []Server) tui.BoardData {
 	}
 	nameW += 2
 	d := tui.BoardData{Columns: ui.Pad("СЕРВЕР", nameW) + ui.Pad("ОС", 20) + ui.Pad("РАБОТАЕТ", 10) + "НАХОДКИ"}
-	d.Empty = "Серверов нет: tim знает их из ~/.ssh/config и поля ssh у проектов"
+	d.Empty = "Серверов нет: tim берёт их из ~/.ssh/config - добавь туда Host с адресом сервера"
 	var oldest time.Time
 	for _, t := range targets {
 		s, at, ok := saved(t.Alias)
@@ -82,7 +82,7 @@ func ago(t time.Time) string {
 
 // serverRow: строка из кэша; в карточке - находки, диск и память, когда снято.
 func serverRow(t Server, s serverState, at time.Time, ok bool, nameW int) tui.BoardRow {
-	row := tui.BoardRow{ID: t.Alias, Find: strings.Join(t.Projects, " ")}
+	row := tui.BoardRow{ID: t.Alias}
 	card := &tui.Card{Title: t.Alias, Sub: "ssh " + t.Alias}
 	row.Card = card
 	if !ok {
@@ -118,9 +118,6 @@ func serverRow(t Server, s serverState, at time.Time, ok bool, nameW int) tui.Bo
 	}
 	if len(load) > 0 {
 		card.Facts = append(card.Facts, tui.Fact{Label: "занято", Value: strings.Join(load, " \u00b7 ")})
-	}
-	if len(t.Projects) > 0 {
-		card.Facts = append(card.Facts, tui.Fact{Label: "проекты", Value: strings.Join(t.Projects, ", ")})
 	}
 	return row
 }

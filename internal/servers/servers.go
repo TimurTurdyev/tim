@@ -32,7 +32,6 @@ type serversOptions struct{ all, json, record, install, uninstall bool }
 // serverState: один сервер в сводке - отчёт и находки или почему не достучались.
 type serverState struct {
 	Target   string         `json:"target"`
-	Projects []string       `json:"projects,omitempty"`
 	Report   srvinfo.Report `json:"report"`
 	Findings []health.Check `json:"findings"`
 	Err      string         `json:"error,omitempty"`
@@ -87,9 +86,9 @@ func runServers(env *app.Env, args []string, o serversOptions) error {
 		ui.Println(ui.Label("замер серверов убран") + ui.Dim("  журналы остались в "+stats.Dir()))
 		return nil
 	}
-	targets := Targets(env, args, o.all)
+	targets := Targets(env, args)
 	if len(targets) == 0 {
-		return ui.Errorf("серверов нет: у проектов не задано поле ssh (tim sync или конфиг); --all берёт все алиасы ~/.ssh/config")
+		return ui.Errorf("серверов нет: tim берёт их из ~/.ssh/config - добавь туда Host с адресом сервера")
 	}
 	if o.record {
 		return recordServers(targets)
@@ -105,10 +104,9 @@ func runServers(env *app.Env, args []string, o serversOptions) error {
 	return nil
 }
 
-// Server: сервер сводки - алиас, под которым заходим, и проекты, которые на нём живут.
+// Server: сервер сводки - алиас, под которым заходим.
 type Server struct {
-	Alias    string
-	Projects []string
+	Alias string
 }
 
 // hostKey: один хост под разными алиасами и пользователями - один ключ кэша.
@@ -120,9 +118,9 @@ func hostKey(alias string) string {
 	return t.Host + "-" + t.Port
 }
 
-// Targets: аргументы как есть, иначе ssh проектов реестра; all - ещё все алиасы ~/.ssh/config,
-// кроме git-хостов. Один хост под разными пользователями - один сервер.
-func Targets(env *app.Env, args []string, all bool) []Server {
+// Targets: аргументы как есть, иначе все алиасы ~/.ssh/config, кроме git-хостов. Один хост под разными
+// пользователями - один сервер.
+func Targets(env *app.Env, args []string) []Server {
 	var aliases []string
 	add := func(t string) {
 		if t != "" && !slices.Contains(aliases, t) {
@@ -133,14 +131,9 @@ func Targets(env *app.Env, args []string, all bool) []Server {
 		add(Target(env.Cfg, a))
 	}
 	if len(args) == 0 {
-		for _, p := range env.Cfg.Projects {
-			add(p.SSH)
-		}
-		if all {
-			for _, a := range sshx.Aliases() {
-				if !gitHost(a) {
-					add(a)
-				}
+		for _, a := range sshx.Aliases() {
+			if !gitHost(a) {
+				add(a)
 			}
 		}
 		sort.Strings(aliases)
@@ -163,10 +156,9 @@ func byHost(env *app.Env, aliases []string) []Server {
 		n, ok := index[key]
 		if !ok {
 			index[key] = len(out)
-			out = append(out, Server{Alias: a, Projects: env.ProjectsOn(a)})
+			out = append(out, Server{Alias: a})
 			continue
 		}
-		out[n].Projects = append(out[n].Projects, env.ProjectsOn(a)...)
 		if t.User == "root" && resolved[slices.Index(aliases, out[n].Alias)].User != "root" {
 			out[n].Alias = a
 		}
@@ -229,14 +221,14 @@ func printServers(states []serverState) {
 }
 
 func serversHeader() string {
-	return ui.Pad("сервер", 16) + ui.Pad("состояние", 30) + ui.Pad("up", 7) + ui.Pad("нагрузка", 10) + ui.Pad("память", 8) + ui.Pad("диск", 6) + "проекты"
+	return ui.Pad("сервер", 16) + ui.Pad("состояние", 30) + ui.Pad("up", 7) + ui.Pad("нагрузка", 10) + ui.Pad("память", 8) + "диск"
 }
 
 // serverLine: строка таблицы; у недоступного сервера цифр нет.
 func serverLine(s serverState) string {
 	line := ui.Pad(ui.Clip(s.Target, 15), 16) + ui.Pad(level.Lamp(s.level(), ui.Clip(s.state(), 27)), 30)
 	if s.Err != "" {
-		return line + ui.Pad("", 31) + ui.Dim(strings.Join(s.Projects, ", "))
+		return line
 	}
 	r := s.Report
 	cell := func(pct int, ok bool, width int) string {
@@ -249,8 +241,7 @@ func serverLine(s serverState) string {
 	line += cell(int(r.Load[1]*100/max(float64(r.Cores), 1)), r.Cores > 0, 10)
 	line += cell(int((r.MemTotal-r.MemAvail)*100/max(r.MemTotal, 1)), r.MemTotal > 0, 8)
 	d, ok := r.Root()
-	line += cell(d.Pct, ok, 6)
-	return line + ui.Dim(strings.Join(s.Projects, ", "))
+	return line + cell(d.Pct, ok, 6)
 }
 
 // problems: что печатать под строкой таблицы - только настоящие беды, остальное покажет tim server.

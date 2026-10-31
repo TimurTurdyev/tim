@@ -4,42 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
-	"github.com/TimurTurdyev/tim/internal/visits"
 )
 
 // ErrCanceled: человек закрыл выбор - команда тихо завершается.
 var ErrCanceled = errors.New("выбор отменён")
 
-// PickProject: выбор проекта из реестра, недавние сверху.
-func (e *Env) PickProject() (*config.Project, error) {
-	projects := e.Cfg.Projects
-	if len(projects) == 0 {
-		return nil, ui.Errorf("реестр пуст: tim config init или tim proj scan")
-	}
-	names := make([]string, len(projects))
-	for i, p := range projects {
-		names[i] = p.Name
-	}
-	// Недавние сверху: без запроса это порядок списка, с запросом - порядок при равных очках.
-	order := visits.Order(names, visits.Load(), time.Now())
-	items := make([]tui.Item, len(order))
-	for k, i := range order {
-		items[k] = tui.Item{Title: projects[i].Name, Hint: projects[i].Path}
-	}
-	k, err := tui.Pick("проект", items)
-	if err != nil {
-		return nil, PickErr(err, "проект", items)
-	}
-	return &e.Cfg.Projects[order[k]], nil
-}
-
-// PickAlias: выбор ssh-алиаса; рядом - проекты, которые на нём живут.
+// PickAlias: выбор ssh-алиаса.
 func (e *Env) PickAlias() (string, error) {
 	var aliases []string
 	var items []tui.Item
@@ -49,9 +23,6 @@ func (e *Env) PickAlias() (string, error) {
 		}
 		t := sshx.Resolve(a)
 		hint := t.User + "@" + t.Host
-		if ps := e.ProjectsOn(a); len(ps) > 0 {
-			hint += "  " + strings.Join(ps, " ")
-		}
 		aliases = append(aliases, a)
 		items = append(items, tui.Item{Title: a, Hint: hint})
 	}
@@ -60,17 +31,6 @@ func (e *Env) PickAlias() (string, error) {
 		return "", PickErr(err, "алиас", items)
 	}
 	return aliases[i], nil
-}
-
-// ProjectsOn: проекты, которые деплоятся на ssh-алиас.
-func (e *Env) ProjectsOn(alias string) []string {
-	var out []string
-	for _, p := range e.Cfg.Projects {
-		if p.SSH == alias {
-			out = append(out, p.Name)
-		}
-	}
-	return out
 }
 
 // PickErr: без терминала выбирать некому - варианты печатаются в stdout, чтобы скрипт мог их взять.

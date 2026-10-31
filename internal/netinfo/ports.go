@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -48,19 +47,6 @@ func (p Ports) Busy(port string) bool {
 	_, busy := p.Who(port)
 	return busy
 }
-
-// FirstFree: первый порт от from до 65535, который не занят; ok=false - свободных не осталось.
-func FirstFree(from int, taken func(int) bool) (port int, ok bool) {
-	for p := max(from, 1); p <= 65535; p++ {
-		if !taken(p) {
-			return p, true
-		}
-	}
-	return 0, false
-}
-
-// Port: номер порта строкой, как его пишут в адресе.
-func Port(n int) string { return strconv.Itoa(n) }
 
 // Listening: слушающие TCP-порты через lsof.
 type Listener struct {

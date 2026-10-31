@@ -61,14 +61,10 @@ func Household(cfg *config.Config) []string {
 	if len(rows) == 0 {
 		return nil
 	}
-	out := []string{ui.Dim("ХОЗЯЙСТВО \u00b7 проверено " + since(at)),
-		ui.Dim(ui.Pad("САЙТ", 18) + ui.Pad("ПРОЕКТ", 14) + ui.Pad("ОТВЕТ", 9) + ui.Pad("СЕРТ, ДН", 11) + ui.Pad("ПОЧТА", 12) + "ДОМЕН, ДН")}
+	out := []string{ui.Dim("ХОЗЯЙСТВО · проверено " + since(at)),
+		ui.Dim(ui.Pad("САЙТ", 24) + ui.Pad("ОТВЕТ", 9) + ui.Pad("СЕРТ, ДН", 11) + ui.Pad("ПОЧТА", 12) + "ДОМЕН, ДН")}
 	for _, r := range rows {
-		p, err := cfg.Pick(r.Name)
-		if err != nil {
-			continue
-		}
-		line := ui.Fit(siteHost(p), 18) + ui.Fit(r.Name, 14)
+		line := ui.Fit(r.Name, 24)
 		for i, col := range siteCols {
 			c := r.Get(col.check)
 			w := []int{9, 11, 12, 10}[i]
@@ -83,15 +79,11 @@ func Household(cfg *config.Config) []string {
 	return out
 }
 
-// DomainAttention: домены проектов с неотмеченным новым - "lpack-spb.ru: сменилась запись MX". Из
+// DomainAttention: домены сайтов с неотмеченным новым - "lpack-spb.ru: сменилась запись MX". Из
 // хранилища, без сети: наблюдает обход и вкладки домена.
 func DomainAttention(cfg *config.Config) []health.Alert {
-	projects := make([]*config.Project, 0, len(cfg.Projects))
-	for i := range cfg.Projects {
-		projects = append(projects, &cfg.Projects[i])
-	}
 	var out []health.Alert
-	for _, d := range roundDomains(projects) {
+	for _, d := range roundDomains(siteHosts(cfg, nil)) {
 		if news := domainNews(d); len(news) > 0 {
 			out = append(out, health.Alert{Level: level.Warn, Text: d + ": " + strings.Join(news, ", ")})
 		}

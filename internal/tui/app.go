@@ -105,7 +105,7 @@ type CommandEntry struct {
 	Confirm *Dialog
 }
 
-// Paletter: у экрана своя группа в палитре - заготовки сервера, задачи проекта. Она стоит первой;
+// Paletter: у экрана своя группа в палитре - например, заготовки сервера. Она стоит первой;
 // title вида "на сервере prod · этот экран": до первой точки - заголовок, дальше - пояснение.
 type Paletter interface {
 	Palette() (title string, entries []CommandEntry)

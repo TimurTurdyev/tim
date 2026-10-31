@@ -12,11 +12,11 @@ import (
 	"github.com/TimurTurdyev/tim/internal/brew"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/doctor"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/notify"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/rcfile"
 	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -86,7 +86,6 @@ func home(s string) string {
 func diagnose(env *app.Env, all bool) error {
 	r := &report{all: all}
 	checkConfig(r, env.Cfg)
-	checkRegistry(r, env.Cfg)
 	checkShim(r)
 	dirs := filepath.SplitList(os.Getenv("PATH"))
 	checkPath(r, dirs)
@@ -106,42 +105,27 @@ func diagnose(env *app.Env, all bool) error {
 func checkConfig(r *report, cfg *config.Config) {
 	r.title("Конфиг")
 	if _, err := os.Stat(config.Path()); err != nil {
-		r.warn(config.Path() + " нет, работают значения по умолчанию: tim config init")
+		r.ok(config.Path() + " нет, работают значения по умолчанию")
 	} else {
 		r.ok(config.Path())
 	}
 	if st, err := os.Stat(cfg.Dev); err != nil || !st.IsDir() {
-		r.bad("корня проектов нет: " + cfg.Dev)
+		r.bad("папки с кодом нет: " + cfg.Dev + " - поле dev в конфиге")
 	} else {
-		r.ok("корень проектов " + cfg.Dev)
+		r.ok("папка с кодом " + cfg.Dev)
+	}
+	for _, h := range cfg.Hosts {
+		if _, err := netinfo.ParseTarget(h.Addr); err != nil {
+			r.bad("цель обхода " + h.Addr + ": " + err.Error())
+		}
+	}
+	if legacy := cfg.Legacy(); legacy != "" {
+		r.warn("в конфиге остались " + legacy + " - tim их больше не читает, можно убрать руками")
 	}
 	if where := notify.Configured(cfg.Notify); len(where) > 0 {
 		r.ok("итог обхода уходит в " + strings.Join(where, ", ") + "; проверить - tim notify test")
 	} else if cfg.Notify != (config.Notify{}) {
 		r.warn("[notify] неполный: у Telegram нужны и telegram, и chat; tim notify --help")
-	}
-}
-
-func checkRegistry(r *report, cfg *config.Config) {
-	r.title("Реестр")
-	if len(cfg.Projects) == 0 {
-		r.warn("проектов нет: tim proj scan")
-		return
-	}
-	aliases := map[string]bool{}
-	for _, a := range sshx.Aliases() {
-		aliases[a] = true
-	}
-	findings := doctor.Registry(cfg, aliases)
-	for _, f := range findings {
-		if f.Bad {
-			r.bad(f.Text)
-		} else {
-			r.warn(f.Text)
-		}
-	}
-	if len(findings) == 0 {
-		r.ok(strconv.Itoa(len(cfg.Projects)) + " проектов, папки на месте, повторов нет")
 	}
 }
 
@@ -160,7 +144,7 @@ func checkShim(r *report) {
 		r.warn("шим подключён, но эта оболочка открыта раньше: открой новый терминал")
 		return
 	}
-	r.warn("шим не подключён: tim init (без него не работают tim go и tim php use)")
+	r.warn("шим не подключён: tim init (без него экраны не переходят в папку)")
 }
 
 func checkPath(r *report, dirs []string) {
@@ -299,7 +283,7 @@ func checkServices(r *report) {
 		r.title("Службы systemd")
 		failed := sysinfo.FailedUnits()
 		for _, u := range failed {
-			r.bad(u + " упала: tim svc logs " + strings.TrimSuffix(u, ".service"))
+			r.bad(u + " упала: почему - journalctl -u " + u + " -n 50")
 		}
 		if len(failed) == 0 {
 			r.ok("упавших нет")
@@ -315,7 +299,7 @@ func checkServices(r *report) {
 	failed := 0
 	for _, a := range sysinfo.ParseLaunchctl(out) {
 		if !a.Running() && a.Status != 0 {
-			r.bad(a.Name + " упал с кодом " + strconv.Itoa(a.Status) + ": tim svc logs " + a.Name)
+			r.bad(a.Name + " упал с кодом " + strconv.Itoa(a.Status) + ": заново - brew services restart " + a.Name)
 			failed++
 		}
 	}

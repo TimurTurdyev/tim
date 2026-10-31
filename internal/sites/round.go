@@ -8,11 +8,9 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/fill"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
-	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/notify"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
@@ -31,15 +29,11 @@ var seriousCols = []string{"сайт", "сертификат", "почта", "д
 // alert: строка уведомления и её ключ - по ключу понятно, что о ней уже писали, даже если числа в ней сменились.
 type alert struct{ key, line string }
 
-// roundDomains: домены проектов для наблюдения записей и выпусков сертификатов.
-func roundDomains(projects []*config.Project) []string {
+// roundDomains: регистрируемые домены сайтов - для наблюдения записей и выпусков сертификатов.
+func roundDomains(hosts []string) []string {
 	var out []string
-	for _, p := range projects {
-		host, _ := netinfo.HostPort(p.URL, "")
-		if p.URL == "" || host == "" || fill.Local(host) {
-			continue
-		}
-		if base := inspect.Registrable(host); !slices.Contains(out, base) {
+	for _, h := range hosts {
+		if base := inspect.Registrable(h); !slices.Contains(out, base) {
 			out = append(out, base)
 		}
 	}
@@ -49,17 +43,6 @@ func roundDomains(projects []*config.Project) []string {
 // watchDomains: записи и сертификаты доменов обхода - сравниваются с прошлым разом.
 func watchDomains(domains []string) {
 	par.Map(domains, 4, watchDomain)
-}
-
-// roundAliases: серверы проектов обхода.
-func roundAliases(projects []*config.Project) []string {
-	var out []string
-	for _, p := range projects {
-		if p.SSH != "" && !slices.Contains(out, p.SSH) {
-			out = append(out, p.SSH)
-		}
-	}
-	return out
 }
 
 func roundAlerts(rows []health.Row, domains, aliases []string) []alert {
@@ -133,7 +116,9 @@ func roundScope(rows []health.Row, domains, aliases []string) string {
 	if n := len(domains); n > 0 {
 		parts = append(parts, ui.Count(n, "домен", "домена", "доменов"))
 	}
-	parts = append(parts, ui.Count(len(rows), "проект", "проекта", "проектов"))
+	if sites := len(rows) - len(aliases); sites > 0 {
+		parts = append(parts, ui.Count(sites, "сайт", "сайта", "сайтов"))
+	}
 	return strings.Join(parts, ", ")
 }
 

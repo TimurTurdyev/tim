@@ -12,7 +12,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// ssh: алиас, проект или user@host; без аргумента - выбор алиаса, list - список.
+// ssh: алиас или user@host; без аргумента - выбор алиаса, list - список.
 func ssh(env *app.Env, args []string) error {
 	if len(args) > 0 && args[0] == "list" || len(args) == 0 && !app.Interactive() {
 		printAliases(env)
@@ -33,29 +33,15 @@ func ssh(env *app.Env, args []string) error {
 	return runner.Exec("ssh", append([]string{target}, args[1:]...)...)
 }
 
-// Target: куда заходить отчёту о сервере - ssh проекта или аргумент как есть.
-func Target(cfg *config.Config, arg string) string {
-	if p, ok := cfg.Project(arg); ok && p.SSH != "" {
-		return p.SSH
-	}
-	return arg
-}
+// Target: куда заходить отчёту о сервере - алиас или user@host как есть.
+func Target(cfg *config.Config, arg string) string { return arg }
 
-// sshTarget: алиас как есть, проект через его поле ssh, иначе user@host или host.
+// sshTarget: алиас как есть, иначе user@host или host.
 func sshTarget(cfg *config.Config, want string) (string, error) {
-	if sshx.IsAlias(want) || strings.Contains(want, "@") {
+	if sshx.IsAlias(want) || strings.Contains(want, "@") || netinfo.IsIPv4(want) || strings.Contains(want, ".") {
 		return want, nil
 	}
-	if p, ok := cfg.Project(want); ok {
-		if p.SSH == "" {
-			return "", ui.Errorf("у проекта %s нет ssh-алиаса в конфиге", want)
-		}
-		return p.SSH, nil
-	}
-	if netinfo.IsIPv4(want) || strings.Contains(want, ".") {
-		return want, nil
-	}
-	return "", ui.Errorf("нет алиаса %s в ~/.ssh/config и проекта с таким именем", want)
+	return "", ui.Errorf("нет алиаса %s в ~/.ssh/config: tim ssh list", want)
 }
 
 // ensureBypass: если адрес сервера уходит в туннель или на шлюз прежней сети, предлагает маршрут
@@ -82,6 +68,6 @@ func printAliases(env *app.Env) {
 			continue
 		}
 		t := sshx.Resolve(a)
-		ui.Println(ui.Label(ui.Pad(a, 24)) + " " + ui.Pad(t.User+"@"+t.Host, 34) + " " + ui.Dim(strings.Join(env.ProjectsOn(a), " ")))
+		ui.Println(ui.Label(ui.Pad(a, 24)) + " " + t.User + "@" + t.Host)
 	}
 }

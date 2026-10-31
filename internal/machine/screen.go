@@ -10,33 +10,35 @@ import (
 	"github.com/TimurTurdyev/tim/internal/tui"
 )
 
+// Вкладки Машины по порядку.
+const (
+	tabHW = iota
+	tabProcs
+	tabRunning
+)
+
 // HWScreen: Машина на вкладке Железо. Паспорт собирается при первом замере, уже в фоне - открытие
 // экрана не ждёт system_profiler.
-func HWScreen(env *app.Env) tui.Screen {
-	s := machineScreen(env, 0, tui.ProcsOpts{})
-	if env.MachinePalette != nil {
-		tui.SetPalette(s, env.MachinePalette)
-	}
-	return s
-}
+func HWScreen(env *app.Env) tui.Screen { return machineScreen(env, tabHW, tui.ProcsOpts{}) }
 
 // ProcsScreen: Машина на вкладке Процессы; query - сразу отфильтровать.
 func ProcsScreen(env *app.Env, query string) tui.Screen {
-	return machineScreen(env, 1, tui.ProcsOpts{Query: query})
+	return machineScreen(env, tabProcs, tui.ProcsOpts{Query: query})
 }
 
 // MemoryScreen: процессы по памяти; из беды памяти - курсор на держателе и беда над списком.
 func MemoryScreen(env *app.Env, warning, holder string) tui.Screen {
-	return machineScreen(env, 1, tui.ProcsOpts{ByMem: true, Focus: holder, Warning: warning})
+	return machineScreen(env, tabProcs, tui.ProcsOpts{ByMem: true, Focus: holder, Warning: warning})
 }
 
-// machineScreen: вкладки Железо, Процессы и Защита на одном экране.
+// machineScreen: вкладки Железо, Процессы, Запущенные и Защита на одном экране.
 func machineScreen(env *app.Env, start int, po tui.ProcsOpts) tui.Screen {
 	po.Load, po.Close = loadProcs, closeGroup
 	procsTab := tui.NewProcs(po).(tui.Tab)
 	src, err := SourceFor()
 	if err != nil {
-		return tui.NewTabs([]string{"Машина"}, []tui.Tab{procsTab, protectTab(env)}, 0)
+		// Без Железа вкладки сдвигаются на одну.
+		return tui.NewTabs([]string{"Машина"}, []tui.Tab{procsTab, runningTab(env), protectTab(env)}, max(0, start-1))
 	}
 	base := sync.OnceValue(src.Collect)
 	hw := tui.NewHW(tui.HWOpts{
@@ -48,7 +50,7 @@ func machineScreen(env *app.Env, start int, po tui.ProcsOpts) tui.Screen {
 			return s
 		},
 	})
-	return tui.NewTabs([]string{"Машина"}, []tui.Tab{hw, procsTab, protectTab(env)}, start)
+	return tui.NewTabs([]string{"Машина"}, []tui.Tab{hw, procsTab, runningTab(env), protectTab(env)}, start)
 }
 
 func loadProcs() tui.ProcsData {

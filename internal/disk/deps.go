@@ -43,10 +43,7 @@ func deps(env *app.Env, o options, args []string) error {
 	}
 	s := diskuse.Summarize(items, 20, minSize)
 	for _, it := range s.Top {
-		owner := ""
-		if p, ok := env.Cfg.ProjectHere(it.Path); ok {
-			owner = p.Name
-		}
+		owner := repoName(it.Path)
 		ui.Println(ui.Label(ui.Pad(ui.Bytes(it.Size), 9)) + " " + ui.Pad(owner, 20) + " " + ui.Dim(paths.Show(it.Path)))
 	}
 	kinds := make([]string, 0, len(s.ByKind))
@@ -79,9 +76,8 @@ func cleanStale(cfg *config.Config, items []diskuse.Item, minSize int64, o optio
 	}
 	var freed int64
 	for _, it := range stale {
-		owner, _ := cfg.ProjectHere(it.Path)
 		days := int(time.Since(touched[it.Path]).Hours() / 24)
-		q := fmt.Sprintf("%s %s (%s, не трогали %d дн) - в Корзину?", ui.Bytes(it.Size), paths.Show(it.Path), owner.Name, days)
+		q := fmt.Sprintf("%s %s (%s, не трогали %d дн) - в Корзину?", ui.Bytes(it.Size), paths.Show(it.Path), repoName(it.Path), days)
 		if !runner.Confirm(q) {
 			continue
 		}
@@ -99,9 +95,9 @@ func cleanStale(cfg *config.Config, items []diskuse.Item, minSize int64, o optio
 	return nil
 }
 
-// touchTimes: когда трогали проект каждой папки - последний коммит или изменение в папке над
-// найденной, что позже. git log идёт один раз на проект, а не на каждую найденную папку.
-// Папки вне реестра отметки не получают и в очистку не попадают.
+// touchTimes: когда трогали репозиторий каждой папки - последний коммит или изменение в папке над
+// найденной, что позже. git log идёт один раз на репозиторий, а не на каждую найденную папку.
+// Папки вне репозиториев отметки не получают и в очистку не попадают.
 func touchTimes(cfg *config.Config, items []diskuse.Item) map[string]time.Time {
 	var mu sync.Mutex
 	commits := map[string]func() time.Time{}
@@ -116,11 +112,11 @@ func touchTimes(cfg *config.Config, items []diskuse.Item) map[string]time.Time {
 		return f()
 	}
 	times := par.Map(items, par.Limit, func(it diskuse.Item) time.Time {
-		p, ok := cfg.ProjectHere(it.Path)
+		repo, ok := repoOf(it.Path)
 		if !ok {
 			return time.Time{}
 		}
-		t := commitOf(cfg.ProjectDir(p))
+		t := commitOf(repo)
 		if st, err := os.Stat(filepath.Dir(it.Path)); err == nil && st.ModTime().After(t) {
 			t = st.ModTime()
 		}

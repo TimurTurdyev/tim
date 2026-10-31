@@ -78,4 +78,3 @@ func banCommand(target, ip string) error {
 func banNote(p banPlan) string {
 	return p.Undo + "; tim закроется, пароль sudo, если нужен, спросит ssh"
 }
-

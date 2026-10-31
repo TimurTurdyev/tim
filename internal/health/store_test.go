@@ -14,10 +14,10 @@ func TestSavedRowRoundTrip(t *testing.T) {
 	if !ok || got.Get("почта").Level != level.Bad {
 		t.Fatalf("из кэша: %+v %v", got, ok)
 	}
-	// Проверка без сети не стирает сетевые ответы.
+	// Несделанная проверка не стирает прежний ответ.
 	SaveRows([]Row{{Name: "shop", Checks: []Check{{Name: "git", Level: level.OK}, {Name: "почта", Level: level.Skip}}}})
 	got, _ = SavedRow("shop")
 	if got.Get("почта").Level != level.Bad || got.Get("git").Level != level.OK {
-		t.Errorf("после проверки без сети: %+v", got.Checks)
+		t.Errorf("после несделанной проверки: %+v", got.Checks)
 	}
 }

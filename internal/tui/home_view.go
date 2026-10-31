@@ -46,7 +46,7 @@ func (h *home) groupsView(w, room int) []string {
 	fit := room - len(out) - 1
 	switch {
 	case len(rec) == 0 && h.ready:
-		out = append(out, "   "+styleHead.Render("НЕДАВНЕЕ"), "   "+styleHint.Render("проекты и команды, которые открываешь, появятся здесь"))
+		out = append(out, "   "+styleHead.Render("НЕДАВНЕЕ"), "   "+styleHint.Render("команды, которые запускаешь, появятся здесь"))
 	case len(rec) > 0 && fit >= min(homeMinRecent, len(rec)):
 		out = append(out, "   "+styleHead.Render("НЕДАВНЕЕ"))
 		for _, i := range rec[:min(fit, len(rec))] {
@@ -191,25 +191,11 @@ func (h *home) searchView(width, height int) []string {
 	return out
 }
 
-// thirdView: третья колонка широкого окна - что сделано сегодня и хозяйство из кэша проверок.
+// thirdView: третья колонка широкого окна - хозяйство из кэша проверок.
 func (h *home) thirdView(w int) []string {
 	var out []string
-	switch {
-	case !h.todayOK:
-		out = append(out, styleHead.Render("СЕГОДНЯ"), styleDim.Render(Spinner()+" считаю коммиты"))
-	case len(h.today) == 0:
-		out = append(out, styleHead.Render("СЕГОДНЯ"), styleDim.Render("коммитов сегодня нет"))
-	default:
-		out = append(out, styleHead.Render("СЕГОДНЯ"))
-		for _, l := range h.today {
-			out = append(out, ui.Clip(l, w))
-		}
-	}
-	if len(h.mach.Household) > 0 {
-		out = append(out, "")
-		for _, l := range h.mach.Household {
-			out = append(out, ui.Clip(l, w))
-		}
+	for _, l := range h.mach.Household {
+		out = append(out, ui.Clip(l, w))
 	}
 	return out
 }

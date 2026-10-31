@@ -155,11 +155,6 @@ func Exec(name string, args ...string) error {
 	return cmd.Run()
 }
 
-// ExecEnv как Exec, но с дополнительными переменными окружения (пароли баз).
-func ExecEnv(env []string, name string, args ...string) error {
-	return Stream(env, os.Stdin, os.Stdout, "", name, args...)
-}
-
 // Stream запускает команду со своими stdin и stdout; note дописывается к строке dry-run (например "> файл").
 func Stream(env []string, in io.Reader, out io.Writer, note, name string, args ...string) error {
 	if DryRun {
@@ -244,85 +239,10 @@ func answer(yes bool) string {
 	return "нет"
 }
 
-// lookIn ищет программу по PATH из env, если он там задан: exec.Command смотрит только PATH самого tim.
-func lookIn(env []string, name string) string {
-	if strings.Contains(name, "/") {
-		return name
-	}
-	for _, e := range env {
-		path, ok := strings.CutPrefix(e, "PATH=")
-		if !ok {
-			continue
-		}
-		for _, d := range filepath.SplitList(path) {
-			p := filepath.Join(d, name)
-			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
-				return p
-			}
-		}
-	}
-	return name
-}
-
 // Has: программа есть в PATH.
 func Has(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-// ExecIn как Exec, но в папке dir и с дополнительным окружением.
-func ExecIn(dir string, env []string, name string, args ...string) error {
-	if DryRun {
-		ui.Println(ui.Dim("$ cd " + shellq.Join([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+shellq.Join(append([]string{name}, args...)))))
-		return nil
-	}
-	cmd := exec.Command(lookIn(env, name), args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
-}
-
-// CaptureIn выполняет команду, меняющую систему, в папке dir и возвращает её вывод; в dry-run только печатает.
-func CaptureIn(dir, name string, args ...string) (string, error) {
-	if DryRun {
-		ui.Println(ui.Dim("$ cd " + shellq.Join([]string{dir}) + " && " + shellq.Join(append([]string{name}, args...))))
-		return "", nil
-	}
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-// Start запускает команду в фоне в своей группе процессов, вывод пишет в logPath; возвращает pid.
-// В dry-run только печатает и возвращает 0.
-func Start(dir string, env []string, logPath, name string, args ...string) (int, error) {
-	if DryRun {
-		ui.Println(ui.Dim("$ cd " + shellq.Join([]string{dir}) + " && " + strings.TrimSpace(strings.Join(env, " ")+" "+shellq.Join(append([]string{name}, args...))) + " > " + logPath + " &"))
-		return 0, nil
-	}
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = log.Close() }()
-	cmd := exec.Command(lookIn(env, name), args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdout, cmd.Stderr = log, log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return 0, err
-	}
-	pid := cmd.Process.Pid
-	_ = cmd.Process.Release()
-	return pid, nil
-}
-
-// StopGroup шлёт SIGTERM всей группе процессов pid (запущенной через Start).
-func StopGroup(pid int) error {
-	return Run("kill", "-TERM", "--", "-"+strconv.Itoa(pid))
 }
 
 // WriteRoot пишет файл, который может принадлежать системе: сначала напрямую,

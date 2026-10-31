@@ -27,6 +27,9 @@ const (
 	blockFull  = "\u2588"
 )
 
+// cronExamples: частые расписания - описание у каждого берётся у того же разбора.
+var cronExamples = []string{"*/5 * * * *", "0 * * * *", "0 3 * * *", "30 9 * * 1-5", "0 */2 * * *", "0 0 1 * *", "0 10 * * 0,6"}
+
 type passOptions struct {
 	length, count                int
 	noSymbols, noAmbiguous, copy bool
@@ -221,9 +224,6 @@ func printCron(args []string, runs int) error {
 	}
 	return nil
 }
-
-// cronExamples: частые расписания - описание у каждого берётся у того же разбора.
-var cronExamples = []string{"*/5 * * * *", "0 * * * *", "0 3 * * *", "30 9 * * 1-5", "0 */2 * * *", "0 0 1 * *", "0 10 * * 0,6"}
 
 // printCronHelp: как пишется выражение - без него tim cron ничего не проверяет, а объясняет.
 func printCronHelp() {

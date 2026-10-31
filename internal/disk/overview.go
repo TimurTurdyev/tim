@@ -260,15 +260,8 @@ func stopAt(home string) func(string) bool {
 	}
 }
 
-// ownerOf: чей проект лежит по пути - для подписей мест.
-func ownerOf(cfg *config.Config) func(string) string {
-	return func(path string) string {
-		if p, ok := cfg.ProjectHere(path); ok {
-			return p.Name
-		}
-		return ""
-	}
-}
+// ownerOf: чей репозиторий лежит по пути - для подписей мест.
+func ownerOf(cfg *config.Config) func(string) string { return repoName }
 
 func sortRows(rows []diskuse.Row) {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Size > rows[j].Size })

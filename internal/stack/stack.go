@@ -1,18 +1,20 @@
-package run
+// Package stack: чем собрана папка проекта - Laravel, Vite, Go, Python - по файлам в её корне.
+package stack
 
 import (
+	"os"
 	"path/filepath"
 )
 
-// Stack: laravel, vitepress, go, python, php, node, make или other.
-// stackNames: как стек называется на экране; "other" и "make" - без имени.
-var stackNames = map[string]string{"laravel": "Laravel", "node": "Node.js", "php": "PHP", "go": "Go",
+// names: как стек называется на экране; "other" и "make" - без имени.
+var names = map[string]string{"laravel": "Laravel", "node": "Node.js", "php": "PHP", "go": "Go",
 	"python": "Python", "vitepress": "VitePress"}
 
-// StackName: стек проекта словами для списков и плиток; неизвестный - пусто.
-func StackName(dir string) string { return stackNames[Stack(dir)] }
+// Name: стек папки словами для списков; неизвестный - пусто.
+func Name(dir string) string { return names[Of(dir)] }
 
-func Stack(dir string) string {
+// Of: laravel, vitepress, go, python, php, node, make или other.
+func Of(dir string) string {
 	switch {
 	case exists(filepath.Join(dir, "artisan")):
 		return "laravel"
@@ -31,4 +33,9 @@ func Stack(dir string) string {
 		return "make"
 	}
 	return "other"
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

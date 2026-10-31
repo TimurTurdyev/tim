@@ -50,8 +50,8 @@ func topCommand(env *app.Env) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "top [--by app|project] [--cpu] [-n 10] [--json]",
 		Short: "Кто занял память и CPU: по приложениям или по проектам",
-		Long: `Складывает процессы по приложению (все помощники браузера - в одну строку) или по проекту
-реестра (по рабочей папке процесса). Память - RSS: общие страницы считаются в каждом процессе,
+		Long: `Складывает процессы по приложению (все помощники браузера - в одну строку) или по проекту -
+git-корню рабочей папки процесса. Память - RSS: общие страницы считаются в каждом процессе,
 поэтому у многопроцессных приложений сумма выше, чем в Мониторе системы.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,7 +104,7 @@ func portsCommand(env *app.Env) *cobra.Command {
 	var hours float64
 	c := &cobra.Command{
 		Use:   "ports [--all] [--old [--older 8h] [--kill]]",
-		Short: "Кто слушает TCP-порты: процесс, сколько работает, чей проект",
+		Short: "Кто слушает TCP-порты: процесс, папка, кто запустил, сколько работает",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
@@ -115,8 +115,8 @@ func portsCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVarP(&o.all, "all", "a", false, "показать и системные процессы")
-	c.Flags().BoolVar(&o.old, "old", false, "dev-серверы проектов, которые работают дольше --older")
-	c.Flags().StringVar(&older, "older", "8h", "с какого возраста dev-сервер считается забытым: 8h, 2d")
+	c.Flags().BoolVar(&o.old, "old", false, "забытое: процессы закрытых или молчащих сессий агента, запущенное вручную дольше --older")
+	c.Flags().StringVar(&older, "older", "8h", "с какого возраста процесс считается забытым: 8h, 2d")
 	c.Flags().Float64Var(&hours, "hours", 0, "")
 	_ = c.Flags().MarkHidden("hours")
 	c.Flags().BoolVar(&o.kill, "kill", false, "с --old: предложить остановить каждый")

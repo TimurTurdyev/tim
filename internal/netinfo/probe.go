@@ -20,29 +20,6 @@ func Dial(addr string, limit time.Duration) (time.Duration, error) {
 	return time.Since(start), nil
 }
 
-// WaitPort ждёт, пока локальный порт начнёт принимать соединения; false - не дождались за limit.
-func WaitPort(port string, limit time.Duration) bool {
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
-		if _, err := Dial("127.0.0.1:"+port, 300*time.Millisecond); err == nil {
-			return true
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	return false
-}
-
-// FreePort: свободный порт на loopback, который выдала система.
-func FreePort() (string, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = l.Close() }()
-	_, port, err := net.SplitHostPort(l.Addr().String())
-	return port, err
-}
-
 // ExternalIP: адрес, которым машина видна в интернете; proxy - через SOCKS или HTTP-прокси, пусто - напрямую.
 func ExternalIP(proxy string) (string, error) {
 	tr := &http.Transport{}

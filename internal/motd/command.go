@@ -1,5 +1,5 @@
-// Package motd: сводка при входе в терминал - машина, проект текущей папки, сеть, запущенное,
-// сервисы, репозитории, процессы, версии.
+// Package motd: сводка при входе в терминал - машина и текущая папка, сеть, запущенное, сервисы,
+// процессы, версии.
 package motd
 
 import (
@@ -14,8 +14,8 @@ func Commands(env *app.Env) []*cobra.Command {
 	c := &cobra.Command{
 		Use:       "status [раздел...] [--full] [--all] [--time]",
 		Aliases:   []string{"motd"},
-		Short:     "Сводка: машина, проект, сеть, порты, сервисы, репозитории, процессы, версии",
-		Long:      "Разделы: system, project, net, ports, services, repos, procs, versions. По умолчанию ключ motd в конфиге или system net ports; --full добавляет службы.",
+		Short:     "Сводка: машина, сеть, порты, сервисы, процессы, версии",
+		Long:      "Разделы: system, net, ports, services, procs, versions. По умолчанию ключ motd в конфиге или system net ports; --full добавляет службы.",
 		ValidArgs: names(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return show(env.Cfg, env.Build(), args, all, full, timing)

@@ -30,7 +30,7 @@ func saved(target string) (serverState, time.Time, bool) {
 
 // collect: состояние сервера по ssh, удачное - в кэш.
 func collect(t Server) serverState {
-	s := serverState{Target: t.Alias, Projects: t.Projects}
+	s := serverState{Target: t.Alias}
 	r, err := srvinfoCollect(t.Alias)
 	if err != nil {
 		s.Err = sshError(err)
