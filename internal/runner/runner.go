@@ -223,7 +223,9 @@ func ConfirmDefault(question string, def bool) bool {
 	var a string
 	if _, err := fmtScan(&a); err != nil {
 		// Без терминала ответа не будет: молча выйти - и скрипт решит, что всё сделано.
-		ui.Println(ui.Dim("нет ответа - отменено; без вопроса: -y, если команда его знает"))
+		// Флаг -y общий у всех команд: точная строка для повтора полезнее совета "добавь -y".
+		retry := shellq.Join(append([]string{filepath.Base(os.Args[0])}, os.Args[1:]...)) + " -y"
+		ui.Println(ui.Dim("нет ответа - отменено; без вопроса: " + retry))
 		return false
 	}
 	switch a {
