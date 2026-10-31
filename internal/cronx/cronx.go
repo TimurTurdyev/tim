@@ -3,6 +3,7 @@ package cronx
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -149,43 +150,141 @@ func (s Schedule) Next(from time.Time, n int) []time.Time {
 	return out
 }
 
-// Describe: человеческое описание выражения.
+// Describe: человеческое описание выражения - "каждые 15 минут с 09:00 до 18:45, по будням".
 func (s Schedule) Describe() string {
-	var when string
-	switch {
-	case s.min.any && s.hour.any:
-		when = "каждую минуту"
-	case strings.HasPrefix(s.min.raw, "*/") && s.hour.any:
-		when = "каждые " + strings.TrimPrefix(s.min.raw, "*/") + " мин"
-	case len(s.min.vals) == 1 && len(s.hour.vals) == 1:
-		when = "в " + clock(first(s.hour), first(s.min))
-	case len(s.min.vals) == 1 && s.hour.any:
-		when = "в " + strconv.Itoa(first(s.min)) + "-ю минуту каждого часа"
-	case len(s.min.vals) == 1:
-		when = "в " + pad(first(s.min)) + " минут, часы " + list(s.hour, nil, "")
-	default:
-		when = "минуты " + list(s.min, nil, "каждую") + ", часы " + list(s.hour, nil, "каждый")
-	}
-	var days []string
-	if !s.dom.any {
-		days = append(days, "числа "+list(s.dom, nil, ""))
-	}
-	if !s.dow.any {
-		days = append(days, "по дням: "+list(s.dow, dowRu, ""))
-	}
-	day := "каждый день"
-	switch len(days) {
-	case 1:
-		day = days[0]
-	case 2:
-		day = days[0] + " или " + days[1]
-	}
-	out := when + ", " + day
+	out := s.when() + ", " + s.days()
 	if !s.mon.any {
-		out += ", месяц " + list(s.mon, monRu, "")
+		out += ", " + months(s.mon)
 	}
 	return out
 }
+
+// when: в какие минуты и часы.
+func (s Schedule) when() string {
+	mins, hours := values(s.min, 59), values(s.hour, 23)
+	step := strings.HasPrefix(s.min.raw, "*/")
+	switch {
+	case s.min.any && s.hour.any:
+		return "каждую минуту"
+	case step && s.hour.any:
+		return "каждые " + strings.TrimPrefix(s.min.raw, "*/") + " минут"
+	case step && contiguous(hours):
+		return "каждые " + strings.TrimPrefix(s.min.raw, "*/") + " минут с " + clock(hours[0], mins[0]) + " до " + clock(hours[len(hours)-1], mins[len(mins)-1])
+	case len(mins) != 1:
+		return "минуты " + list(s.min, nil, "каждую") + ", часы " + list(s.hour, nil, "каждый")
+	case s.hour.any:
+		return "каждый час в :" + pad(mins[0])
+	case strings.HasPrefix(s.hour.raw, "*/"):
+		return "каждые " + strings.TrimPrefix(s.hour.raw, "*/") + " ч в :" + pad(mins[0])
+	case len(hours) <= 4:
+		var at []string
+		for _, h := range hours {
+			at = append(at, clock(h, mins[0]))
+		}
+		return "в " + strings.Join(at, ", ")
+	case contiguous(hours):
+		return "каждый час в :" + pad(mins[0]) + " с " + clock(hours[0], mins[0]) + " до " + clock(hours[len(hours)-1], mins[0])
+	}
+	return "в " + pad(mins[0]) + " минут, часы " + list(s.hour, nil, "")
+}
+
+// days: в какие дни. Если заданы и числа, и дни недели, cron запускает по любому из них.
+func (s Schedule) days() string {
+	var parts []string
+	if !s.dom.any {
+		d := values(s.dom, 31)
+		if len(d) == 1 {
+			parts = append(parts, strconv.Itoa(d[0])+"-го числа")
+		} else {
+			parts = append(parts, "числа "+list(s.dom, nil, ""))
+		}
+	}
+	if !s.dow.any {
+		parts = append(parts, weekdays(values(s.dow, 6), s.dow))
+	}
+	if len(parts) == 0 {
+		return "каждый день"
+	}
+	return strings.Join(parts, " или ")
+}
+
+// dowDat: "по понедельникам".
+var dowDat = []string{"воскресеньям", "понедельникам", "вторникам", "средам", "четвергам", "пятницам", "субботам"}
+
+func weekdays(d []int, f field) string {
+	switch {
+	case slices.Equal(d, []int{1, 2, 3, 4, 5}):
+		return "по будням"
+	case slices.Equal(d, []int{0, 6}):
+		return "по выходным"
+	case len(d) <= 3:
+		var names []string
+		for _, v := range d {
+			names = append(names, dowDat[v])
+		}
+		return "по " + strings.Join(names, " и ")
+	}
+	return "по дням: " + list(f, dowRu, "")
+}
+
+// monPrep: "в январе".
+var monPrep = []string{"", "январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"}
+
+func months(f field) string {
+	m := values(f, 12)
+	if len(m) <= 3 {
+		var names []string
+		for _, v := range m {
+			names = append(names, monPrep[v])
+		}
+		return "в " + strings.Join(names, " и ")
+	}
+	return "месяцы " + list(f, monRu, "")
+}
+
+// Fields: поля выражения по порядку - имя, как записано, что значит.
+func (s Schedule) Fields() [][3]string {
+	return [][3]string{
+		{"минута", s.min.raw, meaning(s.min, nil, "любая", "минут", 59)},
+		{"час", s.hour.raw, meaning(s.hour, nil, "любой", "ч", 23)},
+		{"день месяца", s.dom.raw, meaning(s.dom, nil, "любой", "дн", 31)},
+		{"месяц", s.mon.raw, meaning(s.mon, monRu, "любой", "мес", 12)},
+		{"день недели", s.dow.raw, meaning(s.dow, dowRu, "любой", "дн", 6)},
+	}
+}
+
+func meaning(f field, names []string, anyWord, unit string, max int) string {
+	switch v := values(f, max); {
+	case f.any:
+		return anyWord
+	case strings.HasPrefix(f.raw, "*/"):
+		return "каждые " + strings.TrimPrefix(f.raw, "*/") + " " + unit
+	case names == nil && contiguous(v) && len(v) > 2:
+		return "с " + strconv.Itoa(v[0]) + " до " + strconv.Itoa(v[len(v)-1])
+	}
+	return list(f, names, "")
+}
+
+// values: значения поля по возрастанию.
+func values(f field, max int) []int {
+	var out []int
+	for v := 0; v <= max; v++ {
+		if f.vals[v] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func contiguous(v []int) bool {
+	for i := 1; i < len(v); i++ {
+		if v[i] != v[i-1]+1 {
+			return false
+		}
+	}
+	return len(v) > 1
+}
+
 
 func clock(h, m int) string { return pad(h) + ":" + pad(m) }
 

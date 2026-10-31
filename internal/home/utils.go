@@ -8,8 +8,11 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-// runsBare: утилиты, которым аргумент не нужен - enter выполняет их сразу, а не набирает в ":".
+// runsBare: утилиты, которым аргумент не нужен - enter выполняет их сразу, а не спрашивает строкой.
 var runsBare = map[string]bool{"uuid": true, "ts": true, "pass": true}
+
+// askHints: что вводить, если вызова из справки мало.
+var askHints = map[string]string{"cron": "минута час день месяц день-недели; пусто - как писать"}
 
 // utilsScreen: мелкие утилиты списком; карточка - их справка из того же места, что --help.
 func (h *Home) utilsScreen() tui.Screen {
@@ -27,7 +30,7 @@ func (h *Home) utilsScreen() tui.Screen {
 		}
 		row := tui.BoardRow{ID: n, Find: c.Short, Cells: ui.Pad(n, nameW+3) + ui.Dim(c.Short)}
 		data.Wide = data.Wide || nameW+3+ui.Width(c.Short)+3 > 56
-		card := &tui.Card{Title: n, Enter: "набрать " + n + " в \":\", аргумент впишешь сам"}
+		card := &tui.Card{Title: n, Enter: "ввести, что проверить, - строкой внизу"}
 		if runsBare[n] {
 			card.Enter = "выполнить сразу"
 		}
@@ -56,15 +59,60 @@ func (h *Home) utilsScreen() tui.Screen {
 		},
 		Load: func(bool) tui.BoardData { return data },
 		Actions: append([]tui.BoardAction{
-			{Key: "enter", Label: "набрать", Do: func(row *tui.BoardRow) tui.Action {
+			{Key: "enter", Label: "ввести", Do: func(row *tui.BoardRow) tui.Action {
 				if runsBare[row.ID] {
 					return h.result([]string{row.ID})
 				}
-				return tui.Action{Command: row.ID + " "}
+				return h.askUtil(row.ID)
 			}},
 			{Key: "1-3", Label: "дальше", Free: true},
 		}, h.exampleKeys()...),
 	})
+}
+
+// askUtil: строка ввода внизу с примером в подсказке; пустой enter - утилита без аргумента (cron
+// тогда объясняет, как писать выражение).
+func (h *Home) askUtil(name string) tui.Action {
+	placeholder, hint := "", ""
+	if ex := examplesOf(h.exampleText(name)); len(ex) > 0 {
+		placeholder = strings.Trim(strings.TrimSpace(strings.TrimPrefix(ex[0], name)), `"`)
+	}
+	if c, _, err := h.root.Find([]string{name}); err == nil {
+		hint = "tim " + c.Use
+	}
+	if hh, ok := askHints[name]; ok {
+		hint = hh
+	}
+	return tui.Action{Ask: &tui.Ask{Placeholder: placeholder, Hint: hint, Done: func(text string) tui.Action {
+		return h.result(append([]string{name}, splitArgs(text)...))
+	}}}
+}
+
+// splitArgs: строка как в оболочке - кавычки держат пробелы внутри и снимаются.
+func splitArgs(s string) []string {
+	var out []string
+	var cur strings.Builder
+	quote, has := rune(0), false
+	for _, r := range s {
+		switch {
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote == 0 && (r == '"' || r == '\''):
+			quote, has = r, true
+		case quote == 0 && (r == ' ' || r == '\t'):
+			if cur.Len() > 0 || has {
+				out = append(out, cur.String())
+				cur.Reset()
+				has = false
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if cur.Len() > 0 || has {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 // exampleKeys: цифры 1-3 ставят пример выбранной утилиты в ":" для правки.

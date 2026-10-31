@@ -190,9 +190,9 @@ KobiraTesunoMapive42.`,
 func cronCommand() *cobra.Command {
 	var runs int
 	c := &cobra.Command{
-		Use:   `cron "<выражение>" [-n 5]`,
-		Short: "Что значит cron-выражение и когда ближайшие запуски",
-		Args:  cobra.MinimumNArgs(1),
+		Use:   `cron ["<выражение>"] [-n 5]`,
+		Short: "Что значит cron-выражение и когда ближайшие запуски; без выражения - как его писать",
+		Args:  cobra.ArbitraryArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return printCron(args, runs) },
 	}
 	c.Flags().IntVarP(&runs, "runs", "n", 5, "сколько ближайших запусков")

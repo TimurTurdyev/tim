@@ -202,14 +202,40 @@ func humanUse(bits float64) string {
 }
 
 func printCron(args []string, runs int) error {
+	if len(args) == 0 {
+		printCronHelp()
+		return nil
+	}
 	expr := strings.Join(args, " ")
 	s, err := cronx.Parse(expr)
 	if err != nil {
-		return ui.Errorf("%s: %v", expr, err)
+		return ui.Errorf("%s: %v; как писать - tim cron без выражения", expr, err)
 	}
 	ui.Println(ui.Label(s.Describe()))
+	for _, f := range s.Fields() {
+		ui.Println("  " + ui.Pad(f[0], 13) + ui.Pad(f[1], 10) + ui.Dim(f[2]))
+	}
+	ui.Println(ui.Info("ближайшие запуски"))
 	for _, t := range s.Next(time.Now(), runs) {
 		ui.Println("  " + dowShort[t.Weekday()] + " " + t.Format("2006-01-02 15:04") + ui.Dim("  "+relative(t)))
 	}
 	return nil
+}
+
+// cronExamples: частые расписания - описание у каждого берётся у того же разбора.
+var cronExamples = []string{"*/5 * * * *", "0 * * * *", "0 3 * * *", "30 9 * * 1-5", "0 */2 * * *", "0 0 1 * *", "0 10 * * 0,6"}
+
+// printCronHelp: как пишется выражение - без него tim cron ничего не проверяет, а объясняет.
+func printCronHelp() {
+	ui.Println(ui.Label("cron-выражение - пять полей через пробел"))
+	ui.Println("  " + ui.Pad("минута", 9) + ui.Pad("час", 7) + ui.Pad("день", 7) + ui.Pad("месяц", 8) + "день недели")
+	ui.Println("  " + ui.Dim(ui.Pad("0-59", 9)+ui.Pad("0-23", 7)+ui.Pad("1-31", 7)+ui.Pad("1-12", 8)+"0-6, 0 - воскресенье, или mon-sun"))
+	ui.Println("  " + ui.Dim("* любое   */15 каждые 15   9-18 с 9 до 18   1,15 список   @daily @hourly @weekly @monthly"))
+	ui.Println(ui.Info("примеры"))
+	for _, e := range cronExamples {
+		if s, err := cronx.Parse(e); err == nil {
+			ui.Println("  " + ui.Pad(e, 16) + ui.Dim(s.Describe()))
+		}
+	}
+	ui.Println(ui.Dim(`проверить своё: tim cron "0 3 * * *"`))
 }
