@@ -33,12 +33,18 @@ const recentRows = 15
 var layoutKeys = map[string]string{"в": "d", "ь": "m", "т": "n", "ы": "s", "ц": "w", "г": "u"}
 
 // exitCmds: команды, которым нужен терминал целиком - выполняются после закрытия экрана.
-var exitCmds = map[string]bool{"ssh": true, "tunnel": true, "direct": true, "disk": true, "watch": true, "hook": true,
-	"route": true, "cert": true, "link": true, "host": true, "init": true, "config": true, "self-update": true}
+var exitCmds = map[string]bool{"ssh": true, "tunnel": true, "direct": true, "watch": true, "hook": true,
+	"route": true, "cert": true, "link": true, "host": true, "init": true, "self-update": true}
 
 // changingWords: слова, после которых команда меняет систему.
 var changingWords = map[string]bool{"kill": true, "rm": true, "stop": true, "fix": true, "add": true,
-	"--clean": true, "clean": true, "-y": true, "--yes": true}
+	"--clean": true, "clean": true, "-y": true, "--yes": true, "up": true, "down": true, "on": true, "off": true,
+	"install": true, "uninstall": true, "new": true, "resolver": true, "all": true, "system": true, "expose": true,
+	"--ban": true, "--accept": true}
+
+// changingCmds: команды, которые меняют систему с любым первым словом, кроме перечисленных только читающих.
+var changingCmds = map[string][]string{"direct": {"", "list", "check", "watch"}, "link": nil, "unlink": nil,
+	"init": nil, "self-update": {"--check"}}
 
 func (h *Home) screen() tui.Screen {
 	index := sync.OnceValue(h.newIndex)
@@ -55,7 +61,8 @@ func (h *Home) runLine(line string) tui.Action {
 	if s := h.screenFor(args); s != nil {
 		return tui.Action{Push: s}
 	}
-	if exitCmds[args[0]] {
+	// Уборка зависимостей спрашивает про каждую папку - ей нужен терминал целиком.
+	if exitCmds[args[0]] || args[0] == "disk" && slices.Contains(args, "--clean") {
 		return tui.Action{Exit: func() { h.after(args) }}
 	}
 	return h.result(args)
@@ -95,8 +102,10 @@ func diskScreen(env *app.Env, flags []string) tui.Screen {
 	var s tui.Screen
 	var err error
 	switch {
-	case len(flags) == 0:
+	case len(flags) == 0 || len(flags) == 1 && (flags[0] == "--all" || flags[0] == "-a"):
 		s, err = disk.Screen(env, nil, false)
+	case len(flags) == 1 && !strings.HasPrefix(flags[0], "-"):
+		s, err = disk.Screen(env, flags, false)
 	case len(flags) == 1 && (flags[0] == "-b" || flags[0] == "--browse"):
 		s, err = disk.BrowseScreen(env)
 	case len(flags) == 1 && flags[0] == "--leftovers":
@@ -238,8 +247,12 @@ func changing(line string) bool {
 	if len(f) == 0 {
 		return false
 	}
-	if exitCmds[f[0]] {
-		return true
+	if readOnly, ok := changingCmds[f[0]]; ok {
+		sub := ""
+		if len(f) > 1 {
+			sub = f[1]
+		}
+		return !slices.Contains(readOnly, sub)
 	}
 	for _, w := range f[1:] {
 		if changingWords[w] {
