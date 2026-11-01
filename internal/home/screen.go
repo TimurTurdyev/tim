@@ -2,6 +2,7 @@ package home
 
 import (
 	"cmp"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -10,10 +11,12 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/disk"
+	"github.com/TimurTurdyev/tim/internal/diskuse"
 	"github.com/TimurTurdyev/tim/internal/fuzzy"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/machine"
 	"github.com/TimurTurdyev/tim/internal/motd"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/sites"
 	"github.com/TimurTurdyev/tim/internal/srvinfo"
@@ -109,14 +112,12 @@ func diskScreen(env *app.Env, flags []string) tui.Screen {
 func nextAfter(args []string) []tui.CommandEntry {
 	if len(args) == 1 {
 		switch args[0] {
-		case "today":
-			return []tui.CommandEntry{{Line: "today --week"}, {Line: "today --md"}}
 		case "status":
 			return []tui.CommandEntry{{Line: "hw"}, {Line: "ports"}, {Line: "top"}}
 		case "ports":
 			return []tui.CommandEntry{{Line: "ports --old"}, {Line: "ports --all"}}
 		case "doctor":
-			return []tui.CommandEntry{{Line: "config"}, {Line: "proj scan"}}
+			return []tui.CommandEntry{{Line: "config"}}
 		}
 		return nil
 	}
@@ -256,7 +257,8 @@ type searchIndex struct {
 	aliases  []string
 	domains  []string
 	sections []tui.Section
-	secLines []string // название раздела и подсказка
+	secLines []string     // название раздела и подсказка
+	disk     diskuse.Tree // последний замер Диска из кэша: папки находятся без нового замера
 }
 
 func (h *Home) newIndex() *searchIndex {
@@ -269,6 +271,7 @@ func (h *Home) newIndex() *searchIndex {
 	for _, s := range ix.sections {
 		ix.secLines = append(ix.secLines, s.Title+" "+s.Hint)
 	}
+	ix.disk, _ = diskuse.Cached()
 	return ix
 }
 
@@ -306,9 +309,9 @@ func exactness(q, title string) int {
 	return 0
 }
 
-// search: команды, серверы, домены и разделы по запросу; внутри группы - самые похожие первыми.
+// search: команды, серверы, домены, разделы и папки Диска по запросу; внутри группы - самые похожие первыми.
 func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
-	groups := make([]hitGroup, 4)
+	groups := make([]hitGroup, 5)
 	for _, i := range rankCommands(q, ix.cmdNames, ix.lines, 4) {
 		c := ix.cmds[i]
 		hit := tui.Hit{Kind: "команды", Title: c.Line, Hint: c.Desc, Open: func() tui.Action { return h.runLine(c.Line) }}
@@ -347,10 +350,36 @@ func (h *Home) search(ix *searchIndex, q string) []tui.Hit {
 			groups[3].add(secHit(sec), q)
 		}
 	}
+	groups[4].hits = h.diskHits(ix, q)
 	slices.SortStableFunc(groups, func(a, b hitGroup) int { return cmp.Compare(b.exact, a.exact) })
 	var out []tui.Hit
 	for _, g := range groups {
 		out = append(out, g.hits...)
 	}
 	return out
+}
+
+// diskHits: крупные папки из последнего замера Диска, чьё имя совпало с запросом от трёх букв, - enter
+// открывает Диск с этим поиском, где их отмечают и убирают.
+func (h *Home) diskHits(ix *searchIndex, q string) []tui.Hit {
+	if len([]rune(strings.TrimSpace(q))) < 3 || ix.disk == nil {
+		return nil
+	}
+	home := paths.Home()
+	var hits []tui.Hit
+	for _, s := range diskuse.Search(ix.disk, home, q, 3) {
+		name := filepath.Base(s.Path)
+		if m, ok := diskuse.ModelName(s.Path); ok {
+			name = m
+		}
+		hits = append(hits, tui.Hit{Kind: "диск", Title: name, Note: ui.Dim(ui.Bytes(s.Size)), Hint: paths.Show(filepath.Dir(s.Path)),
+			Open: func() tui.Action {
+				scr, err := disk.FindScreen(h.env, nil, false, q)
+				if err != nil {
+					return tui.Action{}
+				}
+				return tui.Action{Push: scr}
+			}})
+	}
+	return hits
 }
