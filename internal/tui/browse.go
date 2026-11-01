@@ -23,6 +23,7 @@ type Entry struct {
 // BrowseOpts: что показывать и что делать. Kids может считать долго (du) - зовётся в фоне.
 type BrowseOpts struct {
 	Root   Entry
+	Into   []Entry // путь от корня до папки, с которой открыть: стрелка влево ведёт по нему вверх
 	Kids   func(path string) []Entry
 	Open   func(path string)
 	Remove func(list []Entry) (freed int64, errs []string)
@@ -34,6 +35,7 @@ type folder struct {
 	kids    []Entry
 	list    List
 	loading bool
+	focus   string // папка, из которой пришли: курсор встаёт на неё
 }
 
 type kidsMsg struct {
@@ -51,10 +53,14 @@ type browse struct {
 func NewBrowse(o BrowseOpts) Screen {
 	b := &browse{opts: o}
 	b.stack = []*folder{{entry: o.Root, loading: true}}
+	for _, e := range o.Into {
+		b.cur().focus = e.Path
+		b.stack = append(b.stack, &folder{entry: e, loading: true})
+	}
 	return b
 }
 
-func (b *browse) Init() tea.Cmd { return b.load(b.opts.Root.Path) }
+func (b *browse) Init() tea.Cmd { return b.load(b.cur().entry.Path) }
 
 func (b *browse) load(path string) tea.Cmd {
 	return func() tea.Msg { return kidsMsg{path, b.opts.Kids(path)} }
@@ -155,6 +161,11 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 			if l.entry.Path == msg.path {
 				l.kids, l.loading = msg.kids, false
 				b.fill(l)
+				for i, k := range l.kids {
+					if l.focus != "" && k.Path == l.focus {
+						l.list.Cursor, l.focus = i, ""
+					}
+				}
 				if l.list.Cursor >= len(l.kids) {
 					l.list.Cursor = max(0, len(l.kids)-1)
 				}
@@ -181,6 +192,10 @@ func (b *browse) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "left", "backspace":
 			if len(b.stack) > 1 {
 				b.stack = b.stack[:len(b.stack)-1]
+				// Открыли сразу глубоко: уровень выше ещё не считан.
+				if up := b.cur(); up.kids == nil {
+					return b.load(up.entry.Path)
+				}
 				return nil
 			}
 			return app.Pop()

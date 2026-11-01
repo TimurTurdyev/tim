@@ -61,7 +61,7 @@ type DiskOpts struct {
 	Remove    func(paths []string) (freed int64, errs []string)
 	Clean     func(cmd string) (string, error) // команда очистки кэша
 	Open      func(path string)                // показать в Finder
-	Browse    func() Screen
+	Browse    func(path string) Screen // обозреватель с этой папки; пусто - со всего диска
 	Leftovers func() Screen
 }
 
@@ -243,7 +243,11 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 			case cur != nil && cur.Cmd != "":
 				return d.confirmClean(app, *cur)
 			case d.opts.Browse != nil && !d.loading:
-				return app.Push(d.opts.Browse())
+				path := ""
+				if cur != nil {
+					path = cur.Path
+				}
+				return app.Push(d.opts.Browse(path))
 			}
 		}
 	}

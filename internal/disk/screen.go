@@ -100,7 +100,7 @@ func Screen(env *app.Env, args []string, fresh bool) (tui.Screen, error) {
 		Remove:    st.remove,
 		Clean:     func(cmd string) (string, error) { return clean(st, cmd) },
 		Open:      reveal,
-		Browse:    func() tui.Screen { return browseScreen(st) },
+		Browse:    func(path string) tui.Screen { return browseScreen(st, path) },
 		Leftovers: func() tui.Screen { return LeftoversScreen(env.Cfg) },
 	}), nil
 }
@@ -111,7 +111,7 @@ func BrowseScreen(env *app.Env) (tui.Screen, error) {
 	if err != nil {
 		return nil, err
 	}
-	return browseScreen(st), nil
+	return browseScreen(st, ""), nil
 }
 
 // browse: обозреватель из командной строки. Замер до экрана: ход печатается в stderr, пока
@@ -127,7 +127,7 @@ func browse(env *app.Env, args []string, fresh bool) error {
 		}
 	})
 	fmt.Fprint(os.Stderr, "\r\033[2K")
-	return env.Open(browseScreen(st))
+	return env.Open(browseScreen(st, ""))
 }
 
 // overviewData: вкладки обзора из дерева - те же места, что печатает tim disk.
@@ -208,7 +208,8 @@ func diskRow(r diskuse.Row, home string) tui.DiskRow {
 	return row
 }
 
-func browseScreen(st *state) tui.Screen {
+// browseScreen: обозреватель; start - папка, с которой открыть, стопка над ней - от корня замера.
+func browseScreen(st *state, start string) tui.Screen {
 	home := paths.Home()
 	var used int64
 	if d, ok := sysinfo.DataDisk(); ok && len(st.args) == 0 {
@@ -228,7 +229,34 @@ func browseScreen(st *state) tui.Screen {
 		}
 		return st.remove(ps)
 	}
-	return tui.NewBrowse(tui.BrowseOpts{Root: root, Kids: st.kidsFunc(home, used), Open: reveal, Remove: remove, Total: used})
+	return tui.NewBrowse(tui.BrowseOpts{Root: root, Into: st.chain(start, home), Kids: st.kidsFunc(home, used), Open: reveal,
+		Remove: remove, Total: used})
+}
+
+// chain: папки от корня замера до start включительно; start вне замера - пусто, открывается корень.
+func (d *state) chain(start, home string) []tui.Entry {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, r := range d.roots {
+		if start == "" || start == r || !strings.HasPrefix(start, strings.TrimSuffix(r, "/")+"/") {
+			continue
+		}
+		var out []tui.Entry
+		// В обзоре всего диска корни замера - первый уровень; с папкой в аргументе корень уже открыт.
+		if len(d.args) == 0 {
+			e := entry(r, d.tree[r], home)
+			e.Name = paths.Show(r)
+			out = append(out, e)
+		}
+		rel, _ := filepath.Rel(r, start)
+		p := r
+		for _, part := range strings.Split(rel, "/") {
+			p = filepath.Join(p, part)
+			out = append(out, entry(p, d.tree[p], home))
+		}
+		return out
+	}
+	return nil
 }
 
 // kidsFunc: содержимое папки для обозревателя; пустой путь - верх: корни, тома и неразобранное.
