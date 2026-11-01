@@ -33,6 +33,7 @@ type Row struct {
 	Size             int64
 	Items            []Spot
 	Kind             Kind
+	Query            string `json:"query,omitempty"` // строка-сводка: её места находит этот поиск
 	label            string // подпись без имени проекта: от неё удлиняется имя при повторе
 }
 

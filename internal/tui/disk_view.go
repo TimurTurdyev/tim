@@ -30,9 +30,14 @@ func (d *disk) View(width, height int) string {
 	if time.Since(d.data.MeasuredAt) >= time.Minute {
 		ago = "замер " + ui.Short(time.Since(d.data.MeasuredAt))
 	}
-	out := []string{"   " + ui.Bar(d.data.UsedPct, 40) + "  " + styleDim.Render(ago+" "+symSep+" r - заново"),
-		"   " + d.tabs(width-4), ""}
-	out = append(out, "   "+styleHead.Render(fmt.Sprintf("%10s   %-8s  %s", "РАЗМЕР "+sortMark(true), "ДОЛЯ", ui.Fit("МЕСТО", min(34, max(20, width-60))+1)+"ЧЕМ УБРАТЬ")))
+	top := "   " + d.tabs(width-4)
+	tail := "ЧЕМ УБРАТЬ"
+	if d.searching() || d.input.Focused() {
+		top, tail = "   "+d.foundLine(), "ГДЕ"
+	}
+	out := []string{"   " + ui.Bar(d.data.UsedPct, 40) + "  " + styleDim.Render(ago+" "+symSep+" r - заново"), top, ""}
+	out = append(out, "   "+styleHead.Render(fmt.Sprintf("%10s   %-8s  %s", "РАЗМЕР "+sortMark(true), "ДОЛЯ",
+		ui.Fit("МЕСТО", min(34, max(20, width-70))+1)+ui.Fit("ТРОГАЛИ", 10)+tail)))
 	var foot []string
 	if d.marked.len() > 0 {
 		var sum int64
@@ -87,12 +92,17 @@ func (d *disk) card() *Card {
 		c.Facts = append(c.Facts, Fact{Label: styleAmber.Render(symWarn + " внимание"), Value: cur.Warn})
 	}
 	switch {
+	case cur.Query != "":
+		c.Enter = "показать по одной - отметить нужные и убрать"
+		if cur.Hint != "" {
+			c.Facts = append(c.Facts, Fact{Label: "как убрать", Value: cur.Hint})
+		}
 	case cur.Cmd != "":
 		c.Enter = "выполнить " + cur.Cmd + ", спросит подтверждение"
 		c.About = append(c.About, styleDim.Render(ui.Bytes(cur.Size)+" "+symSep+" отметить пробелом нельзя - это команда, а не папка"))
 	case cur.Removable:
 		c.Enter = "внутрь, по папкам"
-		c.About = append(c.About, styleDim.Render(ui.Bytes(cur.Size)+" "+symSep+" можно целиком в Корзину"))
+		c.About = append(c.About, styleDim.Render(ui.Bytes(cur.Size)+" "+symSep+" можно целиком в Корзину: x"))
 	default:
 		c.Enter = "внутрь, по папкам"
 		if cur.Hint != "" {

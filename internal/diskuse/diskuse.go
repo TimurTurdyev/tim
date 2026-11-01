@@ -4,6 +4,7 @@ package diskuse
 import (
 	"cmp"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -96,4 +97,21 @@ func Stale(items []Item, touched map[string]time.Time, now time.Time, days int, 
 // bySize: крупные первыми, при равном размере по пути - чтобы список не прыгал между запусками.
 func bySize(items []Item) {
 	slices.SortStableFunc(items, func(a, b Item) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Path, b.Path)) })
+}
+
+// Touched: когда в папке последний раз что-то меняли - она сама и её первый уровень. Глубже не идём:
+// полный обход большой папки занял бы минуты, а для решения "нужно ли это" хватает и такого.
+func Touched(dir string) time.Time {
+	st, err := os.Stat(dir)
+	if err != nil {
+		return time.Time{}
+	}
+	t := st.ModTime()
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && info.ModTime().After(t) {
+			t = info.ModTime()
+		}
+	}
+	return t
 }

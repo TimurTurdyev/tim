@@ -88,11 +88,19 @@ func (d *state) remove(pathsToTrash []string) (freed int64, errs []string) {
 
 // Screen: обзор диска по вкладкам; args - папка вместо всего диска.
 func Screen(env *app.Env, args []string, fresh bool) (tui.Screen, error) {
+	return FindScreen(env, args, fresh, "")
+}
+
+// FindScreen: обзор диска, открытый сразу с поиском query.
+func FindScreen(env *app.Env, args []string, fresh bool, query string) (tui.Screen, error) {
 	st, err := newState(env.Cfg, args, fresh)
 	if err != nil {
 		return nil, err
 	}
+	home := paths.Home()
 	return tui.NewDisk(tui.DiskOpts{
+		Query: query,
+		Find:  func(q string) []tui.DiskRow { return st.find(q, home) },
 		Load: func(fresh bool, progress func(done, total int, where string)) tui.DiskData {
 			st.ensure(fresh, progress)
 			return overviewData(st)
@@ -172,13 +180,11 @@ func diskRow(r diskuse.Row, home string) tui.DiskRow {
 	if name == "" {
 		name = filepath.Base(r.Path)
 	}
-	row := tui.DiskRow{Name: name, Path: r.Path, Hint: r.Hint, Size: r.Size, Cmd: diskuse.Command(r.Hint)}
-	if r.Path != "" {
+	row := tui.DiskRow{Name: name, Path: r.Path, Hint: r.Hint, Size: r.Size, Cmd: diskuse.Command(r.Hint), Query: r.Query}
+	if r.Path != "" && r.Query == "" {
 		row.Show = paths.Show(r.Path)
-		// Целиком в Корзину - кэши, которые вернутся сами, и свои файлы в домашней папке.
-		// Данные программ (OrbStack, Steam) и систему так не трогаем.
-		l, _, known := diskuse.LabelOf(r.Path, home)
-		row.Removable = strings.HasPrefix(r.Path, home+"/") && ((known && l.Whole) || (r.Kind == diskuse.Data && !l.Stop))
+		row.Removable = removable(r.Path, home)
+		row.Touched = diskuse.Touched(r.Path)
 	}
 	var games map[string]diskuse.Game
 	if strings.HasSuffix(r.Path, "steamapps/common") {

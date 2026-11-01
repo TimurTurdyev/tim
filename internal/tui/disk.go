@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/TimurTurdyev/tim/internal/level"
@@ -27,9 +28,11 @@ type DiskRow struct {
 	Name, Path, Show, Hint string
 	Size                   int64
 	Items                  []DiskItem
-	Warn                   string // например "Steam удалён, а игры остались"
-	Removable              bool   // можно убрать в Корзину целиком
-	Cmd                    string // кэш чистится этой командой: enter выполняет её через подтверждение
+	Warn                   string    // например "Steam удалён, а игры остались"
+	Removable              bool      // можно убрать в Корзину целиком
+	Cmd                    string    // кэш чистится этой командой: enter выполняет её через подтверждение
+	Touched                time.Time // когда в папке последний раз что-то меняли
+	Query                  string    // строка-сводка (зависимости, копии): enter ищет по этому запросу
 }
 
 func (r DiskRow) shown() string {
@@ -61,8 +64,10 @@ type DiskOpts struct {
 	Remove    func(paths []string) (freed int64, errs []string)
 	Clean     func(cmd string) (string, error) // команда очистки кэша
 	Open      func(path string)                // показать в Finder
-	Browse    func(path string) Screen // обозреватель с этой папки; пусто - со всего диска
+	Browse    func(path string) Screen         // обозреватель с этой папки; пусто - со всего диска
 	Leftovers func() Screen
+	Find      func(query string) []DiskRow // поиск по всему замеру
+	Query     string                       // открыть сразу с этим поиском
 }
 
 type disk struct {
@@ -77,13 +82,17 @@ type disk struct {
 	total   int
 	where   string
 	mu      sync.Mutex
+	input   textinput.Model
+	found   []DiskRow // найденное по запросу из input
 }
 
 type diskDataMsg DiskData
 
 // NewDisk создаёт экран обзора диска.
 func NewDisk(opts DiskOpts) Screen {
-	return &disk{opts: opts}
+	d := &disk{opts: opts, input: searchInput()}
+	d.input.SetValue(opts.Query)
+	return d
 }
 
 func (d *disk) Init() tea.Cmd { return d.load(false) }
@@ -128,11 +137,22 @@ func (d *disk) Keys() []Key {
 	if d.loading && len(d.data.Tabs) == 0 {
 		return nil
 	}
-	enter := Key{"enter", "по папкам"}
-	if cur := d.current(); cur != nil && cur.Cmd != "" {
-		enter = Key{"enter", "выполнить"}
+	if d.input.Focused() {
+		return []Key{{"enter", "готово"}, {"esc", "очистить"}}
 	}
-	return []Key{enter, {"space", "отметить"}, {"x", "убрать"}, {"t", "хвосты"}, {"tab", "вкладка"}}
+	enter := Key{"enter", "по папкам"}
+	cur := d.current()
+	switch {
+	case cur != nil && cur.Cmd != "":
+		enter = Key{"enter", "выполнить"}
+	case cur != nil && cur.Query != "":
+		enter = Key{"enter", "по одной"}
+	}
+	keys := []Key{enter, {"space", "отметить"}, {"x", "убрать"}, {"/", "найти"}}
+	if d.searching() {
+		return append(keys, Key{"A", "отметить найденное"})
+	}
+	return append(keys, Key{"t", "хвосты"}, Key{"tab", "вкладка"})
 }
 
 // HelpKeys: r и o - в справке: r подписан в строке полосы, o - в карточке.
@@ -141,6 +161,9 @@ func (d *disk) HelpKeys() []Key {
 }
 
 func (d *disk) rows() []DiskRow {
+	if d.searching() {
+		return d.found
+	}
 	if d.tab < len(d.data.Tabs) {
 		return d.data.Tabs[d.tab].Rows
 	}
@@ -163,7 +186,7 @@ func (d *disk) refill() {
 			// Доля - от самого крупного места: процент от диска тут ничего не говорит.
 			cells := max(1, int(r.Size*8/max(1, top)))
 			bar := styleText.Render(strings.Repeat("\u2584", cells)) + styleGhost.Render(strings.Repeat("\u2582", 8-cells))
-			nameW := min(34, max(20, w-60))
+			nameW := min(34, max(20, w-70))
 			name := styleText.Render(ui.Fit(r.Name, nameW))
 			if sel {
 				name = styleBold.Render(ui.Fit(r.Name, nameW))
@@ -172,7 +195,7 @@ func (d *disk) refill() {
 			if r.Warn != "" {
 				tail = styleAmber.Render(r.Warn)
 			}
-			line := fmt.Sprintf("%s%9s   %s  %s %s", mark, ui.Bytes(r.Size), bar, name, tail)
+			line := fmt.Sprintf("%s%9s   %s  %s %s %s", mark, ui.Bytes(r.Size), bar, name, touched(r.Touched), tail)
 			return SelRow(sel, w, line)
 		}})
 	}
@@ -197,12 +220,15 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 		if d.tab >= len(d.data.Tabs) {
 			d.tab = 0
 		}
-		d.refill()
+		d.refind()
 		return nil
 	case JobDone:
 		return d.load(false)
 	case tea.KeyPressMsg:
 		k := msg.String()
+		if d.input.Focused() {
+			return d.typeKey(msg)
+		}
 		if d.list.Key(k, 10) {
 			return nil
 		}
@@ -229,6 +255,14 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 				d.opts.Open(cur.Path)
 				return app.Say(level.OK, cur.Name+": открыто в Finder")
 			}
+		case "/":
+			if !d.loading {
+				return d.input.Focus()
+			}
+		case "A":
+			if d.searching() {
+				return d.markFound(app)
+			}
 		case "x":
 			return d.confirmRemove(app)
 		case "t":
@@ -242,6 +276,10 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 			switch {
 			case cur != nil && cur.Cmd != "":
 				return d.confirmClean(app, *cur)
+			case cur != nil && cur.Query != "":
+				d.input.SetValue(cur.Query)
+				d.refind()
+				return nil
 			case d.opts.Browse != nil && !d.loading:
 				path := ""
 				if cur != nil {
@@ -255,12 +293,18 @@ func (d *disk) Update(msg tea.Msg, app *App) tea.Cmd {
 }
 
 func (d *disk) confirmRemove(app *App) tea.Cmd {
-	if d.marked.len() == 0 {
-		return app.Say(level.Warn, "сначала отметь пробелом, что убрать")
+	list := d.marked.list()
+	// Ничего не отмечено - убирается строка под курсором, если её можно в Корзину.
+	if len(list) == 0 {
+		cur := d.current()
+		if cur == nil || !cur.Removable || cur.Path == "" {
+			return app.Say(level.Warn, "это не убрать в Корзину целиком - как освободить, сказано в карточке")
+		}
+		list = []DiskRow{*cur}
 	}
 	var lines, paths []string
 	var sum int64
-	for _, r := range d.marked.list() {
+	for _, r := range list {
 		lines = append(lines, ui.Fit(ui.Bytes(r.Size), 9)+"  "+r.Name+"  "+styleDim.Render(r.shown()))
 		paths = append(paths, r.Path)
 		sum += r.Size
