@@ -97,22 +97,27 @@ func show(cfg *config.Config, build string, want []string, all, full, timing boo
 	)
 	_, depth := ui.Colors()
 	look := brand.Look{Mood: h.Mood(time.Now()), Light: ui.Light()}
-	out := ui.Header(head, ui.HeaderOpts{Look: look, Indent: 1, Width: ui.Cols(), Sprite: depth != brand.Basic})
+	cols := ui.Cols()
+	out := ui.Header(head, ui.HeaderOpts{Look: look, Indent: 1, Width: cols, Sprite: depth != brand.Basic})
 	// Пустая строка отделяет карточку от трёх строк лок-апа: последняя из них стоит вровень с ножками.
 	out = append(out, "")
+	// Длинное значение переносится под себя же, с колонки значения; беда - под текстом после ▲.
 	for _, r := range rows {
-		out = append(out, "  "+r.Text())
+		out = append(out, ui.WrapHanging("  "+r.Text(), cols, 2+labelW)...)
 	}
 	var warns []string
 	for _, w := range h.Warnings() {
-		warns = append(warns, "  "+ui.Warn("\u25b2 "+w.Full()))
+		warns = append(warns, ui.WrapHanging("  "+ui.Warn("\u25b2 "+w.Full()), cols, 4)...)
 	}
-	warns = append(warns, machine.HogLines("  "+ui.Warn("\u25b2 "))...)
+	for _, l := range machine.HogLines("  " + ui.Warn("\u25b2 ")) {
+		warns = append(warns, ui.WrapHanging(l, cols, 4)...)
+	}
 	if len(warns) > 0 {
 		out = append(append(out, ""), warns...)
 	}
 	if timing {
-		out = append(out, "", "  "+ui.Dim(timingNote(chosen, results, time.Since(start))))
+		out = append(out, "")
+		out = append(out, ui.WrapHanging("  "+ui.Dim(timingNote(chosen, results, time.Since(start))), cols, 2)...)
 	}
 	for _, l := range out {
 		ui.Println(l)

@@ -25,3 +25,28 @@ func TestDaysUntil(t *testing.T) {
 		}
 	}
 }
+
+// Перенос строки сводки: по точке-разделителю, продолжение под значением, подпись не рвётся, цвет не теряется.
+func TestWrap(t *testing.T) {
+	line := "  запущено  " + Dim("lpack Laravel :8003") + " · mercurio http.server :8090, http.server :8091 · tim :8766"
+	got := WrapHanging(line, 50, 12)
+	want := []string{
+		"  запущено  lpack Laravel :8003",
+		"            mercurio http.server :8090,",
+		"            http.server :8091 · tim :8766",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("строк %d: %q", len(got), got)
+	}
+	for i := range want {
+		if StripANSI(got[i]) != want[i] {
+			t.Errorf("строка %d: %q, ожидали %q", i, StripANSI(got[i]), want[i])
+		}
+		if Width(got[i]) > 50 {
+			t.Errorf("строка %d шире 50: %d", i, Width(got[i]))
+		}
+	}
+	if one := WrapHanging(line, 0, 12); len(one) != 1 {
+		t.Errorf("без ширины перенесено: %q", one)
+	}
+}
