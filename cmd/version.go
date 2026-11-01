@@ -76,11 +76,16 @@ func versionLines() [][]string {
 	return [][]string{{ui.Strong(brand.Name) + "  " + ui.Dim(env.Build())}, engine, place}
 }
 
-// lockup: лок-ап в тексте - значок с колонки 2, строки с 15-й.
+// lockup: лок-ап в тексте - значок с колонки 2, текст через три пробела после него. Со значком сверху
+// пустая строка, иначе его крыша упирается в строку с командой.
 func lockup(lines [][]string) []string {
-	_, depth := ui.Colors()
+	on, depth := ui.Colors()
 	look := brand.Look{Mood: brand.Calm, Light: ui.Light()}
-	return ui.Header(lines, ui.HeaderOpts{Look: look, Indent: 1, Width: ui.Cols(), Sprite: depth != brand.Basic})
+	out := ui.Header(lines, ui.HeaderOpts{Look: look, Indent: 1, Width: ui.Cols(), Sprite: depth != brand.Basic})
+	if on && depth != brand.Basic {
+		out = append([]string{""}, out...)
+	}
+	return out
 }
 
 // buildTime: когда собран бинарник - по метке коммита из сборки go.

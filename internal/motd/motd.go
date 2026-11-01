@@ -98,7 +98,8 @@ func show(cfg *config.Config, build string, want []string, all, full, timing boo
 	_, depth := ui.Colors()
 	look := brand.Look{Mood: h.Mood(time.Now()), Light: ui.Light()}
 	cols := ui.Cols()
-	out := ui.Header(head, ui.HeaderOpts{Look: look, Indent: 1, Width: cols, Sprite: depth != brand.Basic})
+	// Пустая строка сверху: иначе крыша значка упирается в строку приглашения с командой.
+	out := append([]string{""}, ui.Header(head, ui.HeaderOpts{Look: look, Indent: 1, Width: cols, Sprite: depth != brand.Basic})...)
 	// Пустая строка отделяет карточку от трёх строк лок-апа: последняя из них стоит вровень с ножками.
 	out = append(out, "")
 	// Длинное значение переносится под себя же, с колонки значения; беда - под текстом после ▲.
