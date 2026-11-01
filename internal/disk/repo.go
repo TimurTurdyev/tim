@@ -18,11 +18,3 @@ func repoOf(path string) (string, bool) {
 	}
 	return "", false
 }
-
-// repoName: имя репозитория над path; вне репозитория - пусто.
-func repoName(path string) string {
-	if d, ok := repoOf(path); ok {
-		return filepath.Base(d)
-	}
-	return ""
-}

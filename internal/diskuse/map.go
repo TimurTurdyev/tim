@@ -33,6 +33,7 @@ type Row struct {
 	Size             int64
 	Items            []Spot
 	Kind             Kind
+	label            string // подпись без имени проекта: от неё удлиняется имя при повторе
 }
 
 // DefaultRoots: что мерить без аргумента. Домашняя папка есть всегда; на macOS ещё программы и
@@ -83,7 +84,7 @@ func Map(roots []string, fresh bool, progress func(done, total int, root string)
 }
 
 // Rows: места в строки. Всё внутри группы (игры Steam, виртуалки) - одной строкой с разбивкой.
-func Rows(spots []Spot, home string, owner func(path string) string) []Row {
+func Rows(spots []Spot, home string) []Row {
 	var rows []Row
 	groups := map[string]int{}
 	for _, s := range spots {
@@ -106,17 +107,71 @@ func Rows(spots []Spot, home string, owner func(path string) string) []Row {
 		case ok:
 			r.Name, r.Hint, r.Kind = l.Name, l.Hint, l.Kind
 		}
-		who := owner(s.Path)
-		if who == "" && ok && l.Deps {
-			// Репозиторий не нашёлся: без имени три строки "зависимости .venv" не отличить.
-			who = dirOwner(s.Path)
+		// Имя проекта - только у мест проекта: у Homebrew или Корзины его быть не должно.
+		if !ok || l.Owned {
+			r.label = r.Name
+			r.Name = placeName(r.Name, s.Path, ownerName(s.Path, home, 1))
 		}
-		r.Name = placeName(r.Name, s.Path, who)
 		rows = append(rows, r)
 	}
+	distinct(rows, home)
 	slices.SortStableFunc(rows, func(a, b Row) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Name, b.Name)) })
 	return rows
 }
+
+// distinct: одинаковые имена мест проектов удлиняются на папку выше, пока не станут разными - шесть
+// строк "зависимости .venv: env" не отличить.
+func distinct(rows []Row, home string) {
+	for levels := 2; levels <= 4; levels++ {
+		seen := map[string]int{}
+		for _, r := range rows {
+			seen[r.Name]++
+		}
+		changed := false
+		for i, r := range rows {
+			if seen[r.Name] > 1 && r.label != "" {
+				if name := placeName(r.label, r.Path, ownerName(r.Path, home, levels)); name != r.Name {
+					rows[i].Name, changed = name, true
+				}
+			}
+		}
+		if !changed {
+			return
+		}
+	}
+}
+
+// ownerName: чьё место - проект, в котором оно лежит, и путь до места внутри проекта: "simple-talk/tools/bench".
+// Проект - git-корень внутри домашней папки; безликое app, src, env заменяется папкой выше. levels -
+// сколько папок от проекта взять в имя. Вне репозитория - папка над местом.
+func ownerName(path, home string, levels int) string {
+	base, inRepo := filepath.Dir(path), false
+	if repo := repoRoot(path); repo != "" && repo != home && strings.HasPrefix(repo, home+"/") {
+		base, inRepo = repo, true
+	}
+	dir := base
+	for plainDirs[filepath.Base(dir)] && filepath.Dir(dir) != home && filepath.Dir(dir) != dir {
+		dir = filepath.Dir(dir)
+	}
+	rel, err := filepath.Rel(home, dir)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		rel = dir
+	}
+	parts := strings.Split(strings.Trim(rel, "/"), "/")
+	name := strings.Join(parts[max(0, len(parts)-levels):], "/")
+	// В репозитории безликий корень (app) в имя не идёт; вне репозитория он и есть отличие: data/env.
+	from := dir
+	if inRepo {
+		from = base
+	}
+	if inner, err := filepath.Rel(from, filepath.Dir(path)); err == nil && inner != "." && !strings.HasPrefix(inner, "..") {
+		name += "/" + inner
+	}
+	return name
+}
+
+// ProjectName: чьё место для подписи вне обзора - как в строках обзора.
+func ProjectName(path, home string) string { return ownerName(path, home, 1) }
 
 // dirOwner: чья папка зависимостей - репозиторий или папка над ней.
 // Безликое имя (app, src) - взять папку выше: клон часто лежит в обёртке shop/app.

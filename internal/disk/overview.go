@@ -52,7 +52,7 @@ func printOverview(cfg *config.Config, args []string, all, fresh, asJSON bool) e
 		spots = append(spots, diskuse.Spots(tree, r, minSize, stopAt(home))...)
 		measured += tree[r]
 	}
-	rows := diskuse.Rows(spots, home, ownerOf(cfg))
+	rows := diskuse.Rows(spots, home)
 	var volumes int64
 	if len(args) == 0 {
 		for _, r := range diskuse.VolumeRows() {
@@ -259,9 +259,6 @@ func stopAt(home string) func(string) bool {
 		return ok && l.Stop
 	}
 }
-
-// ownerOf: чей репозиторий лежит по пути - для подписей мест.
-func ownerOf(cfg *config.Config) func(string) string { return repoName }
 
 func sortRows(rows []diskuse.Row) {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Size > rows[j].Size })

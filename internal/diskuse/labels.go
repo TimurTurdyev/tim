@@ -25,6 +25,9 @@ var rules = []rule{
 	{".lmstudio/models", Label{Name: "модели LM Studio", Hint: "удалить в LM Studio - My Models", Stop: true}, false},
 	{"/Applications", Label{Name: "программы", Hint: "ненужные - в Корзину из Программ", Stop: true, Kind: Apps}, true},
 	{"Applications", Label{Name: "программы в домашней папке", Hint: "ненужные - в Корзину", Stop: true, Kind: Apps}, true},
+	{"Library/Caches/ms-playwright", Label{Name: "браузеры Playwright", Hint: "старые версии (chromium-1234 рядом с 1243) - целиком, скачаются снова", Stop: true, Whole: true}, false},
+	{"Library/Caches/ms-playwright-mcp", Label{Name: "браузеры Playwright MCP", Hint: "скачаются снова при надобности", Stop: true, Whole: true}, false},
+	{"Library/Application Support/com.apple.wallpaper/aerials", Label{Name: "заставки macOS", Hint: "Настройки - Обои: убрать скачанные; скачаются снова", Stop: true, Whole: true}, false},
 	{"Downloads", Label{Name: "Загрузки", Hint: "разобрать руками", Stop: true}, false},
 	{".Trash", Label{Name: "Корзина", Hint: "очистить Корзину", Stop: true}, false},
 	{".local/share/Trash", Label{Name: "Корзина", Hint: "очистить Корзину", Stop: true}, false},
@@ -48,7 +51,8 @@ type Label struct {
 	Name, Hint, Group string
 	Stop              bool // внутрь не спускаться: это одно целое
 	Whole             bool // можно убрать целиком, пересоздастся само
-	Deps              bool // зависимости проекта: в подписи нужно, чьи они
+	Deps              bool // зависимости проекта
+	Owned             bool // место проекта: в подписи нужно, чьё оно - "файлы Laravel: shop"
 	Kind              Kind
 }
 
@@ -84,15 +88,15 @@ func LabelOf(path, home string) (Label, string, bool) {
 	name := filepath.Base(path)
 	switch {
 	case deps[name]:
-		return Label{Name: "зависимости " + name, Hint: "пересоздаются установкой (tim disk --clean)", Stop: true, Whole: true, Deps: true}, "", true
+		return Label{Name: "зависимости " + name, Hint: "пересоздаются установкой", Stop: true, Whole: true, Deps: true, Owned: true}, "", true
 	case name == "storage" && exists(filepath.Join(filepath.Dir(path), "artisan")):
-		return Label{Name: "файлы Laravel", Hint: "загрузки и логи: перед удалением проверь, что они есть на сервере", Stop: true, Kind: Data}, "", true
+		return Label{Name: "файлы Laravel", Hint: "загрузки и логи: перед удалением проверь, что они есть на сервере", Stop: true, Owned: true, Kind: Data}, "", true
 	case name == "backups" || name == "backup" || strings.Contains(path, "/backups/"):
 		return Label{Name: "бэкапы", Hint: "старые копии - на внешний диск или в облако", Stop: name == "backups" || name == "backup", Kind: Data}, "", true
 	case strings.HasSuffix(name, ".app"):
 		return Label{Name: "приложение " + strings.TrimSuffix(name, ".app"), Hint: "не нужно - в Корзину из Программ", Stop: true, Kind: Apps}, "", true
 	case name == ".git":
-		return Label{Name: "история git", Hint: "git gc --prune=now; большие файлы в истории - git filter-repo", Stop: true, Kind: Data}, "", true
+		return Label{Name: "история git", Hint: "git gc --prune=now; большие файлы в истории - git filter-repo", Stop: true, Owned: true, Kind: Data}, "", true
 	}
 	if i, _, ok := lookup(ix.places, path); ok {
 		p := SystemPlaces[i]

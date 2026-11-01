@@ -43,8 +43,8 @@ func deps(env *app.Env, o options, args []string) error {
 	}
 	s := diskuse.Summarize(items, 20, minSize)
 	for _, it := range s.Top {
-		owner := repoName(it.Path)
-		ui.Println(ui.Label(ui.Pad(ui.Bytes(it.Size), 9)) + " " + ui.Pad(owner, 20) + " " + ui.Dim(paths.Show(it.Path)))
+		owner := diskuse.ProjectName(it.Path, paths.Home())
+		ui.Println(ui.Label(ui.Pad(ui.Bytes(it.Size), 9)) + " " + ui.Fit(owner, 26) + " " + ui.Dim(paths.Show(it.Path)))
 	}
 	kinds := make([]string, 0, len(s.ByKind))
 	for k := range s.ByKind {
@@ -77,7 +77,7 @@ func cleanStale(cfg *config.Config, items []diskuse.Item, minSize int64, o optio
 	var freed int64
 	for _, it := range stale {
 		days := int(time.Since(touched[it.Path]).Hours() / 24)
-		q := fmt.Sprintf("%s %s (%s, не трогали %d дн) - в Корзину?", ui.Bytes(it.Size), paths.Show(it.Path), repoName(it.Path), days)
+		q := fmt.Sprintf("%s %s (%s, не трогали %d дн) - в Корзину?", ui.Bytes(it.Size), paths.Show(it.Path), diskuse.ProjectName(it.Path, paths.Home()), days)
 		if !runner.Confirm(q) {
 			continue
 		}

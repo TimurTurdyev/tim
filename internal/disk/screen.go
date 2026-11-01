@@ -139,7 +139,7 @@ func overviewData(st *state) tui.DiskData {
 	for _, r := range st.roots {
 		spots = append(spots, diskuse.Spots(st.tree, r, 100<<20, stopAt(home))...)
 	}
-	rows := diskuse.Rows(spots, home, ownerOf(st.cfg))
+	rows := diskuse.Rows(spots, home)
 	if len(st.args) == 0 {
 		rows = append(rows, diskuse.VolumeRows()...)
 		sortRows(rows)
