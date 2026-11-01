@@ -85,9 +85,9 @@ func (l *leftovers) Status() string {
 	}
 	big, small, _ := l.counts()
 	if big == 0 {
-		return "крупных нет " + symSep + " " + itoa(small) + " мелких"
+		return "крупных нет " + symSep + " " + ui.Count(small, "мелкий", "мелких", "мелких")
 	}
-	return itoa(big) + " заметных " + symSep + " " + itoa(small) + " мелких"
+	return ui.Count(big, "заметный", "заметных", "заметных") + " " + symSep + " " + ui.Count(small, "мелкий", "мелких", "мелких")
 }
 
 func (l *leftovers) Command() string { return "tim disk --leftovers" }

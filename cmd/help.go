@@ -75,7 +75,7 @@ var examples = map[string]string{
 	"tim server":  "  tim server prod            # алиас из ~/.ssh/config\n  tim server prod --attacks  # кто ломится, за сутки\n  tim server prod --traffic  # кто ходит на сайты, за час\n  tim server prod --traffic --since 1d\n  tim server prod --run disk  # заготовка: что растёт на диске\n  tim server prod --deep      # веб-оболочки, файлы пакетов, SUID\n  tim server prod --ban 203.0.113.5 --dry-run\n  tim server prod --run unit nginx",
 	"tim servers": "  tim servers                # все серверы из ~/.ssh/config\n  tim servers prod web       # только эти\n  tim servers install        # замер раз в 6 часов для прогноза диска",
 	"tim ports":   "  tim ports                  # что слушает порты, в какой папке и кто запустил\n  tim port 5173              # карточка: что это, папка, сессия агента\n  tim port 8000 kill\n  tim ports --old --kill     # забытое: закрыть по одному\n  tim ports --json           # с полями agent и forgotten - для агентов",
-	"tim disk":    "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --deps ~/Dev/clients --min 200M",
+	"tim disk":    "  tim disk                   # куда ушло место\n  tim disk --all\n  tim disk ~/Dev\n  tim disk --clean --days 90  # зависимости заброшенных проектов в Корзину\n  tim disk --leftovers        # что осталось от удалённых программ",
 	"tim pass":    "  tim pass                   # 20 случайных символов\n  tim pass --human           # Kobira-tesuno-mapive-42, читается вслух\n  tim pass --strong --copy   # для менеджера паролей, сразу в буфер",
 	"tim cron":    "  tim cron \"*/15 9-18 * * mon-fri\"\n  tim cron @daily -n 3",
 	"tim jwt":     "  tim jwt eyJhbGciOi...\n  pbpaste | tim jwt",

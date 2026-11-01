@@ -100,8 +100,9 @@ func (g *gathering) libraryDirs(own map[string]bool) {
 				continue
 			}
 			v := g.index.Judge(e.Name())
-			// Папка с именем своего проекта - его же данные: свои программы в разработке не хвост.
-			if !v.Sure && own[strings.ToLower(e.Name())] {
+			// Папка с именем своего проекта - его же данные: свои программы в разработке не хвост. Сборки
+			// проекта называются от него: shop-demo, shop.dev.
+			if !v.Sure && ownName(own, e.Name()) {
 				continue
 			}
 			// По одному имени, без ID, верим только папкам программ: в Caches и Group Containers
@@ -293,4 +294,18 @@ func Remove(g *Group) bool {
 // sortItems: крупные первыми, при равном размере по пути.
 func sortItems(items []Item) {
 	slices.SortStableFunc(items, func(a, b Item) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Path, b.Path)) })
+}
+
+// ownName: имя - свой проект или его сборка: само имя или имя проекта с приставкой через дефис или точку.
+func ownName(own map[string]bool, name string) bool {
+	name = strings.ToLower(name)
+	if own[name] {
+		return true
+	}
+	for i, c := range name {
+		if (c == '-' || c == '.' || c == '_') && i > 2 && own[name[:i]] {
+			return true
+		}
+	}
+	return false
 }
