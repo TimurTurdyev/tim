@@ -153,6 +153,7 @@ type Spot struct {
 	Path string
 	Size int64
 	Rest bool
+	Name string `json:"name,omitempty"` // подпись в разбивке; пусто - имя папки
 }
 
 // Spots спускается от root туда, где место действительно лежит: пока у папки есть подпапки

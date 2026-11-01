@@ -23,7 +23,7 @@ func (d *disk) View(width, height int) string {
 		}
 		out := Notice("Считаю, куда ушло место", progressLine(frac, count, d.started),
 			"первый замер около минуты, потом 15 минут берётся готовый; после esc досчитается в фоне", width)
-		out = append(out, "", "   "+styleTabOff.Render(" Можно освободить ···   Программы ···   Твои файлы ···   Система ··· "))
+		out = append(out, "", "   "+styleTabOff.Render(" Можно освободить ···   Программы ···   Твои файлы ··· "))
 		return strings.Join(out, "\n")
 	}
 	ago := "замер только что"
@@ -35,7 +35,11 @@ func (d *disk) View(width, height int) string {
 	if d.searching() || d.input.Focused() {
 		top, tail = "   "+d.foundLine(), "ГДЕ"
 	}
-	out := []string{"   " + ui.Bar(d.data.UsedPct, 40) + "  " + styleDim.Render(ago+" "+symSep+" r - заново"), top, ""}
+	bar := "   " + ui.Bar(d.data.UsedPct, 40) + "  "
+	if d.data.System > 0 {
+		bar += styleDim.Render("система " + ui.Bytes(d.data.System) + " " + symSep + " ")
+	}
+	out := []string{bar + styleDim.Render(ago+" "+symSep+" r - заново"), top, ""}
 	out = append(out, "   "+styleHead.Render(fmt.Sprintf("%10s   %-8s  %s", "РАЗМЕР "+sortMark(true), "ДОЛЯ",
 		ui.Fit("МЕСТО", min(34, max(20, width-70))+1)+ui.Fit("ТРОГАЛИ", 10)+tail)))
 	var foot []string

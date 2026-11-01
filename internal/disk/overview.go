@@ -1,10 +1,10 @@
 package disk
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,13 +53,18 @@ func printOverview(cfg *config.Config, args []string, all, fresh, asJSON bool) e
 		measured += tree[r]
 	}
 	rows := diskuse.Rows(spots, home)
-	var volumes int64
+	var volumes, system int64
 	if len(args) == 0 {
 		for _, r := range diskuse.VolumeRows() {
 			volumes += r.Size
 			rows = append(rows, r)
 		}
-		sortRows(rows)
+	}
+	rows = diskuse.Group(rows, tree, home)
+	for _, r := range rows {
+		if r.Kind == diskuse.System {
+			system += r.Size
+		}
 	}
 	var unknown int64
 	d, haveDisk := sysinfo.DataDisk()
@@ -75,7 +80,11 @@ func printOverview(cfg *config.Config, args []string, all, fresh, asJSON bool) e
 		return ui.JSON(out)
 	}
 	if haveDisk && len(args) == 0 {
-		ui.Println(ui.Title("Диск") + "  " + ui.Bar(d.Percent(), 20) + ui.Dim("  свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size))))
+		line := ui.Title("Диск") + "  " + ui.Bar(d.Percent(), 20) + ui.Dim("  свободно ") + ui.Bytes(int64(d.Avail)) + ui.Dim(" из "+ui.Bytes(int64(d.Size)))
+		if system > 0 {
+			line += ui.Dim(" \u00b7 система " + ui.Bytes(system))
+		}
+		ui.Println(line)
 		unknown = int64(d.Size-d.Avail) - measured - volumes
 	}
 	shown := shortList(rows, all)
@@ -121,6 +130,9 @@ func printSections(rows, shown []diskuse.Row, all bool) {
 		top = rows[0].Size
 	}
 	for _, sec := range sections {
+		if sec.kind == diskuse.System {
+			continue
+		}
 		var in []diskuse.Row
 		var total int64
 		for _, r := range rows {
@@ -192,7 +204,7 @@ func printItems(r diskuse.Row, all bool) {
 			ui.Println(indent + g.Name + " " + ui.Bytes(it.Size) + ", " + playedText(g.LastPlayed))
 			continue
 		}
-		inline = append(inline, diskuse.ItemName(it.Path)+" "+ui.Bytes(it.Size))
+		inline = append(inline, ui.Clip(cmp.Or(it.Name, diskuse.ItemName(it.Path)), 40)+" "+ui.Bytes(it.Size))
 	}
 	if more > 0 {
 		inline = append(inline, "ещё "+strconv.Itoa(more))
@@ -258,8 +270,4 @@ func stopAt(home string) func(string) bool {
 		l, _, ok := diskuse.LabelOf(p, home)
 		return ok && l.Stop
 	}
-}
-
-func sortRows(rows []diskuse.Row) {
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Size > rows[j].Size })
 }

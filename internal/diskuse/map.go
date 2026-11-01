@@ -35,6 +35,8 @@ type Row struct {
 	Kind             Kind
 	Query            string `json:"query,omitempty"` // строка-сводка: её места находит этот поиск
 	label            string // подпись без имени проекта: от неё удлиняется имя при повторе
+	deps             bool   // зависимости проекта
+	plain            bool   // место без подписи: просто папка
 }
 
 // DefaultRoots: что мерить без аргумента. Домашняя папка есть всегда; на macOS ещё программы и
@@ -109,10 +111,11 @@ func Rows(spots []Spot, home string) []Row {
 			r.Name, r.Hint, r.Kind = l.Name, l.Hint, l.Kind
 		}
 		// Имя проекта - только у мест проекта: у Homebrew или Корзины его быть не должно.
-		if !ok || l.Owned {
+		if (!ok || l.Owned) && !s.Rest {
 			r.label = r.Name
 			r.Name = placeName(r.Name, s.Path, ownerName(s.Path, home, 1))
 		}
+		r.deps, r.plain = ok && l.Deps, !ok
 		rows = append(rows, r)
 	}
 	distinct(rows, home)
@@ -174,25 +177,6 @@ func ownerName(path, home string, levels int) string {
 // ProjectName: чьё место для подписи вне обзора - как в строках обзора.
 func ProjectName(path, home string) string { return ownerName(path, home, 1) }
 
-// dirOwner: чья папка зависимостей - репозиторий или папка над ней.
-// Безликое имя (app, src) - взять папку выше: клон часто лежит в обёртке shop/app.
-func dirOwner(path string) string {
-	dir := filepath.Dir(path)
-	if repo := repoRoot(path); repo != "" && repo != path {
-		dir = repo
-	}
-	top := dir
-	for plainDirs[filepath.Base(top)] && filepath.Dir(top) != top {
-		top = filepath.Dir(top)
-	}
-	if top == dir {
-		return filepath.Base(dir)
-	}
-	// Безликую часть оставить: у одного проекта бывает несколько окружений - app, env.
-	rel, _ := filepath.Rel(top, dir)
-	return filepath.Base(top) + "/" + rel
-}
-
 // placeName: подпись с тем, чьё это: "файлы Laravel: shop-admin", "бэкап example.com".
 // У безымянной папки - репозиторий, в котором она лежит, и путь внутри него.
 func placeName(name, path, owner string) string {
@@ -207,9 +191,6 @@ func placeName(name, path, owner string) string {
 		if repo := repoRoot(path); repo != "" && repo != path {
 			r, _ := filepath.Rel(repo, path)
 			return filepath.Base(repo) + ": " + r
-		}
-		if owner != "" {
-			return "проект " + owner
 		}
 		return filepath.Base(filepath.Dir(path)) + "/" + filepath.Base(path)
 	}

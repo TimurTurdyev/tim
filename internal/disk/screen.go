@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -150,13 +151,22 @@ func overviewData(st *state) tui.DiskData {
 	rows := diskuse.Rows(spots, home)
 	if len(st.args) == 0 {
 		rows = append(rows, diskuse.VolumeRows()...)
-		sortRows(rows)
 	}
+	rows = diskuse.Group(rows, st.tree, home)
 	data := tui.DiskData{MeasuredAt: st.at}
 	if d, ok := sysinfo.DataDisk(); ok {
 		data.UsedPct, data.Avail, data.Size = d.Percent(), int64(d.Avail), int64(d.Size)
 	}
+	// Система - числом в строке полосы: с ней ничего не сделать, вкладка ради одной строки лишняя.
+	for _, r := range rows {
+		if r.Kind == diskuse.System {
+			data.System += r.Size
+		}
+	}
 	for _, sec := range sections {
+		if sec.kind == diskuse.System {
+			continue
+		}
 		tab := tui.DiskTab{Title: tabTitles[sec.kind]}
 		for _, r := range rows {
 			if r.Kind == sec.kind {
@@ -200,7 +210,7 @@ func diskRow(r diskuse.Row, home string) tui.DiskRow {
 			rest += it.Size
 			continue
 		}
-		item := tui.DiskItem{Name: diskuse.ItemName(it.Path), Size: it.Size}
+		item := tui.DiskItem{Name: cmp.Or(it.Name, diskuse.ItemName(it.Path)), Size: it.Size}
 		if g, ok := games[filepath.Base(it.Path)]; ok {
 			item.Name = g.Name
 			item.Note, item.Stale = diskuse.PlayedAgo(g.LastPlayed)

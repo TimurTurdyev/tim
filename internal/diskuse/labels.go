@@ -28,6 +28,8 @@ var rules = []rule{
 	{"Library/Caches/ms-playwright", Label{Name: "браузеры Playwright", Hint: "старые версии (chromium-1234 рядом с 1243) - целиком, скачаются снова", Stop: true, Whole: true}, false},
 	{"Library/Caches/ms-playwright-mcp", Label{Name: "браузеры Playwright MCP", Hint: "скачаются снова при надобности", Stop: true, Whole: true}, false},
 	{"Library/Application Support/com.apple.wallpaper/aerials", Label{Name: "заставки macOS", Hint: "Настройки - Обои: убрать скачанные; скачаются снова", Stop: true, Whole: true}, false},
+	{".gradle/caches", Label{Name: "Gradle: кэш", Hint: "./gradlew --stop, потом удалить целиком: скачается снова", Stop: true, Whole: true}, false},
+	{".gradle/wrapper/dists", Label{Name: "Gradle: дистрибутивы", Hint: "старые версии целиком, нужная скачается снова", Stop: true, Whole: true}, false},
 	{"Downloads", Label{Name: "Загрузки", Hint: "разобрать руками", Stop: true}, false},
 	{".Trash", Label{Name: "Корзина", Hint: "очистить Корзину", Stop: true}, false},
 	{".local/share/Trash", Label{Name: "Корзина", Hint: "очистить Корзину", Stop: true}, false},
@@ -101,6 +103,19 @@ func LabelOf(path, home string) (Label, string, bool) {
 	if i, _, ok := lookup(ix.places, path); ok {
 		p := SystemPlaces[i]
 		return Label{Name: p.Name, Hint: p.Clean, Stop: true, Whole: p.Whole}, "", true
+	}
+	// Папка программы в общих кешах: что бы это ни было, пересоздастся само.
+	if dir := filepath.Dir(path); dir == filepath.Join(home, Caches) || dir == filepath.Join(home, DotCache) {
+		return Label{Name: "кэш " + name, Hint: "пересоздастся сам; чистить при закрытой программе", Stop: true, Whole: true}, "", true
+	}
+	// Данные встроенных программ Apple: их убирает сама система, вручную только сломать.
+	if dir := filepath.Dir(path); strings.HasPrefix(name, "com.apple.") &&
+		(dir == filepath.Join(home, "Library/Containers") || dir == filepath.Join(home, "Library/Group Containers")) {
+		return Label{Name: "Apple: " + strings.TrimPrefix(name, "com.apple."), Stop: true, Kind: System}, "", true
+	}
+	// Вне домашней папки неизвестное - системное: без sudo не убрать, и это не твои файлы.
+	if !strings.HasPrefix(path, home+"/") {
+		return Label{Name: name, Stop: true, Kind: System}, "", true
 	}
 	return Label{}, "", false
 }

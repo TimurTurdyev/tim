@@ -53,6 +53,7 @@ type DiskTab struct {
 type DiskData struct {
 	UsedPct     int
 	Avail, Size int64
+	System      int64 // macOS и служебные тома - числом в строке полосы
 	Tabs        []DiskTab
 	MeasuredAt  time.Time
 	Notes       []string // например про копии Chrome
