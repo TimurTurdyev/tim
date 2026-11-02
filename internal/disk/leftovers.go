@@ -37,6 +37,10 @@ func leftovers(env *app.Env, o options) error {
 		total += g.Size
 	}
 	if len(shown) == 0 {
+		if small > 0 {
+			ui.Println(ui.Dim("крупных хвостов нет; мелких " + strconv.Itoa(small) + " на " + ui.Bytes(smallSize) + ": tim disk --leftovers --all"))
+			return nil
+		}
 		ui.Println(ui.Dim("хвостов удалённых программ не нашёл"))
 		return nil
 	}

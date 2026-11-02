@@ -189,12 +189,17 @@ func printItems(r diskuse.Row, all bool) {
 	var inline []string
 	var rest int64
 	listed, more := 0, 0
+	// С --all мест больше, но строка разбивки всё равно короткая: длинную не прочесть.
+	limit := 4
+	if all {
+		limit = 6
+	}
 	for _, it := range r.Items {
 		switch {
 		case it.Rest:
 			rest += it.Size
 			continue
-		case !all && listed >= 4:
+		case listed >= limit:
 			rest += it.Size
 			more++
 			continue

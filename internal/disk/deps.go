@@ -91,7 +91,11 @@ func cleanStale(cfg *config.Config, items []diskuse.Item, minSize int64, o optio
 		ui.Println(ui.Dim("ничего не убрано; кандидатов " + strconv.Itoa(len(stale))))
 		return nil
 	}
-	ui.Println(ui.Info("освобождено "+ui.Bytes(freed)) + ui.Dim("  вернуть можно из Корзины"))
+	if runner.DryRun {
+		ui.Println(ui.Info("ушло бы в Корзину "+ui.Bytes(freed)) + ui.Dim("  это --dry-run, ничего не тронуто"))
+		return nil
+	}
+	ui.Println(ui.Info("в Корзине "+ui.Bytes(freed)) + ui.Dim("  место освободится, когда очистишь Корзину"))
 	return nil
 }
 

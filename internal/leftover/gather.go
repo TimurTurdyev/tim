@@ -198,8 +198,8 @@ func (g *gathering) measured() []*Group {
 		for _, it := range grp.Items {
 			grp.Size += it.Size
 		}
-		// По одному имени без ID - только крупное: мелких папок от утилит без .app слишком много.
-		if !grp.Sure && grp.Size < 1<<30 {
+		// По одному имени без ID - только заметное: мелких папок от утилит без .app слишком много.
+		if !grp.Sure && grp.Size < 100<<20 {
 			continue
 		}
 		out = append(out, grp)
