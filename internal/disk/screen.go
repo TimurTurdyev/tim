@@ -170,7 +170,7 @@ func overviewData(st *state) tui.DiskData {
 		tab := tui.DiskTab{Title: tabTitles[sec.kind]}
 		for _, r := range rows {
 			if r.Kind == sec.kind {
-				tab.Total += r.Size
+				tab.Total += r.Counted()
 				tab.Rows = append(tab.Rows, diskRow(r, home))
 			}
 		}

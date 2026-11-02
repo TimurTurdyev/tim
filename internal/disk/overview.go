@@ -137,7 +137,7 @@ func printSections(rows, shown []diskuse.Row, all bool) {
 		var total int64
 		for _, r := range rows {
 			if r.Kind == sec.kind {
-				total += r.Size
+				total += r.Counted()
 			}
 		}
 		for _, r := range shown {

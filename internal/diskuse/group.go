@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
@@ -169,7 +170,7 @@ func Copies(tree Tree, home string) []Row {
 			continue
 		}
 		n := strconv.Itoa(len(st.spots))
-		r := Row{Name: "копии " + st.name + " x" + n, Kind: Data, Query: st.name, Hint: "одна папка в " + n + " местах: оставь одну"}
+		r := Row{Name: "копии " + st.name + " x" + n, Kind: Data, Query: st.name, Hint: "одна папка в " + n + " местах: оставь одну", Copy: true}
 		var biggest int64
 		for _, s := range st.spots {
 			r.Size += s.Size
@@ -178,9 +179,41 @@ func Copies(tree Tree, home string) []Row {
 			taken = append(taken, s.Path)
 		}
 		r.Size -= biggest
-		out = append(out, r)
+		out = append(out, cloned(r, st.spots, n))
 	}
 	return out
+}
+
+// cloned: копии, сделанные клонированием APFS (cp -c, копия в Finder), делят блоки - на диске они один раз,
+// и удаление лишней не вернёт ничего. Строка тогда объясняет, а не советует.
+func cloned(r Row, spots []Spot, n string) Row {
+	privs := par.Map(spots, len(spots), func(s Spot) int64 {
+		v, ok := PrivateSize(s.Path)
+		if !ok {
+			return -1
+		}
+		return v
+	})
+	var sum, most int64
+	for _, v := range privs {
+		if v < 0 {
+			return r
+		}
+		sum += v
+		most = max(most, v)
+	}
+	back := sum - most
+	switch {
+	case back < r.Size/10:
+		r.Name = "клоны " + strings.TrimPrefix(r.Name, "копии ")
+		r.Hint = "клоны APFS: в списке посчитаны все " + n + ", а на диске место занято один раз; вернётся, только если убрать все"
+		r.Size -= back
+		r.Copy, r.Clone = false, true
+	case back < r.Size*9/10:
+		r.Hint = "часть блоков у копий общая (клоны APFS): оставив одну, вернёшь столько"
+		r.Size = back
+	}
+	return r
 }
 
 // outermost: без папок, лежащих внутри другой папки того же списка.

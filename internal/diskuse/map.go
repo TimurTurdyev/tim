@@ -34,9 +34,24 @@ type Row struct {
 	Items            []Spot
 	Kind             Kind
 	Query            string `json:"query,omitempty"` // строка-сводка: её места находит этот поиск
-	label            string // подпись без имени проекта: от неё удлиняется имя при повторе
-	deps             bool   // зависимости проекта
-	plain            bool   // место без подписи: просто папка
+	// Copy: строка копий - её место уже посчитано в строках самих папок, в сумму раздела не входит.
+	// У клонов APFS Size - сколько раздел насчитал лишнего, из суммы оно вычитается.
+	Copy  bool   `json:"copy,omitempty"`
+	Clone bool   `json:"clone,omitempty"`
+	label string // подпись без имени проекта: от неё удлиняется имя при повторе
+	deps  bool   // зависимости проекта
+	plain bool   // место без подписи: просто папка
+}
+
+// Counted: сколько строка добавляет к сумме раздела.
+func (r Row) Counted() int64 {
+	switch {
+	case r.Copy:
+		return 0
+	case r.Clone:
+		return -r.Size
+	}
+	return r.Size
 }
 
 // DefaultRoots: что мерить без аргумента. Домашняя папка есть всегда; на macOS ещё программы и
