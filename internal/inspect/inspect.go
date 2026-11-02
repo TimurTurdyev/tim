@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/dnsq"
 )
 
 const Timeout = 5 * time.Second
@@ -52,7 +54,7 @@ type Record struct {
 
 // DNS собирает A, AAAA, CNAME, MX, NS, TXT; server - "1.1.1.1" или пусто для системного резолвера.
 func DNS(host, server string) []Record {
-	r := net.DefaultResolver
+	r := dnsq.Resolver()
 	if server != "" {
 		if !strings.Contains(server, ":") {
 			server += ":53"

@@ -4,11 +4,11 @@ package twins
 
 import (
 	"context"
-	"net"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
 )
 
@@ -99,12 +99,12 @@ func Registered(cands map[string]string) []Twin {
 	found := par.Map(names, 32, func(name string) *Twin {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
-		if ns, err := net.DefaultResolver.LookupNS(ctx, name); err != nil || len(ns) == 0 {
+		if ns, err := dnsq.Resolver().LookupNS(ctx, name); err != nil || len(ns) == 0 {
 			return nil
 		}
 		t := &Twin{Name: name, How: cands[name]}
-		t.IPs, _ = net.DefaultResolver.LookupHost(ctx, name)
-		mx, _ := net.DefaultResolver.LookupMX(ctx, name)
+		t.IPs, _ = dnsq.Resolver().LookupHost(ctx, name)
+		mx, _ := dnsq.Resolver().LookupMX(ctx, name)
 		t.MX = len(mx) > 0
 		return t
 	})

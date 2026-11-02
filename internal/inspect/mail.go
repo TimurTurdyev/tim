@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/level"
 )
 
@@ -136,7 +137,7 @@ type Mail struct {
 }
 
 func lookupTXT(ctx context.Context, name string) []string {
-	txt, _ := net.DefaultResolver.LookupTXT(ctx, name)
+	txt, _ := dnsq.Resolver().LookupTXT(ctx, name)
 	return txt
 }
 
@@ -147,7 +148,7 @@ func MailCheck(domain string, selectors []string) *Mail {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	wg.Go(func() {
-		mx, err := net.DefaultResolver.LookupMX(ctx, domain)
+		mx, err := dnsq.Resolver().LookupMX(ctx, domain)
 		if dnsErr, ok := errors.AsType[*net.DNSError](err); err != nil && (!ok || !dnsErr.IsNotFound) {
 			m.NoAnswer = true
 		}

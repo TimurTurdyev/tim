@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"maps"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
+	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
 )
 
@@ -341,7 +341,7 @@ func bruteforce(domain string) map[string][]string {
 func lookup(name string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
 	defer cancel()
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, name)
+	addrs, err := dnsq.Resolver().LookupIPAddr(ctx, name)
 	if err != nil {
 		return nil
 	}
@@ -356,7 +356,7 @@ func lookup(name string) []string {
 func ptr(ip string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
 	defer cancel()
-	names, err := net.DefaultResolver.LookupAddr(ctx, ip)
+	names, err := dnsq.Resolver().LookupAddr(ctx, ip)
 	if err != nil || len(names) == 0 {
 		return ""
 	}

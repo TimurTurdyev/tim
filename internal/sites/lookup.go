@@ -120,6 +120,13 @@ func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
 	return nil
 }
 
+// hijackNote: почему записи могут разойтись с тем, что показывает dig на этой же машине.
+func hijackNote() {
+	if dnsq.Hijacked() {
+		ui.Println(ui.Dim("DNS на этой машине перехвачен (VPN или фильтр): записи взяты через DNS-over-HTTPS, мимо его кэша"))
+	}
+}
+
 func printDNS(arg, server string, asJSON bool) error {
 	host, _ := netinfo.HostPort(arg, "")
 	recs := inspect.DNS(host, server)
@@ -156,6 +163,9 @@ func printDNS(arg, server string, asJSON bool) error {
 			state = "подписана, подпись проверена"
 		}
 		ui.Println(ui.Label(ui.Pad("DNSSEC", 6)) + " " + state)
+	}
+	if server == "" {
+		hijackNote()
 	}
 	return nil
 }

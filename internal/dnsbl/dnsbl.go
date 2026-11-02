@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/dnsq"
 )
 
 // Zones: списки, которые смотрят почтовые серверы чаще всего.
@@ -39,7 +41,7 @@ func Check(ip string) []Result {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 			defer cancel()
-			addrs, err := net.DefaultResolver.LookupHost(ctx, strings.Join(rev, ".")+"."+z)
+			addrs, err := dnsq.Resolver().LookupHost(ctx, strings.Join(rev, ".")+"."+z)
 			out[i] = classify(z, addrs, err)
 		})
 	}
@@ -69,7 +71,7 @@ func Resolve(host string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	ips, err := dnsq.Resolver().LookupIP(ctx, "ip4", host)
 	if err != nil || len(ips) == 0 {
 		return ""
 	}

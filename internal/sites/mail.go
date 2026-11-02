@@ -76,6 +76,7 @@ func printMail(arg string, selectors []string, asJSON bool) error {
 	default:
 		ui.Println(ui.Bad("итог ") + "есть проблемы: " + strings.Join(reasons, ", "))
 	}
+	hijackNote()
 	if bad > 0 {
 		return ui.Verdictf("ошибок: %d", bad)
 	}

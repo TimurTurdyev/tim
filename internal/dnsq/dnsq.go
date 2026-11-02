@@ -2,6 +2,7 @@
 package dnsq
 
 import (
+	"context"
 	"errors"
 	"math/rand/v2"
 	"net"
@@ -23,49 +24,21 @@ type Answer struct {
 }
 
 func query(server, name string, t dnsmessage.Type) (Answer, error) {
-	n, err := dnsmessage.NewName(strings.TrimSuffix(name, ".") + ".")
+	msg, err := build(name, t)
 	if err != nil {
 		return Answer{}, err
 	}
-	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: uint16(rand.IntN(1 << 16)), RecursionDesired: true})
-	b.EnableCompression()
-	if err := b.StartQuestions(); err != nil {
-		return Answer{}, err
+	var resp []byte
+	if Hijacked() {
+		resp, err = overHTTPS(context.Background(), msg)
+	} else {
+		resp, err = overUDP(server, msg, 3*time.Second)
 	}
-	if err := b.Question(dnsmessage.Question{Name: n, Type: t, Class: dnsmessage.ClassINET}); err != nil {
-		return Answer{}, err
-	}
-	// EDNS с битом DO: без него резолвер не скажет, проверена ли подпись.
-	if err := b.StartAdditionals(); err != nil {
-		return Answer{}, err
-	}
-	var opt dnsmessage.ResourceHeader
-	if err := opt.SetEDNS0(1232, dnsmessage.RCodeSuccess, true); err != nil {
-		return Answer{}, err
-	}
-	if err := b.OPTResource(opt, dnsmessage.OPTResource{}); err != nil {
-		return Answer{}, err
-	}
-	msg, err := b.Finish()
-	if err != nil {
-		return Answer{}, err
-	}
-	conn, err := net.DialTimeout("udp", server, 3*time.Second)
-	if err != nil {
-		return Answer{}, err
-	}
-	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
-	if _, err := conn.Write(msg); err != nil {
-		return Answer{}, err
-	}
-	buf := make([]byte, 4096)
-	k, err := conn.Read(buf)
 	if err != nil {
 		return Answer{}, err
 	}
 	var p dnsmessage.Parser
-	h, err := p.Start(buf[:k])
+	h, err := p.Start(resp)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -75,6 +48,51 @@ func query(server, name string, t dnsmessage.Type) (Answer, error) {
 		return Answer{}, err
 	}
 	return Answer{Authentic: h.AuthenticData, Records: ans}, nil
+}
+
+func build(name string, t dnsmessage.Type) ([]byte, error) {
+	n, err := dnsmessage.NewName(strings.TrimSuffix(name, ".") + ".")
+	if err != nil {
+		return nil, err
+	}
+	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: uint16(rand.IntN(1 << 16)), RecursionDesired: true})
+	b.EnableCompression()
+	if err := b.StartQuestions(); err != nil {
+		return nil, err
+	}
+	if err := b.Question(dnsmessage.Question{Name: n, Type: t, Class: dnsmessage.ClassINET}); err != nil {
+		return nil, err
+	}
+	// EDNS с битом DO: без него резолвер не скажет, проверена ли подпись.
+	if err := b.StartAdditionals(); err != nil {
+		return nil, err
+	}
+	var opt dnsmessage.ResourceHeader
+	if err := opt.SetEDNS0(1232, dnsmessage.RCodeSuccess, true); err != nil {
+		return nil, err
+	}
+	if err := b.OPTResource(opt, dnsmessage.OPTResource{}); err != nil {
+		return nil, err
+	}
+	return b.Finish()
+}
+
+func overUDP(server string, msg []byte, limit time.Duration) ([]byte, error) {
+	conn, err := net.DialTimeout("udp", server, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(limit))
+	if _, err := conn.Write(msg); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 4096)
+	k, err := conn.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf[:k], nil
 }
 
 // Query спрашивает резолверы по очереди, пока один не ответит.
