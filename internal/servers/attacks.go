@@ -59,7 +59,9 @@ func collectAttacks(target string, since time.Duration) (*attackReport, error) {
 		}
 	}
 	r.classify(srvinfo.ByIP(a))
-	if a.SSH == srvinfo.Read {
+	// Новые сети входа замечаются по суткам, как в обычном обходе: окно шире только показывает, иначе входы
+	// недельной давности всплыли бы новым.
+	if a.SSH == srvinfo.Read && since <= 24*time.Hour {
 		observeLogins(target, a.Logins)
 	}
 	return r, nil
