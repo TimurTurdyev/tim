@@ -36,7 +36,7 @@ var SystemPlaces = []Place{
 	{"docker", []string{"/var/lib/docker"}, "docker system prune -a", false},
 	{"журнал systemd", []string{"/var/log/journal"}, "journalctl --vacuum-size=500M", false},
 	{"пакеты apt", []string{"/var/cache/apt"}, "apt-get clean", false},
-	{"модели Hugging Face", []string{".cache/huggingface"}, "hf cache delete - выбрать ненужные модели", true},
+	{"модели Hugging Face", []string{".cache/huggingface"}, "hf cache ls; ненужные - hf cache rm model/<имя>, а не папкой: файлы моделей бывают общими", true},
 	{"uv", []string{".cache/uv"}, "uv cache clean", true},
 	{"браузеры puppeteer", []string{".cache/puppeteer"}, "удалить папку, скачаются снова при надобности", true},
 	{"браузеры chrome-devtools-mcp", []string{".cache/chrome-devtools-mcp"}, "удалить папку, скачаются снова при надобности", true},

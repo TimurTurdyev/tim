@@ -176,7 +176,7 @@ func printRow(r diskuse.Row, top int64, all bool) {
 		return
 	}
 	if r.Hint != "" {
-		ui.Println(indent + ui.Dim("\u2192 "+r.Hint))
+		ui.Println(indent + ui.Dim("\u2192 "+engineHint(r.Name, r.Hint)))
 	}
 }
 

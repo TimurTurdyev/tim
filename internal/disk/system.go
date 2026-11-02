@@ -197,15 +197,29 @@ func tilde(rel string) string {
 	return "~/" + rel
 }
 
-// engineHint: docker system prune чистит только через работающий движок - у выключенного
-// OrbStack нет сокета, и команда падает с "no such file or directory".
+// engineHint: docker system prune чистит только через работающий движок - у выключенного OrbStack нет
+// сокета, и команда падает. У работающего показывает, сколько prune правда вернёт: место OrbStack - это
+// диск виртуалки целиком, с образами и данными работающих контейнеров.
 func engineHint(name, clean string) string {
-	if name != "OrbStack" || !runner.Has("orb") {
+	if name != "OrbStack" && name != "Docker Desktop" && name != "docker" {
 		return clean
 	}
-	out, _ := runner.Output("orb", "status")
-	if strings.TrimSpace(out) == "Running" {
+	if name == "OrbStack" && runner.Has("orb") {
+		if out, _ := runner.Output("orb", "status"); strings.TrimSpace(out) != "Running" {
+			return "OrbStack выключен: orb start, docker system df - сколько вернётся, " + clean + ", orb stop"
+		}
+	}
+	if !runner.Has("docker") {
 		return clean
 	}
-	return "OrbStack выключен: orb start, " + clean + ", orb stop"
+	out, err := runner.OutputWithin(5*time.Second, "docker", "system", "df", "--format", "{{.Type}}\t{{.Reclaimable}}")
+	if err != nil {
+		return clean
+	}
+	prune, volumes := diskuse.DockerReclaim(out)
+	h := clean + " вернёт " + ui.Bytes(prune) + ", остальное - образы и данные работающих контейнеров"
+	if volumes >= 100<<20 {
+		h += "; тома без контейнеров " + ui.Bytes(volumes) + " - только с --volumes, в них бывают базы"
+	}
+	return h
 }

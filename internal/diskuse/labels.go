@@ -33,6 +33,7 @@ var rules = []rule{
 	{"Downloads", Label{Name: "Загрузки", Hint: "разобрать руками", Stop: true}, false},
 	{".Trash", Label{Name: "Корзина", Hint: "очистить Корзину", Stop: true}, false},
 	{".local/share/Trash", Label{Name: "Корзина", Hint: "очистить Корзину", Stop: true}, false},
+	{"/opt/homebrew/var", Label{Name: "Homebrew: данные баз", Hint: "базы brew services: ненужную - сначала дамп, потом brew services stop и brew uninstall, её папку здесь - в Корзину", Kind: Data}, true},
 	{"/opt/homebrew", Label{Name: "Homebrew: программы", Hint: "brew autoremove; brew cleanup; ненужное - brew uninstall", Stop: true, Kind: Apps}, false},
 	{"/var/lib/docker", Label{Name: "docker", Hint: "docker system prune -a", Stop: true}, false},
 	{"/var/log", Label{Name: "журналы системы", Hint: "journalctl --vacuum-size=500M; старые логи в /var/log", Stop: true, Kind: System}, false},

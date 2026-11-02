@@ -15,6 +15,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 )
 
+// apart: папки внутри цельного места, которые показываются отдельно, - базы brew services не программы.
+var apart = []string{"/opt/homebrew/var", "/usr/local/var", "/home/linuxbrew/.linuxbrew/var"}
+
 // Tree: размер папок в байтах по абсолютному пути.
 type Tree map[string]int64
 
@@ -175,7 +178,15 @@ func Spots(t Tree, root string, minSize int64, stop func(string) bool) []Spot {
 			}
 		}
 		if len(big) == 0 || (p != root && stop != nil && stop(p)) {
-			return []Spot{{Path: p, Size: t[p]}}
+			whole := Spot{Path: p, Size: t[p]}
+			var out []Spot
+			for _, a := range apart {
+				if filepath.Dir(a) == p && t[a] >= minSize {
+					out = append(out, walk(a)...)
+					whole.Size -= t[a]
+				}
+			}
+			return append(out, whole)
 		}
 		var out []Spot
 		var sum int64

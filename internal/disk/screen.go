@@ -190,7 +190,7 @@ func diskRow(r diskuse.Row, home string) tui.DiskRow {
 	if name == "" {
 		name = filepath.Base(r.Path)
 	}
-	row := tui.DiskRow{Name: name, Path: r.Path, Hint: r.Hint, Size: r.Size, Cmd: diskuse.Command(r.Hint), Query: r.Query}
+	row := tui.DiskRow{Name: name, Path: r.Path, Hint: engineHint(r.Name, r.Hint), Size: r.Size, Cmd: diskuse.Command(r.Hint), Query: r.Query}
 	if r.Path != "" && r.Query == "" {
 		row.Show = paths.Show(r.Path)
 		row.Removable = removable(r.Path, home)
