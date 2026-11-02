@@ -217,3 +217,88 @@ func TestTraffic(t *testing.T) {
 		t.Errorf("4xx при 8%% - не находка: %v", got)
 	}
 }
+
+// exploreSample: обход сервера под FASTPANEL - сокращённый вывод ExploreScript.
+const exploreSample = `@@nginx
+# configuration file /etc/nginx/nginx.conf:
+    access_log  /var/log/nginx/access.log main;
+# configuration file /etc/nginx/fastpanel2-sites/kniga_usr/kniga.test.conf:
+server {
+    server_name kniga.test;
+    ssl_certificate "/var/www/httpd-cert/kniga.test.crt";
+    set $root_path /var/www/kniga_usr/data/www/kniga.test;
+    root $root_path;
+        fastcgi_pass unix:/var/run/kniga.test.sock;
+    error_log /var/www/kniga_usr/data/logs/kniga.test-frontend.error.log;
+    access_log /var/www/kniga_usr/data/logs/kniga.test-frontend.access.log;
+server {
+     server_name kniga.test;
+    access_log /var/www/kniga_usr/data/logs/kniga.test-frontend.access.log;
+server {
+    server_name www.kniga.test  ;
+    ssl_certificate "/var/www/httpd-cert/kniga.test.crt";
+server {
+    server_name _;
+    root /var/www;
+@@dirs
+/var/www|root|1793387800.41
+/var/www/kniga_usr/data/www/kniga.test|kniga_usr|1792763891.06
+@@certs
+/var/www/httpd-cert/kniga.test.crt|Dec 23 22:19:49 2026 GMT
+@@hits
+/var/www/kniga_usr/data/logs/kniga.test-frontend.access.log|10507|3
+@@php
+/etc/php/8.3/fpm/pool.d/www.conf:listen = /run/php/php8.3-fpm.sock
+/opt/php74/etc/php-fpm.d/kniga.test.conf:listen = /var/run/kniga.test.sock
+@@users
+root|0|/root|/bin/bash
+kniga_usr|1001|/var/www/kniga_usr/data|/bin/bash
+deploy|1002|/home/deploy|/bin/bash
+@@groups
+kniga_usr|kniga_usr fastsecure fastmail
+deploy|deploy sudo
+@@created
+2026-10-30T19:29:13.261377+03:00 web useradd[304603]: new user: name=kniga_usr, UID=1001, GID=1008, home=/var/www/kniga_usr/data, shell=/bin/bash, from=none
+Oct 31 10:02:44 web useradd[1]: new user: name=deploy, UID=1002, GID=1002, home=/home/deploy, shell=/bin/bash, from=/dev/pts/0
+@@lastlog
+root             pts/0    203.0.113.7                               Mon Oct 12 16:34:35 +0300 2026
+@@keys
+root|1
+kniga_usr|0
+deploy|2
+@@procs
+      3 kniga_usr
+    119 root
+@@panel
+fastpanel
+@@end
+`
+
+// Сайты и пользователи с сервера под FASTPANEL: блоки одного имени сливаются, корень - через set, PHP - по пулу,
+// пользователя панели видно по группе, а у заведённого руками "кто завёл" пусто.
+func TestParseExplore(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	e := ParseExplore(exploreSample, now)
+	if len(e.Sites) != 1 {
+		t.Fatalf("сайтов %d: %+v", len(e.Sites), e.Sites)
+	}
+	s := e.Sites[0]
+	if s.Name != "kniga.test" || s.Owner != "kniga_usr" || s.PHP != "7.4" || s.Hits != 10507 || s.Errors != 3 ||
+		s.CertEnd.Month() != time.December || len(s.Aliases) != 1 || s.Root != "/var/www/kniga_usr/data/www/kniga.test" {
+		t.Fatalf("сайт: %+v", s)
+	}
+	by := map[string]Account{}
+	for _, a := range e.Accounts {
+		by[a.Name] = a
+	}
+	kniga, deploy := by["kniga_usr"], by["deploy"]
+	if kniga.By != "FASTPANEL" || kniga.Created.Day() != 30 || len(kniga.Sites) != 1 || kniga.Procs != 3 {
+		t.Fatalf("пользователь панели: %+v", kniga)
+	}
+	if deploy.By != "" || deploy.Keys != 2 || deploy.Created.Day() != 31 {
+		t.Fatalf("заведённый руками: %+v", deploy)
+	}
+	if by["root"].LastFrom != "203.0.113.7" || by["root"].LastLogin.Day() != 12 {
+		t.Fatalf("последний вход root: %+v", by["root"])
+	}
+}

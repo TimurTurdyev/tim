@@ -19,11 +19,20 @@ import (
 // newPrefix: у строки нового ID начинается с него - по нему space отмечает своим.
 const newPrefix = "new "
 
-// Screen: сервер - полосы места, памяти и нагрузки, лампы одной строкой и находки по группам.
-// Последнее известное состояние видно сразу, свежее приходит по ssh следом.
+// Screen: сервер как место - вкладки Состояние, Сайты, Пользователи, Входы. Вкладка читает сервер, когда её
+// открыли.
 func Screen(env *app.Env, target string) tui.Screen {
+	x := &explorer{target: target}
+	return tui.NewTabs([]string{"Серверы", target},
+		[]tui.Tab{stateTab(env, target), sitesTab(env, x), usersTab(target, x), loginsTab(env, target)}, 0)
+}
+
+// stateTab: состояние - полосы места, памяти и нагрузки, лампы одной строкой и находки по группам.
+// Последнее известное состояние видно сразу, свежее приходит по ssh следом.
+func stateTab(env *app.Env, target string) tui.Tab {
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs:  []string{"Серверы", target},
+		Tab:     "Состояние",
 		Loading: "захожу по ssh на " + target + ", только чтение",
 		Refresh: true,
 		Command: func(*tui.BoardRow) string { return "tim server " + target },
@@ -62,7 +71,7 @@ func Screen(env *app.Env, target string) tui.Screen {
 					return "отмечено своим, больше не новое", baseline.Accept(object(target), kind, key)
 				}},
 		},
-	})
+	}).(tui.Tab)
 }
 
 func serverData(s serverState) tui.BoardData {
@@ -100,9 +109,12 @@ func serverData(s serverState) tui.BoardData {
 	d.Wide = true
 	group := "НОВОЕ С " + baseline.Since(fresh).Local().Format("02.01 15:04") + " \u00b7 " + strconv.Itoa(len(fresh))
 	for _, it := range fresh {
+		lvl, inline := level.Warn, "что делать: "+newFix(s.Target, it)
+		if why := explained(s.Target, it); why != "" {
+			lvl, inline = level.OK, why+" - так панель заводит пользователя под сайт; подробнее - вкладка Пользователи"
+		}
 		d.Rows = append(d.Rows, tui.BoardRow{ID: newPrefix + it.Kind + " " + it.Key, Group: group,
-			Cells:  ui.Pad(level.Lamp(level.Warn, ui.Clip(newWhat(it), 22)), 25) + newText(it),
-			Inline: "что делать: " + newFix(s.Target, it)})
+			Cells: ui.Pad(level.Lamp(lvl, ui.Clip(newWhat(it), 22)), 25) + newText(it), Inline: inline})
 	}
 	groups := map[level.Level]string{level.Bad: "ВНИМАНИЕ", level.Warn: "ВНИМАНИЕ", level.OK: "БЕЗ ПОСЛЕДСТВИЙ",
 		level.Info: "БЕЗ ПОСЛЕДСТВИЙ", level.Skip: "НЕ ПРОВЕРЕНО"}

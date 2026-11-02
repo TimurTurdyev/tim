@@ -44,7 +44,7 @@ func CheckServer(alias string) health.Check {
 		return c
 	}
 	misses(alias, true)
-	fresh := baseline.Pending(object(alias))
+	fresh := unexplained(alias)
 	var worst *health.Check
 	for i := range s.Findings {
 		if f := &s.Findings[i]; f.Level >= level.Warn && (worst == nil || f.Level > worst.Level) {
@@ -88,7 +88,8 @@ func RoundLines(alias string) []string {
 // pendingWords: что нового на сервере словами - для главного экрана и уведомления.
 func pendingWords(alias string) []string {
 	var news []string
-	for _, it := range baseline.Pending(object(alias)) {
+	// Новое, которое объясняет обход (пользователь панели под сайт), бедой не считается.
+	for _, it := range unexplained(alias) {
 		if w := newPhrase(it); !slices.Contains(news, w) {
 			news = append(news, w)
 		}
