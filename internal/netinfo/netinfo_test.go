@@ -3,6 +3,7 @@ package netinfo
 import (
 	"net/netip"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -26,10 +27,14 @@ func TestParseRouteGet(t *testing.T) {
 }
 
 func TestParseLsof(t *testing.T) {
-	out := "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\npostgres 1728 dev 7u IPv6 0x1 0t0 TCP [::1]:5432 (LISTEN)\npostgres 1728 dev 8u IPv4 0x2 0t0 TCP 127.0.0.1:5432 (LISTEN)\nOrbStack\\x20Helper 52572 dev 9u IPv4 0x3 0t0 TCP *:443 (LISTEN)\n"
+	out := "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\npostgres 1728 dev 7u IPv6 0x1 0t0 TCP [::1]:5432 (LISTEN)\npostgres 1728 dev 8u IPv4 0x2 0t0 TCP 127.0.0.1:5432 (LISTEN)\nOrbStack\\x20Helper 52572 dev 9u IPv4 0x3 0t0 TCP *:443 (LISTEN)\n" +
+		"php 10199 dev 5u IPv4 0x4 0t0 TCP 127.0.0.1:8199 (LISTEN)\nphp 10201 dev 5u IPv4 0x4 0t0 TCP 127.0.0.1:8199 (LISTEN)\nphp 10202 dev 5u IPv4 0x4 0t0 TCP 127.0.0.1:8199 (LISTEN)\n"
 	list := ParseLsof(out)
-	if len(list) != 2 || list[0].Port != "5432" || list[0].PID != "1728" || list[1].Port != "443" {
+	if len(list) != 3 || list[0].Port != "5432" || list[0].PID != "1728" || len(list[0].PIDs) != 1 || list[1].Port != "443" {
 		t.Errorf("lsof: %+v", list)
+	}
+	if php := list[2]; php.PID != "10199" || !slices.Equal(php.PIDs, []string{"10199", "10201", "10202"}) {
+		t.Errorf("php -S с воркерами - порт держат все: %+v", php)
 	}
 }
 
@@ -63,11 +68,14 @@ func TestParseSS(t *testing.T) {
 	out := `LISTEN 0      4096         0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=812,fd=3))
 LISTEN 0      4096            [::]:22           [::]:*    users:(("sshd",pid=812,fd=4))
 LISTEN 0      511        127.0.0.1:5432      0.0.0.0:*
-LISTEN 0      128   [::ffff:127.0.0.1]:8000         *:*    users:(("php",pid=99,fd=7))
+LISTEN 0      128   [::ffff:127.0.0.1]:8000         *:*    users:(("php",pid=99,fd=7),("php",pid=101,fd=7))
 `
 	list := ParseSS(out)
 	if len(list) != 3 || list[0].Port != "22" || list[0].PID != "812" || list[0].Command != "sshd" || list[1].Port != "5432" || list[1].PID != "" || list[2].Port != "8000" {
 		t.Errorf("ss: %+v", list)
+	}
+	if !slices.Equal(list[0].PIDs, []string{"812"}) || list[1].PIDs != nil || !slices.Equal(list[2].PIDs, []string{"99", "101"}) {
+		t.Errorf("ss pids: %+v", list)
 	}
 }
 

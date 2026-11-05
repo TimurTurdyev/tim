@@ -293,7 +293,12 @@ func killRows(rows []PortRow, force bool) {
 		sig = "-KILL"
 	}
 	for _, r := range rows {
-		if !runner.Confirm(fmt.Sprintf("остановить %s (pid %s)?", ui.Dash(r.Kind), r.Listener.PID)) {
+		pids := holders(r.Listener)
+		if r.Container == nil && len(pids) == 0 {
+			ui.Println(ui.Bad("порт " + r.Port + " держит процесс чужого пользователя: sudo lsof -nP -iTCP:" + r.Port + " -sTCP:LISTEN"))
+			continue
+		}
+		if !runner.Confirm(fmt.Sprintf("остановить %s (%s)?", ui.Dash(r.Kind), pidsText(pids))) {
 			continue
 		}
 		if r.Container != nil {
@@ -302,29 +307,54 @@ func killRows(rows []PortRow, force bool) {
 			}
 			continue
 		}
-		if err := runner.Run("kill", sig, r.Listener.PID); err != nil {
+		if err := runner.Run("kill", append([]string{sig}, pids...)...); err != nil {
 			ui.Println(ui.Bad("не вышло: " + err.Error()))
 			continue
 		}
-		if again, ok := respawned(r.Port, r.Listener.PID, 2*time.Second); ok {
-			parent := procs.Info([]string{again.PPID})[again.PPID]
-			ui.Println(ui.Warn("порт " + r.Port + " поднят заново: " + shortCommand(parent) + " (pid " + again.PPID + ") перезапускает сервер, останавливаю и его"))
-			_ = runner.Run("kill", sig, again.PPID)
-			_ = runner.Run("kill", sig, again.PID)
+		fresh, again, ok := respawned(r.Port, pids, 2*time.Second)
+		if !ok {
+			continue
 		}
+		parent := procs.Info([]string{again.PPID})[again.PPID]
+		if !signalable(again.PPID) {
+			ui.Println(ui.Warn("порт " + r.Port + " поднят заново: " + shortCommand(again) + " (pid " + again.PID + ") - служба, её перезапускает " + cmp.Or(shortCommand(parent), "система") + "; остановите саму службу"))
+			continue
+		}
+		ui.Println(ui.Warn("порт " + r.Port + " поднят заново: " + shortCommand(parent) + " (pid " + again.PPID + ") перезапускает сервер, останавливаю и его"))
+		_ = runner.Run("kill", sig, again.PPID)
+		_ = runner.Run("kill", append([]string{sig}, fresh...)...)
 	}
 }
 
-// respawned: на порту за wait появился новый процесс вместо остановленного. Опрос каждые 300 мс.
-func respawned(port, oldPID string, wait time.Duration) (procs.Proc, bool) {
+// holders: кому слать сигнал ради порта - всем, кто держит сокет, кроме init и самого tim.
+func holders(l netinfo.Listener) []string {
+	return slices.DeleteFunc(slices.Clone(l.PIDs), func(pid string) bool { return !signalable(pid) })
+}
+
+func signalable(pid string) bool {
+	return pid != "" && pid != "0" && pid != "1" && pid != strconv.Itoa(os.Getpid())
+}
+
+func pidsText(pids []string) string {
+	if len(pids) < 2 {
+		return "pid " + strings.Join(pids, "")
+	}
+	return fmt.Sprintf("pid %s и ещё %d", pids[0], len(pids)-1)
+}
+
+// respawned: на порту за wait появились новые процессы вместо остановленных. Опрос каждые 300 мс.
+// Возвращает новых держателей и главного из них - того, чей родитель не среди них.
+func respawned(port string, old []string, wait time.Duration) ([]string, procs.Proc, bool) {
 	for end := time.Now().Add(wait); time.Now().Before(end); time.Sleep(300 * time.Millisecond) {
-		if l, busy := netinfo.PortBusy(port); busy && l.PID != "" && l.PID != oldPID {
-			if p, ok := procs.Info([]string{l.PID})[l.PID]; ok {
-				return p, true
+		l, _ := netinfo.PortBusy(port)
+		fresh := slices.DeleteFunc(holders(l), func(pid string) bool { return slices.Contains(old, pid) })
+		for _, p := range procs.Info(fresh) {
+			if !slices.Contains(fresh, p.PPID) {
+				return fresh, p, true
 			}
 		}
 	}
-	return procs.Proc{}, false
+	return nil, procs.Proc{}, false
 }
 
 func checkPorts(addrs []string) error {

@@ -176,14 +176,15 @@ func closeRow(r PortRow, force bool) (string, error) {
 		_, err := runner.Quiet("docker", "stop", r.Container.Name)
 		return r.Container.Name + ": остановлен", err
 	}
-	if r.Listener.PID == "" {
+	pids := holders(r.Listener)
+	if len(pids) == 0 {
 		return "", ui.Errorf("процесс чужого пользователя: sudo lsof -nP -iTCP:%s -sTCP:LISTEN", r.Port)
 	}
 	sig := "-TERM"
 	if force {
 		sig = "-KILL"
 	}
-	_, err := runner.Quiet("kill", sig, r.Listener.PID)
+	_, err := runner.Quiet("kill", append([]string{sig}, pids...)...)
 	return ui.Dash(r.Kind) + " :" + r.Port + " закрыт", err
 }
 

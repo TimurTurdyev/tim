@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -13,8 +14,11 @@ import (
 // DefaultPort: с него раздаются порты dev-серверов.
 const DefaultPort = 8000
 
-// ssProcRe: имя и pid процесса в колонке users у ss.
-var ssProcRe = regexp.MustCompile(`\(\("([^"]+)",pid=(\d+)`)
+// ssProcRe: имя и pid первого процесса в колонке users у ss, ssPidRe - pid всех.
+var (
+	ssProcRe = regexp.MustCompile(`\(\("([^"]+)",pid=(\d+)`)
+	ssPidRe  = regexp.MustCompile(`,pid=(\d+),`)
+)
 
 // Ports: снимок слушающих портов - один lsof или ss на перебор, а не на каждую пробу.
 type Ports map[string]Listener
@@ -50,8 +54,10 @@ func (p Ports) Busy(port string) bool {
 
 // Listening: слушающие TCP-порты через lsof.
 type Listener struct {
-	Port    string
-	PID     string
+	Port string
+	PID  string
+	// PIDs: все, кто держит сокет; у php -S с воркерами это мастер и каждый воркер.
+	PIDs    []string
 	Command string
 	// Network: слушает не только эту машину - все адреса или адрес в сети; такой dev-сервер виден
 	// всем в той же Wi-Fi, в кафе и в офисе.
@@ -84,14 +90,21 @@ func ParseLsof(out string) []Listener {
 		}
 		cut := strings.LastIndex(name, ":")
 		port, open := name[cut+1:], exposed(name[:cut])
-		if j, ok := byPort[port]; ok {
-			list[j].Network = list[j].Network || open
-			continue
+		j, seen := byPort[port]
+		if !seen {
+			j, byPort[port] = len(list), len(list)
+			list = append(list, Listener{Port: port, PID: f[1], Command: f[0]})
 		}
-		byPort[port] = len(list)
-		list = append(list, Listener{Port: port, PID: f[1], Command: f[0], Network: open})
+		list[j].Network = list[j].Network || open
+		list[j].addPID(f[1])
 	}
 	return list
+}
+
+func (l *Listener) addPID(pid string) {
+	if !slices.Contains(l.PIDs, pid) {
+		l.PIDs = append(l.PIDs, pid)
+	}
 }
 
 // ParseSS: ss -Hltnp -> слушающие порты; один порт на IPv4 и IPv6 - одной строкой.
@@ -109,16 +122,19 @@ func ParseSS(out string) []Listener {
 		if port == "" {
 			continue
 		}
-		if j, ok := byPort[port]; ok {
-			list[j].Network = list[j].Network || open
-			continue
+		j, seen := byPort[port]
+		if !seen {
+			j, byPort[port] = len(list), len(list)
+			list = append(list, Listener{Port: port})
 		}
-		byPort[port] = len(list)
-		l := Listener{Port: port, Network: open}
-		if m := ssProcRe.FindStringSubmatch(line); m != nil {
+		l := &list[j]
+		l.Network = l.Network || open
+		if m := ssProcRe.FindStringSubmatch(line); m != nil && l.PID == "" {
 			l.Command, l.PID = m[1], m[2]
 		}
-		list = append(list, l)
+		for _, m := range ssPidRe.FindAllStringSubmatch(line, -1) {
+			l.addPID(m[1])
+		}
 	}
 	return list
 }
