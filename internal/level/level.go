@@ -1,59 +1,25 @@
-// Package level: общая шкала "насколько всё плохо" для проверок, находок и сообщений экранов.
+// Package level: общая шкала "насколько всё плохо" и её цвета в терминале. Сама шкала живёт в report,
+// чтобы её видели и другие модули; здесь - псевдонимы для разделов и раскраска.
 package level
 
 import (
-	"fmt"
-
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
-
-// Level: порядок важен, худший уровень - наибольший.
-type Level int
 
 const (
-	Skip Level = iota // проверить нечем, например у домена нет почты
-	Info              // к сведению: не плохо и не хорошо
-	OK
-	Warn
-	Bad
+	Skip = report.Skip
+	Info = report.Info
+	OK   = report.OK
+	Warn = report.Warn
+	Bad  = report.Bad
 )
 
-func (l Level) String() string {
-	switch l {
-	case Bad:
-		return "плохо"
-	case Warn:
-		return "внимание"
-	case OK:
-		return "ок"
-	}
-	return "-"
-}
-
-// MarshalText: в --json уровень словом, а не числом.
-func (l Level) MarshalText() ([]byte, error) {
-	return []byte([...]string{"skip", "info", "ok", "warn", "bad"}[l]), nil
-}
-
-// UnmarshalText: уровень словом обратно - кэш проверок читается тем же типом, что пишется.
-func (l *Level) UnmarshalText(b []byte) error {
-	for i, w := range [...]string{"skip", "info", "ok", "warn", "bad"} {
-		if string(b) == w {
-			*l = Level(i)
-			return nil
-		}
-	}
-	return fmt.Errorf("неизвестный уровень %q", b)
-}
+// Level: то же, что report.Level.
+type Level = report.Level
 
 // Worst: худший из уровней, Skip без уровней.
-func Worst(levels ...Level) Level {
-	worst := Skip
-	for _, l := range levels {
-		worst = max(worst, l)
-	}
-	return worst
-}
+func Worst(levels ...Level) Level { return report.Worst(levels...) }
 
 // Lamp: строка со значком уровня - читается и без цвета.
 func Lamp(l Level, text string) string {

@@ -13,14 +13,18 @@ import (
 	"testing"
 )
 
-const module = "github.com/TimurTurdyev/tim/internal/"
+const module = "github.com/TimurTurdyev/tim/"
 
 // Ядро ничего не знает о предметной области; разделы - то, что видит человек; остальное - библиотеки.
 // app - связка корня и разделов: окружение, запуск экранов; ей можно в библиотеки.
 var (
 	core = []string{"brand", "cache", "config", "fuzzy", "gitx", "level", "par", "paths", "privileged",
-		"runner", "schedule", "shellq", "tui", "ui"}
-	sections = []string{"bypass", "disk", "home", "local", "machine", "motd", "servers", "shell", "sites",
+		"report", "runner", "schedule", "shellq", "tui", "ui", "view"}
+	// Пакеты в корне модуля открыты другим модулям (страница проверки сайта): без терминала, системы и
+	// конфига tim.
+	public       = []string{"report"}
+	publicDenied = []string{"app", "config", "privileged", "runner", "tui", "ui", "view"}
+	sections     = []string{"bypass", "disk", "home", "local", "machine", "motd", "servers", "shell", "sites",
 		"tools"}
 	// Разрешённые зависимости раздела от раздела: строго в одну сторону.
 	sectionDeps = map[string][]string{
@@ -36,7 +40,7 @@ var (
 
 type goFile struct {
 	path string // относительно корня модуля
-	pkg  string // каталог под internal/ или "cmd"
+	pkg  string // каталог под internal/, "cmd" или открытый пакет в корне
 	ast  *ast.File
 	fset *token.FileSet
 	size int
@@ -95,8 +99,10 @@ func forbidden(f goFile, imp string) string {
 	if !ok || f.pkg == "cmd" {
 		return ""
 	}
-	dep, _, _ = strings.Cut(dep, "/")
+	dep, _, _ = strings.Cut(strings.TrimPrefix(dep, "internal/"), "/")
 	switch {
+	case slices.Contains(public, f.pkg) && slices.Contains(publicDenied, dep):
+		return "открытый пакет не тянет терминал, систему и конфиг tim"
 	case dep == "tui" && f.pkg != "tui" && level(f.pkg) != "app" && level(f.pkg) != "section":
 		return "экраны только в разделах"
 	case dep == "tui" && f.pkg != "home" && level(f.pkg) == "section" && !strings.HasPrefix(name, "screen"):
@@ -158,7 +164,7 @@ func sources(t *testing.T) []goFile {
 	t.Helper()
 	root := filepath.Join("..", "..")
 	var files []goFile
-	for _, dir := range []string{"cmd", "internal"} {
+	for _, dir := range append([]string{"cmd", "internal"}, public...) {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
@@ -173,8 +179,8 @@ func sources(t *testing.T) []goFile {
 				return err
 			}
 			rel, _ := filepath.Rel(root, path)
-			pkg := "cmd"
-			if rest, ok := strings.CutPrefix(filepath.ToSlash(rel), "internal/"); ok {
+			pkg, rest, _ := strings.Cut(filepath.ToSlash(rel), "/")
+			if pkg == "internal" {
 				pkg, _, _ = strings.Cut(rest, "/")
 			}
 			files = append(files, goFile{path: rel, pkg: pkg, ast: file, fset: fset, size: strings.Count(string(data), "\n")})
