@@ -19,6 +19,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/stack"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // ForgottenAfter: dev-сервер, который работает дольше, обычно забыли остановить.
@@ -221,34 +223,31 @@ func printPorts(cfg *config.Config, o portsOptions) error {
 		}
 		rows = append(rows, r)
 	}
-	if o.json {
-		return printJSON(rows)
-	}
-	printRows(rows)
 	tail := ui.Count(len(rows), "порт", "порта", "портов")
 	if !o.all {
 		tail += " \u00b7 системные и эфемерные скрыты: --all"
 	}
-	ui.Println(ui.Dim(tail + " \u00b7 карточка и kill: tim port <n> [kill]"))
-	return nil
+	r := tableReport(rows)
+	r.Blocks = append(r.Blocks, report.Note(tail+" \u00b7 карточка и kill: tim port <n> [kill]"))
+	return view.Show(r, o.json)
 }
 
 func printForgotten(cfg *config.Config, o portsOptions) error {
 	rows := Forgotten(PortsFull(cfg), o.older)
-	if o.json && !o.kill {
-		return printJSON(rows)
-	}
-	if len(rows) == 0 {
-		ui.Println(ui.Dim("забытых процессов нет: ни сессий агентов, которые закрылись, ни запущенного старше " + ui.Short(o.older)))
-		return nil
-	}
-	printRows(rows)
-	if o.kill {
+	r := tableReport(rows)
+	switch {
+	case o.json && !o.kill:
+		return view.JSON(r)
+	case len(rows) == 0:
+		r.Blocks = []report.Block{report.Note("забытых процессов нет: ни сессий агентов, которые закрылись, ни запущенного старше " + ui.Short(o.older))}
+	case o.kill:
+		view.Print(r)
 		killRows(rows, o.force)
 		return nil
+	default:
+		r.Blocks = append(r.Blocks, report.Next{{Text: "остановить", Command: "tim ports --old --kill"}})
 	}
-	ui.Println(ui.Dim("остановить: tim ports --old --kill"))
-	return nil
+	return view.Show(r, false)
 }
 
 // portOwner: кто держит порт; с "kill" вторым словом - остановить его.
@@ -263,25 +262,16 @@ func portOwner(cfg *config.Config, args []string, o portsOptions) error {
 			found = append(found, r)
 		}
 	}
-	if len(found) == 0 {
-		if o.json {
-			return printJSON([]PortRow{})
-		}
-		ui.Println(ui.Dim("порт " + port + " свободен"))
-		return nil
-	}
-	if o.json && (len(args) < 2 || args[1] != "kill") {
-		return printJSON(found)
-	}
-	if len(args) > 1 && args[1] == "kill" {
-		printRows(found)
+	kill := len(args) > 1 && args[1] == "kill"
+	switch {
+	case len(found) == 0:
+		return view.Show(report.Report{Data: portsData(nil), Blocks: []report.Block{report.Note("порт " + port + " свободен")}}, o.json)
+	case kill:
+		view.Print(tableReport(found))
 		killRows(found, o.force)
 		return nil
 	}
-	for _, r := range found {
-		printCard(r)
-	}
-	return nil
+	return view.Show(cardsReport(found), o.json)
 }
 
 // killRows: процессу - сигнал; порту контейнера - docker stop, иначе лёг бы весь движок Docker.
@@ -374,8 +364,8 @@ func checkPorts(addrs []string) error {
 	return nil
 }
 
-// printJSON: строки портов для скриптов и агентов.
-func printJSON(rows []PortRow) error {
+// portsData: строки портов для скриптов и агентов - форма --json.
+func portsData(rows []PortRow) []portJSON {
 	out := make([]portJSON, 0, len(rows))
 	for _, r := range rows {
 		j := portJSON{Kind: r.Kind, Folder: r.Folder, Dir: r.Dir, Agent: r.Agent, Forgotten: r.Forgotten(ForgottenAfter),
@@ -386,7 +376,7 @@ func printJSON(rows []PortRow) error {
 		}
 		out = append(out, j)
 	}
-	return ui.JSON(out)
+	return out
 }
 
 // whoShort: кто запустил - для колонки: "агент", "агент, сессия закрыта"; руками - пусто.
@@ -404,40 +394,28 @@ func whoShort(r PortRow) string {
 	return "агент"
 }
 
-// printRows: колонки по самому длинному значению; команда целиком - в карточке tim port <n>.
-func printRows(rows []PortRow) {
-	table := [][]string{{"ПОРТ", "ЧТО", "ПАПКА", "КТО", "РАБОТАЕТ", "PID"}}
+// tableReport: таблица портов; команда целиком - в карточке tim port <n>.
+func tableReport(rows []PortRow) report.Report {
+	t := report.Table{Columns: []report.Column{{Title: "ПОРТ", Style: report.Key}, {Title: "ЧТО"}, {Title: "ПАПКА"},
+		{Title: "КТО", Style: report.Muted}, {Title: "РАБОТАЕТ", Kind: report.Duration, Style: report.Muted},
+		{Title: "PID", Kind: report.Number, Style: report.Muted}}}
 	for _, r := range rows {
-		// Пустая ячейка - пустая: столбик прочерков в девяти строках из десяти - шум.
 		kind := r.Kind
 		if r.Network && devServer(r) {
-			kind += " · в сети"
+			kind += " \u00b7 в сети"
 		}
-		table = append(table, []string{strings.Join(r.Ports, ", "), kind, r.Folder, whoShort(r), uptime(r.Uptime), r.Listener.PID})
+		pid, _ := strconv.Atoi(r.Listener.PID)
+		t.Rows = append(t.Rows, []any{portList(r.Ports), kind, r.Folder, whoShort(r), r.Uptime, pid})
 	}
-	widths := make([]int, len(table[0]))
-	for _, t := range table {
-		for i, c := range t {
-			widths[i] = max(widths[i], ui.Width(c))
-		}
+	return report.Report{Data: portsData(rows), Blocks: []report.Block{t}}
+}
+
+// portList: у Docker и OrbStack один процесс держит десяток портов - в колонке первые три, все - в карточке.
+func portList(ports []string) string {
+	if len(ports) <= 4 {
+		return strings.Join(ports, ", ")
 	}
-	for n, t := range table {
-		var cells []string
-		for i, c := range t {
-			switch {
-			case i == len(t)-1:
-				c = strings.Repeat(" ", max(0, widths[i]-ui.Width(c))) + c // PID - число, вправо
-			default:
-				c = ui.Pad(c, widths[i])
-			}
-			cells = append(cells, c)
-		}
-		if n == 0 {
-			ui.Println(ui.Dim(strings.Join(cells, "  ")))
-			continue
-		}
-		ui.Println(ui.Label(cells[0]) + "  " + strings.Join(cells[1:3], "  ") + "  " + ui.Dim(strings.Join(cells[3:], "  ")))
-	}
+	return strings.Join(ports[:3], ", ") + " и ещё " + strconv.Itoa(len(ports)-3)
 }
 
 func uptime(d time.Duration) string {

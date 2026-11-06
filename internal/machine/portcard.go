@@ -10,55 +10,53 @@ import (
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // shells: родитель-оболочка - значит, процесс запущен руками в терминале.
 var shells = map[string]bool{"zsh": true, "bash": true, "fish": true, "sh": true, "-zsh": true, "-bash": true}
 
-// printCard: всё о процессе на порту - что это, где, сколько ест, кто запустил и куда пишет.
-// Строки без данных не печатаются.
-func printCard(r PortRow) {
+// cardsReport: всё о процессах на порту - что это, где, сколько ест, кто запустил и куда пишет.
+// Строки без данных не показываются.
+func cardsReport(rows []PortRow) report.Report {
+	r := report.Report{Data: portsData(rows)}
+	for _, row := range rows {
+		r.Blocks = append(r.Blocks, cardBlocks(row)...)
+	}
+	return r
+}
+
+func cardBlocks(r PortRow) []report.Block {
 	title := ":" + strings.Join(r.Ports, ", :") + "  " + ui.Dash(r.Kind)
 	if r.Folder != "" {
 		title += "  " + r.Folder
 	}
-	ui.Println(ui.Label(title))
-	line := func(k, v string) {
+	var facts report.Facts
+	add := func(k, v string) {
 		if v != "" {
-			ui.Println("  " + ui.Dim(ui.Pad(k, 10)) + v)
+			facts = append(facts, report.Fact{Key: k, Value: v})
 		}
 	}
 	switch {
 	case r.Container != nil:
-		line("контейнер", r.Container.Name+" ("+r.Container.Image+")")
-		line("журнал", "docker logs -f "+r.Container.Name)
-		ui.Println(ui.Dim("  остановить: docker stop " + r.Container.Name))
-		return
+		add("контейнер", r.Container.Name+" ("+r.Container.Image+")")
+		add("журнал", "docker logs -f "+r.Container.Name)
+		return []report.Block{report.Heading(title), facts, report.Next{{Text: "остановить", Command: "docker stop " + r.Container.Name}}}
 	case r.Listener.PID == "":
-		line("процесс", "чужого пользователя: sudo lsof -nP -iTCP:"+r.Port+" -sTCP:LISTEN")
-		return
+		add("процесс", "чужого пользователя: sudo lsof -nP -iTCP:"+r.Port+" -sTCP:LISTEN")
+		return []report.Block{report.Heading(title), facts}
 	}
-	line("папка", paths.Show(r.Cwd))
-	line("процесс", fmt.Sprintf("%s %s, работает %s, память %s", filepath.Base(r.Proc.Command), r.Listener.PID, uptime(r.Uptime), ui.Bytes(r.RSS)))
-	width := 1 << 20
-	if cols := ui.Cols(); cols > 0 {
-		width = max(40, cols-14)
-	}
-	for i, l := range ui.Wrap(r.Args, width) {
-		if i == 0 {
-			line("команда", l)
-		} else {
-			ui.Println(strings.Repeat(" ", 12) + l)
-		}
-	}
-	line("запустил", starter(r))
+	add("папка", paths.Show(r.Cwd))
+	add("процесс", fmt.Sprintf("%s %s, работает %s, память %s", filepath.Base(r.Proc.Command), r.Listener.PID, uptime(r.Uptime), ui.Bytes(r.RSS)))
+	add("команда", r.Args)
+	add("запустил", starter(r))
 	out, errs := procs.Outputs(r.Listener.PID)
 	log := out
 	if errs != "" && errs != out {
 		log = strings.TrimSpace(out + "  ошибки: " + errs)
 	}
-	line("журнал", paths.Show(log))
-	ui.Println(ui.Dim("  остановить: tim port " + r.Port + " kill"))
+	add("журнал", paths.Show(log))
+	return []report.Block{report.Heading(title), facts, report.Next{{Text: "остановить", Command: "tim port " + r.Port + " kill"}}}
 }
 
 // starter: кто запустил процесс - агент и его сессия, терминал или родитель. Сервер часто внук того, что
