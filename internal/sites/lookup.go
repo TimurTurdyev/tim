@@ -17,7 +17,12 @@ import (
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
+
+// hijackText: почему записи могут разойтись с тем, что показывает dig на этой же машине.
+const hijackText = "DNS на этой машине перехвачен (VPN или фильтр): записи взяты через DNS-over-HTTPS, мимо его кэша"
 
 // printCert: сертификат одного хоста подробно - кому, кем, имена, сроки, цепочка.
 // certJSON: сертификат для --json - то, что печатает tim cert, без самих байтов цепочки.
@@ -120,11 +125,18 @@ func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
 	return nil
 }
 
-// hijackNote: почему записи могут разойтись с тем, что показывает dig на этой же машине.
 func hijackNote() {
 	if dnsq.Hijacked() {
-		ui.Println(ui.Dim("DNS на этой машине перехвачен (VPN или фильтр): записи взяты через DNS-over-HTTPS, мимо его кэша"))
+		ui.Println(ui.Dim(hijackText))
 	}
+}
+
+// dnsData: записи для --json; CAA и DNSSEC - если резолвер ответил.
+type dnsData struct {
+	Host    string           `json:"host"`
+	Records []inspect.Record `json:"records"`
+	CAA     []string         `json:"caa,omitempty"`
+	DNSSEC  *bool            `json:"dnssec,omitempty"`
 }
 
 func printDNS(arg, server string, asJSON bool) error {
@@ -133,41 +145,37 @@ func printDNS(arg, server string, asJSON bool) error {
 	if len(recs) == 0 {
 		return ui.Errorf("%s: записей нет", host)
 	}
-	if asJSON {
-		out := struct {
-			Host    string           `json:"host"`
-			Records []inspect.Record `json:"records"`
-			CAA     []string         `json:"caa,omitempty"`
-			DNSSEC  *bool            `json:"dnssec,omitempty"`
-		}{Host: host, Records: recs}
-		if caa, err := dnsq.CAA(host); err == nil {
-			out.CAA = caa
-		}
-		if signed, err := dnsq.Signed(host); err == nil {
-			out.DNSSEC = &signed
-		}
-		return ui.JSON(out)
-	}
-	for _, r := range recs {
-		ui.Println(ui.Label(ui.Pad(r.Type, 6)) + r.Value)
-	}
+	d := dnsData{Host: host, Records: recs}
 	// CAA и DNSSEC спрашиваем у проверяющего резолвера: системный за VPN может не ставить бит AD.
 	if caa, err := dnsq.CAA(host); err == nil {
-		for _, c := range caa {
-			ui.Println(ui.Label(ui.Pad("CAA", 6)) + c)
-		}
+		d.CAA = caa
 	}
 	if signed, err := dnsq.Signed(host); err == nil {
-		state := ui.Dim("не подписана")
-		if signed {
-			state = "подписана, подпись проверена"
+		d.DNSSEC = &signed
+	}
+	return view.Show(dnsReport(d, server == "" && dnsq.Hijacked()), asJSON)
+}
+
+func dnsReport(d dnsData, hijacked bool) report.Report {
+	var rows report.Facts
+	for _, r := range d.Records {
+		rows = append(rows, report.Fact{Key: r.Type, Value: r.Value})
+	}
+	for _, c := range d.CAA {
+		rows = append(rows, report.Fact{Key: "CAA", Value: c})
+	}
+	if d.DNSSEC != nil {
+		state := report.Fact{Key: "DNSSEC", Value: "подписана, подпись проверена"}
+		if !*d.DNSSEC {
+			state.Value, state.Level = "не подписана", report.Info
 		}
-		ui.Println(ui.Label(ui.Pad("DNSSEC", 6)) + " " + state)
+		rows = append(rows, state)
 	}
-	if server == "" {
-		hijackNote()
+	r := report.Report{Schema: "tim.dns/1", Title: d.Host, Data: d, Blocks: []report.Block{rows}}
+	if hijacked {
+		r.Blocks = append(r.Blocks, report.Note(hijackText))
 	}
-	return nil
+	return r
 }
 
 // flushDNS: на macOS - dscacheutil и mDNSResponder, на Linux кэш держит systemd-resolved или nscd;

@@ -10,6 +10,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/audit"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // auditOptions: как отдать отчёт - на экран, JSON, файлом для клиента.
@@ -31,14 +33,11 @@ func runAudit(env *app.Env, arg string, o auditOptions) error {
 	if err != nil {
 		return ui.Errorf("%s: %v", target, err)
 	}
-	if o.json {
-		return ui.JSON(r)
-	}
-	printAudit(r)
 	if o.md || o.html {
+		view.Print(auditReport(r))
 		return writeReport(r, o)
 	}
-	return nil
+	return view.Show(auditReport(r), o.json)
 }
 
 // writeReport: отчёт для клиента файлом рядом, имя - сайт и дата, если не задано --out.
@@ -73,26 +72,11 @@ func auditTarget(env *app.Env, arg string) (string, error) {
 	return "", ui.Errorf("%s - не домен: tim audit example.ru", arg)
 }
 
-// printAudit: вердикт строкой, потом находки - худшие сверху, у каждой почему и что сделать.
-func printAudit(r *audit.Report) {
-	ui.Println(ui.Label(r.Final) + "  " + level.Lamp(r.Verdict(), verdictText(r)))
-	// В трубе ширины нет - строки не переносятся, их перенесёт то, что читает.
-	width := 1 << 20
-	if cols := ui.Cols(); cols > 0 {
-		width = max(60, cols-8)
-	}
-	for _, f := range r.Findings {
-		ui.Println("  " + level.Lamp(f.Level, ui.Pad(f.Area, 11)+f.Text))
-		for _, part := range [][2]string{{"почему: ", f.Why}, {"что сделать: ", f.Fix}} {
-			if part[1] == "" {
-				continue
-			}
-			for _, l := range ui.Wrap(part[0]+part[1], width) {
-				ui.Println(ui.Dim("      " + l))
-			}
-		}
-	}
-	ui.Println(ui.Dim("проверено: " + strings.Join(r.Checked, ", ")))
+// auditReport: вердикт рядом с адресом, находки - худшие сверху, у каждой почему и что сделать.
+func auditReport(r *audit.Report) report.Report {
+	return report.Report{Schema: "tim.audit/1", Title: r.Final, Data: r,
+		Verdict: report.Verdict{Level: r.Verdict(), Text: verdictText(r)},
+		Blocks:  []report.Block{report.Findings(r.Findings), report.Note("проверено: " + strings.Join(r.Checked, ", "))}}
 }
 
 func verdictText(r *audit.Report) string {

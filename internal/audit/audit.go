@@ -7,16 +7,11 @@ import (
 	"slices"
 
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // Finding: что не так, почему это плохо и что сделать.
-type Finding struct {
-	Area  string      `json:"area"`
-	Level level.Level `json:"level"`
-	Text  string      `json:"text"`
-	Why   string      `json:"why,omitempty"`
-	Fix   string      `json:"fix,omitempty"`
-}
+type Finding = report.Finding
 
 // Report: итог проверки одного сайта.
 type Report struct {
