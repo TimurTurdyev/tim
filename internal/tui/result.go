@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -8,12 +9,17 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // result: вывод команды внутри экрана. Команда - в крошке и справа внизу, в теле только вывод; исход
-// и время - в статусе; что логично сделать дальше - цифрами сразу под выводом.
+// и время - в статусе; что логично сделать дальше - цифрами сразу под выводом. Отчёт команды экран
+// раскладывает сам под свою ширину, его таблицу сортирует p.
 type result struct {
-	run     func() (string, error)
+	run     func() (string, *report.Report, error)
+	rep     *report.Report
+	sortBy  int
 	title   string
 	lines   []string
 	out     string
@@ -30,6 +36,7 @@ type result struct {
 
 type resultMsg struct {
 	out string
+	rep *report.Report
 	err error
 }
 
@@ -43,24 +50,38 @@ type ResultOpts struct {
 }
 
 func newResult(run func() (string, error)) *result {
-	return &result{run: run, title: "команда"}
+	return &result{run: func() (string, *report.Report, error) {
+		out, err := run()
+		return out, nil, err
+	}, title: "команда"}
 }
 
 // NewResult: экран результата с заголовком и действиями "дальше".
 func NewResult(title string, run func() (string, error), opts ResultOpts) Screen {
 	r := newResult(run)
+	r.setOpts(title, opts)
+	return r
+}
+
+// NewReportResult: то же, но команда может отдать отчёт - тогда экран рисует его, а не текст.
+func NewReportResult(title string, run func() (string, *report.Report, error), opts ResultOpts) Screen {
+	r := &result{run: run}
+	r.setOpts(title, opts)
+	return r
+}
+
+func (r *result) setOpts(title string, opts ResultOpts) {
 	r.title = title
 	r.copied = opts.Copy
 	r.copyOut = opts.CopyOutput
 	r.next = opts.Next
-	return r
 }
 
 func (r *result) Init() tea.Cmd {
 	r.started = time.Now()
 	return func() tea.Msg {
-		out, err := r.run()
-		return resultMsg{out, err}
+		out, rep, err := r.run()
+		return resultMsg{out, rep, err}
 	}
 }
 
@@ -90,6 +111,9 @@ func (r *result) Keys() []Key {
 	if r.copied != nil {
 		k = append(k, Key{"y", "скопировать"})
 	}
+	if len(r.columns()) > 0 {
+		k = append(k, Key{"p", "порядок"})
+	}
 	return append(k, Key{"r", "повторить"})
 }
 
@@ -98,9 +122,13 @@ func (r *result) Command() string { return "tim " + r.title }
 func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 	switch msg := msg.(type) {
 	case resultMsg:
-		r.done, r.err, r.out = true, msg.err, msg.out
+		r.done, r.err, r.out, r.rep = true, msg.err, msg.out, msg.rep
 		r.took = time.Since(r.started)
 		r.lines = strings.Split(strings.TrimRight(msg.out, "\n"), "\n")
+		if msg.rep != nil {
+			r.lines = view.Lines(*msg.rep, view.Layout{})
+			r.next = mergeNext(stepsOf(*msg.rep), r.next)
+		}
 		markOutcome(msg.err == nil)
 		if msg.err != nil {
 			r.lines = append(r.lines, "", styleBad.Render(symCross+" "+msg.err.Error()))
@@ -123,14 +151,16 @@ func (r *result) Update(msg tea.Msg, app *App) tea.Cmd {
 		case "end", "G":
 			r.top = len(r.lines)
 		case "r":
-			r.done, r.lines, r.top = false, nil, 0
+			r.done, r.lines, r.top, r.rep = false, nil, 0, nil
 			return r.Init()
+		case "p":
+			return r.sortNext(app)
 		case "y":
 			if r.copied == nil || !r.done {
 				return nil
 			}
 			if r.copyOut {
-				r.copied(strings.TrimSpace(ui.StripANSI(r.out)))
+				r.copied(strings.TrimSpace(ui.StripANSI(r.text())))
 				return app.Say(level.OK, r.title+": вывод скопирован")
 			}
 			r.copied("tim " + r.title)
@@ -165,6 +195,9 @@ func (r *result) View(width, height int) string {
 		}
 		next = []string{"", "   " + strings.Join(parts, "     ")}
 	}
+	if r.rep != nil {
+		r.lines = view.Lines(*r.rep, view.Layout{Width: width - 3, SortBy: r.sortBy, Runnable: true})
+	}
 	body := height - len(out) - len(next)
 	r.height = body
 	if r.top > max(0, len(r.lines)-body) {
@@ -178,4 +211,74 @@ func (r *result) View(width, height int) string {
 		out[len(out)-1] = styleDim.Render("   " + symDown + " ещё " + itoa(len(r.lines)-end) + " ниже")
 	}
 	return strings.Join(append(out, next...), "\n")
+}
+
+// text: что копирует y - отчёт без цветов или вывод команды.
+func (r *result) text() string {
+	if r.rep == nil {
+		return r.out
+	}
+	return strings.Join(view.Lines(*r.rep, view.Layout{}), "\n")
+}
+
+// columns: колонки первой таблицы отчёта - по ним сортирует p.
+func (r *result) columns() []report.Column {
+	if r.rep == nil {
+		return nil
+	}
+	for _, b := range r.rep.Blocks {
+		if t, ok := b.(report.Table); ok {
+			return t.Columns
+		}
+	}
+	return nil
+}
+
+// sortNext: p по кругу - колонки слева направо, потом порядок самой команды.
+func (r *result) sortNext(app *App) tea.Cmd {
+	cols := r.columns()
+	if len(cols) == 0 {
+		return nil
+	}
+	r.sortBy = (r.sortBy + 1) % (len(cols) + 1)
+	r.top = 0
+	if r.sortBy == 0 {
+		return app.Say(level.Info, "порядок как у команды")
+	}
+	return app.Say(level.Info, "по колонке "+strings.ToLower(cols[r.sortBy-1].Title))
+}
+
+// stepsOf: шаги "дальше" из отчёта - только команды tim, остальное экран не запускает. Одинаковые
+// подписи (две карточки - два "остановить") заменяются самой командой.
+func stepsOf(rep report.Report) []CommandEntry {
+	var out []CommandEntry
+	names := map[string]int{}
+	for _, b := range rep.Blocks {
+		next, ok := b.(report.Next)
+		if !ok {
+			continue
+		}
+		for _, s := range next {
+			if line, ok := strings.CutPrefix(s.Command, "tim "); ok {
+				out = append(out, CommandEntry{Line: line, Name: s.Text})
+				names[s.Text]++
+			}
+		}
+	}
+	for i := range out {
+		if names[out[i].Name] > 1 {
+			out[i].Name = ""
+		}
+	}
+	return out
+}
+
+func mergeNext(first, rest []CommandEntry) []CommandEntry {
+	out := first
+	for _, e := range rest {
+		if !slices.ContainsFunc(out, func(o CommandEntry) bool { return o.Line == e.Line }) {
+			out = append(out, e)
+		}
+	}
+	return out
 }

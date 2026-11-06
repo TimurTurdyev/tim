@@ -18,7 +18,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/shellq"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 	"github.com/TimurTurdyev/tim/internal/visits"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // notRemembered: команды, которые не предлагать в недавнем: справка, служебные, шим, сводка терминала.
@@ -112,14 +114,14 @@ func cdTo(dir string) error {
 // result: команда выполняется, не выходя из экрана, её вывод - на экране результата.
 func (h *Home) result(args []string) tui.Action {
 	title := strings.Join(args, " ")
-	return tui.Action{Push: tui.NewResult(title, func() (string, error) {
-		out, err := h.inside(args)
+	return tui.Action{Push: tui.NewReportResult(title, func() (string, *report.Report, error) {
+		out, rep, err := h.capture(args, true)
 		if err == nil {
 			if c, _, ferr := h.root.Find(args); ferr == nil {
 				remember(c, args, h.utils)
 			}
 		}
-		return out, err
+		return out, rep, err
 	},
 		tui.ResultOpts{Copy: copier(args), CopyOutput: len(args) == 1 && runsBare[args[0]] || args[0] == "pass" || slices.Contains(args, "--run"),
 			Next: nextAfter(args)})}
@@ -168,6 +170,13 @@ func remember(c *cobra.Command, args, utils []string) {
 
 // inside выполняет команду tim внутри экрана: вывод собирается, вопросы не задаются.
 func (h *Home) inside(args []string) (string, error) {
+	out, _, err := h.capture(args, false)
+	return out, err
+}
+
+// capture: команда без терминала, вывод собирается. С withReport отчёт команды забирает окно результата,
+// а не текст: фоновым вызовам (Env.Inside) нужен именно текст.
+func (h *Home) capture(args []string, withReport bool) (string, *report.Report, error) {
 	prevIn, prevDis := runner.NoInput, tui.Disabled
 	runner.NoInput, tui.Disabled = true, true
 	defer func() { runner.NoInput, tui.Disabled = prevIn, prevDis }()
@@ -176,17 +185,24 @@ func (h *Home) inside(args []string) (string, error) {
 		h.prepare(args)
 	}
 	var err error
-	out := ui.Capture(func() {
+	run := func() {
 		// Справку и ошибки cobra пишет сама, мимо ui: без этого они ложатся поверх экрана.
 		h.root.SetOut(ui.Writer())
 		h.root.SetErr(ui.Writer())
 		h.root.SetArgs(args)
 		err = h.root.Execute()
-	})
+	}
+	var out string
+	var rep *report.Report
+	if withReport {
+		out, rep = view.Capture(run)
+	} else {
+		out = ui.Capture(run)
+	}
 	h.root.SetOut(nil)
 	h.root.SetErr(nil)
 	h.root.SetArgs(nil)
-	return out, err
+	return out, rep, err
 }
 
 // after выполняет команду уже в терминале, после закрытия экрана; строка с "$" - чтобы было видно,
