@@ -27,37 +27,46 @@ const (
 // checks: проверки аудита по порядку. Новая проверка - строка здесь: имя для "проверено" и правило от
 // собранных фактов; сеть, если нужна, - внутри run. Проверки идут параллельно.
 var checks = []check{
-	{"заголовки", false, func(s *site) []Finding { return Headers(s.home.header, s.https) }},
-	{"куки", false, func(s *site) []Finding { return Cookies(s.home.header.Values("Set-Cookie"), s.https) }},
-	{"переход с http", true, func(s *site) []Finding { return one(plainHTTP(s.base)) }},
-	{"TLS", true, func(s *site) []Finding { return TLSFindings(collectTLS(s.host, s.port), time.Now()) }},
-	{"версии", false, func(s *site) []Finding {
+	{name: "заголовки", run: func(s *site) []Finding { return Headers(s.home.header, s.https) }},
+	{name: "куки", run: func(s *site) []Finding { return Cookies(s.home.header.Values("Set-Cookie"), s.https) }},
+	{name: "переход с http", https: true, run: func(s *site) []Finding { return one(plainHTTP(s.base)) }},
+	{name: "TLS", https: true, run: func(s *site) []Finding { return TLSFindings(collectTLS(s.host, s.port), time.Now()) }},
+	{name: "версии", run: func(s *site) []Finding {
 		sw := ParseSoftware(s.home.header.Get("Server"), s.home.header.Get("X-Powered-By"), s.home.body)
-		return VersionFindings(sw, releasesOf(sw))
+		return VersionFindings(sw, releasesOf(sw, s.opts.CacheDir))
 	}},
-	{"порты баз", false, func(s *site) []Finding { return PortFindings(scanPorts(s.host)) }},
-	{strconv.Itoa(len(ProbePaths())) + " путей", false, exposedFiles},
-	{"страница ошибки", false, errorPage},
-	{"индексация", false, indexing},
-	{"www", false, canonicalHost},
-	{"разметка", false, func(s *site) []Finding { return PageFindings(s.page) }},
-	{"ссылки", false, brokenLinks},
-	{"доставка", false, delivery},
-	{"скорость", false, speed},
-	{"dns", false, dns},
-	{"поддомены", false, takeovers},
+	{name: "порты баз", intrusive: true, run: func(s *site) []Finding { return PortFindings(scanPorts(s.host)) }},
+	{name: strconv.Itoa(len(ProbePaths())) + " путей", intrusive: true, run: exposedFiles},
+	{name: "страница ошибки", run: errorPage},
+	{name: "индексация", run: indexing},
+	{name: "www", run: canonicalHost},
+	{name: "разметка", run: func(s *site) []Finding { return PageFindings(s.page) }},
+	{name: "ссылки", run: brokenLinks},
+	{name: "доставка", run: delivery},
+	{name: "скорость", run: speed},
+	{name: "dns", run: dns},
+	{name: "поддомены", run: takeovers},
 }
 
-// check: одна проверка аудита; https - только для сайтов на https.
+// check: одна проверка аудита; https - только для сайтов на https; intrusive - запросы, которых обычный
+// посетитель не делает (пути .env, порты баз): только с Options.Intrusive.
 type check struct {
-	name  string
-	https bool
-	run   func(s *site) []Finding
+	name             string
+	https, intrusive bool
+	run              func(s *site) []Finding
+}
+
+// Options: Intrusive - проверять и пути вроде /.env с портами баз, это для владельца сайта; CacheDir -
+// где хранить сроки версий с endoflife.date, пусто - каталог состояния tim.
+type Options struct {
+	Intrusive bool
+	CacheDir  string
 }
 
 // site: что известно о сайте до проверок. insecure - главная открылась только без проверки сертификата:
 // дальше ходим так же, а про сертификат скажет проверка TLS.
 type site struct {
+	opts                     Options
 	target, base, host, port string
 	https, insecure          bool
 	home                     response
@@ -75,11 +84,12 @@ type response struct {
 }
 
 // Run проверяет сайт по адресу: главная, потом все проверки из таблицы.
-func Run(target string) (*Report, error) {
+func Run(target string, o Options) (*Report, error) {
 	s, err := open(target)
 	if err != nil {
 		return nil, err
 	}
+	s.opts = o
 	r := &Report{Target: target, Final: s.home.url, Status: s.home.status}
 	if !s.https {
 		r.Findings = append(r.Findings, Finding{Area: "https", Level: level.Bad, Text: "сайт открывается без https",
@@ -91,14 +101,15 @@ func Run(target string) (*Report, error) {
 			Why: "заголовки и куки ниже могут быть от заглушки, защиты от ботов или страницы обслуживания, а не от сайта",
 			Fix: "проверить главную в браузере и повторить аудит, когда сайт отвечает 200"})
 	}
+	skip := func(c check) bool { return c.https && !s.https || c.intrusive && !o.Intrusive }
 	results := par.Map(checks, len(checks), func(c check) []Finding {
-		if c.https && !s.https {
+		if skip(c) {
 			return nil
 		}
 		return c.run(s)
 	})
 	for i, c := range checks {
-		if c.https && !s.https {
+		if skip(c) {
 			continue
 		}
 		r.Findings = append(r.Findings, results[i]...)
@@ -171,6 +182,7 @@ func exposedFiles(s *site) []Finding {
 	for i, a := range answers {
 		if f, ok := Exposed(paths[i], a.status, a.body); ok && !seen[f.Text] {
 			seen[f.Text] = true
+			f.Intrusive = true
 			out = append(out, f)
 		}
 	}

@@ -119,14 +119,17 @@ func cycle(list []Release, version string) (Release, bool) {
 }
 
 // releasesOf: ветки продуктов с endoflife.date, кэш на сутки; без сети - что есть в кэше.
-func releasesOf(sw []Software) map[string][]Release {
+func releasesOf(sw []Software, dir string) map[string][]Release {
+	if dir == "" {
+		dir = paths.State("eol")
+	}
 	out := map[string][]Release{}
 	for _, s := range sw {
 		slug, ok := eolSlugs[s.Product]
 		if !ok || s.Distro {
 			continue
 		}
-		list, err := cache.Get(cache.Path(paths.State("eol"), slug), releasesTTL, func() ([]Release, error) {
+		list, err := cache.Get(cache.Path(dir, slug), releasesTTL, func() ([]Release, error) {
 			return fetchReleases(slug)
 		})
 		if err == nil {

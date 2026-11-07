@@ -200,7 +200,7 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 у каждой находки почему это важно и что сделать. Проверяй свои сайты и те, что попросили проверить.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: siteNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(env, app.First(args), o) },
+		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(app.First(args), o) },
 	}
 	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	c.Flags().BoolVar(&o.md, "md", false, "отчёт для клиента в Markdown: audit-<сайт>-<дата>.md")
