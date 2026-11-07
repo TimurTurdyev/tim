@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 // Timing: фазы одного запроса на новом соединении.
@@ -37,11 +39,8 @@ func Measure(url string) (*Timing, error) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh) tim")
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-	client := &http.Client{
-		Timeout:       30 * time.Second,
-		Transport:     &http.Transport{DisableKeepAlives: true, ForceAttemptHTTP2: true, Proxy: http.ProxyFromEnvironment},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	client := webnet.Fresh(30 * time.Second)
+	client.CheckRedirect = webnet.NoRedirect
 	start = time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

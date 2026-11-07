@@ -15,6 +15,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 const (
@@ -34,7 +35,7 @@ var checks = []check{
 		sw := ParseSoftware(s.home.header.Get("Server"), s.home.header.Get("X-Powered-By"), s.home.body)
 		return VersionFindings(sw, releasesOf(sw))
 	}},
-	{"порты баз", false, func(s *site) []Finding { return PortFindings(openPorts(s.host)) }},
+	{"порты баз", false, func(s *site) []Finding { return PortFindings(scanPorts(s.host)) }},
 	{strconv.Itoa(len(ProbePaths())) + " путей", false, exposedFiles},
 	{"страница ошибки", false, errorPage},
 	{"индексация", false, indexing},
@@ -130,12 +131,9 @@ func open(target string) (*site, error) {
 
 // get: GET с ограничением тела; follow - идти по редиректам, иначе ответ на сам путь.
 func (s *site) get(u string, follow ...bool) response {
-	client := &http.Client{Timeout: timeout}
-	if s.insecure {
-		client.Transport = insecureTransport()
-	}
+	client := webnet.Client(timeout, s.insecure)
 	if len(follow) == 0 || !follow[0] {
-		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client.CheckRedirect = webnet.NoRedirect
 	}
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
@@ -149,11 +147,6 @@ func (s *site) get(u string, follow ...bool) response {
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
 	return response{url: resp.Request.URL.String(), status: resp.StatusCode, proto: resp.Proto, header: resp.Header, body: string(body)}
-}
-
-// insecureTransport: без проверки сертификата - он уже признан битым, идём смотреть остальное.
-func insecureTransport() *http.Transport {
-	return &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // осознанно, см. выше
 }
 
 // errorPage: несуществующий путь должен отвечать 404 без отладки; 200 на всё - "мягкая 404", поисковик

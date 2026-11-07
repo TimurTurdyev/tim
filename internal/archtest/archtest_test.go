@@ -19,7 +19,7 @@ const module = "github.com/TimurTurdyev/tim/"
 // app - связка корня и разделов: окружение, запуск экранов; ей можно в библиотеки.
 var (
 	core = []string{"brand", "cache", "config", "fuzzy", "gitx", "level", "par", "paths", "privileged",
-		"report", "runner", "schedule", "shellq", "tui", "ui", "view"}
+		"report", "runner", "schedule", "shellq", "tui", "ui", "view", "webnet"}
 	// Пакеты в корне модуля открыты другим модулям (страница проверки сайта): без терминала, системы и
 	// конфига tim.
 	public       = []string{"report"}

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 var generatorRe = regexp.MustCompile(`(?i)<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)`)
@@ -23,13 +25,14 @@ type Page struct {
 // HTTP идёт по редиректам и читает первые 256 КБ тела для распознавания CMS.
 func HTTP(url string) (*Page, error) {
 	var redirects []string
-	client := &http.Client{Timeout: Timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := webnet.Client(Timeout, false)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("больше 10 редиректов")
 		}
 		redirects = append(redirects, req.URL.String())
 		return nil
-	}}
+	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

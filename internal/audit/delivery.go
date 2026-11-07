@@ -17,6 +17,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 // Пороги скорости: первый байт дольше 400 мс заметен, дольше 800 - сайт "тормозит".
@@ -54,10 +55,7 @@ func delivery(s *site) []Finding {
 // encodingOf: чем сервер сжимает, если попросить как браузер. Сам клиент Go распаковывает gzip молча,
 // поэтому запрос отдельный, с явным Accept-Encoding.
 func encodingOf(s *site) string {
-	client := &http.Client{Timeout: timeout}
-	if s.insecure {
-		client.Transport = insecureTransport()
-	}
+	client := webnet.Client(timeout, s.insecure)
 	req, err := http.NewRequest(http.MethodGet, s.home.url, nil)
 	if err != nil {
 		return ""

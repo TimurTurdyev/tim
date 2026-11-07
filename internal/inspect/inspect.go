@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 const Timeout = 5 * time.Second
@@ -28,7 +29,7 @@ func (c *CertInfo) Leaf() *x509.Certificate { return c.Chain[0] }
 // Cert снимает сертификат; при ошибке проверки цепочки повторяет без проверки, чтобы показать, что там.
 func Cert(host, port string) (*CertInfo, error) {
 	addr := net.JoinHostPort(host, port)
-	dialer := &net.Dialer{Timeout: Timeout}
+	dialer := webnet.Dialer(Timeout)
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host})
 	var verifyErr error
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 var errCrtStale = errors.New("не ответил, показан прошлый список имён")
@@ -365,10 +366,7 @@ func ptr(ip string) string {
 
 // probe: отвечает ли имя по HTTPS, иначе по HTTP; у главной страницы - ещё и счётчики.
 func probe(h *Host, home bool) {
-	client := &http.Client{
-		Timeout:   httpTimeout,
-		Transport: &http.Transport{DisableKeepAlives: true, TLSHandshakeTimeout: httpTimeout},
-	}
+	client := webnet.Fresh(httpTimeout)
 	for _, scheme := range []string{"https", "http"} {
 		req, err := http.NewRequest(http.MethodGet, scheme+"://"+h.Name, nil)
 		if err != nil {

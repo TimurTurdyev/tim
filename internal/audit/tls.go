@@ -12,6 +12,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 const tlsTimeout = 5 * time.Second
@@ -62,7 +63,7 @@ func TLSFindings(t TLSFacts, now time.Time) []Finding {
 // одному на каждую устаревшую версию.
 func collectTLS(host, port string) TLSFacts {
 	var t TLSFacts
-	dialer := &net.Dialer{Timeout: tlsTimeout}
+	dialer := webnet.Dialer(tlsTimeout)
 	addr := net.JoinHostPort(host, port)
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host, InsecureSkipVerify: true})
 	if err != nil {
