@@ -125,3 +125,29 @@ func TestParseRobotsAndPage(t *testing.T) {
 		t.Errorf("%+v", p)
 	}
 }
+
+// Порт базы считается открытым только по ответу самого сервиса: за VPN соединение принимает кто угодно.
+func TestIdentify(t *testing.T) {
+	yes := map[int]string{
+		3306:  "J\x00\x00\x00\x0a8.0.36\x00",
+		5432:  "N",
+		6379:  "-NOAUTH Authentication required.\r\n",
+		27017: "HTTP/1.0 200 OK\r\n\r\nIt looks like you are trying to access MongoDB over HTTP on the native driver port.\r\n",
+		9200:  "HTTP/1.0 401 Unauthorized\r\nX-elastic-product: Elasticsearch\r\n\r\n",
+		11211: "VERSION 1.6.21\r\n",
+		5984:  "HTTP/1.0 200 OK\r\n\r\n{\"couchdb\":\"Welcome\",\"version\":\"3.3.3\"}",
+		8086:  "HTTP/1.0 204 No Content\r\nX-Influxdb-Version: 1.8.10\r\n\r\n",
+		2375:  "HTTP/1.0 200 OK\r\n\r\n{\"Platform\":{\"Name\":\"Docker Engine\"},\"ApiVersion\":\"1.45\"}",
+	}
+	for port, reply := range yes {
+		if !Identify(port, []byte(reply)) {
+			t.Errorf("%d: ответ сервиса не узнан: %q", port, reply)
+		}
+	}
+	nginx := "HTTP/1.1 400 Bad Request\r\nServer: nginx\r\n\r\n<html><head><title>400 Bad Request</title></head></html>"
+	for port := range DBPorts {
+		if Identify(port, nil) || Identify(port, []byte(nginx)) {
+			t.Errorf("%d: пустой или чужой ответ принят за сервис", port)
+		}
+	}
+}
