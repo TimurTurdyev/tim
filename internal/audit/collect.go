@@ -46,6 +46,8 @@ var checks = []check{
 	{name: "скорость", run: speed},
 	{name: "dns", run: dns},
 	{name: "поддомены", run: takeovers},
+	{name: "движок", run: engine},
+	{name: "вход", run: login},
 }
 
 // check: одна проверка аудита; https - только для сайтов на https; intrusive - запросы, которых обычный

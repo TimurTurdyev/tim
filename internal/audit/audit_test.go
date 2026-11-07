@@ -1,8 +1,10 @@
 package audit
 
 import (
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -149,5 +151,59 @@ func TestIdentify(t *testing.T) {
 		if Identify(port, nil) || Identify(port, []byte(nginx)) {
 			t.Errorf("%d: пустой или чужой ответ принят за сервис", port)
 		}
+	}
+}
+
+// Признаки - из стандартных шапок OpenCart 1.5.6.4, 2.3.0.2, 3.0.x и 4.0.2.3 и подвала входа в админку.
+func TestOpenCart(t *testing.T) {
+	heads := map[string]string{
+		`<script src="catalog/view/javascript/jquery/jquery-1.7.1.min.js"></script>`: "1.5",
+		`<script src="catalog/view/javascript/jquery/jquery-2.1.1.min.js"></script>`: "2-3",
+		`<script src="catalog/view/javascript/jquery/jquery-3.7.1.min.js"></script>
+<link href="catalog/view/javascript/bootstrap/css/bootstrap.min.css" rel="stylesheet">`: "3",
+		`<link href="catalog/view/stylesheet/bootstrap.css"><script src="catalog/view/javascript/jquery/jquery-3.7.1.min.js">`: "4",
+		`<a href="https://shop.example/index.php?route=account/login&amp;language=ru-ru">`:                                     "4",
+		`<link href="catalog/view/theme/custom/stylesheet/stylesheet.css">`:                                                    "",
+	}
+	for html, want := range heads {
+		if got := OpenCartBranch(html); got != want {
+			t.Errorf("%q: ветка %q, а не %q", html, got, want)
+		}
+	}
+	admin := `<footer id="footer"><a href="https://www.opencart.com">OpenCart</a> &copy; 2009-2026 All Rights Reserved.<br/>Version 3.0.3.8</footer>`
+	if v := OpenCartVersion(admin); v != "3.0.3.8" {
+		t.Errorf("версия из подвала: %q", v)
+	}
+	levels := map[[2]string]level.Level{{"2-3", ""}: level.Info, {"2-3", "2.3.0.2"}: level.Bad, {"1.5", ""}: level.Bad,
+		{"", "1.5.6.4"}: level.Bad, {"2-3", "3.0.3.8"}: level.Info, {"4", ""}: level.Info}
+	for in, want := range levels {
+		f := OpenCartFindings(in[0], in[1])
+		if len(f) != 1 || f[0].Level != want {
+			t.Errorf("%v: %+v", in, f)
+		}
+	}
+}
+
+func TestForeignLogins(t *testing.T) {
+	page := `<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://connect.facebook.net/en_US/fbevents.js"></script>
+<script src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="shop_bot"></script>`
+	found := ForeignLogins(page)
+	if !slices.Equal(found, []string{"Google", "Telegram"}) {
+		t.Fatalf("пиксель Facebook - не вход: %v", found)
+	}
+	if !Russian("shop.ru", "") || !Russian("example.com", "ru-RU") || Russian("example.com", "en") {
+		t.Error("российский сайт - по зоне или языку страницы")
+	}
+	got := map[string]level.Level{}
+	for _, f := range LoginFindings(append(found, "uLogin"), true) {
+		got[f.Text] = f.Level
+	}
+	want := map[string]level.Level{"вход через Google": level.Bad, "вход через Telegram": level.Info, "вход через виджет uLogin": level.Warn}
+	if !maps.Equal(got, want) {
+		t.Errorf("находки: %v", got)
+	}
+	if f := LoginFindings(found, false); len(f) != 0 {
+		t.Errorf("не российский сайт: %+v", f)
 	}
 }
