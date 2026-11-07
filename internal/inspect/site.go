@@ -76,7 +76,8 @@ func DetectCMS(h http.Header, cookies []string, html string) string {
 	switch {
 	case strings.Contains(low, "/wp-content/") || strings.Contains(low, "/wp-includes/"):
 		return "WordPress"
-	case has("OCSESSID") || strings.Contains(low, "catalog/view/theme") || strings.Contains(low, "index.php?route="):
+	// Одна ссылка index.php?route= - не признак: её сохраняют и после переезда с OpenCart ради старых адресов.
+	case has("OCSESSID") || strings.Contains(low, "catalog/view/"):
 		return "OpenCart"
 	case strings.Contains(low, "/bitrix/") || has("BITRIX_SM"):
 		return "1C-Bitrix"
