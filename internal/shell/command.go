@@ -21,7 +21,7 @@ func configCommand(env *app.Env) *cobra.Command {
 		RunE:  func(cmd *cobra.Command, args []string) error { return printConfig(env.Cfg, raw) },
 	}
 	c.Flags().BoolVar(&raw, "raw", false, "весь файл целиком")
-	return c
+	return app.WithJSON(c)
 }
 
 func initCommand(env *app.Env) *cobra.Command {
@@ -57,7 +57,7 @@ func doctorCommand(env *app.Env) *cobra.Command {
 		RunE:  func(cmd *cobra.Command, args []string) error { return diagnose(env, all) },
 	}
 	c.Flags().BoolVarP(&all, "all", "a", false, "и разделы без бед целиком")
-	return c
+	return app.WithJSON(c)
 }
 
 func selfUpdateCommand(env *app.Env) *cobra.Command {

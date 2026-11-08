@@ -4,11 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/localca"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/trust"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 type certOptions struct {
@@ -60,23 +62,6 @@ func issueCert(names []string, o certOptions) error {
 	return nil
 }
 
-func showCA() {
-	ca, err := localca.Load()
-	if err != nil {
-		ui.Println(ui.Dim("CA ещё нет, создастся при первом tim cert new"))
-		ui.Println(ui.Dim("будет лежать в " + localca.Root()))
-		return
-	}
-	ui.Println(ui.Label("имя   ") + ca.Cert.Subject.CommonName)
-	ui.Println(ui.Label("файл  ") + localca.CertPath())
-	ui.Println(ui.Label("годен ") + ui.DaysLeft(ca.Cert.NotAfter))
-	if trust.Installed(localca.Name()) {
-		ui.Println(ui.Label("в хранилище ") + "да")
-	} else {
-		ui.Println(ui.Warn("в хранилище не установлен") + ui.Dim("  (tim cert ca install)"))
-	}
-}
-
 func trustCA() error {
 	ca, fresh, err := localca.LoadOrCreate()
 	if err != nil {
@@ -117,4 +102,30 @@ func warnUntrusted() {
 	if !trust.Installed(localca.Name()) {
 		ui.Println(ui.Warn("CA не в хранилище, браузер сертификату не поверит") + ui.Dim("  (tim cert ca install)"))
 	}
+}
+
+// caData: свой CA для --json.
+type caData struct {
+	Exists  bool      `json:"exists"`
+	Name    string    `json:"name,omitempty"`
+	File    string    `json:"file"`
+	Expires time.Time `json:"expires,omitzero"`
+	Trusted bool      `json:"trusted"`
+}
+
+func caReport() report.Report {
+	ca, err := localca.Load()
+	if err != nil {
+		return report.Report{Schema: "tim.cert.ca/1", Data: caData{File: localca.CertPath()}, Blocks: []report.Block{
+			report.Note("CA ещё нет, создастся при первом tim cert new"), report.Note("будет лежать в " + localca.Root())}}
+	}
+	d := caData{Exists: true, Name: ca.Cert.Subject.CommonName, File: localca.CertPath(), Expires: ca.Cert.NotAfter,
+		Trusted: trust.Installed(localca.Name())}
+	facts := report.Facts{{Key: "имя", Value: d.Name}, {Key: "файл", Value: d.File}, {Key: "годен", Value: ui.StripANSI(ui.DaysLeft(d.Expires))}}
+	if d.Trusted {
+		facts = append(facts, report.Fact{Key: "в хранилище", Value: "да", Level: report.OK})
+	} else {
+		facts = append(facts, report.Fact{Key: "в хранилище", Value: "не установлен: tim cert ca install", Level: report.Warn})
+	}
+	return report.Report{Schema: "tim.cert.ca/1", Data: d, Blocks: []report.Block{facts}}
 }

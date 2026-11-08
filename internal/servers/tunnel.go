@@ -11,6 +11,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // tunnels: команды tim tunnel и общий для них флаг --port.
@@ -23,28 +24,6 @@ type tunnels struct {
 type allOptions struct {
 	noDNS   bool
 	exclude []string
-}
-
-func printTunnels() {
-	list := sshx.Known()
-	if len(list) == 0 {
-		ui.Println(ui.Dim("туннелей нет: tim tunnel up | port | all"))
-	}
-	for _, t := range list {
-		state := ui.Label("работает")
-		if !t.Alive() {
-			state = ui.Bad("умер")
-		}
-		ui.Println(ui.Pad(t.Name, 14) + " " + ui.Pad(state, 10) + " " + t.Host + "  " + ui.Dim(t.Desc))
-	}
-	if pid, ok := sshx.ShuttlePID(); ok {
-		ui.Println(ui.Pad("all", 14) + " " + ui.Pad(ui.Label("работает"), 10) + " " + ui.Dim("sshuttle, pid "+pid+", весь IPv4 через ssh"))
-	}
-	if phys, _ := netinfo.Physical(); phys.Name != "" {
-		if p := netinfo.SocksProxy(phys.Name); p.Enabled {
-			ui.Println(ui.Warn("системный SOCKS включён на " + phys.Name + ": " + p.Server + ":" + p.Port))
-		}
-	}
 }
 
 func (t *tunnels) socksPort() string {
@@ -106,27 +85,6 @@ func (t *tunnels) down(want string) error {
 		return ui.Errorf("туннеля %s нет: tim tunnel", want)
 	}
 	return nil
-}
-
-func (t *tunnels) check() {
-	direct, err := netinfo.ExternalIP("")
-	if err != nil {
-		direct = ui.Bad(err.Error())
-	}
-	ui.Println(ui.Label("напрямую  ") + direct)
-	proxy := "socks5://127.0.0.1:" + t.socksPort()
-	via, err := netinfo.ExternalIP(proxy)
-	if err != nil {
-		ui.Println(ui.Dim("через SOCKS: туннеля нет или он не отвечает (" + proxy + ")"))
-		if _, ok := sshx.ShuttlePID(); ok {
-			ui.Println(ui.Dim("tunnel all работает: адрес напрямую выше уже должен быть адресом сервера"))
-		}
-		return
-	}
-	ui.Println(ui.Label("через SOCKS ") + via)
-	if via == direct {
-		ui.Println(ui.Warn("адреса совпадают: трафик через SOCKS выходит тем же путём"))
-	}
 }
 
 func (t *tunnels) system(args []string) error {
@@ -265,4 +223,84 @@ func systemProxy(on bool, port string) {
 		return
 	}
 	ui.Println(ui.Label("системный SOCKS включён на " + phys.Name + " -> 127.0.0.1:" + port))
+}
+
+// tunnelRow: туннель для --json.
+type tunnelRow struct {
+	Name  string `json:"name"`
+	Alive bool   `json:"alive"`
+	Host  string `json:"host,omitempty"`
+	Desc  string `json:"desc,omitempty"`
+}
+
+// tunnelsData: туннели tim и системный SOCKS - форма --json у tim tunnel.
+type tunnelsData struct {
+	Tunnels     []tunnelRow `json:"tunnels"`
+	SystemSocks string      `json:"system_socks,omitempty"`
+}
+
+func tunnelsReport() report.Report {
+	d := tunnelsData{Tunnels: []tunnelRow{}}
+	t := report.Table{Columns: []report.Column{{Title: "ТУННЕЛЬ", Style: report.Key}, {Title: "СОСТОЯНИЕ"}, {Title: "КУДА"}, {Title: "ЧТО", Style: report.Muted}}}
+	add := func(row tunnelRow) {
+		state := report.Mark{Text: "работает", Level: report.OK}
+		if !row.Alive {
+			state = report.Mark{Text: "умер", Level: report.Bad}
+		}
+		d.Tunnels = append(d.Tunnels, row)
+		t.Rows = append(t.Rows, []any{row.Name, state, row.Host, row.Desc})
+	}
+	for _, k := range sshx.Known() {
+		add(tunnelRow{Name: k.Name, Alive: k.Alive(), Host: k.Host, Desc: k.Desc})
+	}
+	if pid, ok := sshx.ShuttlePID(); ok {
+		add(tunnelRow{Name: "all", Alive: true, Desc: "sshuttle, pid " + pid + ", весь IPv4 через ssh"})
+	}
+	r := report.Report{Schema: "tim.tunnel/1", Data: &d, Blocks: []report.Block{t}}
+	if len(d.Tunnels) == 0 {
+		r.Blocks = []report.Block{report.Note("туннелей нет: tim tunnel up | port | all")}
+	}
+	if phys, _ := netinfo.Physical(); phys.Name != "" {
+		if p := netinfo.SocksProxy(phys.Name); p.Enabled {
+			d.SystemSocks = p.Server + ":" + p.Port
+			r.Blocks = append(r.Blocks, report.Facts{{Key: "системный SOCKS", Value: "включён на " + phys.Name + ": " + d.SystemSocks, Level: report.Warn}})
+		}
+	}
+	return r
+}
+
+// tunnelCheck: внешний адрес напрямую и через SOCKS - форма --json у tim tunnel check.
+type tunnelCheck struct {
+	Direct string `json:"direct,omitempty"`
+	Socks  string `json:"socks,omitempty"`
+	Same   bool   `json:"same"`
+}
+
+func (t *tunnels) checkReport() report.Report {
+	var d tunnelCheck
+	direct := report.Fact{Key: "напрямую"}
+	if ip, err := netinfo.ExternalIP(""); err != nil {
+		direct.Value, direct.Level = err.Error(), report.Bad
+	} else {
+		d.Direct, direct.Value = ip, ip
+	}
+	facts := report.Facts{direct}
+	r := report.Report{Schema: "tim.tunnel.check/1", Data: &d}
+	proxy := "socks5://127.0.0.1:" + t.socksPort()
+	via, err := netinfo.ExternalIP(proxy)
+	if err != nil {
+		facts = append(facts, report.Fact{Key: "через SOCKS", Value: "туннеля нет или он не отвечает (" + proxy + ")", Level: report.Info})
+		r.Blocks = []report.Block{facts}
+		if _, ok := sshx.ShuttlePID(); ok {
+			r.Blocks = append(r.Blocks, report.Note("tunnel all работает: адрес напрямую выше уже должен быть адресом сервера"))
+		}
+		return r
+	}
+	d.Socks, d.Same = via, via == d.Direct
+	facts = append(facts, report.Fact{Key: "через SOCKS", Value: via})
+	if d.Same {
+		facts = append(facts, report.Fact{Key: "итог", Value: "адреса совпадают: трафик через SOCKS выходит тем же путём", Level: report.Warn})
+	}
+	r.Blocks = []report.Block{facts}
+	return r
 }

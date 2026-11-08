@@ -8,24 +8,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/hostsfile"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
-
-func listHosts() error {
-	_, entries, err := hostsfile.Load()
-	if err != nil {
-		return err
-	}
-	printBlock(entries)
-	names, counts := hostsfile.Profiles(entries)
-	for _, p := range names {
-		c := counts[p]
-		ui.Println(ui.Label(ui.Pad(p, 16)) + ui.Dim(strconv.Itoa(c[0])+" из "+strconv.Itoa(c[1])+" включено"))
-	}
-	if len(entries) > 0 {
-		ui.Println(ui.Dim("включить профиль: tim host on <профиль>"))
-	}
-	return nil
-}
 
 func addHosts(names []string, ip, profile string) error {
 	if net.ParseIP(ip) == nil {
@@ -75,30 +60,6 @@ func switchProfile(profile string, on bool) error {
 	return save(text, entries)
 }
 
-// checkHosts: куда резолвится имя и есть ли оно в блоке tim.
-func checkHosts(names []string) {
-	_, entries, _ := hostsfile.Load()
-	for _, name := range names {
-		line := ui.Pad(name, 30)
-		if ips, err := net.LookupHost(name); err != nil {
-			line += ui.Bad("не резолвится")
-		} else {
-			line += strings.Join(ips, " ")
-		}
-		for _, e := range entries {
-			if !hasName(e, name) {
-				continue
-			}
-			state := "через " + hostsfile.Path() + ", профиль " + e.Profile
-			if !e.On {
-				state = "в " + hostsfile.Path() + " есть, но выключено, профиль " + e.Profile
-			}
-			line += ui.Dim("  " + state)
-		}
-		ui.Println(line)
-	}
-}
-
 // save переписывает файл hosts; в dry-run показывает, каким стал бы блок tim.
 func save(text string, entries []hostsfile.Entry) error {
 	if hostsfile.Render(text, entries) == text {
@@ -115,20 +76,6 @@ func save(text string, entries []hostsfile.Entry) error {
 	}
 	ui.Println(ui.Dim("прежний файл: " + hostsfile.Path() + ".tim-backup"))
 	return nil
-}
-
-func printBlock(entries []hostsfile.Entry) {
-	if len(entries) == 0 {
-		ui.Println(ui.Dim("записей tim в " + hostsfile.Path() + " нет"))
-		return
-	}
-	for _, e := range entries {
-		line := ui.Pad(e.IP, 16) + ui.Pad(strings.Join(e.Names, " "), 40) + ui.Dim(e.Profile)
-		if !e.On {
-			line = ui.Dim(ui.Pad(e.IP, 16)+ui.Pad(strings.Join(e.Names, " "), 40)+e.Profile) + " " + ui.Dim("выключено")
-		}
-		ui.Println(line)
-	}
 }
 
 // nameCount: сколько имён в записях - запись могла остаться, а имя из неё уйти.
@@ -154,4 +101,96 @@ func profileOr(p string) string {
 		return hostsfile.DefaultProfile
 	}
 	return p
+}
+
+// hostRow: запись tim в hosts для --json.
+type hostRow struct {
+	IP      string   `json:"ip"`
+	Names   []string `json:"names"`
+	Profile string   `json:"profile,omitempty"`
+	On      bool     `json:"on"`
+}
+
+// hostsReport: записи tim в hosts и профили - сколько в каждом включено.
+func hostsReport() (report.Report, error) {
+	_, entries, err := hostsfile.Load()
+	if err != nil {
+		return report.Report{}, err
+	}
+	rows := make([]hostRow, 0, len(entries))
+	for _, e := range entries {
+		rows = append(rows, hostRow{e.IP, e.Names, e.Profile, e.On})
+	}
+	r := report.Report{Schema: "tim.host/1", Data: rows, Blocks: []report.Block{blockTable(entries)}}
+	if len(entries) == 0 {
+		return r, nil
+	}
+	names, counts := hostsfile.Profiles(entries)
+	var profiles report.Facts
+	for _, p := range names {
+		profiles = append(profiles, report.Fact{Key: p, Value: strconv.Itoa(counts[p][0]) + " из " + strconv.Itoa(counts[p][1]) + " включено"})
+	}
+	r.Blocks = append(r.Blocks, report.Heading("профили"), profiles, report.Next{{Text: "включить профиль", Command: "tim host on <профиль>"}})
+	return r, nil
+}
+
+// blockTable: блок tim в hosts; выключенные записи приглушены.
+func blockTable(entries []hostsfile.Entry) report.Block {
+	if len(entries) == 0 {
+		return report.Note("записей tim в " + hostsfile.Path() + " нет")
+	}
+	t := report.Table{Columns: []report.Column{{Title: "IP", Style: report.Key}, {Title: "ИМЕНА"}, {Title: "ПРОФИЛЬ", Style: report.Muted}, {Title: ""}}}
+	for _, e := range entries {
+		state := report.Mark{}
+		names := any(strings.Join(e.Names, " "))
+		if !e.On {
+			state = report.Mark{Text: "выключено", Level: report.Info}
+			names = report.Mark{Text: strings.Join(e.Names, " "), Level: report.Info}
+		}
+		t.Rows = append(t.Rows, []any{e.IP, names, e.Profile, state})
+	}
+	return t
+}
+
+func printBlock(entries []hostsfile.Entry) {
+	view.Print(report.Report{Blocks: []report.Block{blockTable(entries)}})
+}
+
+// hostCheck: куда резолвится имя и есть ли оно в блоке tim - для --json у tim host check.
+type hostCheck struct {
+	Name    string   `json:"name"`
+	IPs     []string `json:"ips,omitempty"`
+	Error   string   `json:"error,omitempty"`
+	Profile string   `json:"profile,omitempty"`
+	On      *bool    `json:"on,omitempty"`
+}
+
+func checkHostsReport(names []string) report.Report {
+	_, entries, _ := hostsfile.Load()
+	rows := make([]hostCheck, 0, len(names))
+	var facts report.Facts
+	for _, name := range names {
+		c := hostCheck{Name: name}
+		f := report.Fact{Key: name}
+		if ips, err := net.LookupHost(name); err != nil {
+			c.Error, f.Value, f.Level = err.Error(), "не резолвится", report.Bad
+		} else {
+			c.IPs, f.Value = ips, strings.Join(ips, " ")
+		}
+		for _, e := range entries {
+			if !hasName(e, name) {
+				continue
+			}
+			on := e.On
+			c.Profile, c.On = e.Profile, &on
+			state := "через " + hostsfile.Path() + ", профиль " + e.Profile
+			if !e.On {
+				state = "в " + hostsfile.Path() + " есть, но выключено, профиль " + e.Profile
+			}
+			f.Value += "  " + state
+		}
+		rows = append(rows, c)
+		facts = append(facts, f)
+	}
+	return report.Report{Schema: "tim.host.check/1", Data: rows, Blocks: []report.Block{facts}}
 }

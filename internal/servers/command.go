@@ -205,11 +205,11 @@ func serversCommand(env *app.Env) *cobra.Command {
 
 func tunnelCommand(env *app.Env) *cobra.Command {
 	t := &tunnels{env: env}
-	c := &cobra.Command{
+	c := app.WithJSON(&cobra.Command{
 		Use:   "tunnel",
 		Short: "Туннели через ssh: SOCKS, системный прокси, порты, expose",
-		Run:   func(cmd *cobra.Command, args []string) { printTunnels() },
-	}
+		RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(tunnelsReport(), view.AsJSON) },
+	})
 	up := &cobra.Command{
 		Use:   "up [сервер] [--port 1080]",
 		Short: "SOCKS5 через сервер (ssh -D): слушает только 127.0.0.1, наружу идёт обычный ssh",
@@ -217,12 +217,12 @@ func tunnelCommand(env *app.Env) *cobra.Command {
 		RunE:  func(cmd *cobra.Command, args []string) error { return t.up(app.First(args)) },
 	}
 	up.Flags().IntVar(&t.port, "port", 0, "локальный порт SOCKS (по умолчанию tunnel.port)")
-	check := &cobra.Command{
+	check := app.WithJSON(&cobra.Command{
 		Use:   "check",
 		Short: "Внешний IP напрямую и через SOCKS",
 		Args:  cobra.NoArgs,
-		Run:   func(cmd *cobra.Command, args []string) { t.check() },
-	}
+		RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(t.checkReport(), view.AsJSON) },
+	})
 	check.Flags().IntVar(&t.port, "port", 0, "локальный порт SOCKS")
 	system := &cobra.Command{
 		Use:       "system on|off [сервер]",

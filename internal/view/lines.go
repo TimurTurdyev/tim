@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	keyMax  = 14 // ключи длиннее не растягивают колонку значений
+	keyMax  = 18 // ключи длиннее не растягивают колонку значений
 	areaMax = 12
 	minWrap = 30
 )
@@ -98,12 +98,7 @@ func paintMark(l report.Level, s string) string {
 	return level.Paint(l, s)
 }
 
-func paintFact(l report.Level, s string) string {
-	if l == report.Info {
-		return ui.Dim(s)
-	}
-	return level.Paint(l, s)
-}
+func paintFact(l report.Level, s string) string { return paintMark(l, s) }
 
 // findings: значок и область, текст; под ним почему и что сделать - мельче и с отступом.
 func findings(list report.Findings, indent string, width int) []string {
@@ -111,7 +106,9 @@ func findings(list report.Findings, indent string, width int) []string {
 	for _, f := range list {
 		w = max(w, ui.Width(f.Area))
 	}
-	w = min(w, areaMax) + 2
+	if w > 0 {
+		w = min(w, areaMax) + 2
+	}
 	hang := indent + strings.Repeat(" ", w+2)
 	sub := indent + "    "
 	var out []string

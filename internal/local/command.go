@@ -9,6 +9,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/hostsfile"
 	"github.com/TimurTurdyev/tim/internal/localca"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // Commands: команды раздела; cert new и cert ca встают под cert раздела sites.
@@ -20,15 +21,21 @@ func Commands(env *app.Env) []*cobra.Command {
 }
 
 func hostCommand() *cobra.Command {
-	c := &cobra.Command{
+	c := app.WithJSON(&cobra.Command{
 		Use:   "host",
 		Short: "Локальные имена в /etc/hosts: профили, включение и выключение",
 		Long: `tim ведёт в /etc/hosts свой блок между "# tim:begin" и "# tim:end" и не трогает ничего за его
 пределами. Записи разложены по профилям: профиль целиком включается и выключается одной командой.
 Перед каждой записью файл копируется в /etc/hosts.tim-backup.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return listHosts() },
-	}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := hostsReport()
+			if err != nil {
+				return err
+			}
+			return view.Show(r, view.AsJSON)
+		},
+	})
 	var ip, profile string
 	add := &cobra.Command{
 		Use:   "add <имя...> [--ip 127.0.0.1] [--profile имя]",
@@ -56,12 +63,12 @@ func hostCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return switchProfile(args[0], false) },
 	}
-	check := &cobra.Command{
+	check := app.WithJSON(&cobra.Command{
 		Use:   "check <имя...>",
 		Short: "Куда на самом деле резолвится имя",
 		Args:  cobra.MinimumNArgs(1),
-		Run:   func(cmd *cobra.Command, args []string) { checkHosts(args) },
-	}
+		RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(checkHostsReport(args), view.AsJSON) },
+	})
 	c.AddCommand(add, rm, on, off, check, resolverCommand())
 	return c
 }
@@ -136,12 +143,12 @@ func certNewCommand() *cobra.Command {
 }
 
 func certCACommand() *cobra.Command {
-	c := &cobra.Command{
+	c := app.WithJSON(&cobra.Command{
 		Use:   "ca",
 		Short: "Локальный CA: где лежит, до каких пор годен, в хранилище ли он",
 		Args:  cobra.NoArgs,
-		Run:   func(cmd *cobra.Command, args []string) { showCA() },
-	}
+		RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(caReport(), view.AsJSON) },
+	})
 	install := &cobra.Command{
 		Use:   "install",
 		Short: "Добавить локальный CA в системное хранилище доверия (sudo)",

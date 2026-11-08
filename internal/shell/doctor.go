@@ -19,6 +19,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // watchedTools: программы, чьи копии в разных каталогах PATH чаще всего путают.
@@ -30,49 +32,63 @@ var dbFamilies = map[string][]string{
 	"postgres": {"postgresql", "libpq"},
 }
 
-// report: раздел за разделом печатает находки и считает их. Раздел без бед - одной строкой: столбик
-// зелёных ламп ничего не говорит.
-type report struct {
-	warns, errs int
-	section     string
-	lines       []string
-	trouble     bool
-	all         bool // --all: и здоровые разделы целиком
+// checkup: находки по разделам; область находки - раздел.
+type checkup struct {
+	all     bool // --all: и здоровые разделы целиком
+	section string
+	order   []string
+	found   []report.Finding
 }
 
-func (r *report) title(s string) {
-	r.flush()
-	r.section, r.lines, r.trouble = s, nil, false
+func (r *checkup) title(s string) {
+	r.section = s
+	r.order = append(r.order, s)
 }
 
-func (r *report) ok(s string)   { r.lines = append(r.lines, "  "+ui.OK("\u25cf ")+home(s)) }
-func (r *report) note(s string) { r.lines = append(r.lines, "    "+s) }
-
-func (r *report) warn(s string) {
-	r.warns++
-	r.trouble = true
-	r.lines = append(r.lines, "  "+ui.Warn("\u25b2 ")+home(s))
+func (r *checkup) add(l report.Level, s string) {
+	r.found = append(r.found, report.Finding{Area: r.section, Level: l, Text: home(s)})
 }
 
-func (r *report) bad(s string) {
-	r.errs++
-	r.trouble = true
-	r.lines = append(r.lines, "  "+ui.Bad("\u2715 ")+home(s))
-}
+func (r *checkup) ok(s string)   { r.add(report.OK, s) }
+func (r *checkup) note(s string) { r.add(report.Info, s) }
+func (r *checkup) warn(s string) { r.add(report.Warn, s) }
+func (r *checkup) bad(s string)  { r.add(report.Bad, s) }
 
-// flush печатает раздел: с бедой или по --all - целиком, иначе одной строкой.
-func (r *report) flush() {
-	if r.section == "" {
-		return
+func (r *checkup) count(l report.Level) int {
+	n := 0
+	for _, f := range r.found {
+		if f.Level == l {
+			n++
+		}
 	}
-	if !r.trouble && !r.all {
-		ui.Println(ui.Strong(ui.Pad(r.section, 18)) + ui.OK("\u25cf в порядке"))
-		return
+	return n
+}
+
+// blocks: здоровые разделы - строками "в порядке" сверху (столбик зелёных ламп ничего не говорит),
+// разделы с бедой или все по --all - заголовком и списком.
+func (r *checkup) blocks() []report.Block {
+	var healthy report.Facts
+	var trouble []report.Block
+	for _, sec := range r.order {
+		var list report.Findings
+		worst := report.Skip
+		for _, f := range r.found {
+			if f.Area == sec {
+				worst = max(worst, f.Level)
+				f.Area = ""
+				list = append(list, f)
+			}
+		}
+		if worst < report.Warn && !r.all {
+			healthy = append(healthy, report.Fact{Key: sec, Value: "в порядке", Level: report.OK})
+			continue
+		}
+		trouble = append(trouble, report.Heading(sec), list)
 	}
-	ui.Println(ui.Strong(r.section))
-	for _, l := range r.lines {
-		ui.Println(l)
+	if len(healthy) == 0 {
+		return trouble
 	}
+	return append([]report.Block{healthy}, trouble...)
 }
 
 // home: домашняя папка тильдой - пути короче и читаются.
@@ -84,7 +100,7 @@ func home(s string) string {
 }
 
 func diagnose(env *app.Env, all bool) error {
-	r := &report{all: all}
+	r := &checkup{all: all}
 	checkConfig(r, env.Cfg)
 	checkShim(r)
 	dirs := filepath.SplitList(os.Getenv("PATH"))
@@ -92,17 +108,27 @@ func diagnose(env *app.Env, all bool) error {
 	checkManagers(r, dirs)
 	checkDB(r)
 	checkServices(r)
-	r.flush()
-	ui.Println()
-	summary := "ошибок " + strconv.Itoa(r.errs) + " \u00b7 предупреждений " + strconv.Itoa(r.warns)
-	if r.errs > 0 {
+	errs, warns := r.count(report.Bad), r.count(report.Warn)
+	summary := "ошибок " + strconv.Itoa(errs) + " \u00b7 предупреждений " + strconv.Itoa(warns)
+	data := struct {
+		Findings []report.Finding `json:"findings"`
+		Errors   int              `json:"errors"`
+		Warnings int              `json:"warnings"`
+	}{r.found, errs, warns}
+	rep := report.Report{Schema: "tim.doctor/1", Data: data, Blocks: r.blocks()}
+	if errs == 0 {
+		rep.Blocks = append(rep.Blocks, report.Note(summary))
+	}
+	if err := view.Show(rep, view.AsJSON); err != nil {
+		return err
+	}
+	if errs > 0 {
 		return ui.Errorf("%s", summary)
 	}
-	ui.Println(ui.Dim(summary))
 	return nil
 }
 
-func checkConfig(r *report, cfg *config.Config) {
+func checkConfig(r *checkup, cfg *config.Config) {
 	r.title("Конфиг")
 	if _, err := os.Stat(config.Path()); err != nil {
 		r.ok(config.Path() + " нет, работают значения по умолчанию")
@@ -129,7 +155,7 @@ func checkConfig(r *report, cfg *config.Config) {
 	}
 }
 
-func checkShim(r *report) {
+func checkShim(r *checkup) {
 	r.title("Оболочка")
 	if os.Getenv("TIM_SHIM") != "" {
 		r.ok("шим tim init работает в этой оболочке")
@@ -147,7 +173,7 @@ func checkShim(r *report) {
 	r.warn("шим не подключён: tim init (без него экраны не переходят в папку)")
 }
 
-func checkPath(r *report, dirs []string) {
+func checkPath(r *checkup, dirs []string) {
 	r.title("PATH")
 	dups, missing := doctor.PathIssues(dirs)
 	for _, d := range dups {
@@ -206,7 +232,7 @@ func systemDir(d string) bool {
 	return false
 }
 
-func checkManagers(r *report, dirs []string) {
+func checkManagers(r *checkup, dirs []string) {
 	r.title("Менеджеры версий")
 	env := map[string]string{}
 	for _, kv := range os.Environ() {
@@ -223,7 +249,7 @@ func checkManagers(r *report, dirs []string) {
 		if langs == "" {
 			langs = "языки не видны по PATH"
 		}
-		r.note(ui.Pad(m.Name, 8) + " " + ui.Dim(langs))
+		r.note(m.Name + ": " + langs)
 	}
 	conflicts := doctor.Conflicts(managers)
 	langs := make([]string, 0, len(conflicts))
@@ -239,7 +265,7 @@ func checkManagers(r *report, dirs []string) {
 	}
 }
 
-func checkDB(r *report) {
+func checkDB(r *checkup) {
 	r.title("Клиенты баз")
 	if !runner.Has("brew") {
 		r.ok("brew нет, проверка пропущена")
@@ -278,7 +304,7 @@ func familyFormulas(formulas, prefixes []string) []string {
 	return found
 }
 
-func checkServices(r *report) {
+func checkServices(r *checkup) {
 	if runtime.GOOS == "linux" {
 		r.title("Службы systemd")
 		failed := sysinfo.FailedUnits()
