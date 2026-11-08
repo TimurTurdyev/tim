@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // checkOptions: что проверять и как часто обходить по расписанию.
@@ -81,6 +82,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 		Use:   "check [сайт...] [--servers] | check install [--at 09:30] | uninstall",
 		Short: "Обход: ответ, сертификат, почта и срок домена у сайтов, с --servers - ещё серверы",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
 			var err error
 			if o.older, err = olderFlag(cmd, older, hours); err != nil {
 				return err
@@ -93,7 +95,6 @@ func checkCommand(env *app.Env) *cobra.Command {
 	f.BoolVar(&o.machine, "machine", false, "защита этой машины: FileVault, файрвол, ключи ssh без пароля, автозапуск, что видно в сети")
 	f.StringVar(&older, "older", "8h", "с какого возраста процесс на порту считается забытым: 8h, 2d")
 	f.BoolVar(&o.notify, "notify", false, "уведомление системы, если есть плохие строки")
-	f.BoolVar(&o.json, "json", false, "строки и проверки в JSON")
 	// Прежние флаги остаются скрытыми: их знают поставленные задания и чужие скрипты.
 	f.Float64Var(&hours, "hours", 0, "")
 	f.BoolVar(&o.install, "install", false, "")
@@ -120,7 +121,7 @@ func checkCommand(env *app.Env) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return check(env, nil, checkOptions{uninstall: true}) },
 	})
-	return c
+	return app.WithJSON(c)
 }
 
 // olderFlag: срок из --older; прежний --hours ещё понимается.
@@ -137,14 +138,14 @@ func certCommand(env *app.Env) *cobra.Command {
 		Use:   "cert [host[:port]...] [--json]",
 		Short: "TLS-сертификат: один домен - подробно, несколько или без аргументов - сроки списком",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
 			if len(args) != 1 {
 				return printExpiries(env.Cfg, args, asJSON)
 			}
 			return printCert(args[0], asJSON)
 		},
 	}
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
-	return c
+	return app.WithJSON(c)
 }
 
 func dnsCommand() *cobra.Command {
@@ -154,10 +155,12 @@ func dnsCommand() *cobra.Command {
 		Use:   "dns <host> [--server 1.1.1.1] [--json]",
 		Short: "Записи A, AAAA, CNAME, MX, NS, TXT, CAA и подписана ли зона (DNSSEC)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return printDNS(args[0], server, asJSON) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
+			return printDNS(args[0], server, asJSON)
+		},
 	}
 	c.Flags().StringVar(&server, "server", "", "резолвер, например 1.1.1.1")
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "flush",
 		Short: "Сбросить DNS-кэш системы (sudo)",
@@ -169,7 +172,7 @@ func dnsCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return printDNSServers() },
 	})
-	return c
+	return app.WithJSON(c)
 }
 
 func siteCommand() *cobra.Command {
@@ -178,10 +181,12 @@ func siteCommand() *cobra.Command {
 		Use:   "site <домен|url>",
 		Short: "Что за сайт: IP и где он, регистрация домена, сертификат, HTTP, CMS",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return printSite(args[0], asJSON) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
+			return printSite(args[0], asJSON)
+		},
 	}
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
-	return c
+	return app.WithJSON(c)
 }
 
 func auditCommand(env *app.Env) *cobra.Command {
@@ -200,13 +205,15 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 у каждой находки почему это важно и что сделать. Проверяй свои сайты и те, что попросили проверить.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: siteNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return runAudit(app.First(args), o) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
+			return runAudit(app.First(args), o)
+		},
 	}
-	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	c.Flags().BoolVar(&o.md, "md", false, "отчёт для клиента в Markdown: audit-<сайт>-<дата>.md")
 	c.Flags().BoolVar(&o.html, "html", false, "отчёт для клиента одной HTML-страницей")
 	c.Flags().StringVar(&o.out, "out", "", "куда записать отчёт")
-	return c
+	return app.WithJSON(c)
 }
 
 func domainCommand(env *app.Env) *cobra.Command {
@@ -222,20 +229,22 @@ func domainCommand(env *app.Env) *cobra.Command {
 зарегистрированы и принимают почту - так готовят фишинг под сайт и письма.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: siteNames,
-		RunE:              func(cmd *cobra.Command, args []string) error { return domain(env, app.First(args), o) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
+			return domain(env, app.First(args), o)
+		},
 	}
 	f := c.Flags()
 	f.BoolVar(&o.fast, "fast", false, "без логов сертификатов, только перебор частых имён")
 	f.BoolVar(&o.fresh, "fresh", false, "обновить логи сертификатов, не брать из кэша")
 	f.BoolVar(&o.noNeighbors, "no-neighbors", false, "не спрашивать соседей по IP")
-	f.BoolVar(&o.json, "json", false, "вывод в JSON")
 	f.BoolVar(&o.openMap, "map", false, "собрать карту в HTML и открыть")
 	f.StringVar(&o.mapOut, "out", "", "сохранить карту в файл, не открывая")
 	f.StringVar(&o.mapOut, "map-out", "", "")
 	_ = f.MarkHidden("map-out")
 	f.BoolVarP(&o.all, "all", "a", false, "кратко по всем доменам из списка sites")
 	f.BoolVar(&o.twins, "twins", false, "двойники домена: опечатки и другие зоны, которые зарегистрированы")
-	return c
+	return app.WithJSON(c)
 }
 
 func mailCommand(env *app.Env) *cobra.Command {
@@ -246,6 +255,7 @@ func mailCommand(env *app.Env) *cobra.Command {
 		Short: "Почта домена: MX, SPF, DKIM, DMARC и что с ними не так",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
 			switch {
 			case all:
 				return printMailSummary(env.Cfg)
@@ -256,9 +266,8 @@ func mailCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVarP(&all, "all", "a", false, "сводка по доменам из списка sites")
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
 	c.Flags().StringSliceVar(&selectors, "selector", nil, "свой DKIM-селектор (можно несколько)")
-	return c
+	return app.WithJSON(c)
 }
 
 func httpCommand() *cobra.Command {
@@ -268,13 +277,13 @@ func httpCommand() *cobra.Command {
 		Short: "Сколько отвечает сайт по фазам: DNS, TCP, TLS, первый байт, загрузка",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
 			return printTimings(args[0], follow, allHeaders, asJSON)
 		},
 	}
 	c.Flags().BoolVarP(&follow, "location", "L", false, "идти по редиректам")
 	c.Flags().BoolVar(&allHeaders, "all-headers", false, "все заголовки ответа")
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON: по объекту на каждый переход")
-	return c
+	return app.WithJSON(c)
 }
 
 func ogCommand() *cobra.Command {
@@ -283,10 +292,12 @@ func ogCommand() *cobra.Command {
 		Use:   "og <url> [--json]",
 		Short: "Как ссылка будет выглядеть в Telegram и соцсетях: заголовок, описание, картинка",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return printPreview(args[0], asJSON) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
+			return printPreview(args[0], asJSON)
+		},
 	}
-	c.Flags().BoolVar(&asJSON, "json", false, "вывод в JSON")
-	return c
+	return app.WithJSON(c)
 }
 
 func corsCommand() *cobra.Command {
@@ -298,14 +309,16 @@ func corsCommand() *cobra.Command {
 Сравнивает ответы с тем, что собирается сделать фронтенд, и говорит, какой заголовок мешает.
 Тело запроса не отправляется: для разбора CORS хватает заголовков.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error { return checkCORS(args[0], o) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
+			return checkCORS(args[0], o)
+		},
 	}
 	c.Flags().StringVar(&o.origin, "origin", "", "откуда запрос, например https://app.example.com")
 	c.Flags().StringVar(&o.method, "method", "GET", "метод запроса фронтенда")
 	c.Flags().StringSliceVar(&o.headers, "header", nil, "свои заголовки запроса (можно несколько)")
 	c.Flags().BoolVar(&o.credentials, "credentials", false, "запрос с куками (credentials: include)")
-	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
-	return c
+	return app.WithJSON(c)
 }
 
 func watchCommand() *cobra.Command {

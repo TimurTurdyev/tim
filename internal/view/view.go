@@ -13,6 +13,9 @@ import (
 )
 
 var (
+	// AsJSON: общий флаг --json; команды без вывода в JSON корень с ним не запускает.
+	AsJSON bool
+
 	catchMu  sync.Mutex
 	catching bool
 	caught   *report.Report

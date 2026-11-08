@@ -27,6 +27,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/tools"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // env: окружение команд разделов, конфиг в нём появляется перед запуском команды.
@@ -45,7 +46,10 @@ TIM_DRY_RUN=1 или --dry-run печатает команды, меняющие
 	Args:          cobra.NoArgs,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		tui.Disabled = tui.Disabled || runner.NoInput
+		if view.AsJSON && cmd.Annotations[app.JSON] == "" {
+			return ui.Errorf("у %s нет вывода в JSON", cmd.CommandPath())
+		}
+		tui.Disabled = tui.Disabled || runner.NoInput || view.AsJSON
 		c, err := config.Load()
 		if err != nil {
 			return ui.Errorf("конфиг %s: %v", config.Path(), err)
@@ -74,6 +78,7 @@ func init() {
 	root.PersistentFlags().BoolVar(&runner.DryRun, "dry-run", runner.DryRun, "показать команды, ничего не выполняя")
 	root.PersistentFlags().BoolVar(&runner.NoInput, "no-input", runner.NoInput, "ни о чём не спрашивать: для скриптов и cron")
 	root.PersistentFlags().BoolVarP(&runner.Yes, "yes", "y", false, "на все вопросы отвечать да: для скриптов и агентов")
+	root.PersistentFlags().BoolVar(&view.AsJSON, "json", false, "вывод в JSON для скриптов и агентов, где он есть")
 	root.CompletionOptions.HiddenDefaultCmd = true
 	env.Version = resolveVersion()
 	screens = home.New(env, root, home.Options{Examples: examples, Overview: overview, Translate: translateError,

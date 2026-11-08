@@ -9,6 +9,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/sshx"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // exposeOptions: куда показать локальный порт - frps, свой сервер по ssh или cloudflared.
@@ -79,6 +80,7 @@ func serverCommand(env *app.Env) *cobra.Command {
 			return sshx.Aliases(), cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
 			target := Target(env.Cfg, args[0])
 			if recipe != "" {
 				return runRecipe(env, target, recipe, app.First(args[1:]))
@@ -122,7 +124,6 @@ func serverCommand(env *app.Env) *cobra.Command {
 			return printServer(target, asJSON)
 		},
 	}
-	c.Flags().BoolVar(&asJSON, "json", false, "отчёт в JSON")
 	c.Flags().BoolVar(&attacks, "attacks", false, "кто ломится: перебор ssh, удачные входы, пробы сайта, баны - по журналам")
 	c.Flags().BoolVar(&traffic, "traffic", false, "кто ходит: запросы, ошибки, адреса, пути и время ответа - по журналам nginx")
 	c.Flags().StringVar(&since, "since", "", "окно назад: 30m, 24h, 3d, 1w; у --attacks по умолчанию 24h, у --traffic 1h")
@@ -137,7 +138,7 @@ func serverCommand(env *app.Env) *cobra.Command {
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp
 	})
-	return c
+	return app.WithJSON(c)
 }
 
 // withWindow: окно из флага или по умолчанию для отчёта.
@@ -164,10 +165,12 @@ func serversCommand(env *app.Env) *cobra.Command {
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return sshx.Aliases(), cobra.ShellCompDirectiveNoFileComp
 		},
-		RunE: func(cmd *cobra.Command, args []string) error { return runServers(env, args, o) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
+			return runServers(env, args, o)
+		},
 	}
 	f := c.Flags()
-	f.BoolVar(&o.json, "json", false, "отчёты в JSON")
 	// Прежние флаги остаются скрытыми: их знают поставленные задания launchd и привычка.
 	f.BoolVarP(&o.all, "all", "a", false, "")
 	f.BoolVar(&o.record, "record", false, "")
@@ -197,7 +200,7 @@ func serversCommand(env *app.Env) *cobra.Command {
 			return runServers(env, nil, serversOptions{uninstall: true})
 		},
 	})
-	return c
+	return app.WithJSON(c)
 }
 
 func tunnelCommand(env *app.Env) *cobra.Command {

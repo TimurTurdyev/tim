@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 type options struct {
@@ -29,7 +30,10 @@ vendor и venv заброшенных проектов. -b - обозреват�
 удалённых программ: папки в ~/Library, агенты автозапуска без программы, процессы без файла.
 tim сам ничего не удаляет: только в Корзину и с вопросом.`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error { return run(env, o, args) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
+			return run(env, o, args)
+		},
 	}
 	f := c.Flags()
 	f.StringVar(&o.minSize, "min", "50M", "не показывать папки меньше")
@@ -38,7 +42,6 @@ tim сам ничего не удаляет: только в Корзину и �
 	f.BoolVar(&o.system, "system", false, "кеши программ по именам: npm, go, docker, IDE, модели")
 	f.BoolVarP(&o.all, "all", "a", false, "все места от 100 MB, а не только крупнейшие")
 	f.BoolVar(&o.fresh, "fresh", false, "померить заново, а не из кэша")
-	f.BoolVar(&o.json, "json", false, "обзор в JSON")
 	f.BoolVar(&o.deps, "deps", false, "зависимости и сборки по проектам")
 	f.BoolVarP(&o.browse, "browse", "b", false, "разобрать по папкам: заходить внутрь, отмечать и убирать в Корзину")
 	f.BoolVar(&o.left, "leftovers", false, "хвосты удалённых программ: папки в Library, агенты автозапуска, процессы")
@@ -46,7 +49,7 @@ tim сам ничего не удаляет: только в Корзину и �
 	for _, name := range []string{"system", "deps"} {
 		_ = f.MarkHidden(name)
 	}
-	return []*cobra.Command{c}
+	return []*cobra.Command{app.WithJSON(c)}
 }
 
 func run(env *app.Env, o options, args []string) error {

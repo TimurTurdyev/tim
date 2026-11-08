@@ -7,6 +7,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // Commands: команды раздела.
@@ -27,6 +28,7 @@ func hwCommand(env *app.Env) *cobra.Command {
 --watch обновляет процессор, видеокарту и память раз в секунду; выход - Ctrl-C.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON = view.AsJSON
 			if watch && app.Interactive() && !asJSON {
 				return env.Open(HWScreen(env))
 			}
@@ -35,14 +37,13 @@ func hwCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVarP(&watch, "watch", "w", false, "обновлять раз в секунду")
-	c.Flags().BoolVar(&asJSON, "json", false, "снимок в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "battery",
 		Short: "Износ батареи: циклы, ёмкость от заводской, состояние",
 		Args:  cobra.NoArgs,
 		Run:   func(cmd *cobra.Command, args []string) { printBattery() },
 	})
-	return c
+	return app.WithJSON(c)
 }
 
 func topCommand(env *app.Env) *cobra.Command {
@@ -55,6 +56,7 @@ git-корню рабочей папки процесса. Память - RSS: �
 поэтому у многопроцессных приложений сумма выше, чем в Мониторе системы.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
 			if app.Interactive() && o.by == "app" && !o.json {
 				return env.Open(ProcsScreen(env, ""))
 			}
@@ -64,8 +66,7 @@ git-корню рабочей папки процесса. Память - RSS: �
 	c.Flags().StringVar(&o.by, "by", "app", "app или project")
 	c.Flags().IntVarP(&o.count, "count", "n", 10, "сколько строк")
 	c.Flags().BoolVar(&o.cpu, "cpu", false, "сортировать по CPU, а не по памяти")
-	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
-	return c
+	return app.WithJSON(c)
 }
 
 func psCommand(env *app.Env) *cobra.Command {
@@ -107,6 +108,7 @@ func portsCommand(env *app.Env) *cobra.Command {
 		Short: "Кто слушает TCP-порты: процесс, папка, кто запустил, сколько работает",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
 			var err error
 			if o.older, err = olderFlag(cmd, older, hours); err != nil {
 				return err
@@ -121,8 +123,7 @@ func portsCommand(env *app.Env) *cobra.Command {
 	_ = c.Flags().MarkHidden("hours")
 	c.Flags().BoolVar(&o.kill, "kill", false, "с --old: предложить остановить каждый")
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
-	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
-	return c
+	return app.WithJSON(c)
 }
 
 func portCommand(env *app.Env) *cobra.Command {
@@ -131,6 +132,7 @@ func portCommand(env *app.Env) *cobra.Command {
 		Use:   "port <n> [kill] [--json] | port check <host:port...>",
 		Short: "Кто держит порт, остановить его; проверка чужих портов",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			o.json = view.AsJSON
 			if len(args) == 0 {
 				return cmd.Help()
 			}
@@ -138,14 +140,13 @@ func portCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
-	c.Flags().BoolVar(&o.json, "json", false, "вывод в JSON")
 	c.AddCommand(&cobra.Command{
 		Use:   "check <host:port...>",
 		Short: "Открыт ли TCP-порт и за сколько",
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return checkPorts(args) },
 	})
-	return c
+	return app.WithJSON(c)
 }
 
 func netCommand() *cobra.Command {
