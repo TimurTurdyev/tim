@@ -13,133 +13,174 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/routewatch"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
-// printRoutes: интерфейс, куда идёт трафик, страж и состояние каждой цели; probe - проверить порт 22.
-// routeRow: строка таблицы целей - цель и пометка только у первого адреса.
+// routeRow: адрес цели для --json; цель и пометка - у каждого адреса.
 type routeRow struct {
-	name, label, dest, state string
-	bad                      bool
+	Target string       `json:"target"`
+	Label  string       `json:"label,omitempty"`
+	Dest   string       `json:"dest,omitempty"`
+	State  string       `json:"state"`
+	Level  report.Level `json:"level"`
+	Port22 *bool        `json:"port22,omitempty"`
 }
 
-// printRoutes: куда идёт трафик и где каждая цель. Без all и probe - только адреса с отклонением
-// и итог: 725 одинаковых строк "в обход" ничего не говорят.
-func printRoutes(cfg *config.Config, probe, all bool) {
+// routesData: куда идёт трафик и где каждая цель - форма --json у tim route.
+type routesData struct {
+	Iface     string     `json:"iface"`
+	Gateway   string     `json:"gateway"`
+	Internet  string     `json:"internet"`
+	TunnelAll bool       `json:"tunnel_all"`
+	Guard     string     `json:"guard"`
+	Targets   []routeRow `json:"targets"`
+}
+
+// routesReport: куда идёт трафик и где каждая цель; probe - ещё проверить порт 22. Без all и probe в
+// таблице только адреса с отклонением и итог: 725 одинаковых строк "в обход" ничего не говорят.
+func routesReport(cfg *config.Config, probe, all bool) report.Report {
 	phys, gw := netinfo.Physical()
+	d := routesData{Iface: phys.Device, Gateway: gw, Internet: netinfo.InternetIface()}
+	d.TunnelAll = netinfo.IsTunnelIface(d.Internet)
+	guard, guardLevel := guardState()
+	d.Guard = guard
+	facts := report.Facts{{Key: "сеть", Value: phys.Device + " шлюз " + ui.Dash(gw)}}
 	if phys.Device == "" {
-		ui.Println(ui.Warn("физический интерфейс не найден: сеть выключена?"))
-	} else {
-		ui.Println(ui.Dim("физический интерфейс ") + phys.Device + ui.Dim(" шлюз ") + gw)
+		facts[0] = report.Fact{Key: "сеть", Value: "физический интерфейс не найден: сеть выключена?", Level: report.Warn}
 	}
-	inet := netinfo.InternetIface()
-	line := ui.Dim("трафик в интернет идёт через ") + ui.Dash(inet)
-	if netinfo.IsTunnelIface(inet) {
-		line += "  " + ui.Warn("(VPN забирает весь трафик)")
+	inet := report.Fact{Key: "интернет", Value: "через " + ui.Dash(d.Internet)}
+	if d.TunnelAll {
+		inet.Value, inet.Level = inet.Value+" - VPN забирает весь трафик", report.Warn
 	}
-	ui.Println(line)
+	facts = append(facts, inet)
+	r := report.Report{Schema: "tim.route/1", Data: &d}
 	if len(cfg.Hosts) == 0 {
-		ui.Println(ui.Dim("целей обхода нет: tim direct <сайт|адрес|подсеть|as:N>"))
-		return
+		r.Blocks = []report.Block{facts, report.Note("целей обхода нет: tim direct <сайт|адрес|подсеть|as:N>")}
+		return r
 	}
-	ui.Println(GuardLine())
-	var rows []routeRow
-	total, bad := 0, 0
-	expanded := ExpandHosts(cfg.Hosts)
-	for hi, h := range cfg.Hosts {
-		dests := expanded[hi]
-		if len(dests) == 0 {
-			rows = append(rows, routeRow{name: h.Addr, label: h.Label, state: ui.Bad("не раскрывается в адреса"), bad: true})
+	facts = append(facts, report.Fact{Key: "страж", Value: guard, Level: guardLevel})
+	d.Targets = routeRows(cfg, phys, gw, probe)
+	bad := 0
+	for _, t := range d.Targets {
+		if t.Level >= report.Warn {
 			bad++
-			continue
-		}
-		for i, d := range dests {
-			name, label := h.Addr, h.Label
-			if i > 0 {
-				name, label = "", ""
-			}
-			state, wrong := RouteState(d, phys, gw)
-			if probe && !strings.Contains(d, "/") {
-				state += "  " + portNote(d)
-			}
-			total++
-			if wrong {
-				bad++
-			}
-			rows = append(rows, routeRow{name: h.Addr, label: label, dest: d, state: state, bad: wrong})
-			rows[len(rows)-1].name = name
 		}
 	}
 	full := all || probe
-	nameW, labelW, destW := len("ЦЕЛЬ"), len("ПОМЕТКА"), len("АДРЕС")
-	for _, r := range rows {
-		if full || r.bad {
-			nameW, labelW, destW = max(nameW, ui.Width(r.name)), max(labelW, ui.Width(r.label)), max(destW, ui.Width(r.dest))
+	if !full {
+		state := report.Fact{Key: "обход", Value: fmt.Sprintf("%d из %d %s, целей %d", len(d.Targets)-bad, len(d.Targets),
+			ui.Plural(len(d.Targets), "адреса", "адресов", "адресов"), len(cfg.Hosts)), Level: report.OK}
+		if bad > 0 {
+			state.Level = report.Warn
 		}
+		facts = append(facts, state)
 	}
-	nameW, labelW, destW = min(nameW, 28), min(labelW, 24), min(destW, 18)
+	r.Blocks = []report.Block{facts}
 	if full || bad > 0 {
-		ui.Println(ui.Dim(ui.Pad("ЦЕЛЬ", nameW) + "  " + ui.Pad("ПОМЕТКА", labelW) + "  " + ui.Pad("АДРЕС", destW) + "  СОСТОЯНИЕ"))
-	}
-	for _, r := range rows {
-		if full || r.bad {
-			ui.Println(ui.Fit(r.name, nameW) + "  " + ui.Fit(r.label, labelW) + "  " + ui.Fit(r.dest, destW) + "  " + r.state)
-		}
+		r.Blocks = append(r.Blocks, routeTable(d.Targets, full, probe))
 	}
 	if !full {
-		line := fmt.Sprintf("в обход %d из %d %s, целей %d", total-bad, total, ui.Plural(total, "адреса", "адресов", "адресов"), len(cfg.Hosts))
-		if bad == 0 {
-			line = ui.OK(line)
-		} else {
-			line = ui.Warn(line)
+		r.Blocks = append(r.Blocks, report.Note("весь список: tim route --all"))
+	}
+	return r
+}
+
+func routeRows(cfg *config.Config, phys netinfo.Service, gw string, probe bool) []routeRow {
+	var rows []routeRow
+	expanded := ExpandHosts(cfg.Hosts)
+	for hi, h := range cfg.Hosts {
+		if len(expanded[hi]) == 0 {
+			rows = append(rows, routeRow{Target: h.Addr, Label: h.Label, State: "не раскрывается в адреса", Level: report.Bad})
+			continue
 		}
-		ui.Println(line + ui.Dim("; весь список: tim route --all"))
+		for _, dest := range expanded[hi] {
+			state, l := routeState(dest, phys, gw)
+			row := routeRow{Target: h.Addr, Label: h.Label, Dest: dest, State: state, Level: l}
+			if probe && !strings.Contains(dest, "/") {
+				open := PortOpen(dest, "22")
+				row.Port22 = &open
+			}
+			rows = append(rows, row)
+		}
 	}
+	return rows
 }
 
-func portNote(addr string) string {
-	if PortOpen(addr, "22") {
-		return ui.Label("порт 22 отвечает")
+// routeTable: цель и пометка - только у первого адреса цели, чтобы список читался группами.
+func routeTable(rows []routeRow, full, probe bool) report.Table {
+	t := report.Table{Columns: []report.Column{{Title: "ЦЕЛЬ", Style: report.Key}, {Title: "ПОМЕТКА"}, {Title: "АДРЕС"}, {Title: "СОСТОЯНИЕ"}}}
+	if probe {
+		t.Columns = append(t.Columns, report.Column{Title: "ПОРТ 22"})
 	}
-	return ui.Bad("порт 22 молчит")
+	prev := ""
+	for _, r := range rows {
+		if !full && r.Level < report.Warn {
+			continue
+		}
+		name, label := r.Target, r.Label
+		if name == prev {
+			name, label = "", ""
+		}
+		prev = r.Target
+		line := []any{name, label, r.Dest, report.Mark{Text: r.State, Level: r.Level}}
+		if probe && r.Port22 != nil {
+			port := report.Mark{Text: "отвечает", Level: report.OK}
+			if !*r.Port22 {
+				port = report.Mark{Text: "молчит", Level: report.Bad}
+			}
+			line = append(line, port)
+		}
+		t.Rows = append(t.Rows, line)
+	}
+	return t
 }
 
-// printGuard: служба стража, последняя проверка, починки и их причины.
-func printGuard() {
-	installed, running := GuardInstalled(), GuardRunning()
+// guardData: служба стража и её отчёт - форма --json у tim route status.
+type guardData struct {
+	Installed bool               `json:"installed"`
+	Running   bool               `json:"running"`
+	Log       string             `json:"log"`
+	Status    *routewatch.Status `json:"status,omitempty"`
+}
+
+// guardReport: служба стража, последняя проверка, починки и их причины.
+func guardReport() report.Report {
+	d := guardData{Installed: GuardInstalled(), Running: GuardRunning(), Log: GuardLog()}
+	service := report.Fact{Key: "служба", Value: "работает, журнал " + d.Log, Level: report.OK}
 	switch {
-	case !installed:
-		ui.Println(ui.Warn("служба не установлена") + ui.Dim("  sudo tim route install"))
-	case running:
-		ui.Println(ui.Label("служба работает") + ui.Dim("  журнал "+GuardLog()))
-	default:
-		ui.Println(ui.Bad("служба установлена, но не работает") + ui.Dim("  журнал "+GuardLog()))
+	case !d.Installed:
+		service = report.Fact{Key: "служба", Value: "не установлена: sudo tim route install", Level: report.Warn}
+	case !d.Running:
+		service = report.Fact{Key: "служба", Value: "установлена, но не работает; журнал " + d.Log, Level: report.Bad}
 	}
+	r := report.Report{Schema: "tim.route.status/1", Data: &d}
 	st, ok := GuardStatus()
 	if !ok {
-		ui.Println(ui.Dim("отчёта стража нет"))
-		return
+		r.Blocks = []report.Block{report.Facts{service}, report.Note("отчёта стража нет")}
+		return r
 	}
+	d.Status = &st
 	now := time.Now()
-	ui.Println(ui.Label("последняя проверка ") + ui.Duration(now.Sub(st.LastCheck)) + " назад" +
-		ui.Dim(", запущен "+st.Started.Format("02.01 15:04")))
-	ui.Println(ui.Label("сеть               ") + st.Iface + " шлюз " + ui.Dash(st.Gateway))
-	fine := strconv.Itoa(st.OK) + " из " + strconv.Itoa(st.Want)
+	fine := report.Fact{Key: "в порядке", Value: strconv.Itoa(st.OK) + " из " + strconv.Itoa(st.Want) + " маршрутов"}
 	if st.OK < st.Want {
-		fine = ui.Warn(fine)
+		fine.Level = report.Warn
 	}
-	ui.Println(ui.Label("маршрутов в порядке ") + fine)
+	facts := report.Facts{service,
+		{Key: "проверка", Value: ui.Duration(now.Sub(st.LastCheck)) + " назад, запущен " + st.Started.Format("02.01 15:04")},
+		{Key: "сеть", Value: st.Iface + " шлюз " + ui.Dash(st.Gateway)}, fine,
+		{Key: "починок", Value: fmt.Sprintf("за сутки %d, за неделю %d", st.Since(now.Add(-24*time.Hour)), st.Since(now.AddDate(0, 0, -7)))}}
 	if st.Error != "" {
-		ui.Println(ui.Bad("ошибка: " + st.Error))
+		facts = append(facts, report.Fact{Key: "ошибка", Value: st.Error, Level: report.Bad})
 	}
-	day, week := st.Since(now.Add(-24*time.Hour)), st.Since(now.AddDate(0, 0, -7))
-	ui.Println(ui.Label("починок            ") + fmt.Sprintf("за сутки %d, за неделю %d", day, week))
-	if len(st.Repairs) == 0 {
-		return
+	r.Blocks = []report.Block{facts}
+	if len(st.Repairs) > 0 {
+		r.Blocks = append(r.Blocks, repairBlocks(st.Repairs, now)...)
 	}
-	printRepairs(st.Repairs, now)
+	return r
 }
 
-func printRepairs(repairs []routewatch.Repair, now time.Time) {
+// repairBlocks: причины починок за неделю, частые сверху, и пять последних.
+func repairBlocks(repairs []routewatch.Repair, now time.Time) []report.Block {
 	var recent []routewatch.Repair
 	for _, r := range repairs {
 		if r.At.After(now.AddDate(0, 0, -7)) {
@@ -151,55 +192,73 @@ func printRepairs(repairs []routewatch.Repair, now time.Time) {
 	slices.SortFunc(kinds, func(a, b routewatch.Kind) int {
 		return cmp.Or(cmp.Compare(sum[b], sum[a]), cmp.Compare(a, b))
 	})
+	why := report.Table{Columns: []report.Column{{Title: "ЗА НЕДЕЛЮ", Kind: report.Number}, {Title: "ПРИЧИНА"}}}
 	for _, k := range kinds {
-		ui.Println(ui.Dim("  " + ui.Pad(strconv.Itoa(sum[k]), 5) + k.String()))
+		why.Rows = append(why.Rows, []any{sum[k], k.String()})
 	}
-	ui.Println(ui.Dim("последние:"))
+	last := report.Table{Columns: []report.Column{{Title: "КОГДА", Style: report.Muted}, {Title: "АДРЕС"}, {Title: "ЧТО БЫЛО"}}}
 	for _, r := range repairs[max(0, len(repairs)-5):] {
-		ui.Println(ui.Dim("  " + r.At.Format("02.01 15:04") + "  " + ui.Pad(r.Dest, 18) + " " + r.Reason))
+		last.Rows = append(last.Rows, []any{r.At.Format("02.01 15:04"), r.Dest, r.Reason})
 	}
+	return []report.Block{report.Heading("починки"), why, report.Heading("последние"), last}
 }
 
-// printVPN: туннели, подключения, куда идёт интернет, DNS и сколько целей идут мимо VPN.
-func printVPN(cfg *config.Config) {
-	tunnels := netinfo.Tunnels()
+// vpnData: туннели, подключения, куда идёт интернет, DNS и обход - форма --json у tim vpn.
+type vpnData struct {
+	Tunnels     []netinfo.Tunnel `json:"tunnels"`
+	Connections []string         `json:"connections,omitempty"`
+	Internet    string           `json:"internet"`
+	Mode        string           `json:"mode"` // full - весь трафик в туннель, split - раздельный, direct - без VPN
+	DNS         []string         `json:"dns,omitempty"`
+	BypassOK    int              `json:"bypass_ok"`
+	BypassTotal int              `json:"bypass_total"`
+}
+
+// vpnReport: туннели, подключения, куда идёт интернет, DNS и сколько целей идут мимо VPN.
+func vpnReport(cfg *config.Config) report.Report {
+	d := vpnData{Tunnels: netinfo.Tunnels(), Internet: netinfo.InternetIface(), DNS: netinfo.DNSServers()}
+	var facts report.Facts
 	hasV6 := false
-	if len(tunnels) == 0 {
-		ui.Println(ui.Dim("туннелей нет"))
-	}
-	for _, t := range tunnels {
-		addrs := append(append([]string{}, t.IPv4...), t.IPv6...)
+	for _, t := range d.Tunnels {
 		hasV6 = hasV6 || len(t.IPv6) > 0
-		ui.Println(ui.Label(ui.Pad(t.Iface, 8)) + strings.Join(addrs, " "))
+		facts = append(facts, report.Fact{Key: t.Iface, Value: strings.Join(append(slices.Clone(t.IPv4), t.IPv6...), " ")})
+	}
+	if len(d.Tunnels) == 0 {
+		facts = append(facts, report.Fact{Key: "туннели", Value: "нет", Level: report.Info})
 	}
 	for _, c := range netinfo.NetConns() {
 		if c.State == "Connected" {
-			ui.Println(ui.Label("подключение ") + c.Name)
+			d.Connections = append(d.Connections, c.Name)
+			facts = append(facts, report.Fact{Key: "подключение", Value: c.Name})
 		}
 	}
-	inet := netinfo.InternetIface()
+	inet := report.Fact{Key: "интернет"}
 	switch {
-	case netinfo.IsTunnelIface(inet):
-		ui.Println(ui.Warn("весь трафик в интернет идёт в туннель " + inet))
-	case len(tunnels) > 0:
-		ui.Println(ui.Info("раздельный туннель: интернет идёт через " + ui.Dash(inet)))
+	case netinfo.IsTunnelIface(d.Internet):
+		d.Mode, inet.Value, inet.Level = "full", "весь трафик идёт в туннель "+d.Internet, report.Warn
+	case len(d.Tunnels) > 0:
+		d.Mode, inet.Value = "split", "раздельный туннель, интернет через "+ui.Dash(d.Internet)
 	default:
-		ui.Println(ui.Dim("интернет напрямую через " + ui.Dash(inet)))
+		d.Mode, inet.Value, inet.Level = "direct", "напрямую через "+ui.Dash(d.Internet), report.Info
 	}
-	if dns := netinfo.DNSServers(); len(dns) > 0 {
-		ui.Println(ui.Label("dns ") + strings.Join(dns, " "))
+	facts = append(facts, inet)
+	if len(d.DNS) > 0 {
+		facts = append(facts, report.Fact{Key: "dns", Value: strings.Join(d.DNS, " ")})
 	}
-	if ok, total := BypassCount(cfg); total > 0 {
-		line := ui.Label("обход ") + strconv.Itoa(ok) + " из " + strconv.Itoa(total) + " адресов"
-		if ok < total {
-			line += "  " + ui.Dim("tim route fix")
+	d.BypassOK, d.BypassTotal = BypassCount(cfg)
+	if d.BypassTotal > 0 {
+		bypass := report.Fact{Key: "обход", Value: strconv.Itoa(d.BypassOK) + " из " + strconv.Itoa(d.BypassTotal) + " адресов", Level: report.OK}
+		if d.BypassOK < d.BypassTotal {
+			bypass.Value, bypass.Level = bypass.Value+": tim route fix", report.Warn
 		}
-		ui.Println(line)
-		ui.Println(GuardLine())
+		guard, l := guardState()
+		facts = append(facts, bypass, report.Fact{Key: "страж", Value: guard, Level: l})
 	}
+	r := report.Report{Schema: "tim.vpn/1", Data: &d, Blocks: []report.Block{facts}}
 	if hasV6 {
-		ui.Println(ui.Dim("обход работает только для IPv4; IPv6 через туннель остаётся как есть"))
+		r.Blocks = append(r.Blocks, report.Note("обход работает только для IPv4; IPv6 через туннель остаётся как есть"))
 	}
+	return r
 }
 
 // BypassCount: сколько адресов целей сейчас идут мимо VPN и сколько их всего.

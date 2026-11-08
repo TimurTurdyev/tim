@@ -87,6 +87,17 @@ func facts(list report.Facts, indent string, width int) []string {
 	return out
 }
 
+// paintMark: ячейка с уровнем - хорошее выделено, к сведению приглушено, плохое цветом уровня.
+func paintMark(l report.Level, s string) string {
+	switch l {
+	case report.OK:
+		return ui.Label(s)
+	case report.Info:
+		return ui.Dim(s)
+	}
+	return level.Paint(l, s)
+}
+
 func paintFact(l report.Level, s string) string {
 	if l == report.Info {
 		return ui.Dim(s)
@@ -148,19 +159,26 @@ func wrap(s string, width int) []string {
 func table(t report.Table, indent string, sortBy int) []string {
 	rows := sortRows(t, sortBy)
 	grid := make([][]string, 0, len(rows)+1)
+	marks := make([][]report.Level, 0, len(rows)+1)
 	head := make([]string, len(t.Columns))
 	for i, c := range t.Columns {
 		head[i] = c.Title
 	}
 	grid = append(grid, head)
+	marks = append(marks, make([]report.Level, len(t.Columns)))
 	for _, r := range rows {
 		line := make([]string, len(t.Columns))
+		levels := make([]report.Level, len(t.Columns))
 		for i, c := range t.Columns {
 			if i < len(r) {
 				line[i] = cell(c, r[i])
+				if m, ok := r[i].(report.Mark); ok {
+					levels[i] = m.Level
+				}
 			}
 		}
 		grid = append(grid, line)
+		marks = append(marks, levels)
 	}
 	widths := make([]int, len(t.Columns))
 	for _, line := range grid {
@@ -170,12 +188,12 @@ func table(t report.Table, indent string, sortBy int) []string {
 	}
 	out := make([]string, 0, len(grid))
 	for n, line := range grid {
-		out = append(out, indent+tableLine(t.Columns, line, widths, n == 0))
+		out = append(out, indent+tableLine(t.Columns, line, marks[n], widths, n == 0))
 	}
 	return out
 }
 
-func tableLine(cols []report.Column, line []string, widths []int, header bool) string {
+func tableLine(cols []report.Column, line []string, marks []report.Level, widths []int, header bool) string {
 	cells := make([]string, len(line))
 	for i, c := range line {
 		right := cols[i].Kind != report.Text
@@ -186,7 +204,11 @@ func tableLine(cols []report.Column, line []string, widths []int, header bool) s
 			c = ui.Pad(c, widths[i])
 		}
 		switch {
-		case header || cols[i].Style == report.Muted:
+		case header:
+			c = ui.Dim(c)
+		case marks[i] != report.Skip:
+			c = paintMark(marks[i], c)
+		case cols[i].Style == report.Muted:
 			c = ui.Dim(c)
 		case cols[i].Style == report.Key:
 			c = ui.Label(c)
@@ -203,6 +225,8 @@ func cell(c report.Column, v any) string {
 		return ""
 	case string:
 		return x
+	case report.Mark:
+		return x.Text
 	case time.Duration:
 		if x == 0 {
 			return ""
@@ -236,7 +260,7 @@ func sortRows(t report.Table, sortBy int) [][]any {
 	slices.SortStableFunc(rows, func(a, b []any) int {
 		x, y := at(a, col), at(b, col)
 		if t.Columns[col].Kind == report.Text {
-			return natural(fmt.Sprint(x), fmt.Sprint(y))
+			return natural(cell(t.Columns[col], x), cell(t.Columns[col], y))
 		}
 		return cmp.Compare(amount(y), amount(x))
 	})

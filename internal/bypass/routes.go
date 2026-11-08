@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/config"
+	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/privileged"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 var (
@@ -56,7 +58,14 @@ func TableChanged() {
 }
 
 // RouteState: человеческое состояние пути до адреса или подсети.
+// RouteState: где идёт адрес - строкой с цветом для экранов; bad - в туннель или через старый шлюз.
 func RouteState(dest string, phys netinfo.Service, gw string) (text string, bad bool) {
+	t, l := routeState(dest, phys, gw)
+	return paintState(t, l), l >= report.Warn
+}
+
+// routeState: где идёт адрес - текст и уровень.
+func routeState(dest string, phys netinfo.Service, gw string) (string, report.Level) {
 	var r netinfo.Route
 	if strings.Contains(dest, "/") {
 		p, _ := netinfo.ParseDest(dest)
@@ -74,13 +83,24 @@ func RouteState(dest string, phys netinfo.Service, gw string) (text string, bad 
 	}
 	switch {
 	case netinfo.IsTunnelIface(r.Iface):
-		return ui.Warn("идёт в туннель " + r.Iface), true
+		return "идёт в туннель " + r.Iface, report.Warn
 	case gw != "" && r.Gateway != "" && r.Iface == phys.Device && r.Gateway != gw && netinfo.IsIPv4(r.Gateway):
-		return ui.Bad("шлюз устарел " + r.Gateway + ", нужен tim route up"), true
+		return "шлюз устарел " + r.Gateway + ", нужен tim route up", report.Bad
 	case gw != "" && r.Gateway == gw:
-		return ui.Label("в обход"), false
+		return "в обход", report.OK
 	}
-	return ui.Dim("без своего маршрута"), false
+	return "без своего маршрута", report.Info
+}
+
+// paintState: хорошее выделено, к сведению приглушено, плохое цветом уровня.
+func paintState(text string, l report.Level) string {
+	switch l {
+	case report.OK:
+		return ui.Label(text)
+	case report.Info:
+		return ui.Dim(text)
+	}
+	return level.Paint(l, text)
 }
 
 func PortOpen(addr, port string) bool {

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // addOptions: флаги новой цели обхода.
@@ -66,12 +67,12 @@ tim открывает сайт в браузере, смотрит, куда т
 			Args:  cobra.MinimumNArgs(1),
 			RunE:  func(cmd *cobra.Command, args []string) error { return removeTargets(env, args) },
 		},
-		&cobra.Command{
+		app.WithJSON(&cobra.Command{
 			Use:   "list",
 			Short: "Цели обхода из конфига",
 			Args:  cobra.NoArgs,
-			Run:   func(cmd *cobra.Command, args []string) { printTargets(env.Cfg) },
-		},
+			RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(targetsReport(env.Cfg), view.AsJSON) },
+		}),
 		directWatchCommand(env),
 		&cobra.Command{
 			Use:   "check",
@@ -117,7 +118,9 @@ func routeCommand(env *app.Env) *cobra.Command {
 трафик к ней минует туннель VPN. Домен раскрывается во все A-записи в момент up, as:N - во все
 сети автономной системы. Заводить и убирать цели: tim direct и tim direct rm.`,
 		Args: cobra.NoArgs,
-		Run:  func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, false, list) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return view.Show(routesReport(env.Cfg, false, list), view.AsJSON)
+		},
 	}
 	c.Flags().BoolVarP(&list, "all", "a", false, "все адреса, а не только с отклонением")
 	var all bool
@@ -129,12 +132,14 @@ func routeCommand(env *app.Env) *cobra.Command {
 	}
 	clean.Flags().BoolVarP(&all, "all", "a", false, "по всей таблице, а не только для целей из конфига")
 	c.AddCommand(
-		&cobra.Command{
+		app.WithJSON(&cobra.Command{
 			Use:   "check",
 			Short: "Состояние плюс проверка порта 22 у адресов",
 			Args:  cobra.NoArgs,
-			Run:   func(cmd *cobra.Command, args []string) { printRoutes(env.Cfg, true, true) },
-		},
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return view.Show(routesReport(env.Cfg, true, true), view.AsJSON)
+			},
+		}),
 		&cobra.Command{
 			Use:   "up [цель|пометка...]",
 			Short: "Завести маршруты через физический шлюз (sudo); без аргументов все цели",
@@ -152,21 +157,21 @@ func routeCommand(env *app.Env) *cobra.Command {
 			Args:  cobra.NoArgs,
 			RunE:  func(cmd *cobra.Command, args []string) error { return fix(env) },
 		},
-		&cobra.Command{
+		app.WithJSON(&cobra.Command{
 			Use:   "table",
 			Short: "Статические маршруты таблицы (адреса и подсети)",
 			Args:  cobra.NoArgs,
-			Run:   func(cmd *cobra.Command, args []string) { printTable(env.Cfg) },
-		},
-		&cobra.Command{
+			RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(tableReport(env.Cfg), view.AsJSON) },
+		}),
+		app.WithJSON(&cobra.Command{
 			Use:   "status",
 			Short: "Как работает страж маршрутов: последняя проверка, починки и их причины",
 			Args:  cobra.NoArgs,
-			Run:   func(cmd *cobra.Command, args []string) { printGuard() },
-		},
+			RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(guardReport(), view.AsJSON) },
+		}),
 		watchCommand(env), installCommand(), uninstallCommand(),
 	)
-	return c
+	return app.WithJSON(c)
 }
 
 // watchCommand: скрыт, потому что его запускает служба стража; имя менять нельзя - сломаются установленные.
@@ -214,20 +219,19 @@ func uninstallCommand() *cobra.Command {
 }
 
 func vpnCommand(env *app.Env) *cobra.Command {
-	return &cobra.Command{
+	return app.WithJSON(&cobra.Command{
 		Use:   "vpn",
 		Short: "Что с VPN: туннели, подключения, куда идёт трафик, DNS, цели обхода",
 		Long: `В терминале - экран: туннель, страж и состояние каждой цели обхода. В скрипте или через
 пайп - та же сводка текстом. Пустить мимо VPN - tim direct, маршруты и страж - tim route.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if app.Interactive() {
+			if app.Interactive() && !view.AsJSON {
 				return env.Open(Screen(env))
 			}
-			printVPN(env.Cfg)
-			return nil
+			return view.Show(vpnReport(env.Cfg), view.AsJSON)
 		},
-	}
+	})
 }
 
 func proxyCommand() *cobra.Command {

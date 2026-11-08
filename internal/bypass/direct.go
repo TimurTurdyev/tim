@@ -3,6 +3,7 @@ package bypass
 import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 )
 
 // directOptions: флаги tim direct - цель в конфиге и как смотреть за сайтом.
@@ -42,6 +43,6 @@ func directStatus(env *app.Env, rules bool) error {
 		return err
 	}
 	ui.Println()
-	printRoutes(env.Cfg, false, false)
+	view.Print(routesReport(env.Cfg, false, false))
 	return nil
 }

@@ -106,6 +106,12 @@ type Table struct {
 	Rows    [][]any
 }
 
+// Mark: ячейка со своим уровнем - состояние строки красится им, а не стилем колонки.
+type Mark struct {
+	Text  string
+	Level Level
+}
+
 // Column: Kind говорит, как печатать и сравнивать значения, Style - как выделить колонку.
 type Column struct {
 	Title string

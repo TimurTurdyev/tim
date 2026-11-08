@@ -16,6 +16,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 const (
@@ -77,25 +78,31 @@ func GuardRunning() bool {
 
 // GuardLine: одна строка о страже для tim route, tim direct и tim vpn.
 func GuardLine() string {
+	text, l := guardState()
+	return paintState("страж "+text, l)
+}
+
+// guardState: работает ли страж маршрутов - текст и уровень.
+func guardState() (string, report.Level) {
 	if !GuardInstalled() {
-		return ui.Dim("страж не установлен: после смены сети обход сам не починится; sudo tim route install")
+		return "не установлен: после смены сети обход сам не починится; sudo tim route install", report.Info
 	}
 	st, ok := GuardStatus()
-	if !GuardRunning() {
-		return ui.Bad("страж установлен, но не работает: tim route status")
-	}
-	if !ok {
-		return ui.Dim("страж работает, отчёта пока нет")
+	switch {
+	case !GuardRunning():
+		return "установлен, но не работает: tim route status", report.Bad
+	case !ok:
+		return "работает, отчёта пока нет", report.Info
 	}
 	age := time.Since(st.LastCheck)
-	line := ui.Label("страж работает") + ui.Dim(fmt.Sprintf("  проверка %s назад, починок за сутки %d", ui.Duration(age), st.Since(time.Now().Add(-24*time.Hour))))
+	text, l := fmt.Sprintf("работает, проверка %s назад, починок за сутки %d", ui.Duration(age), st.Since(time.Now().Add(-24*time.Hour))), report.OK
 	if age > time.Minute {
-		line = ui.Warn(fmt.Sprintf("страж молчит %s", ui.Duration(age))) + ui.Dim("  tim route status")
+		text, l = "молчит "+ui.Duration(age)+": tim route status", report.Warn
 	}
 	if st.Error != "" {
-		line += "  " + ui.Warn(st.Error)
+		text, l = text+"; "+st.Error, max(l, report.Warn)
 	}
-	return line
+	return text, l
 }
 
 // WantedDests: все адреса и сети целей конфига. Конфиг перечитывается каждый цикл, чтобы

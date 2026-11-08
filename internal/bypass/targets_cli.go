@@ -7,6 +7,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // addTargets: цели в конфиг и маршруты к ним; с owner домен заменяется сетями его владельца.
@@ -122,20 +123,44 @@ func fix(env *app.Env) error {
 	return up(env, nil)
 }
 
-func printTargets(cfg *config.Config) {
-	if len(cfg.Hosts) == 0 {
-		ui.Println(ui.Dim("список пуст: tim direct <сайт|адрес|подсеть|as:N>"))
-	}
-	for _, h := range cfg.Hosts {
-		ui.Println(ui.Pad(h.Addr, 24) + " " + h.Label)
-	}
+// directRow: цель обхода из конфига для --json.
+type directRow struct {
+	Addr  string `json:"addr"`
+	Label string `json:"label,omitempty"`
 }
 
-func printTable(cfg *config.Config) {
+func targetsReport(cfg *config.Config) report.Report {
+	rows := make([]directRow, 0, len(cfg.Hosts))
+	t := report.Table{Columns: []report.Column{{Title: "ЦЕЛЬ", Style: report.Key}, {Title: "ПОМЕТКА"}}}
+	for _, h := range cfg.Hosts {
+		rows = append(rows, directRow{h.Addr, h.Label})
+		t.Rows = append(t.Rows, []any{h.Addr, h.Label})
+	}
+	r := report.Report{Schema: "tim.direct.list/1", Data: rows, Blocks: []report.Block{t}}
+	if len(rows) == 0 {
+		r.Blocks = []report.Block{report.Note("список пуст: tim direct <сайт|адрес|подсеть|as:N>")}
+	}
+	return r
+}
+
+// tableRow: статический маршрут таблицы для --json.
+type tableRow struct {
+	Target  string `json:"target"`
+	Gateway string `json:"gateway"`
+	Iface   string `json:"iface"`
+	Label   string `json:"label,omitempty"`
+}
+
+func tableReport(cfg *config.Config) report.Report {
+	rows := []tableRow{}
+	t := report.Table{Columns: []report.Column{{Title: "АДРЕС", Style: report.Key}, {Title: "ШЛЮЗ"}, {Title: "ИНТЕРФЕЙС"}, {Title: "ПОМЕТКА", Style: report.Muted}}}
 	for _, r := range netinfo.Table() {
 		if !strings.Contains(r.Flags, "S") || !strings.Contains(r.Flags, "G") {
 			continue
 		}
-		ui.Println(ui.Pad(r.Target(), 20) + " " + ui.Pad(r.Gateway, 16) + " " + ui.Pad(r.Iface, 7) + " " + ui.Dim(cfg.HostLabel(r.Target())))
+		row := tableRow{r.Target(), r.Gateway, r.Iface, cfg.HostLabel(r.Target())}
+		rows = append(rows, row)
+		t.Rows = append(t.Rows, []any{row.Target, row.Gateway, row.Iface, row.Label})
 	}
+	return report.Report{Schema: "tim.route.table/1", Data: rows, Blocks: []report.Block{t}}
 }
