@@ -189,12 +189,10 @@ func printPreview(arg string, asJSON bool) error {
 	bad := 0
 	var found report.Findings
 	for _, p := range out.Problems {
-		f := report.Finding{Level: report.Warn, Text: p.Text}
 		if p.Bad {
 			bad++
-			f.Level = report.Bad
 		}
-		found = append(found, f)
+		found = append(found, p.Finding())
 	}
 	r.Blocks = append(r.Blocks, found, report.Note("Telegram кеширует превью: после правки отправь ссылку @WebpageBot, чтобы обновить"))
 	if err := view.Show(r, asJSON); err != nil {
@@ -235,11 +233,7 @@ func checkCORS(arg string, o corsOptions) error {
 	var found report.Findings
 	for _, p := range probs {
 		allowed = allowed && !p.Bad
-		f := report.Finding{Level: report.Warn, Text: p.Text}
-		if p.Bad {
-			f.Level = report.Bad
-		}
-		found = append(found, f)
+		found = append(found, p.Finding())
 	}
 	data := struct {
 		Origin          string         `json:"origin"`

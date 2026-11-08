@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/servers"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // DomainChecks: почта и регистрация домена на один обход - у поддоменов домен общий, и спрашивать его
@@ -131,6 +132,11 @@ type MailVerdict struct {
 	Domain  string
 	Level   level.Level
 	Missing []string
+}
+
+// Finding: итог почты домена как находка отчёта.
+func (v MailVerdict) Finding() report.Finding {
+	return report.Finding{Area: "почта", Subject: v.Domain, Level: v.Level, Text: strings.Join(v.Missing, ", ")}
 }
 
 // MailVerdicts: почта по доменам, параллельно, в том же порядке.

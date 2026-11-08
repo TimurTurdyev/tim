@@ -21,6 +21,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/stack"
 	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // sections: разделы карточки по порядку. Раздел, не успевший к сроку, пропускается: сводка не должна
@@ -95,6 +97,9 @@ func show(cfg *config.Config, build string, want []string, all, full, timing boo
 		func() { head = Lockup(cfg, build, true) },
 		func() { rows, h, results = collectAll(cfg, chosen) },
 	)
+	if view.AsJSON {
+		return view.JSON(report.Report{Schema: "tim.status/1", Data: statusData(rows, h)})
+	}
 	_, depth := ui.Colors()
 	look := brand.Look{Mood: h.Mood(time.Now()), Light: ui.Light()}
 	cols := ui.Cols()
@@ -310,4 +315,31 @@ func names() []string {
 		out[i] = s.name
 	}
 	return out
+}
+
+// statusRow: строка карточки для --json; пустая подпись - продолжение строки выше.
+type statusRow struct {
+	Label string `json:"label,omitempty"`
+	Value string `json:"value"`
+}
+
+// statusData: карточка и беды под ней - форма --json у tim status.
+func statusData(rows []Line, h health.Machine) any {
+	out := struct {
+		Rows     []statusRow      `json:"rows"`
+		Findings []report.Finding `json:"findings"`
+	}{Findings: Findings(h)}
+	for _, r := range rows {
+		out.Rows = append(out.Rows, statusRow{r.Label, ui.StripANSI(r.Value)})
+	}
+	return out
+}
+
+// Findings: беды машины находками - память, диск, обход и страж, процессы, которые едят ядро.
+func Findings(h health.Machine) []report.Finding {
+	out := []report.Finding{}
+	for _, w := range h.Warnings() {
+		out = append(out, w.Finding())
+	}
+	return append(out, machine.HogFindings()...)
 }

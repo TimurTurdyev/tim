@@ -51,8 +51,9 @@ func roundAlerts(rows []health.Row, domains, aliases []string) []alert {
 	var out []alert
 	for _, r := range rows {
 		for _, c := range r.Checks {
-			if c.Level == level.Bad && c.Name != "сервер" || c.Level == level.Warn && slices.Contains(seriousCols, c.Name) {
-				out = append(out, alert{r.Name + "|" + c.Name + "|" + c.Text, mark(c.Level) + " " + r.Name + ": " + c.Detail})
+			f := c.Finding()
+			if f.Level == level.Bad && f.Area != "сервер" || f.Level == level.Warn && slices.Contains(seriousCols, f.Area) {
+				out = append(out, alert{r.Name + "|" + f.Area + "|" + f.Text, mark(f.Level) + " " + r.Name + ": " + f.Why})
 			}
 		}
 	}

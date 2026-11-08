@@ -4,6 +4,8 @@ package cors
 import (
 	"net/http"
 	"strings"
+
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // safeMethods и safeHeaders не требуют разрешения в preflight.
@@ -23,6 +25,14 @@ type Request struct {
 type Problem struct {
 	Bad  bool
 	Text string
+}
+
+// Finding: проблема как находка отчёта.
+func (p Problem) Finding() report.Finding {
+	if p.Bad {
+		return report.Finding{Level: report.Bad, Text: p.Text}
+	}
+	return report.Finding{Level: report.Warn, Text: p.Text}
 }
 
 func listHas(header, want string) bool {

@@ -9,6 +9,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // Кэш проверок: последняя проверка каждого сайта и сервера с её временем. Пишут check и экран Сайтов;
@@ -74,8 +75,6 @@ func SavedRows() []Saved {
 	return out
 }
 
-// Alert: беда для группы ВНИМАНИЕ главного экрана - уровень и текст "<объект>: <что>".
-type Alert struct {
-	Level level.Level
-	Text  string
-}
+// Alert: беда для группы ВНИМАНИЕ главного экрана - уровень и текст "<объект>: <что>". Это та же
+// находка, что у всех отчётов; старый кэш с ключами Level и Text читается: JSON не смотрит на регистр.
+type Alert = report.Finding

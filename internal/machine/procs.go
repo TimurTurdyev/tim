@@ -15,22 +15,32 @@ import (
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
-// HogLines: процессы, которые больше часа едят хотя бы целое ядро, строками для check и status.
-func HogLines(indent string) []string {
+// HogFindings: процессы, которые больше часа едят ядро и больше, - находками: кто, сколько и как остановить.
+func HogFindings() []report.Finding {
 	list, err := procs.All()
 	if err != nil {
 		return nil
 	}
-	var out []string
+	var out []report.Finding
 	for _, h := range procs.Hogs(list, 100, time.Hour) {
-		line := indent + ui.Warn(fmt.Sprintf("%s ест %s", h.Name, procs.Cores(h.CPU)))
 		detail := "уже " + ui.Duration(h.Uptime)
 		if h.Note != "" {
 			detail = h.Note + ", " + detail
 		}
-		out = append(out, line+ui.Dim("  "+detail+", pid "+h.PID+"  (tim kill "+h.PID+")"))
+		out = append(out, report.Finding{Area: "процессы", Subject: h.PID, Level: report.Warn,
+			Text: fmt.Sprintf("%s ест %s", h.Name, procs.Cores(h.CPU)), Why: detail + ", pid " + h.PID, Fix: "tim kill " + h.PID})
+	}
+	return out
+}
+
+// HogLines: те же находки строками для сводки - беда цветом, подробность и команда приглушены.
+func HogLines(indent string) []string {
+	var out []string
+	for _, f := range HogFindings() {
+		out = append(out, indent+ui.Warn(f.Text)+ui.Dim("  "+f.Why+"  ("+f.Fix+")"))
 	}
 	return out
 }

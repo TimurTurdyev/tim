@@ -43,7 +43,8 @@ func (h *Home) machine() tui.HomeMachine {
 			sitesDone = true
 		}
 		dest, key, open := h.trouble(w, m.MemHolder)
-		add(level.Warn, w.Text, dest, key, open)
+		f := w.Finding()
+		add(f.Level, f.Text, dest, key, open)
 	}
 	if !sitesDone {
 		for _, a := range sites.Attention(h.env.Cfg) {

@@ -24,5 +24,5 @@ func Commands(env *app.Env) []*cobra.Command {
 	c.Flags().BoolVarP(&all, "all", "a", false, "все разделы")
 	c.Flags().BoolVar(&full, "full", false, "со службами")
 	c.Flags().BoolVar(&timing, "time", false, "сколько занял каждый раздел")
-	return []*cobra.Command{c}
+	return []*cobra.Command{app.WithJSON(c)}
 }

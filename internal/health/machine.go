@@ -6,6 +6,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/brand"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // Виды беды на машине - по ним главный экран выбирает, куда вести по enter.
@@ -36,6 +37,11 @@ func (w Warning) Full() string {
 		return w.Text
 	}
 	return w.Text + ", " + w.Tail
+}
+
+// Finding: беда машины как находка отчёта.
+func (w Warning) Finding() report.Finding {
+	return report.Finding{Area: "машина", Level: report.Warn, Text: w.Text, Why: w.Tail}
 }
 
 // Machine: признаки беды на машине, по которым маскот выбирает настроение, а сводка и главный экран -

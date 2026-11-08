@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // Card: то, из чего мессенджер собирает превью.
@@ -96,6 +98,14 @@ func set(c *Card, key, v string) {
 type Problem struct {
 	Bad  bool
 	Text string
+}
+
+// Finding: проблема как находка отчёта.
+func (p Problem) Finding() report.Finding {
+	if p.Bad {
+		return report.Finding{Level: report.Bad, Text: p.Text}
+	}
+	return report.Finding{Level: report.Warn, Text: p.Text}
 }
 
 // Check: проблемы карточки без картинки; картинку проверяет вызывающий по ImageURL.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // Check: одна проверка. Text идёт в колонку таблицы, Detail - в разбор проблем под ней, Fix - с чего
@@ -18,6 +19,11 @@ type Check struct {
 	Text   string
 	Detail string
 	Fix    string `json:",omitempty"`
+}
+
+// Finding: проверка как находка отчёта; её форма в JSON и в кэше остаётся своей.
+func (c Check) Finding() report.Finding {
+	return report.Finding{Area: c.Name, Level: c.Level, Text: c.Text, Why: c.Detail, Fix: c.Fix}
 }
 
 // Row: все проверки одного сайта или сервера.
