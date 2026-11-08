@@ -46,15 +46,23 @@ func RowName(p procs.Full) string {
 	return filepath.Base(p.Comm)
 }
 
-// StateHint: что значит буква состояния из ps.
+// StateHint: что значит буква состояния из ps - цветом, для экранов.
 func StateHint(s string) string {
+	if note := stateNote(s); note != "" {
+		return ui.Warn(note)
+	}
+	return ""
+}
+
+// stateNote: что значит буква состояния из ps; обычный процесс - пусто.
+func stateNote(s string) string {
 	switch {
 	case strings.HasPrefix(s, "Z"):
-		return ui.Warn("зомби: уже завершился, ждёт родителя")
+		return "зомби: уже завершился, ждёт родителя"
 	case strings.HasPrefix(s, "U"), strings.HasPrefix(s, "D"):
-		return ui.Warn("ждёт диск или сеть и не прерывается")
+		return "ждёт диск или сеть и не прерывается"
 	case strings.HasPrefix(s, "T"):
-		return ui.Warn("остановлен")
+		return "остановлен"
 	}
 	return ""
 }

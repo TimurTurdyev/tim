@@ -37,12 +37,12 @@ func hwCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVarP(&watch, "watch", "w", false, "обновлять раз в секунду")
-	c.AddCommand(&cobra.Command{
+	c.AddCommand(app.WithJSON(&cobra.Command{
 		Use:   "battery",
 		Short: "Износ батареи: циклы, ёмкость от заводской, состояние",
 		Args:  cobra.NoArgs,
-		Run:   func(cmd *cobra.Command, args []string) { printBattery() },
-	})
+		RunE:  func(cmd *cobra.Command, args []string) error { return view.Show(batteryReport(), view.AsJSON) },
+	}))
 	return app.WithJSON(c)
 }
 
@@ -70,17 +70,21 @@ git-корню рабочей папки процесса. Память - RSS: �
 }
 
 func psCommand(env *app.Env) *cobra.Command {
-	return &cobra.Command{
+	return app.WithJSON(&cobra.Command{
 		Use:   "ps <имя>",
 		Short: "Найти процессы по имени (с опечатками) и показать, как их закрыть",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if app.Interactive() {
+			if app.Interactive() && !view.AsJSON {
 				return env.Open(ProcsScreen(env, args[0]))
 			}
-			return printFound(args[0])
+			r, err := foundReport(args[0])
+			if err != nil {
+				return err
+			}
+			return view.Show(r, view.AsJSON)
 		},
-	}
+	})
 }
 
 func killCommand() *cobra.Command {
@@ -140,12 +144,12 @@ func portCommand(env *app.Env) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&o.force, "force", false, "SIGKILL вместо SIGTERM")
-	c.AddCommand(&cobra.Command{
+	c.AddCommand(app.WithJSON(&cobra.Command{
 		Use:   "check <host:port...>",
 		Short: "Открыт ли TCP-порт и за сколько",
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return checkPorts(args) },
-	})
+	}))
 	return app.WithJSON(c)
 }
 
@@ -172,10 +176,16 @@ func netCommand() *cobra.Command {
 		Use:   "wifi",
 		Short: "Wi-Fi: сеть, канал, стандарт, скорость, сигнал и шум",
 		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return printWifi() },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := wifiReport()
+			if err != nil {
+				return err
+			}
+			return view.Show(r, view.AsJSON)
+		},
 	}
-	c.AddCommand(check, top, wifi)
-	return c
+	c.AddCommand(app.WithJSON(check), top, app.WithJSON(wifi))
+	return app.WithJSON(c)
 }
 
 func statsCommand() *cobra.Command {
@@ -224,10 +234,16 @@ func olderFlag(cmd *cobra.Command, older string, hours float64) (time.Duration, 
 }
 
 func ipCommand(env *app.Env) *cobra.Command {
-	return &cobra.Command{
+	return app.WithJSON(&cobra.Command{
 		Use:   "ip",
 		Short: "Внешний IP: страна, город, провайдер; напрямую и через SOCKS tim",
 		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return printIP(env.Cfg.Tunnel.Port) },
-	}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := ipReport(env.Cfg.Tunnel.Port)
+			if err != nil {
+				return err
+			}
+			return view.Show(r, view.AsJSON)
+		},
+	})
 }

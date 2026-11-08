@@ -83,46 +83,6 @@ func projectOf(cfg *config.Config) func(procs.Sample) string {
 	}
 }
 
-func printFound(query string) error {
-	list, err := procs.All()
-	if err != nil {
-		return err
-	}
-	apps := procs.Find(list, query)
-	if len(apps) == 0 {
-		return ui.Errorf("ничего похожего на %s не запущено; все: tim top", query)
-	}
-	for i, a := range apps {
-		if i > 0 {
-			ui.Println()
-		}
-		printApp(a, 8)
-	}
-	ui.Println()
-	ui.Println(ui.Dim("закрыть: tim kill " + query + "  (по номеру: tim kill <pid>)"))
-	return nil
-}
-
-func printApp(a procs.App, limit int) {
-	ui.Println(ui.Label(a.Name) + ui.Dim(fmt.Sprintf("  процессов %d, память %s, CPU %.1f%%, работает %s",
-		len(a.Procs), ui.Bytes(a.RSS), a.CPU, ui.Duration(a.Main.Uptime))))
-	sorted := busiestFirst(a.Procs)
-	for i, p := range sorted {
-		if i == limit {
-			ui.Println(ui.Dim(fmt.Sprintf("  и ещё %d", len(sorted)-limit)))
-			break
-		}
-		line := "  " + ui.Pad(p.PID, 7) + ui.Pad(fmt.Sprintf("%.1f%%", p.CPU), 8) + ui.Pad(ui.Bytes(p.RSS), 10) + ui.Clip(RowName(p), 48)
-		if p.PID == a.Main.PID && a.IsApp {
-			line += ui.Dim("  главный")
-		}
-		if h := StateHint(p.State); h != "" {
-			line += "  " + h
-		}
-		ui.Println(line)
-	}
-}
-
 // busiestFirst: процессы по CPU, при равном - по памяти.
 func busiestFirst(list []procs.Full) []procs.Full {
 	sorted := append([]procs.Full(nil), list...)

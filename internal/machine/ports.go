@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/config"
-	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/procs"
@@ -345,23 +344,6 @@ func respawned(port string, old []string, wait time.Duration) ([]string, procs.P
 		}
 	}
 	return nil, procs.Proc{}, false
-}
-
-func checkPorts(addrs []string) error {
-	failed := 0
-	for _, a := range addrs {
-		d, err := netinfo.Dial(a, inspect.Timeout)
-		if err != nil {
-			failed++
-			ui.Println(ui.Bad(ui.Pad(a, 28)) + " " + ui.Dim(err.Error()))
-			continue
-		}
-		ui.Println(ui.Label(ui.Pad(a, 28)) + fmt.Sprintf(" открыт, %d мс", d.Milliseconds()))
-	}
-	if failed > 0 {
-		return ui.Errorf("закрыто: %d из %d", failed, len(addrs))
-	}
-	return nil
 }
 
 // portsData: строки портов для скриптов и агентов - форма --json.

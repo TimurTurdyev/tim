@@ -2,7 +2,6 @@ package machine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"runtime"
@@ -13,7 +12,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/procs"
 	"github.com/TimurTurdyev/tim/internal/runner"
-	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -26,30 +24,6 @@ func (w warning) Error() string { return string(w) }
 type step struct {
 	name string
 	run  func() (string, error)
-}
-
-// checkNet проходит сеть по шагам и называет первый упавший.
-func checkNet() error {
-	failed := ""
-	for _, s := range netSteps() {
-		res, err := s.run()
-		if w, ok := errors.AsType[warning](err); ok {
-			ui.Println(ui.Warn(ui.Pad(s.name, 11)) + string(w))
-			continue
-		}
-		if err != nil {
-			ui.Println(ui.Bad(ui.Pad(s.name, 11)) + err.Error())
-			if failed == "" {
-				failed = s.name
-			}
-			continue
-		}
-		ui.Println(ui.Label(ui.Pad(s.name, 11)) + res)
-	}
-	if failed != "" {
-		return ui.Errorf("первым упал шаг %q - начни с него", failed)
-	}
-	return nil
 }
 
 func netSteps() []step {
@@ -138,53 +112,4 @@ func printNetTop(seconds, count int) error {
 		ui.Println(ui.Label(ui.Pad(ui.Clip(name, 29), 30)) + ui.Pad(rate(f.In), 14) + rate(f.Out) + ui.Dim("  pid "+f.PID))
 	}
 	return nil
-}
-
-func printWifi() error {
-	if runtime.GOOS == "linux" {
-		printLinuxWifi()
-		return nil
-	}
-	out, err := runner.Output("system_profiler", "SPAirPortDataType", "-json")
-	if err != nil {
-		return ui.Errorf("system_profiler: %v", err)
-	}
-	w, ok := sysinfo.ParseWifi([]byte(out))
-	if !ok {
-		ui.Println(ui.Dim("к Wi-Fi не подключено"))
-		return nil
-	}
-	ssid := w.SSID
-	if ssid == "<redacted>" {
-		ssid = ui.Dim("имя скрыто macOS: дай терминалу доступ к геолокации (Настройки - Конфиденциальность - Службы геолокации)")
-	}
-	ui.Println(ui.Label("сеть     ") + ssid + ui.Dim("  "+w.Iface))
-	ui.Println(ui.Label("канал    ") + w.Channel)
-	ui.Println(ui.Label("стандарт ") + w.PHY + ui.Dim("  "+strconv.Itoa(w.Rate)+" Мбит/с"))
-	q := w.Quality()
-	sig := strconv.Itoa(w.Signal) + " dBm, шум " + strconv.Itoa(w.Noise) + " dBm  " + q
-	if q == "слабый" || q == "плохой" {
-		sig = ui.Warn(sig)
-	}
-	ui.Println(ui.Label("сигнал   ") + sig)
-	ui.Println(ui.Label("защита   ") + w.Security)
-	return nil
-}
-
-// printLinuxWifi: через NetworkManager; сигнал там в процентах, а не в dBm.
-func printLinuxWifi() {
-	if !runner.Has("nmcli") {
-		ui.Println(ui.Dim("nmcli не найден: Wi-Fi смотреть нечем (на сервере его обычно и нет)"))
-		return
-	}
-	out, _ := runner.Output("nmcli", "-t", "-f", "ACTIVE,SSID,CHAN,RATE,SIGNAL,SECURITY", "dev", "wifi")
-	w, ok := sysinfo.ParseNmcliWifi(out)
-	if !ok {
-		ui.Println(ui.Dim("к Wi-Fi не подключено"))
-		return
-	}
-	ui.Println(ui.Label("сеть     ") + w.SSID)
-	ui.Println(ui.Label("канал    ") + w.Channel + ui.Dim("  "+strconv.Itoa(w.Rate)+" Мбит/с"))
-	ui.Println(ui.Label("сигнал   ") + strconv.Itoa(w.Signal) + "%")
-	ui.Println(ui.Label("защита   ") + w.Security)
 }
