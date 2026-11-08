@@ -27,6 +27,9 @@ func HTTP(url string) (*Page, error) {
 	var redirects []string
 	client := webnet.Client(Timeout, false)
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := webnet.Follow(req, via); err != nil {
+			return err
+		}
 		if len(via) >= 10 {
 			return errors.New("больше 10 редиректов")
 		}

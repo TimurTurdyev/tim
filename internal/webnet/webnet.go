@@ -24,6 +24,8 @@ type Net struct {
 	Control func(ctx context.Context, network, address string, c syscall.RawConn) error
 	// Proxy: прокси для HTTP, как http.Transport.Proxy; nil - напрямую.
 	Proxy func(*http.Request) (*url.URL, error)
+	// Redirect: можно ли идти по редиректу, как http.Client.CheckRedirect; nil - как у Go, до 10.
+	Redirect func(req *http.Request, via []*http.Request) error
 }
 
 // state: сеть и её транспорты - общие, чтобы соединения переиспользовались, а не копились.
@@ -57,14 +59,23 @@ func Client(timeout time.Duration, insecure bool) *http.Client {
 	if insecure {
 		t = s.insecure
 	}
-	return &http.Client{Timeout: timeout, Transport: t}
+	return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: s.net.Redirect}
 }
 
 // Fresh: HTTP без переиспользования соединений - для замера фаз: DNS, TCP и TLS в каждом запросе заново.
 func Fresh(timeout time.Duration) *http.Client {
-	t := build(get().net).secure
+	n := get().net
+	t := build(n).secure
 	t.DisableKeepAlives = true
-	return &http.Client{Timeout: timeout, Transport: t}
+	return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: n.Redirect}
+}
+
+// Follow: своё правило редиректов клиента сначала проверяется общим - его нельзя обойти.
+func Follow(req *http.Request, via []*http.Request) error {
+	if r := get().net.Redirect; r != nil {
+		return r(req, via)
+	}
+	return nil
 }
 
 // NoRedirect: клиенту - ответ на сам адрес, без перехода по редиректам.
