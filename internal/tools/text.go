@@ -2,10 +2,11 @@ package tools
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"net/url"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/cronx"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // dowShort: дни недели коротко, с воскресенья, как time.Weekday.
@@ -111,31 +114,32 @@ func urlParse(args []string) error {
 	if err != nil {
 		return err
 	}
-	row := func(k, v string) {
-		if v != "" {
-			ui.Println(ui.Label(ui.Pad(k, 9)) + " " + v)
-		}
-	}
-	row("схема", u.Scheme)
+	d := struct {
+		Scheme   string              `json:"scheme,omitempty"`
+		User     string              `json:"user,omitempty"`
+		Host     string              `json:"host,omitempty"`
+		Port     string              `json:"port,omitempty"`
+		Path     string              `json:"path,omitempty"`
+		Query    map[string][]string `json:"query,omitempty"`
+		Fragment string              `json:"fragment,omitempty"`
+	}{Scheme: u.Scheme, Host: u.Hostname(), Port: u.Port(), Path: u.Path, Query: u.Query(), Fragment: u.Fragment}
 	if u.User != nil {
-		row("логин", u.User.Username())
+		d.User = u.User.Username()
 	}
-	row("хост", u.Hostname())
-	row("порт", u.Port())
-	row("путь", u.Path)
-	q := u.Query()
-	keys := make([]string, 0, len(q))
-	for k := range q {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		for _, v := range q[k] {
-			ui.Println(ui.Label("  "+ui.Pad(k, 18)) + " " + v)
+	parts := report.Facts{{Key: "схема", Value: d.Scheme}, {Key: "логин", Value: d.User}, {Key: "хост", Value: d.Host},
+		{Key: "порт", Value: d.Port}, {Key: "путь", Value: d.Path}, {Key: "фрагмент", Value: d.Fragment}}
+	blocks := []report.Block{slices.DeleteFunc(parts, func(f report.Fact) bool { return f.Value == "" })}
+	if len(d.Query) > 0 {
+		keys := slices.Sorted(maps.Keys(d.Query))
+		var query report.Facts
+		for _, k := range keys {
+			for _, v := range d.Query[k] {
+				query = append(query, report.Fact{Key: k, Value: v})
+			}
 		}
+		blocks = append(blocks, report.Heading("параметры"), query)
 	}
-	row("фрагмент", u.Fragment)
-	return nil
+	return view.Show(report.Report{Schema: "tim.url/1", Data: d, Blocks: blocks}, view.AsJSON)
 }
 
 // printPasswords: пароли строками; с copy - ещё и в буфер, а отметка об этом в stderr, чтобы не попасть в трубу.

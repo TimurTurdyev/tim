@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -47,20 +48,20 @@ func b64Command() *cobra.Command {
 }
 
 func jwtCommand() *cobra.Command {
-	return &cobra.Command{
+	return app.WithJSON(&cobra.Command{
 		Use:   "jwt <токен>",
 		Short: "Раскодировать JWT: header, payload, сроки (подпись не проверяется)",
 		RunE:  func(cmd *cobra.Command, args []string) error { return printJWT(args) },
-	}
+	})
 }
 
 func tsCommand() *cobra.Command {
 	var zone string
-	c := &cobra.Command{
+	c := app.WithJSON(&cobra.Command{
 		Use:   "ts [epoch|дата]",
 		Short: "Время: epoch <-> дата; без аргумента сейчас",
 		RunE:  func(cmd *cobra.Command, args []string) error { return printTime(args, zone) },
-	}
+	})
 	c.Flags().StringVar(&zone, "tz", "", "часовой пояс, например Europe/Moscow")
 	return c
 }
@@ -127,19 +128,19 @@ func urlCommand() *cobra.Command {
 		Short: "Раскодировать %XX и + в пробел",
 		RunE:  func(cmd *cobra.Command, args []string) error { return urlDecode(args) },
 	}
-	parse := &cobra.Command{
+	parse := app.WithJSON(&cobra.Command{
 		Use:   "parse <url>",
 		Short: "Разобрать URL: схема, хост, порт, путь, параметры, фрагмент",
 		RunE:  func(cmd *cobra.Command, args []string) error { return urlParse(args) },
-	}
+	})
 	// С адресом без подкоманды - разбор: самое частое, зачем зовут tim url.
-	c := &cobra.Command{Use: "url [адрес]", Short: "URL: разобрать, закодировать, раскодировать", Args: cobra.ArbitraryArgs,
+	c := app.WithJSON(&cobra.Command{Use: "url [адрес]", Short: "URL: разобрать, закодировать, раскодировать", Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
 			}
 			return urlParse(args)
-		}}
+		}})
 	c.AddCommand(encode, decode, parse)
 	return c
 }

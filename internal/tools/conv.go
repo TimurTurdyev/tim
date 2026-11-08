@@ -20,6 +20,8 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/conv"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 var hashNames = []string{"md5", "sha1", "sha256", "sha512", "crc32"}
@@ -91,6 +93,18 @@ func printJWT(args []string) error {
 	if err != nil {
 		return err
 	}
+	if view.AsJSON {
+		var expired *bool
+		if e, ok := j.Expired(time.Now()); ok {
+			expired = &e
+		}
+		return view.JSON(report.Report{Schema: "tim.jwt/1", Data: struct {
+			Header  json.RawMessage      `json:"header"`
+			Claims  json.RawMessage      `json:"claims"`
+			Times   map[string]time.Time `json:"times,omitempty"`
+			Expired *bool                `json:"expired,omitempty"`
+		}{j.Header, j.Claims, j.Times, expired}})
+	}
 	ui.Println(ui.Label("header"))
 	printJSON(j.Header)
 	ui.Println(ui.Label("payload"))
@@ -128,13 +142,18 @@ func printTime(args []string, zone string) error {
 		}
 		t = v.In(loc)
 	}
-	ui.Println(ui.Label("epoch ") + fmt.Sprint(t.Unix()) + "  " + ui.Dim(fmt.Sprintf("мс %d", t.UnixMilli())))
-	ui.Println(ui.Label("local ") + t.Format(time.RFC3339))
-	ui.Println(ui.Label("utc   ") + t.UTC().Format(time.RFC3339))
+	d := struct {
+		Epoch   int64  `json:"epoch"`
+		EpochMs int64  `json:"epoch_ms"`
+		Local   string `json:"local"`
+		UTC     string `json:"utc"`
+	}{t.Unix(), t.UnixMilli(), t.Format(time.RFC3339), t.UTC().Format(time.RFC3339)}
+	r := report.Report{Schema: "tim.ts/1", Data: d, Blocks: []report.Block{report.Facts{
+		{Key: "epoch", Value: fmt.Sprintf("%d  мс %d", d.Epoch, d.EpochMs)}, {Key: "local", Value: d.Local}, {Key: "utc", Value: d.UTC}}}}
 	if len(args) > 0 {
-		ui.Println(ui.Dim(relative(t)))
+		r.Blocks = append(r.Blocks, report.Note(relative(t)))
 	}
-	return nil
+	return view.Show(r, view.AsJSON)
 }
 
 func printUUIDs(count int, v7 bool) {
