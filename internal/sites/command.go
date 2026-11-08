@@ -53,7 +53,7 @@ func siteNames(cmd *cobra.Command, args []string, toComplete string) ([]string, 
 }
 
 func notifyCommand(env *app.Env) *cobra.Command {
-	c := &cobra.Command{
+	c := app.WithJSON(&cobra.Command{
 		Use:   "notify [test]",
 		Short: "Куда обход шлёт итог: Telegram и ntfy из [notify] конфига; test - пробное сообщение",
 		Long: `Обход по расписанию (tim check install) шлёт одно сообщение: только новое со степенью ✕ или ▲
@@ -64,7 +64,7 @@ func notifyCommand(env *app.Env) *cobra.Command {
   ntfy = "https://ntfy.sh/моя-тема"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return notifyStatus(env.Cfg) },
-	}
+	})
 	c.AddCommand(&cobra.Command{
 		Use:   "test",
 		Short: "Пробное сообщение во все настроенные места",
@@ -166,12 +166,12 @@ func dnsCommand() *cobra.Command {
 		Short: "Сбросить DNS-кэш системы (sudo)",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return flushDNS() },
-	}, &cobra.Command{
+	}, app.WithJSON(&cobra.Command{
 		Use:   "servers",
 		Short: "DNS-серверы основного резолвера",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return printDNSServers() },
-	})
+	}))
 	return app.WithJSON(c)
 }
 

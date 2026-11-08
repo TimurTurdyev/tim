@@ -18,6 +18,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // Итог обхода - одно сообщение: только новое со степенью ✕ или ▲ с прошлого уведомления. Уведомление
@@ -125,12 +127,15 @@ func roundScope(rows []health.Row, domains, aliases []string) string {
 // notifyStatus: куда уходит итог обхода.
 func notifyStatus(cfg *config.Config) error {
 	where := notify.Configured(cfg.Notify)
+	r := report.Report{Schema: "tim.notify/1", Data: struct {
+		Targets []string `json:"targets"`
+	}{append([]string{}, where...)}}
 	if len(where) == 0 {
-		ui.Println("итог обхода - только уведомлением системы; Telegram и ntfy - раздел [notify] в конфиге, пример: tim notify --help")
-		return nil
+		r.Blocks = []report.Block{report.Note("итог обхода - только уведомлением системы; Telegram и ntfy - раздел [notify] в конфиге, пример: tim notify --help")}
+	} else {
+		r.Blocks = []report.Block{report.Facts{{Key: "итог обхода уходит", Value: strings.Join(where, ", ") + " и уведомлением системы"}}}
 	}
-	ui.Println(ui.Label("итог обхода уходит: ") + strings.Join(where, ", ") + ui.Dim(" и уведомлением системы"))
-	return nil
+	return view.Show(r, view.AsJSON)
 }
 
 // notifyTest: пробное сообщение.

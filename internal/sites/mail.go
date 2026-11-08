@@ -12,6 +12,8 @@ import (
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // printMail: MX, SPF, DKIM, DMARC домена, что с ними не так и какие записи добавить.
@@ -144,25 +146,35 @@ func printMailSummary(cfg *config.Config) error {
 	}
 	sort.Strings(domains)
 	rows := MailVerdicts(domains)
+	type mailRow struct {
+		Domain  string       `json:"domain"`
+		Level   report.Level `json:"level"`
+		Missing []string     `json:"missing,omitempty"`
+	}
+	data := make([]mailRow, 0, len(rows))
+	t := report.Table{Columns: []report.Column{{Title: "ДОМЕН", Style: report.Key}, {Title: "ИТОГ"}}}
 	bad := 0
-	ui.Println(ui.Dim(ui.Pad("ДОМЕН", 30) + " ИТОГ"))
 	for _, r := range rows {
+		data = append(data, mailRow{r.Domain, r.Level, r.Missing})
+		missing := strings.Join(r.Missing, ", ")
+		verdict := report.Mark{Text: "проблемы: " + missing, Level: report.Bad}
 		switch r.Level {
 		case level.Skip:
-			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Dim("не проверено: "+strings.Join(r.Missing, ", ")))
+			verdict = report.Mark{Text: "не проверено: " + missing, Level: report.Info}
 		case level.OK:
-			ui.Println(ui.Label(ui.Pad(r.Domain, 30)) + " настроена верно")
+			verdict = report.Mark{Text: "настроена верно", Level: report.OK}
 		case level.Warn:
-			bad++
-			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Warn(strings.Join(r.Missing, ", ")))
-		default:
-			bad++
-			ui.Println(ui.Pad(r.Domain, 30) + " " + ui.Bad("проблемы: "+strings.Join(r.Missing, ", ")))
+			verdict = report.Mark{Text: missing, Level: report.Warn}
 		}
+		if r.Level >= level.Warn {
+			bad++
+		}
+		t.Rows = append(t.Rows, []any{r.Domain, verdict})
 	}
-	ui.Println(ui.Dim("подробно по домену: tim mail <домен>"))
-	if bad > 0 {
+	err := view.Show(report.Report{Schema: "tim.mail.all/1", Data: data, Blocks: []report.Block{t,
+		report.Note("подробно по домену: tim mail <домен>")}}, view.AsJSON)
+	if err == nil && bad > 0 {
 		return ui.Verdictf("требуют внимания: %d из %d", bad, len(rows))
 	}
-	return nil
+	return err
 }

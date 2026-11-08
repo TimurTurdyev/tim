@@ -207,6 +207,9 @@ func printDNSServers() error {
 	if len(servers) == 0 {
 		return ui.Errorf("DNS-серверы системы не нашлись")
 	}
+	if view.AsJSON {
+		return view.JSON(report.Report{Data: servers})
+	}
 	for _, s := range servers {
 		ui.Println(s)
 	}
