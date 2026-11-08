@@ -1,10 +1,9 @@
 package sites
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"runtime"
 	"slices"
 	"strings"
@@ -31,6 +30,7 @@ type certJSON struct {
 	Port      string    `json:"port"`
 	Subject   string    `json:"subject,omitempty"`
 	Issuer    string    `json:"issuer,omitempty"`
+	IssuerOrg string    `json:"issuer_org,omitempty"`
 	Names     []string  `json:"names,omitempty"`
 	NotBefore time.Time `json:"not_before,omitzero"`
 	NotAfter  time.Time `json:"not_after,omitzero"`
@@ -50,6 +50,7 @@ func certJSONOf(host, port string) certJSON {
 	}
 	leaf := info.Leaf()
 	c.Subject, c.Issuer, c.Names = leaf.Subject.CommonName, leaf.Issuer.CommonName, leaf.DNSNames
+	c.IssuerOrg = strings.Join(leaf.Issuer.Organization, ", ")
 	c.NotBefore, c.NotAfter, c.DaysLeft = leaf.NotBefore, leaf.NotAfter, ui.DaysUntil(leaf.NotAfter, time.Now())
 	c.TLS, c.Verified = info.Version, info.VerifyErr == nil
 	for _, x := range info.Chain[1:] {
@@ -59,70 +60,6 @@ func certJSONOf(host, port string) certJSON {
 		c.Error = info.VerifyErr.Error()
 	}
 	return c
-}
-
-func printCert(arg string, asJSON bool) error {
-	host, port := netinfo.HostPort(arg, "443")
-	if asJSON {
-		return ui.JSON(certJSONOf(host, port))
-	}
-	info, err := inspect.Cert(host, port)
-	if err != nil {
-		return ui.Errorf("%s:%s: %v", host, port, err)
-	}
-	leaf := info.Leaf()
-	ui.Println(ui.Label("кому     ") + leaf.Subject.CommonName)
-	ui.Println(ui.Label("кем      ") + leaf.Issuer.CommonName + ui.Dim("  "+strings.Join(leaf.Issuer.Organization, ", ")))
-	ui.Println(ui.Label("имена    ") + strings.Join(leaf.DNSNames, " "))
-	ui.Println(ui.Label("с        ") + leaf.NotBefore.Format("2006-01-02"))
-	ui.Println(ui.Label("до       ") + ui.DaysLeft(leaf.NotAfter))
-	ui.Println(ui.Label("tls      ") + info.Version)
-	for i, c := range info.Chain[1:] {
-		ui.Println(ui.Dim(fmt.Sprintf("цепочка %d  %s", i+1, c.Subject.CommonName)))
-	}
-	if info.VerifyErr != nil {
-		ui.Println(ui.Bad("проверка не прошла: " + info.VerifyErr.Error()))
-	} else {
-		ui.Println(ui.Info("цепочка проверена"))
-	}
-	return nil
-}
-
-// printExpiries: сроки сертификатов списком; без доменов - сайты из списка sites.
-func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
-	if len(hosts) == 0 {
-		hosts = siteHosts(cfg, nil)
-	}
-	if len(hosts) == 0 {
-		return ui.Errorf("доменов нет: tim cert <домен> или список sites в конфиге")
-	}
-	if asJSON {
-		return ui.JSON(par.Map(hosts, par.Limit, func(h string) certJSON {
-			host, port := netinfo.HostPort(h, "443")
-			return certJSONOf(host, port)
-		}))
-	}
-	rows := Expiries(hosts)
-	bad := 0
-	for _, r := range rows {
-		if r.Err != nil && r.Expires.IsZero() {
-			bad++
-			ui.Println(ui.Bad(ui.Pad(r.Host, 30)) + " " + ui.Dim(r.Err.Error()))
-			continue
-		}
-		line := ui.Pad(r.Host, 30) + " " + ui.DaysLeft(r.Expires) + "  " + ui.Dim(r.Issuer)
-		if r.Err != nil || time.Until(r.Expires) < 14*24*time.Hour {
-			bad++
-		}
-		if r.Err != nil {
-			line += "  " + ui.Bad(ui.ShortErr(r.Err))
-		}
-		ui.Println(line)
-	}
-	if bad > 0 {
-		return ui.Verdictf("требуют внимания: %d из %d", bad, len(rows))
-	}
-	return nil
 }
 
 func hijackNote() {
@@ -216,6 +153,76 @@ func printDNSServers() error {
 	return nil
 }
 
+// daysFact: срок строкой и уровнем: истёк - плохо, меньше двух недель - внимание.
+func daysFact(key string, t time.Time) report.Fact {
+	f := report.Fact{Key: key, Value: ui.StripANSI(ui.DaysLeft(t))}
+	switch d := ui.DaysUntil(t, time.Now()); {
+	case d <= 0:
+		f.Level = report.Bad
+	case d < 14:
+		f.Level = report.Warn
+	}
+	return f
+}
+
+// printCert: сертификат одного хоста подробно - кому, кем, имена, сроки, цепочка.
+func printCert(arg string, asJSON bool) error {
+	host, port := netinfo.HostPort(arg, "443")
+	c := certJSONOf(host, port)
+	if c.Subject == "" && c.Error != "" {
+		return ui.Errorf("%s:%s: %s", host, port, c.Error)
+	}
+	facts := report.Facts{{Key: "кому", Value: c.Subject}, {Key: "кем", Value: strings.TrimSpace(c.Issuer + "  " + c.IssuerOrg)},
+		{Key: "имена", Value: strings.Join(c.Names, " ")}, {Key: "с", Value: c.NotBefore.Format("2006-01-02")},
+		daysFact("до", c.NotAfter), {Key: "tls", Value: c.TLS}}
+	for i, name := range c.Chain {
+		facts = append(facts, report.Fact{Key: fmt.Sprintf("цепочка %d", i+1), Value: name, Level: report.Info})
+	}
+	verify := report.Fact{Key: "проверка", Value: "цепочка проверена", Level: report.OK}
+	if !c.Verified {
+		verify.Value, verify.Level = "не прошла: "+c.Error, report.Bad
+	}
+	facts = append(facts, verify)
+	return view.Show(report.Report{Schema: "tim.cert/1", Title: host + ":" + port, Data: c, Blocks: []report.Block{facts}}, asJSON)
+}
+
+// printExpiries: сроки сертификатов списком; истекающие за две недели и с ошибкой - повод разобраться.
+func printExpiries(cfg *config.Config, hosts []string, asJSON bool) error {
+	if len(hosts) == 0 {
+		hosts = siteHosts(cfg, nil)
+	}
+	if len(hosts) == 0 {
+		return ui.Errorf("доменов нет: tim cert <домен> или список sites в конфиге")
+	}
+	certs := par.Map(hosts, par.Limit, func(h string) certJSON {
+		host, port := netinfo.HostPort(h, "443")
+		return certJSONOf(host, port)
+	})
+	t := report.Table{Columns: []report.Column{{Title: "ХОСТ", Style: report.Key}, {Title: "СРОК"}, {Title: "КЕМ", Style: report.Muted}, {Title: ""}}}
+	bad := 0
+	for _, c := range certs {
+		if c.Subject == "" && c.Error != "" {
+			bad++
+			t.Rows = append(t.Rows, []any{report.Mark{Text: c.Host, Level: report.Bad}, report.Mark{Text: c.Error, Level: report.Info}, "", ""})
+			continue
+		}
+		days := daysFact("", c.NotAfter)
+		note := report.Mark{}
+		if !c.Verified {
+			note = report.Mark{Text: ui.ShortErr(errors.New(c.Error)), Level: report.Bad}
+		}
+		if !c.Verified || days.Level >= report.Warn {
+			bad++
+		}
+		t.Rows = append(t.Rows, []any{c.Host, report.Mark{Text: days.Value, Level: days.Level}, c.Issuer, note})
+	}
+	err := view.Show(report.Report{Schema: "tim.cert.list/1", Data: certs, Blocks: []report.Block{t}}, asJSON)
+	if err == nil && bad > 0 {
+		return ui.Verdictf("требуют внимания: %d из %d", bad, len(certs))
+	}
+	return err
+}
+
 // printSite: что за сайт - адреса, регистрация, сертификат, ответ HTTP.
 func printSite(arg string, asJSON bool) error {
 	host, _ := netinfo.HostPort(arg, "")
@@ -224,54 +231,43 @@ func printSite(arg string, asJSON bool) error {
 		target = "https://" + host
 	}
 	r := Collect(host, target)
-	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(r)
-	}
-	ui.Println(ui.Info(r.Host))
+	var facts report.Facts
 	if len(r.IPs) > 0 {
-		line := ui.Label("ip       ") + strings.Join(r.IPs, " ")
+		ip := strings.Join(r.IPs, " ")
 		if g := r.Geo; g != nil {
-			line += ui.Dim(fmt.Sprintf("  %s, %s, %s AS%d", g.Country, g.City, g.ISP, g.ASN))
+			ip += fmt.Sprintf("  %s, %s, %s AS%d", g.Country, g.City, g.ISP, g.ASN)
 		}
-		ui.Println(line)
+		facts = append(facts, report.Fact{Key: "ip", Value: ip})
 	}
 	if d := r.Domain; d != nil {
-		printRegistration(d)
+		facts = append(facts, report.Fact{Key: "домен", Value: strings.TrimSpace(ui.Dash(d.Registrar) + "  " + d.Source)})
+		if !d.Created.IsZero() {
+			facts = append(facts, report.Fact{Key: "создан", Value: d.Created.Format("2006-01-02")})
+		}
+		if !d.Expires.IsZero() {
+			facts = append(facts, daysFact("оплачен", d.Expires))
+		}
+		facts = append(facts, report.Fact{Key: "ns", Value: strings.Join(d.Nameservers, " ")})
 	}
 	if t := r.TLS; t != nil {
-		line := ui.Label("tls      ") + t.Issuer + ", до " + ui.DaysLeft(t.Expires)
+		tls := daysFact("tls", t.Expires)
+		tls.Value = t.Issuer + ", до " + tls.Value
 		if !t.Verified {
-			line += "  " + ui.Bad("не проверен")
+			tls.Value, tls.Level = tls.Value+", не проверен", report.Bad
 		}
-		ui.Println(line)
+		facts = append(facts, tls)
 	}
 	if p := r.HTTP; p != nil {
-		ui.Println(ui.Label("http     ") + fmt.Sprintf("%d %s", p.Status, p.Final))
+		facts = append(facts, report.Fact{Key: "http", Value: fmt.Sprintf("%d %s", p.Status, p.Final)})
 		for _, rd := range p.Redirects {
-			ui.Println(ui.Dim("  через " + rd))
+			facts = append(facts, report.Fact{Key: "через", Value: rd, Level: report.Info})
 		}
-		if p.Server != "" || p.PoweredBy != "" {
-			ui.Println(ui.Label("сервер   ") + strings.TrimSpace(p.Server+" "+p.PoweredBy))
-		}
-		ui.Println(ui.Label("cms      ") + ui.Dash(p.CMS))
+		facts = append(facts, report.Fact{Key: "сервер", Value: strings.TrimSpace(p.Server + " " + p.PoweredBy)},
+			report.Fact{Key: "cms", Value: ui.Dash(p.CMS)})
 	}
 	for _, k := range slices.Sorted(maps.Keys(r.Errors)) {
-		ui.Println(ui.Warn(ui.Pad(k, 9)) + ui.Dim(r.Errors[k]))
+		facts = append(facts, report.Fact{Key: k, Value: r.Errors[k], Level: report.Warn})
 	}
-	return nil
-}
-
-func printRegistration(d *inspect.Domain) {
-	ui.Println(ui.Label("домен    ") + ui.Dash(d.Registrar) + ui.Dim("  "+d.Source))
-	if !d.Created.IsZero() {
-		ui.Println(ui.Label("создан   ") + d.Created.Format("2006-01-02"))
-	}
-	if !d.Expires.IsZero() {
-		ui.Println(ui.Label("оплачен  ") + ui.DaysLeft(d.Expires))
-	}
-	if len(d.Nameservers) > 0 {
-		ui.Println(ui.Label("ns       ") + strings.Join(d.Nameservers, " "))
-	}
+	facts = slices.DeleteFunc(facts, func(f report.Fact) bool { return f.Value == "" })
+	return view.Show(report.Report{Schema: "tim.site/1", Title: r.Host, Data: r, Blocks: []report.Block{facts}}, asJSON)
 }

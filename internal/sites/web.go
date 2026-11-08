@@ -3,10 +3,11 @@ package sites
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 	"github.com/TimurTurdyev/tim/internal/og"
 	"github.com/TimurTurdyev/tim/internal/schedule"
 	"github.com/TimurTurdyev/tim/internal/ui"
+	"github.com/TimurTurdyev/tim/internal/view"
 	"github.com/TimurTurdyev/tim/internal/watch"
+	"github.com/TimurTurdyev/tim/report"
 )
 
 // keyHeaders: заголовки ответа, по которым видно главное.
@@ -37,200 +40,7 @@ type timingJSON struct {
 	Headers   http.Header `json:"headers"`
 }
 
-func printTimings(arg string, follow, allHeaders, asJSON bool) error {
-	url := withScheme(arg)
-	var hops []timingJSON
-	for range 10 {
-		t, err := inspect.Measure(url)
-		if err != nil {
-			return ui.Errorf("%s: %v", url, err)
-		}
-		if asJSON {
-			hops = append(hops, timingJSON{URL: url, Status: t.Status, Proto: t.Proto, Size: t.Size, DNSMs: t.DNS.Milliseconds(),
-				ConnectMs: t.Connect.Milliseconds(), TLSMs: t.TLS.Milliseconds(), TTFBMs: t.TTFB.Milliseconds(), TotalMs: t.All.Milliseconds(),
-				Location: t.Location, Headers: t.Header})
-			if !follow || t.Location == "" {
-				return ui.JSON(hops)
-			}
-			url = t.Location
-			continue
-		}
-		status := fmt.Sprintf("%d %s", t.Status, t.Proto)
-		switch {
-		case t.Status >= 500:
-			status = ui.Bad(status)
-		case t.Status >= 400:
-			status = ui.Warn(status)
-		default:
-			status = ui.Label(status)
-		}
-		ui.Println(status + "  " + url + ui.Dim("  "+ui.Bytes(t.Size)))
-		ui.Println(ui.Dim(fmt.Sprintf("  dns %s  tcp %s  tls %s  первый байт %s  загрузка %s",
-			ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.TTFB), ms(t.All-t.TTFB))) + "  " + ui.Label("всего "+ms(t.All)))
-		printHeaders(t.Header, allHeaders)
-		if !follow || t.Location == "" {
-			if t.Location != "" {
-				ui.Println(ui.Dim("редирект: tim http -L " + arg))
-			}
-			return nil
-		}
-		url = t.Location
-	}
-	return ui.Errorf("больше 10 редиректов")
-}
-
-func printHeaders(h http.Header, all bool) {
-	names := keyHeaders
-	if all {
-		names = nil
-		for k := range h {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-	}
-	for _, k := range names {
-		if v := h.Get(k); v != "" {
-			ui.Println("  " + ui.Pad(k, 26) + " " + v)
-		}
-	}
-}
-
 func ms(d time.Duration) string { return fmt.Sprintf("%d мс", d.Milliseconds()) }
-
-// printPreview: как ссылка будет выглядеть в Telegram и соцсетях.
-func printPreview(arg string, asJSON bool) error {
-	url := withScheme(arg)
-	card, status, err := og.Fetch(url)
-	if err != nil {
-		return ui.Errorf("%s: %v", url, ui.ShortErr(err))
-	}
-	if asJSON {
-		out := struct {
-			URL      string       `json:"url"`
-			Status   int          `json:"status"`
-			Card     og.Card      `json:"card"`
-			Image    string       `json:"image,omitempty"`
-			Problems []og.Problem `json:"problems"`
-		}{URL: url, Status: status, Card: card, Problems: og.Check(card)}
-		if card.Image != "" {
-			out.Image = og.ImageURL(url, card)
-			_, more := og.CheckImage(out.Image)
-			out.Problems = append(out.Problems, more...)
-		}
-		return ui.JSON(out)
-	}
-	if status != 200 {
-		ui.Println(ui.Warn(fmt.Sprintf("страница отвечает %d боту мессенджера - превью может не собраться", status)))
-	}
-	show("сайт", card.SiteName, "")
-	show("заголовок", card.Title, card.HTMLTitle)
-	show("описание", card.Description, card.MetaDescription)
-	probs := og.Check(card)
-	if card.Image != "" {
-		img := og.ImageURL(url, card)
-		info, more := og.CheckImage(img)
-		show("картинка", img, "")
-		if info != "" {
-			ui.Println(ui.Pad("", 11) + ui.Dim(info))
-		}
-		probs = append(probs, more...)
-	}
-	if len(probs) == 0 {
-		ui.Println(ui.Label("превью в порядке"))
-		return nil
-	}
-	ui.Println()
-	bad := 0
-	for _, p := range probs {
-		if p.Bad {
-			bad++
-			ui.Println(ui.Bad(p.Text))
-		} else {
-			ui.Println(ui.Warn(p.Text))
-		}
-	}
-	ui.Println(ui.Dim("Telegram кеширует превью: после правки отправь ссылку @WebpageBot, чтобы обновить"))
-	if bad > 0 {
-		return ui.Errorf("превью соберётся плохо")
-	}
-	return nil
-}
-
-func show(label, v, fallback string) {
-	switch {
-	case v != "":
-		ui.Println(ui.Label(ui.Pad(label, 11)) + v)
-	case fallback != "":
-		ui.Println(ui.Label(ui.Pad(label, 11)) + ui.Dim(fallback+"  (запасной вариант)"))
-	default:
-		ui.Println(ui.Label(ui.Pad(label, 11)) + ui.Dim("-"))
-	}
-}
-
-// checkCORS: пустит ли браузер запрос с origin, а если нет - какой заголовок мешает.
-func checkCORS(arg string, o corsOptions) error {
-	if o.origin == "" {
-		return ui.Errorf("откуда запрос: --origin https://app.example.com")
-	}
-	r := cors.Request{Origin: strings.TrimSuffix(o.origin, "/"), Method: strings.ToUpper(o.method), Headers: o.headers, Credentials: o.credentials}
-	resp, err := cors.Probe(withScheme(arg), r)
-	if se, ok := errors.AsType[*cors.StepError](err); ok {
-		return ui.Errorf("%s: %v", se.Step, ui.ShortErr(se.Err))
-	}
-	if err != nil {
-		return err
-	}
-	probs := cors.Analyze(r, resp.PreflightCode, resp.Preflight, resp.Actual)
-	if o.json {
-		allowed := true
-		for _, p := range probs {
-			allowed = allowed && !p.Bad
-		}
-		return ui.JSON(struct {
-			Origin          string         `json:"origin"`
-			Method          string         `json:"method"`
-			PreflightStatus string         `json:"preflight_status,omitempty"`
-			Preflight       http.Header    `json:"preflight,omitempty"`
-			Status          string         `json:"status"`
-			Headers         http.Header    `json:"headers"`
-			Problems        []cors.Problem `json:"problems"`
-			Allowed         bool           `json:"allowed"`
-		}{r.Origin, r.Method, resp.PreflightStatus, resp.Preflight, resp.Status, resp.Actual, probs, allowed})
-	}
-	if resp.Preflight != nil {
-		ui.Println(ui.Label("preflight") + "  OPTIONS " + resp.PreflightStatus)
-		printHeaderValues(resp.Preflight, "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers",
-			"Access-Control-Allow-Credentials", "Access-Control-Max-Age")
-	}
-	ui.Println(ui.Label("ответ") + "      " + resp.Method + " " + resp.Status)
-	printHeaderValues(resp.Actual, "Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Expose-Headers", "Vary")
-	ui.Println()
-	if len(probs) == 0 {
-		ui.Println(ui.Label("браузер пустит " + r.Method + " с " + r.Origin))
-		return nil
-	}
-	bad := 0
-	for _, p := range probs {
-		if p.Bad {
-			bad++
-			ui.Println(ui.Bad(p.Text))
-		} else {
-			ui.Println(ui.Warn(p.Text))
-		}
-	}
-	if bad > 0 {
-		return ui.Errorf("браузер не пустит %s с %s", r.Method, r.Origin)
-	}
-	return nil
-}
-
-func printHeaderValues(h http.Header, keys ...string) {
-	for _, k := range keys {
-		if v := strings.Join(h.Values(k), ", "); v != "" {
-			ui.Println(ui.Dim("  " + k + ": " + v))
-		}
-	}
-}
 
 // watchSite: опрос раз в every; на каждой смене состояния - строка и уведомление системы.
 func watchSite(arg string, o watchOptions) error {
@@ -291,4 +101,187 @@ func withScheme(url string) string {
 		return "https://" + url
 	}
 	return url
+}
+
+// printTimings: время ответа по фазам и главные заголовки; с follow - по каждому редиректу.
+func printTimings(arg string, follow, allHeaders, asJSON bool) error {
+	url := withScheme(arg)
+	var hops []timingJSON
+	var blocks []report.Block
+	for range 10 {
+		t, err := inspect.Measure(url)
+		if err != nil {
+			return ui.Errorf("%s: %v", url, err)
+		}
+		hops = append(hops, timingJSON{URL: url, Status: t.Status, Proto: t.Proto, Size: t.Size, DNSMs: t.DNS.Milliseconds(),
+			ConnectMs: t.Connect.Milliseconds(), TLSMs: t.TLS.Milliseconds(), TTFBMs: t.TTFB.Milliseconds(), TotalMs: t.All.Milliseconds(),
+			Location: t.Location, Headers: t.Header})
+		status := report.Fact{Key: "ответ", Value: fmt.Sprintf("%d %s, %s", t.Status, t.Proto, ui.Bytes(t.Size)), Level: report.OK}
+		switch {
+		case t.Status >= 500:
+			status.Level = report.Bad
+		case t.Status >= 400:
+			status.Level = report.Warn
+		}
+		facts := report.Facts{status,
+			{Key: "по фазам", Value: fmt.Sprintf("dns %s  tcp %s  tls %s  первый байт %s  загрузка %s", ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.TTFB), ms(t.All-t.TTFB))},
+			{Key: "всего", Value: ms(t.All)}}
+		blocks = append(blocks, report.Heading(url), facts, headerFacts(t.Header, allHeaders))
+		if !follow || t.Location == "" {
+			if t.Location != "" {
+				blocks = append(blocks, report.Next{{Text: "по редиректу", Command: "tim http -L " + arg}})
+			}
+			return view.Show(report.Report{Schema: "tim.http/1", Data: hops, Blocks: blocks}, asJSON)
+		}
+		url = t.Location
+	}
+	return ui.Errorf("больше 10 редиректов")
+}
+
+// headerFacts: главные заголовки ответа, с all - все по алфавиту.
+func headerFacts(h http.Header, all bool) report.Facts {
+	names := keyHeaders
+	if all {
+		names = slices.Sorted(maps.Keys(h))
+	}
+	var out report.Facts
+	for _, k := range names {
+		if v := h.Get(k); v != "" {
+			out = append(out, report.Fact{Key: k, Value: v, Level: report.Info})
+		}
+	}
+	return out
+}
+
+// printPreview: как ссылка развернётся в мессенджере - карточка и что в ней не так.
+func printPreview(arg string, asJSON bool) error {
+	url := withScheme(arg)
+	card, status, err := og.Fetch(url)
+	if err != nil {
+		return ui.Errorf("%s: %v", url, ui.ShortErr(err))
+	}
+	out := struct {
+		URL      string       `json:"url"`
+		Status   int          `json:"status"`
+		Card     og.Card      `json:"card"`
+		Image    string       `json:"image,omitempty"`
+		Problems []og.Problem `json:"problems"`
+	}{URL: url, Status: status, Card: card, Problems: og.Check(card)}
+	facts := report.Facts{cardFact("сайт", card.SiteName, ""), cardFact("заголовок", card.Title, card.HTMLTitle),
+		cardFact("описание", card.Description, card.MetaDescription)}
+	if status != 200 {
+		facts = append(report.Facts{{Key: "ответ", Value: fmt.Sprintf("%d боту мессенджера - превью может не собраться", status), Level: report.Warn}}, facts...)
+	}
+	if card.Image != "" {
+		out.Image = og.ImageURL(url, card)
+		info, more := og.CheckImage(out.Image)
+		out.Problems = append(out.Problems, more...)
+		facts = append(facts, report.Fact{Key: "картинка", Value: out.Image})
+		if info != "" {
+			facts = append(facts, report.Fact{Key: "", Value: info, Level: report.Info})
+		}
+	}
+	r := report.Report{Schema: "tim.og/1", Title: url, Data: out, Blocks: []report.Block{facts}}
+	if len(out.Problems) == 0 {
+		r.Verdict = report.Verdict{Level: report.OK, Text: "превью в порядке"}
+		return view.Show(r, asJSON)
+	}
+	bad := 0
+	var found report.Findings
+	for _, p := range out.Problems {
+		f := report.Finding{Level: report.Warn, Text: p.Text}
+		if p.Bad {
+			bad++
+			f.Level = report.Bad
+		}
+		found = append(found, f)
+	}
+	r.Blocks = append(r.Blocks, found, report.Note("Telegram кеширует превью: после правки отправь ссылку @WebpageBot, чтобы обновить"))
+	if err := view.Show(r, asJSON); err != nil {
+		return err
+	}
+	if bad > 0 {
+		return ui.Errorf("превью соберётся плохо")
+	}
+	return nil
+}
+
+// cardFact: поле карточки; пустое - запасным вариантом из страницы или прочерком.
+func cardFact(label, v, fallback string) report.Fact {
+	switch {
+	case v != "":
+		return report.Fact{Key: label, Value: v}
+	case fallback != "":
+		return report.Fact{Key: label, Value: fallback + "  (запасной вариант)", Level: report.Info}
+	}
+	return report.Fact{Key: label, Value: "-", Level: report.Info}
+}
+
+// checkCORS: пустит ли браузер запрос с origin - preflight, ответ и чего не хватает.
+func checkCORS(arg string, o corsOptions) error {
+	if o.origin == "" {
+		return ui.Errorf("откуда запрос: --origin https://app.example.com")
+	}
+	r := cors.Request{Origin: strings.TrimSuffix(o.origin, "/"), Method: strings.ToUpper(o.method), Headers: o.headers, Credentials: o.credentials}
+	resp, err := cors.Probe(withScheme(arg), r)
+	if se, ok := errors.AsType[*cors.StepError](err); ok {
+		return ui.Errorf("%s: %v", se.Step, ui.ShortErr(se.Err))
+	}
+	if err != nil {
+		return err
+	}
+	probs := cors.Analyze(r, resp.PreflightCode, resp.Preflight, resp.Actual)
+	allowed := true
+	var found report.Findings
+	for _, p := range probs {
+		allowed = allowed && !p.Bad
+		f := report.Finding{Level: report.Warn, Text: p.Text}
+		if p.Bad {
+			f.Level = report.Bad
+		}
+		found = append(found, f)
+	}
+	data := struct {
+		Origin          string         `json:"origin"`
+		Method          string         `json:"method"`
+		PreflightStatus string         `json:"preflight_status,omitempty"`
+		Preflight       http.Header    `json:"preflight,omitempty"`
+		Status          string         `json:"status"`
+		Headers         http.Header    `json:"headers"`
+		Problems        []cors.Problem `json:"problems"`
+		Allowed         bool           `json:"allowed"`
+	}{r.Origin, r.Method, resp.PreflightStatus, resp.Preflight, resp.Status, resp.Actual, probs, allowed}
+	var blocks []report.Block
+	if resp.Preflight != nil {
+		blocks = append(blocks, report.Heading("preflight  OPTIONS "+resp.PreflightStatus), headerValues(resp.Preflight, "Access-Control-Allow-Origin",
+			"Access-Control-Allow-Methods", "Access-Control-Allow-Headers", "Access-Control-Allow-Credentials", "Access-Control-Max-Age"))
+	}
+	blocks = append(blocks, report.Heading("ответ  "+resp.Method+" "+resp.Status), headerValues(resp.Actual, "Access-Control-Allow-Origin",
+		"Access-Control-Allow-Credentials", "Access-Control-Expose-Headers", "Vary"))
+	rep := report.Report{Schema: "tim.cors/1", Data: data, Blocks: blocks}
+	if len(found) == 0 {
+		rep.Blocks = append(rep.Blocks, report.Facts{{Key: "итог", Value: "браузер пустит " + r.Method + " с " + r.Origin, Level: report.OK}})
+	} else {
+		rep.Blocks = append(rep.Blocks, report.Heading("итог"), found)
+	}
+	if err := view.Show(rep, o.json); err != nil {
+		return err
+	}
+	if !allowed {
+		return ui.Errorf("браузер не пустит %s с %s", r.Method, r.Origin)
+	}
+	return nil
+}
+
+func headerValues(h http.Header, keys ...string) report.Facts {
+	var out report.Facts
+	for _, k := range keys {
+		if v := strings.Join(h.Values(k), ", "); v != "" {
+			out = append(out, report.Fact{Key: k, Value: v})
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, report.Fact{Key: "заголовки CORS", Value: "нет", Level: report.Info})
+	}
+	return out
 }
