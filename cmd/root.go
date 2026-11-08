@@ -16,6 +16,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/bypass"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/disk"
+	"github.com/TimurTurdyev/tim/internal/ext"
 	"github.com/TimurTurdyev/tim/internal/home"
 	"github.com/TimurTurdyev/tim/internal/local"
 	"github.com/TimurTurdyev/tim/internal/machine"
@@ -68,7 +69,7 @@ var groups = []struct {
 	{"net", "Сеть", []string{"vpn", "route", "direct", "net", "ip"}},
 	{"sites", "Сайты", []string{"site", "audit", "domain", "mail", "dns", "cert", "http", "check", "notify"}},
 	{"util", "Утилиты", utilCmds},
-	{"self", "Сам tim", []string{"init", "config", "doctor", "version", "self-update"}},
+	{"self", "Сам tim", []string{"init", "config", "doctor", "version", "self-update", "render"}},
 }
 
 // utilCmds: мелкие утилиты. В общей справке они одной строкой - полный список: tim help utils.
@@ -114,6 +115,7 @@ func sectionCommands() [][]*cobra.Command {
 		servers.Commands(env),
 		sites.Commands(env),
 		motd.Commands(env),
+		ext.Commands(),
 		{screens.Command()},
 	}
 }
@@ -139,10 +141,41 @@ func mount() {
 }
 
 // assignGroups раскладывает команды по разделам справки; вызывается после всех init().
+// mountOwn: свои команды tim-<имя> ищутся, только когда нужны - справка, completion, главный экран или
+// незнакомое слово. Обходить PATH на каждом старте дорого: status идёт в каждом новом терминале.
+func mountOwn(args []string) {
+	first := ""
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			first = a
+			break
+		}
+	}
+	switch {
+	case first == "" || first == "help" || first == "ui" || first == "completion" || strings.HasPrefix(first, "__complete"):
+		ext.Mount(root, "")
+	case !known(first):
+		ext.Mount(root, first)
+	}
+}
+
+func known(name string) bool {
+	for _, c := range root.Commands() {
+		if c.Name() == name || c.HasAlias(name) {
+			return true
+		}
+	}
+	return name == "help" || name == "completion"
+}
+
 func assignGroups() {
 	byName := map[string]*cobra.Command{}
+	var own []*cobra.Command
 	for _, c := range root.Commands() {
 		byName[c.Name()] = c
+		if c.Annotations[app.External] != "" {
+			own = append(own, c)
+		}
 	}
 	for _, g := range groups {
 		root.AddGroup(&cobra.Group{ID: g.id, Title: g.title})
@@ -150,6 +183,12 @@ func assignGroups() {
 			if c, ok := byName[n]; ok {
 				c.GroupID = g.id
 			}
+		}
+	}
+	if len(own) > 0 {
+		root.AddGroup(&cobra.Group{ID: "own", Title: "Свои команды"})
+		for _, c := range own {
+			c.GroupID = "own"
 		}
 	}
 }
@@ -242,6 +281,7 @@ func flagSuggestion(c *cobra.Command, err error) error {
 
 func Execute() error {
 	mount()
+	mountOwn(os.Args[1:])
 	assignGroups()
 	root.SetHelpFunc(helpWithHeader(root.HelpFunc()))
 	root.SetFlagErrorFunc(flagSuggestion)
@@ -252,6 +292,9 @@ func Execute() error {
 	if err != nil {
 		if errors.Is(err, app.ErrCanceled) {
 			return nil
+		}
+		if _, ok := errors.AsType[app.ExitCode](err); ok {
+			return err
 		}
 		msg := err.Error()
 		if strings.HasPrefix(msg, `unknown command "`) && strings.HasSuffix(strings.SplitN(msg, "\n", 2)[0], `for "tim"`) {
@@ -269,4 +312,12 @@ func Execute() error {
 	}
 	home.Remember(c, os.Args[1:], utilCmds)
 	return nil
+}
+
+// Code: код выхода tim по ошибке Execute - у своей команды её собственный, иначе 1.
+func Code(err error) int {
+	if c, ok := errors.AsType[app.ExitCode](err); ok {
+		return int(c)
+	}
+	return 1
 }

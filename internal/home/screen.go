@@ -62,7 +62,7 @@ func (h *Home) runLine(line string) tui.Action {
 		return tui.Action{Push: s}
 	}
 	// Уборка зависимостей спрашивает про каждую папку - ей нужен терминал целиком.
-	if exitCmds[args[0]] || args[0] == "disk" && slices.Contains(args, "--clean") {
+	if exitCmds[args[0]] || args[0] == "disk" && slices.Contains(args, "--clean") || h.external(args) {
 		return tui.Action{Exit: func() { h.after(args) }}
 	}
 	return h.result(args)
@@ -395,4 +395,10 @@ func (h *Home) diskHits(ix *searchIndex, q string) []tui.Hit {
 			}})
 	}
 	return hits
+}
+
+// external: своя команда tim-<имя> - ей нужен терминал, внутри экрана её вывод некуда показать.
+func (h *Home) external(args []string) bool {
+	c, _, err := h.root.Find(args)
+	return err == nil && c.Annotations[app.External] != ""
 }

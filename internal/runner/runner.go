@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -152,6 +153,17 @@ func Exec(name string, args ...string) error {
 	}
 	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+// Handover: своя команда tim-<имя> получает терминал целиком - ввод, вывод и Ctrl-C. Dry-run ей передаётся
+// переменной TIM_DRY_RUN в env, решает она сама, поэтому здесь он не останавливает запуск.
+func Handover(path string, args, env []string) error {
+	cmd := exec.Command(path, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Env = append(os.Environ(), env...)
+	signal.Ignore(os.Interrupt)
+	defer signal.Reset(os.Interrupt)
 	return cmd.Run()
 }
 

@@ -22,9 +22,9 @@ var (
 		"report", "runner", "schedule", "shellq", "tui", "ui", "view", "webnet"}
 	// Пакеты в корне модуля открыты другим модулям (страница проверки сайта): без терминала, системы и
 	// конфига tim.
-	public       = []string{"report"}
+	public       = []string{"report", "sitecheck"}
 	publicDenied = []string{"app", "config", "privileged", "runner", "tui", "ui", "view"}
-	sections     = []string{"bypass", "disk", "home", "local", "machine", "motd", "servers", "shell", "sites",
+	sections     = []string{"bypass", "disk", "ext", "home", "local", "machine", "motd", "servers", "shell", "sites",
 		"tools"}
 	// Разрешённые зависимости раздела от раздела: строго в одну сторону.
 	sectionDeps = map[string][]string{
