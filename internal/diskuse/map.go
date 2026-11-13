@@ -2,6 +2,7 @@ package diskuse
 
 import (
 	"cmp"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,9 @@ import (
 
 // plainDirs: безликие имена папок - по ним не понять, чей это проект.
 var plainDirs = map[string]bool{"app": true, "src": true, "env": true, "code": true, "www": true, "repo": true}
+
+// cloneHolders: служебные папки программ; облака (Google Drive и др.) держат в них клоны файлов из CloudStorage.
+var cloneHolders = []string{"Library/Application Support", "Library/Containers", "Library/Group Containers"}
 
 // Обзор диска: замер с кэшем, строки по местам, тома, Steam и Chrome.
 
@@ -96,9 +100,43 @@ func Map(roots []string, fresh bool, progress func(done, total int, root string)
 			t[k] = v
 		}
 	}
+	t.unclone(roots, paths.Home())
 	pruned := t.Prune(50 << 20)
 	_ = cache.Store(CachePath(), measured{Roots: roots, Tree: pruned}, 0o600)
 	return pruned, time.Now()
+}
+
+// unclone: служебные папки - с общими блоками клонов один раз. Видимые файлы остаются целиком,
+// так место клона посчитано однажды, а не в каждой папке, куда облако его разложило.
+func (t Tree) unclone(roots []string, home string) {
+	var dirs []string
+	for _, rel := range cloneHolders {
+		holder := filepath.Join(home, rel)
+		for _, dir := range append([]string{holder}, roots...) {
+			if _, ok := t[dir]; ok && under(dir, []string{holder}) {
+				dirs = append(dirs, dir)
+				break
+			}
+		}
+	}
+	own, ok := OwnTree(dirs)
+	if !ok {
+		return
+	}
+	for _, dir := range dirs {
+		extra := t[dir] - own[dir]
+		for p := range t {
+			if under(p, []string{dir}) {
+				delete(t, p)
+			}
+		}
+		for p := filepath.Dir(dir); filepath.Dir(p) != p; p = filepath.Dir(p) {
+			if _, ok := t[p]; ok {
+				t[p] -= extra
+			}
+		}
+	}
+	maps.Copy(t, own)
 }
 
 // Rows: места в строки. Всё внутри группы (игры Steam, виртуалки) - одной строкой с разбивкой.
