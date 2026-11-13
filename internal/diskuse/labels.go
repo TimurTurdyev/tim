@@ -19,6 +19,7 @@ var rules = []rule{
 	{".android/avd", Label{Name: "эмуляторы Android", Hint: "ненужные удалить в Android Studio - Device Manager", Stop: true}, true},
 	{"Library/Android/sdk", Label{Name: "Android SDK", Hint: "лишние образы и платформы - Android Studio - SDK Manager", Stop: true}, false},
 	{"Pictures/Photos Library.photoslibrary", Label{Name: "медиатека Фото", Hint: "Фото - Настройки - iCloud - Оптимизировать хранилище", Stop: true, Kind: Data}, false},
+	{"Library/Application Support/Google/DriveFS", Label{Name: "Google Drive: кэш, отменённые загрузки", Hint: "отменённые загрузки лежат в canceled_uploads: нужное вернуть в папку Диска, остальное удалить; кэш Диск чистит сам", Stop: true, Kind: Data}, false},
 	{"Library/Mail", Label{Name: "почта", Hint: "большие вложения удаляются в самой Почте", Stop: true, Kind: Data}, false},
 	{"Library/Messages", Label{Name: "вложения сообщений", Hint: "Об этом Mac - Хранилище - Сообщения", Stop: true, Kind: Data}, false},
 	{".ollama/models", Label{Name: "модели Ollama", Hint: "ollama list, затем ollama rm <модель>", Stop: true}, false},
@@ -38,6 +39,9 @@ var rules = []rule{
 	{"/var/lib/docker", Label{Name: "docker", Hint: "docker system prune -a", Stop: true}, false},
 	{"/var/log", Label{Name: "журналы системы", Hint: "journalctl --vacuum-size=500M; старые логи в /var/log", Stop: true, Kind: System}, false},
 }
+
+// cloudHint: что делать с местом в ~/Library/CloudStorage - это скачанные копии облачных файлов.
+const cloudHint = "уже в облаке: в Finder - Удалить загрузку; файлы останутся в облаке и скачаются при открытии"
 
 var deps = map[string]bool{"node_modules": true, "vendor": true, ".venv": true, "venv": true, "target": true, ".next": true, ".nuxt": true}
 

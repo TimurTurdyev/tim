@@ -53,6 +53,13 @@ func Group(rows []Row, tree Tree, home string) []Row {
 		out = append(out, folderRow(k, byKey[k], home))
 	}
 	out = append(out, Copies(tree, home)...)
+	// Совет "в облако" для того, что уже в облаке, бессмыслен: место здесь - скачанная копия.
+	cloud := filepath.Join(home, "Library/CloudStorage")
+	for i := range out {
+		if under(out[i].Path, []string{cloud}) {
+			out[i].Hint = cloudHint
+		}
+	}
 	slices.SortStableFunc(out, func(a, b Row) int { return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Name, b.Name)) })
 	return out
 }
