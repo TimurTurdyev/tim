@@ -45,7 +45,9 @@ var (
 )
 
 // ParseRIPEstat разбирает ответ announced-prefixes и оставляет только IPv4.
-func ParseRIPEstat(data []byte) ([]string, error) {
+func ParseRIPEstat(data []byte) ([]string, error) { return parseRIPEstat(data, false) }
+
+func parseRIPEstat(data []byte, v6 bool) ([]string, error) {
 	var doc struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -62,7 +64,7 @@ func ParseRIPEstat(data []byte) ([]string, error) {
 	}
 	var out []string
 	for _, p := range doc.Data.Prefixes {
-		if pr, err := netip.ParsePrefix(p.Prefix); err == nil && pr.Addr().Is4() {
+		if pr, err := netip.ParsePrefix(p.Prefix); err == nil && pr.Addr().Is4() != v6 {
 			out = append(out, pr.Masked().String())
 		}
 	}
@@ -71,10 +73,12 @@ func ParseRIPEstat(data []byte) ([]string, error) {
 
 // Aggregate убирает вложенные сети и склеивает соседние половины в одну: меньше маршрутов в таблице.
 // Одна сортировка и стек: вложенная сеть идёт сразу за своей, а склейка проверяется только с вершиной.
-func Aggregate(list []string) []string {
+func Aggregate(list []string) []string { return aggregate(list, false) }
+
+func aggregate(list []string, v6 bool) []string {
 	var ps []netip.Prefix
 	for _, s := range list {
-		if p, err := netip.ParsePrefix(s); err == nil && p.Addr().Is4() {
+		if p, err := netip.ParsePrefix(s); err == nil && p.Addr().Is4() != v6 {
 			ps = append(ps, p.Masked())
 		}
 	}
@@ -113,13 +117,22 @@ func siblings(a, b netip.Prefix) (netip.Prefix, bool) {
 
 // Prefixes: склеенные IPv4-сети AS из кэша в dir или из RIPEstat. Ошибка сети при живом кэше - не ошибка:
 // старый список полезнее пустого, иначе обход пропадёт из-за недоступности статистики.
-func Prefixes(dir, as string) ([]string, error) {
+func Prefixes(dir, as string) ([]string, error) { return prefixes(dir, as, false) }
+
+// Prefixes6: то же для IPv6. Сетей IPv6 у AS может и не быть - это не ошибка.
+func Prefixes6(dir, as string) ([]string, error) { return prefixes(dir, as, true) }
+
+func prefixes(dir, as string, v6 bool) ([]string, error) {
 	as = strings.TrimPrefix(strings.ToUpper(as), "AS")
-	return cache.Get(cache.Path(filepath.Join(dir, "asn"), as), TTL, func() ([]string, error) {
+	key := as
+	if v6 {
+		key += "-v6"
+	}
+	return cache.Get(cache.Path(filepath.Join(dir, "asn"), key), TTL, func() ([]string, error) {
 		if wait := max(retryIn(as), retryIn(anyAS)); wait > 0 {
 			return nil, errors.New("RIPEstat не отвечал, повтор через " + wait.Round(time.Minute).String())
 		}
-		list, err := fetch(as)
+		list, err := fetch(as, v6)
 		if err != nil {
 			// Не дозвонились - не ответит и про другие AS: пауза для всех, они возьмут старый кэш.
 			if _, unreachable := errors.AsType[*url.Error](err); unreachable {
@@ -128,7 +141,7 @@ func Prefixes(dir, as string) ([]string, error) {
 			failed(as)
 			return nil, err
 		}
-		if list = Aggregate(list); len(list) == 0 {
+		if list = aggregate(list, v6); len(list) == 0 && !v6 {
 			return nil, errors.New("у AS" + as + " нет анонсированных IPv4-сетей")
 		}
 		return list, nil
@@ -149,12 +162,12 @@ func failed(as string) {
 	failMu.Unlock()
 }
 
-func fetch(as string) ([]string, error) {
+func fetch(as string, v6 bool) ([]string, error) {
 	data, err := getJSON("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS" + as)
 	if err != nil {
 		return nil, err
 	}
-	return ParseRIPEstat(data)
+	return parseRIPEstat(data, v6)
 }
 
 // ParseNetworkInfo разбирает network-info: все AS, из которых сейчас виден адрес. Их бывает несколько:

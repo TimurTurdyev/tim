@@ -37,7 +37,7 @@ func addTargets(env *app.Env, args []string, o addOptions) error {
 	if o.noUp {
 		return nil
 	}
-	if err := Up(env.Cfg, dests); err != nil {
+	if err := upTargets(env.Cfg, dests); err != nil {
 		return err
 	}
 	offerGuard(env, before)
@@ -73,7 +73,7 @@ func resolveTarget(arg string, o addOptions, single bool) ([]netinfo.Target, str
 
 // removeTargets: цели по адресу, домену или пометке - из конфига, их маршруты - из таблицы.
 func removeTargets(env *app.Env, args []string) error {
-	var dests []string
+	var dests, dests6 []string
 	for _, a := range args {
 		removed := env.Cfg.RemoveHost(a)
 		if len(removed) == 0 {
@@ -88,11 +88,15 @@ func removeTargets(env *app.Env, args []string) error {
 			ui.Println(ui.Label("убран ") + h.Addr)
 		}
 		dests = append(dests, flatten(ExpandHosts(removed))...)
+		dests6 = append(dests6, flatten(expandHosts6(removed))...)
 	}
 	if err := env.Save(); err != nil {
 		return err
 	}
 	if err := Down(dests); err != nil {
+		return err
+	}
+	if err := Open6(dests6); err != nil {
 		return err
 	}
 	offerUnguard(env)
@@ -104,7 +108,10 @@ func up(env *app.Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	return Up(env.Cfg, dests)
+	if err := Up(env.Cfg, dests); err != nil {
+		return err
+	}
+	return Close6(collect6(env.Cfg, args))
 }
 
 func down(env *app.Env, args []string) error {
@@ -112,7 +119,10 @@ func down(env *app.Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	return Down(dests)
+	if err := Down(dests); err != nil {
+		return err
+	}
+	return Open6(collect6(env.Cfg, args))
 }
 
 // fix: после смены сети - снять протухшие маршруты и завести все цели заново.

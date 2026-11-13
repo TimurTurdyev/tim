@@ -112,3 +112,24 @@ func TestParseDefaults(t *testing.T) {
 		t.Errorf("%+v", list)
 	}
 }
+
+func TestParseRejects(t *testing.T) {
+	mac := ParseRejects(`Internet6:
+Destination                             Gateway                                 Flags               Netif Expire
+default                                 fdfe:dcba:9876::                        UGcg                utun5
+2001:4860::/32                          ::1                                     UGRSc                 lo0
+2a00:1450:4001:80b::200e                ::1                                     UGHRS                 lo0
+fdfe:dcba:9876::/126                    fe80::845:a9a4:a00a:8bcd%utun5          Uc                  utun5
+fe80::%lo0/64                           fe80::1%lo0                             UcI                   lo0
+`)
+	linux := ParseIPRejects(`unreachable 2001:4860::/32 dev lo metric 1024 pref medium
+unreachable 2a00:1450:4001:80b::200e dev lo metric 1024 pref medium
+fe80::/64 dev eth0 proto kernel metric 256 pref medium
+default via fe80::1 dev eth0 proto ra metric 1024 expires 1798sec pref medium
+`)
+	for name, got := range map[string]map[netip.Prefix]bool{"macOS": mac, "Linux": linux} {
+		if len(got) != 2 || !got[netip.MustParsePrefix("2001:4860::/32")] || !got[netip.MustParsePrefix("2a00:1450:4001:80b::200e/128")] {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}

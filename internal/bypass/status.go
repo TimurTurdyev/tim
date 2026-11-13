@@ -33,6 +33,8 @@ type routesData struct {
 	Internet  string     `json:"internet"`
 	TunnelAll bool       `json:"tunnel_all"`
 	Guard     string     `json:"guard"`
+	V6Closed  int        `json:"ipv6_closed"`
+	V6Total   int        `json:"ipv6_total"`
 	Targets   []routeRow `json:"targets"`
 }
 
@@ -59,6 +61,9 @@ func routesReport(cfg *config.Config, probe, all bool) report.Report {
 		return r
 	}
 	facts = append(facts, report.Fact{Key: "страж", Value: guard, Level: guardLevel})
+	if d.V6Closed, d.V6Total = state6(cfg); d.V6Total > 0 {
+		facts = append(facts, v6Fact(d.V6Closed, d.V6Total))
+	}
 	d.Targets = routeRows(cfg, phys, gw, probe)
 	bad := 0
 	for _, t := range d.Targets {
@@ -83,6 +88,15 @@ func routesReport(cfg *config.Config, probe, all bool) report.Report {
 		r.Blocks = append(r.Blocks, report.Note("весь список: tim route --all"))
 	}
 	return r
+}
+
+// v6Fact: закрыт ли IPv6 целей - иначе программы уходят к ним по IPv6 в туннель.
+func v6Fact(closed, total int) report.Fact {
+	f := report.Fact{Key: "IPv6", Value: fmt.Sprintf("закрыт у %d из %d сетей целей: к ним идут по IPv4", closed, total), Level: report.OK}
+	if closed < total {
+		f.Value, f.Level = fmt.Sprintf("открыт у %d из %d сетей целей: туда пойдут по IPv6 через туннель; tim route up", total-closed, total), report.Warn
+	}
+	return f
 }
 
 func routeRows(cfg *config.Config, phys netinfo.Service, gw string, probe bool) []routeRow {
@@ -212,6 +226,8 @@ type vpnData struct {
 	DNS         []string         `json:"dns,omitempty"`
 	BypassOK    int              `json:"bypass_ok"`
 	BypassTotal int              `json:"bypass_total"`
+	V6Closed    int              `json:"ipv6_closed"`
+	V6Total     int              `json:"ipv6_total"`
 }
 
 // vpnReport: туннели, подключения, куда идёт интернет, DNS и сколько целей идут мимо VPN.
@@ -253,12 +269,11 @@ func vpnReport(cfg *config.Config) report.Report {
 		}
 		guard, l := guardState()
 		facts = append(facts, bypass, report.Fact{Key: "страж", Value: guard, Level: l})
+		if d.V6Closed, d.V6Total = state6(cfg); hasV6 && d.V6Total > 0 {
+			facts = append(facts, v6Fact(d.V6Closed, d.V6Total))
+		}
 	}
-	r := report.Report{Schema: "tim.vpn/1", Data: &d, Blocks: []report.Block{facts}}
-	if hasV6 {
-		r.Blocks = append(r.Blocks, report.Note("обход работает только для IPv4; IPv6 через туннель остаётся как есть"))
-	}
-	return r
+	return report.Report{Schema: "tim.vpn/1", Data: &d, Blocks: []report.Block{facts}}
 }
 
 // BypassCount: сколько адресов целей сейчас идут мимо VPN и сколько их всего.

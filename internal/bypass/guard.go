@@ -149,6 +149,9 @@ func Cycle(st *routewatch.Status, c *config.Config) []routewatch.Repair {
 		LogLine("починено %d через %s %s (%s)", len(done), phys.Device, gw, strings.Join(parts, ", "))
 	}
 	st.AddRepairs(done)
+	if n, _, failed := close6(flatten(expandHosts6(c.Hosts))); n > 0 || len(failed) > 0 {
+		LogLine("IPv6 закрыт для %d сетей, не вышло %d", n, len(failed))
+	}
 	return done
 }
 

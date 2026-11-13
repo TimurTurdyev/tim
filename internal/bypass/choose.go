@@ -60,7 +60,7 @@ func chooseNets(env *app.Env, seconds int, label string, o addOptions) error {
 	if o.noUp || runner.DryRun && len(dests) == 0 {
 		return nil
 	}
-	if err := Up(env.Cfg, dests); err != nil {
+	if err := upTargets(env.Cfg, dests); err != nil {
 		return err
 	}
 	offerGuard(env, before)

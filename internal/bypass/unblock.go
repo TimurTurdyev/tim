@@ -135,7 +135,7 @@ func (u *unblocking) apply(targets []netinfo.Target, names []string) error {
 	if err := u.env.Save(); err != nil {
 		return err
 	}
-	return Up(u.env.Cfg, dests)
+	return upTargets(u.env.Cfg, dests)
 }
 
 func (u *unblocking) report(url string, cdn []*Group) {

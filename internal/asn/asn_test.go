@@ -39,6 +39,9 @@ func TestParseRIPEstat(t *testing.T) {
 	if err != nil || strings.Join(got, " ") != "10.88.0.0/18 10.73.192.0/22" {
 		t.Fatalf("%v %v", got, err)
 	}
+	if got, _ := parseRIPEstat(data, true); strings.Join(got, " ") != "2001:db8::/29" {
+		t.Fatalf("IPv6: %v", got)
+	}
 }
 
 func TestParseCymru(t *testing.T) {

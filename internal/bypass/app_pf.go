@@ -88,6 +88,8 @@ func Rules(tunnels []netinfo.Tunnel) string {
 	for _, t := range tunnels {
 		// Следующий узел для lo0 задаётся явно, как у Clash и Surge: без него pf пакет не заворачивает.
 		fmt.Fprintf(&b, "pass out quick on %s route-to (lo0 127.0.0.1) inet proto tcp from any to ! <tim_local> group %s keep state\n", t.Iface, GroupName)
+		// IPv6 прокси не ведёт: отказ сразу, и программа переходит на IPv4.
+		fmt.Fprintf(&b, "block return out quick on %s inet6 from any to 2000::/3 group %s\n", t.Iface, GroupName)
 	}
 	return b.String()
 }

@@ -59,12 +59,18 @@ func HostPort(s, defPort string) (string, string) {
 }
 
 // LookupIPv4 раскрывает домен во все A-записи, отсортированные; ждёт не дольше 3 секунд.
-func LookupIPv4(host string) []string {
+func LookupIPv4(host string) []string { return lookupIP(host, "ip4") }
+
+// LookupIPv6: адреса IPv6 домена - обход закрывает их, чтобы программы шли к домену по IPv4.
+func LookupIPv6(host string) []string { return lookupIP(host, "ip6") }
+
+func lookupIP(host, network string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	key := network + " " + host
+	ips, err := net.DefaultResolver.LookupIP(ctx, network, host)
 	if err != nil {
-		if old, ok := lastGood.Load(host); ok {
+		if old, ok := lastGood.Load(key); ok {
 			return old.([]string)
 		}
 		return nil
@@ -72,13 +78,15 @@ func LookupIPv4(host string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, ip := range ips {
-		if v4 := ip.To4(); v4 != nil && !seen[v4.String()] {
-			seen[v4.String()] = true
-			out = append(out, v4.String())
+		a, ok := netip.AddrFromSlice(ip)
+		if a = a.Unmap(); !ok || a.Is4() != (network == "ip4") || seen[a.String()] {
+			continue
 		}
+		seen[a.String()] = true
+		out = append(out, a.String())
 	}
 	sort.Strings(out)
-	lastGood.Store(host, out)
+	lastGood.Store(key, out)
 	return out
 }
 
