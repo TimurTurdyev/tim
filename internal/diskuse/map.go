@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/sysinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -29,6 +30,7 @@ var cloneHolders = []string{"Library/Application Support", "Library/Containers",
 type measured struct {
 	Roots []string `json:"roots"`
 	Tree  Tree     `json:"tree"`
+	Avail int64    `json:"avail,omitempty"`
 }
 
 // Row: строка обзора - место или группа мест (игры, виртуалки) с разбивкой.
@@ -86,7 +88,7 @@ func CachePath() string { return paths.State("disk-map.json") }
 // Map: дерево размеров. Свежий замер домашней папки идёт десятки секунд, поэтому
 // результат живёт 15 минут: сразу после краткого обзора --all не пересчитывает заново.
 func Map(roots []string, fresh bool, progress func(done, total int, root string)) (Tree, time.Time) {
-	if c, ok := cache.Load[measured](CachePath()); ok && !fresh && c.Fresh(15*time.Minute) && coveredBy(c.Value.Roots, roots) {
+	if c, ok := cache.Load[measured](CachePath()); ok && !fresh && c.Fresh(15*time.Minute) && coveredBy(c.Value.Roots, roots) && !moved(c.Value.Avail) {
 		return c.Value.Tree, c.Fetched
 	}
 	skip := map[string]bool{"/proc": true, "/sys": true, "/dev": true, "/run": true}
@@ -102,8 +104,23 @@ func Map(roots []string, fresh bool, progress func(done, total int, root string)
 	}
 	t.unclone(roots, paths.Home())
 	pruned := t.Prune(50 << 20)
-	_ = cache.Store(CachePath(), measured{Roots: roots, Tree: pruned}, 0o600)
+	_ = cache.Store(CachePath(), measured{Roots: roots, Tree: pruned, Avail: avail()}, 0o600)
 	return pruned, time.Now()
+}
+
+// moved: свободное место с замера сдвинулось больше чем на 2 GB - что-то удалили или скачали мимо tim,
+// и старые строки уже врут.
+func moved(was int64) bool {
+	now := avail()
+	return now > 0 && (was == 0 || now-was > 2<<30 || was-now > 2<<30)
+}
+
+func avail() int64 {
+	d, ok := sysinfo.DataDisk()
+	if !ok {
+		return 0
+	}
+	return int64(d.Avail)
 }
 
 // unclone: служебные папки - с общими блоками клонов один раз. Видимые файлы остаются целиком,
