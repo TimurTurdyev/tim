@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -146,6 +147,10 @@ func start() (*conn, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
+	}
+	if ui.Terminal() {
+		// Строка хода ("маршруты: 1 из 64") без перевода строки - вопрос sudo приклеился бы к ней.
+		fmt.Fprint(os.Stderr, "\r\033[2K")
 	}
 	c := exec.Command("sudo", "-p", "пароль администратора (один раз на запуск tim): ", exe, HelperArg)
 	c.Stderr = os.Stderr
