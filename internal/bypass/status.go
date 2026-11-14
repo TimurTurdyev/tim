@@ -165,7 +165,7 @@ func guardReport() report.Report {
 	case !d.Installed:
 		service = report.Fact{Key: "служба", Value: "не установлена: sudo tim route install", Level: report.Warn}
 	case !d.Running:
-		service = report.Fact{Key: "служба", Value: "установлена, но не работает; журнал " + d.Log, Level: report.Bad}
+		service = report.Fact{Key: "служба", Value: "установлена, но не работает - запустить: sudo tim route install; журнал " + d.Log, Level: report.Bad}
 	}
 	r := report.Report{Schema: "tim.route.status/1", Data: &d}
 	st, ok := GuardStatus()

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -102,11 +103,31 @@ func Notify(title, body string) {
 
 func installLaunchd(job Job) error {
 	path, domain := PlistPath(job.Label, job.Daemon), launchdDomain(job.Daemon)
-	_ = runner.Run("launchctl", "bootout", domain+"/"+job.Label)
+	target := domain + "/" + job.Label
+	_ = runner.Run("launchctl", "bootout", target)
 	if err := runner.WriteRoot(path, []byte(job.Plist())); err != nil {
 		return err
 	}
-	return runner.Run("launchctl", "bootstrap", domain, path)
+	// bootout возвращается раньше, чем служба выгружена, и bootstrap тогда падает с "5: Input/output error".
+	var err error
+	for range 3 {
+		waitUnloaded(target)
+		if err = runner.Run("launchctl", "bootstrap", domain, path); err == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return err
+}
+
+// waitUnloaded: ждать, пока launchd забудет службу, но не дольше 10 секунд.
+func waitUnloaded(target string) {
+	for i := 0; i < 40 && !runner.DryRun; i++ {
+		if _, err := runner.Output("launchctl", "print", target); err != nil {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func installSystemd(job Job, unit string) error {
