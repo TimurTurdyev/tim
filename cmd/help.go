@@ -112,7 +112,7 @@ var overviewSections = []struct {
 
 // renamed: прежние имена команд и нынешние замены - старая привычка не должна упираться в "нет команды".
 var renamed = []struct{ old, now string }{
-	{"vpn exclude", "direct"}, {"route add", "direct"}, {"route clear", "direct rm"}, {"vpn clear", "direct rm"},
+	{"vpn exclude", "direct"}, {"route add", "direct"}, {"route clear", "direct rm"}, {"route list", "direct list"}, {"vpn clear", "direct rm"},
 	{"vpn fix", "route fix"}, {"ssl", "cert"}, {"wifi", "net wifi"}, {"battery", "hw battery"}, {"stale", "ports --old"},
 }
 
@@ -294,8 +294,9 @@ func printUtils() {
 }
 
 // unknownHint: на неизвестную команду - куда она переехала, чем её заменить или на что она похожа.
+// top - неизвестно первое слово; у подкоманды (tim route list) ищем только переезд.
 // Пусто - подсказать нечего, остаётся обычная ошибка.
-func unknownHint(args []string) string {
+func unknownHint(args []string, top bool) string {
 	var words []string
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
@@ -305,7 +306,7 @@ func unknownHint(args []string) string {
 	if len(words) == 0 {
 		return ""
 	}
-	if hint := renamedHint(words); hint != "" {
+	if hint := renamedHint(words); hint != "" || !top {
 		return hint
 	}
 	if hint := removedHint(words[0]); hint != "" {

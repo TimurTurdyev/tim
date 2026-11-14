@@ -297,8 +297,9 @@ func Execute() error {
 			return err
 		}
 		msg := err.Error()
-		if strings.HasPrefix(msg, `unknown command "`) && strings.HasSuffix(strings.SplitN(msg, "\n", 2)[0], `for "tim"`) {
-			if hint := unknownHint(os.Args[1:]); hint != "" {
+		if strings.HasPrefix(msg, `unknown command "`) {
+			top := strings.HasSuffix(strings.SplitN(msg, "\n", 2)[0], `for "tim"`)
+			if hint := unknownHint(os.Args[1:], top); hint != "" {
 				fail(nil, hint)
 				return err
 			}
