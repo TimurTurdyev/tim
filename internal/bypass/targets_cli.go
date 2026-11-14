@@ -1,11 +1,14 @@
 package bypass
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/report"
 )
@@ -90,6 +93,29 @@ func removeTargets(env *app.Env, args []string) error {
 		dests = append(dests, flatten(ExpandHosts(removed))...)
 		dests6 = append(dests6, flatten(expandHosts6(removed))...)
 	}
+	return dropRoutes(env, dests, dests6)
+}
+
+// removeAll: все цели разом, с вопросом. Прежний список остаётся в копии конфига.
+func removeAll(env *app.Env) error {
+	hosts := env.Cfg.Hosts
+	if len(hosts) == 0 {
+		ui.Println(ui.Dim("целей обхода нет"))
+		return nil
+	}
+	if !runner.Confirm(fmt.Sprintf("убрать из обхода все цели (%d)?", len(hosts))) {
+		return nil
+	}
+	env.Cfg.Hosts = nil
+	if err := dropRoutes(env, flatten(ExpandHosts(hosts)), flatten(expandHosts6(hosts))); err != nil {
+		return err
+	}
+	ui.Println(ui.Dim("прежний список: " + paths.Show(config.Path()+".bak") + ", до следующей правки конфига"))
+	return nil
+}
+
+// dropRoutes: записать конфиг без убранных целей и снять их маршруты и закрытие IPv6.
+func dropRoutes(env *app.Env, dests, dests6 []string) error {
 	if err := env.Save(); err != nil {
 		return err
 	}

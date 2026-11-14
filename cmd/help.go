@@ -53,7 +53,7 @@ var helpOnce sync.Once
 
 var examples = map[string]string{
 	"tim ssh":     "  tim ssh                    # выбор алиаса\n  tim ssh prod uptime",
-	"tim direct":  "  tim direct example.org     # сайт целиком: плеер, видео, счётчики\n  tim direct Firefox         # всё приложение\n  tim direct git.example.com --label git\n  tim direct example.org --owner   # все сети владельца\n  tim direct                 # что сейчас идёт напрямую\n  tim direct rm example.org\n  tim direct off             # снять правила приложений",
+	"tim direct":  "  tim direct example.org     # сайт целиком: плеер, видео, счётчики\n  tim direct Firefox         # всё приложение\n  tim direct git.example.com --label git\n  tim direct example.org --owner   # все сети владельца\n  tim direct                 # что сейчас идёт напрямую\n  tim direct rm example.org\n  tim direct rm --all         # все цели сразу\n  tim direct off             # снять правила приложений",
 	"tim route":   "  tim route                  # цели и их маршруты\n  tim route fix              # после смены сети\n  sudo tim route install     # страж: чинит обход сам\n  tim route status",
 	"tim vpn":     "  tim vpn                    # туннель, страж и цели одним экраном",
 	"tim tunnel":  "  tim tunnel up prod          # SOCKS на 127.0.0.1:1080\n  tim tunnel all prod         # весь трафик через ssh\n  tim tunnel port 15432:5432 prod   # база сервера на localhost:15432\n  tim tunnel expose 8000",

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/view"
 )
 
@@ -61,12 +62,7 @@ tim открывает сайт в браузере, смотрит, куда т
 	o.unblock.bind(c)
 	c.Flags().BoolVar(&o.rules, "rules", false, "без аргументов: показать и правила ядра (pf, netfilter) - спросит пароль")
 	c.AddCommand(
-		&cobra.Command{
-			Use:   "rm <цель|пометка...>",
-			Short: "Вернуть под VPN: снять цели и их маршруты",
-			Args:  cobra.MinimumNArgs(1),
-			RunE:  func(cmd *cobra.Command, args []string) error { return removeTargets(env, args) },
-		},
+		directRmCommand(env),
 		app.WithJSON(&cobra.Command{
 			Use:   "list",
 			Short: "Цели обхода из конфига",
@@ -245,5 +241,30 @@ func proxyCommand() *cobra.Command {
 	c.Flags().IntVar(&o.port, "port", ProxyPort, "порт на 127.0.0.1")
 	c.Flags().StringVar(&o.iface, "iface", "", "физический интерфейс")
 	c.Flags().StringVar(&o.ip, "ip", "", "его адрес")
+	return c
+}
+
+func directRmCommand(env *app.Env) *cobra.Command {
+	var all bool
+	c := &cobra.Command{
+		Use:   "rm <цель|пометка...>",
+		Short: "Вернуть под VPN: снять цели и их маршруты",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if all && len(args) > 0 {
+				return ui.Errorf("с --all цели не перечисляют")
+			}
+			if all {
+				return nil
+			}
+			return cobra.MinimumNArgs(1)(cmd, args)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if all {
+				return removeAll(env)
+			}
+			return removeTargets(env, args)
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "все цели сразу; временно снять маршруты, не трогая список, - tim route down")
 	return c
 }
