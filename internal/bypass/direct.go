@@ -34,7 +34,7 @@ func direct(env *app.Env, args []string, o directOptions) error {
 	case KindNet:
 		return addTargets(env, args, o.add)
 	}
-	return ui.Errorf("не понял %s: сайт пишется с точкой, приложение - как оно называется в системе, сеть - as:N, адрес или подсеть", args[0])
+	return ui.Errorf("не понял %s: сайт пишется с точкой, приложение - как оно называется в системе, сеть - as:N или as:сайт, адрес или подсеть", args[0])
 }
 
 // directStatus: что сейчас идёт напрямую - приложения под правилами и цели с маршрутами.

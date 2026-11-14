@@ -36,8 +36,11 @@ func unblock(env *app.Env, site string, o unblockOptions) error {
 		url = "https://" + url
 	}
 	host, _ := netinfo.HostPort(url, "")
-	if host == "" || !strings.Contains(host, ".") {
-		return ui.Errorf("нужен адрес сайта: tim direct example.org")
+	if t, err := netinfo.ParseTarget(host); err != nil || t.Kind != netinfo.KindDomain {
+		return ui.Errorf("%s - не адрес сайта: tim direct example.org", site)
+	}
+	if len(netinfo.LookupIPv4(host)) == 0 {
+		return ui.Errorf("%s не раскрывается в адреса: проверь имя сайта", host)
 	}
 	if len(netinfo.Tunnels()) == 0 {
 		return ui.Errorf("туннеля нет: VPN выключен, сайт и так идёт напрямую")

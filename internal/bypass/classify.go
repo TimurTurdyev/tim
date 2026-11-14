@@ -26,6 +26,9 @@ func Classify(arg string, appExists func(string) bool) Kind {
 	if t, err := netinfo.ParseTarget(arg); err == nil && t.Kind != netinfo.KindDomain {
 		return KindNet
 	}
+	if _, ok := netinfo.OwnerOf(arg); ok {
+		return KindNet
+	}
 	if strings.Contains(arg, "/") || strings.HasSuffix(strings.ToLower(arg), ".app") {
 		return KindApp
 	}

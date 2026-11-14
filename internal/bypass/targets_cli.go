@@ -50,6 +50,9 @@ func addTargets(env *app.Env, args []string, o addOptions) error {
 // resolveTarget: цель из аргумента; домен с owner - сети владельца, и пометкой становится сам домен.
 // Пометка ставится, только когда цель одна: на список одной пометки не напасёшься.
 func resolveTarget(arg string, o addOptions, single bool) ([]netinfo.Target, string, error) {
+	if domain, ok := netinfo.OwnerOf(arg); ok {
+		arg, o.owner = domain, true
+	}
 	t, err := netinfo.ParseTarget(arg)
 	if err != nil {
 		return nil, "", err

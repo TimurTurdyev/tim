@@ -66,6 +66,19 @@ func ParseTarget(s string) (Target, error) {
 	return Target{KindDomain, domain}, nil
 }
 
+// OwnerOf: as:<домен> - все сети компании, которой принадлежит домен; отдаёт сам домен.
+func OwnerOf(s string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(s)), "as:")
+	if !ok {
+		return "", false
+	}
+	t, err := ParseTarget(rest)
+	if err != nil || t.Kind != KindDomain {
+		return "", false
+	}
+	return t.Value, true
+}
+
 // PrivateTarget: адрес или подсеть целиком внутри частных диапазонов.
 func PrivateTarget(t Target) bool {
 	switch t.Kind {
