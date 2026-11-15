@@ -229,12 +229,15 @@ func hostLine(rep *domaudit.Report, name string) string {
 		switch {
 		case h.Status >= 500:
 			code = ui.Bad(code)
-		case h.Status >= 400:
+		case h.Status >= 400 || h.CertError != "":
 			code = ui.Warn(code)
 		default:
 			code = ui.Label(code)
 		}
 		var rest []string
+		if h.CertError != "" {
+			rest = append(rest, "сертификат: "+h.CertError)
+		}
 		for _, t := range []string{h.Server, h.Title} {
 			if t != "" {
 				rest = append(rest, t)

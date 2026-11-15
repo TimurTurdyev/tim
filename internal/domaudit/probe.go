@@ -2,12 +2,17 @@ package domaudit
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/webnet"
@@ -28,6 +33,7 @@ type answer struct {
 	server string
 	final  string
 	body   string
+	cert   *x509.Certificate
 }
 
 // Silent: имя спрашивали по HTTP, и оно не ответило.
@@ -79,7 +85,14 @@ func probe(h *Host, home bool) {
 	if home {
 		limit = homeLimit
 	}
-	got := askBoth(h.Name, limit)
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	got, certError := askBoth(ctx, h.Name, limit)
+	if got == nil && len(h.IPs) > 0 && ctx.Err() == nil {
+		// Быстрый обрыв бывает и случайным, а молчащее имя советуют удалить: спрашиваем ещё раз.
+		got, certError = askBoth(ctx, h.Name, limit)
+	}
+	h.CertError = certError
 	if got == nil {
 		if len(h.IPs) == 0 {
 			if t, ok := MatchTakeover(h.CNAME, false, ""); ok {
@@ -90,6 +103,9 @@ func probe(h *Host, home bool) {
 	}
 	h.Scheme, h.Status, h.Server, h.Final = got.scheme, got.status, got.server, got.final
 	h.Title = Title(got.body)
+	if got.cert != nil {
+		h.CertName, h.certNames = certNames(got.cert)
+	}
 	if home {
 		h.trackers = Trackers(got.body)
 	}
@@ -98,27 +114,46 @@ func probe(h *Host, home bool) {
 	}
 }
 
-func askBoth(name string, limit int64) *answer {
-	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+// askBoth: ответ по https, иначе по http. Сертификат не прошёл проверку - сайт всё равно жив: если и http
+// молчит, страница читается без проверки; причина возвращается словами.
+func askBoth(ctx context.Context, name string, limit int64) (got *answer, certError string) {
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	client := webnet.Fresh(probeTimeout)
-	plain := make(chan *answer, 1)
-	go func() { plain <- ask(ctx, client, "http", name, limit) }()
-	if got := ask(ctx, client, "https", name, limit); got != nil {
-		return got
+	plain, unchecked := make(chan *answer, 1), make(chan *answer, 1)
+	go func() {
+		a, _ := ask(ctx, client, "http", name, limit)
+		plain <- a
+	}()
+	got, err := ask(ctx, client, "https", name, limit)
+	if err == nil {
+		return got, ""
 	}
-	return <-plain
+	certError, cert := certTrouble(name, err)
+	if certError != "" {
+		go func() {
+			a, _ := ask(ctx, webnet.Client(probeTimeout, true), "https", name, limit)
+			unchecked <- a
+		}()
+	}
+	if got = <-plain; got == nil && certError != "" {
+		got = <-unchecked
+	}
+	if got != nil && got.cert == nil {
+		got.cert = cert
+	}
+	return got, certError
 }
 
-func ask(ctx context.Context, client *http.Client, scheme, name string, limit int64) *answer {
+func ask(ctx context.Context, client *http.Client, scheme, name string, limit int64) (*answer, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://"+name, nil)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh) tim")
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
@@ -128,5 +163,47 @@ func ask(ctx context.Context, client *http.Client, scheme, name string, limit in
 	if u.Host != name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
 		got.final = u.String()
 	}
-	return got
+	if first := firstHop(resp); first.TLS != nil && len(first.TLS.PeerCertificates) > 0 {
+		got.cert = first.TLS.PeerCertificates[0]
+	}
+	return got, nil
+}
+
+// firstHop: ответ самого имени - до перехода по редиректам.
+func firstHop(resp *http.Response) *http.Response {
+	for resp.Request != nil && resp.Request.Response != nil {
+		resp = resp.Request.Response
+	}
+	return resp
+}
+
+// certTrouble: почему сертификат не прошёл проверку и сам сертификат; не у имени, а там, куда оно
+// перенаправляет, - причина с именем того сайта.
+func certTrouble(name string, err error) (reason string, cert *x509.Certificate) {
+	certErr, ok := errors.AsType[*tls.CertificateVerificationError](err)
+	if !ok {
+		return "", nil
+	}
+	reason = inspect.CertReason(certErr)
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
+		if u, err := url.Parse(urlErr.URL); err == nil && u.Hostname() != name {
+			return u.Hostname() + ": " + reason, nil
+		}
+	}
+	if len(certErr.UnverifiedCertificates) > 0 {
+		cert = certErr.UnverifiedCertificates[0]
+	}
+	return reason, cert
+}
+
+// certNames: главное имя сертификата и все его имена.
+func certNames(cert *x509.Certificate) (main string, all []string) {
+	for _, n := range cert.DNSNames {
+		all = append(all, ui.Plain(n))
+	}
+	main = ui.Plain(cert.Subject.CommonName)
+	if main == "" && len(all) > 0 {
+		main = all[0]
+	}
+	return main, all
 }

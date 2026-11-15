@@ -4,13 +4,13 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/health"
+	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/webnet"
 )
@@ -86,7 +86,7 @@ func collectTLS(host, port string) TLSFacts {
 		pool.AddCert(c)
 	}
 	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: host, Intermediates: pool}); err != nil && !t.NoChain {
-		t.Invalid = invalidReason(err)
+		t.Invalid = inspect.CertReason(err)
 	}
 	suites := allSuites()
 	for _, v := range oldVersions {
@@ -97,21 +97,6 @@ func collectTLS(host, port string) TLSFacts {
 		}
 	}
 	return t
-}
-
-func invalidReason(err error) string {
-	var inv x509.CertificateInvalidError
-	var host x509.HostnameError
-	var unknown x509.UnknownAuthorityError
-	switch {
-	case errors.As(err, &inv) && inv.Reason == x509.Expired:
-		return "истёк"
-	case errors.As(err, &host):
-		return "выдан не на этот домен"
-	case errors.As(err, &unknown):
-		return "выдан неизвестным центром, похоже на самоподписанный"
-	}
-	return err.Error()
 }
 
 // allSuites: и небезопасные наборы - старые версии TLS без них не договорятся.

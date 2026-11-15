@@ -129,7 +129,7 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 // hostGroup: беда, сам домен или остальные имена.
 func hostGroup(rep *domaudit.Report, h domaudit.Host) string {
 	switch {
-	case h.Takeover != nil || h.Silent() || h.Status >= 400:
+	case h.Takeover != nil || h.Silent() || h.Status >= 400 || h.CertError != "":
 		return "ВНИМАНИЕ"
 	case h.Name == rep.Domain:
 		return "САМ ДОМЕН"
@@ -266,6 +266,9 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	if len(about) > 0 {
 		row.Pane = append(row.Pane, ui.Dim(strings.Join(about, "  ")))
 	}
+	if h.CertName != "" {
+		row.Pane = append(row.Pane, ui.Dim("сертификат на "+h.CertName))
+	}
 	switch {
 	case h.Takeover != nil:
 		row.Pane = append(row.Pane, ui.Bad("можно захватить через "+h.Takeover.Service+": CNAME "+h.Takeover.Target+", "+h.Takeover.Why),
@@ -276,6 +279,9 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	case h.Silent():
 		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"),
 			ui.Dim("\u2192 имя не нужно - удалить запись в DNS; нужно - поднять сайт или редирект"))
+	case h.CertError != "":
+		row.Pane = append(row.Pane, ui.Warn("браузер не пустит: сертификат "+h.CertError),
+			ui.Dim("\u2192 выпустить сертификат на "+h.Name+" на сервере или в панели хостинга; имя не нужно - удалить запись в DNS"))
 	}
 	return row
 }
@@ -319,6 +325,8 @@ func hostStatus(h domaudit.Host) (status, note string) {
 		return level.Lamp(level.Bad, "молчит"), "не отвечает по HTTP"
 	case h.Status >= 500:
 		return level.Lamp(level.Bad, strconv.Itoa(h.Status)), "сервер отвечает ошибкой"
+	case h.CertError != "":
+		return level.Lamp(level.Warn, strconv.Itoa(h.Status)), "сертификат: " + h.CertError
 	case h.Status >= 400:
 		return level.Lamp(level.Warn, strconv.Itoa(h.Status)), ""
 	}
@@ -334,7 +342,7 @@ func sortHosts(rep *domaudit.Report) []domaudit.Host {
 			return 4
 		case h.Name == rep.Domain:
 			return 3
-		case h.Silent() || h.Status >= 500:
+		case h.Silent() || h.Status >= 500 || h.CertError != "":
 			return 2
 		case h.Status >= 400:
 			return 1

@@ -49,6 +49,22 @@ func Cert(host, port string) (*CertInfo, error) {
 	return &CertInfo{Version: tls.VersionName(st.Version), Chain: st.PeerCertificates, VerifyErr: verifyErr}, nil
 }
 
+// CertReason: почему сертификат не прошёл проверку, словами.
+func CertReason(err error) string {
+	var inv x509.CertificateInvalidError
+	var host x509.HostnameError
+	var unknown x509.UnknownAuthorityError
+	switch {
+	case errors.As(err, &inv) && inv.Reason == x509.Expired:
+		return "истёк"
+	case errors.As(err, &host):
+		return "выдан не на этот домен"
+	case errors.As(err, &unknown):
+		return "выдан неизвестным центром, похоже на самоподписанный"
+	}
+	return ui.Plain(err.Error())
+}
+
 type Record struct {
 	Type  string
 	Value string

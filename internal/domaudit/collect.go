@@ -45,10 +45,14 @@ type Host struct {
 	// CNAME: куда ведёт имя; Takeover - его можно захватить: цель у чужого сервиса никем не занята.
 	CNAME    string    `json:"cname,omitempty"`
 	Takeover *Takeover `json:"takeover,omitempty"`
+	// CertError: почему браузер не примет сертификат имени; CertName - на какое имя он выдан.
+	CertError string `json:"cert_error,omitempty"`
+	CertName  string `json:"cert_name,omitempty"`
 	// Unchecked: имя за пределом сбора, по HTTP его не спрашивали.
 	Unchecked bool `json:"unchecked,omitempty"`
 
-	trackers []Tracker // только у главной страницы
+	trackers  []Tracker // только у главной страницы
+	certNames []string  // все имена сертификата
 }
 
 // Addr: адрес, его сеть и имена, которые на него смотрят.
