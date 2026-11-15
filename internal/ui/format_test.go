@@ -50,3 +50,22 @@ func TestWrap(t *testing.T) {
 		t.Errorf("без ширины перенесено: %q", one)
 	}
 }
+
+// Управляющие символы и знаки смены направления письма - в пробел; обычный текст остаётся как есть, вместе с
+// двойными пробелами, которыми отчёты разделяют части строки.
+func TestPlain(t *testing.T) {
+	cases := map[string]string{
+		"nginx  1.28":                  "nginx  1.28",
+		"ok \x1b[2J\x1b]0;pwn\a x":     "ok [2J ]0;pwn x",
+		"c1 \u009b31m red":             "c1 31m red",
+		"line\r\n\tnext\x7f":           "line next",
+		"gpj.\u202egnp.exe \u2066 end": "gpj. gnp.exe end",
+		"\x1b":                         "",
+		"cp1251 \xcf\xf0 ok":           "cp1251 ? ok",
+	}
+	for in, want := range cases {
+		if got := Plain(in); got != want {
+			t.Errorf("%q: %q, ожидали %q", in, got, want)
+		}
+	}
+}

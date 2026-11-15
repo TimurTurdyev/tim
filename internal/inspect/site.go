@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
@@ -55,8 +56,8 @@ func HTTP(url string) (*Page, error) {
 		Final:     resp.Request.URL.String(),
 		Status:    resp.StatusCode,
 		Redirects: redirects,
-		Server:    resp.Header.Get("Server"),
-		PoweredBy: resp.Header.Get("X-Powered-By"),
+		Server:    ui.Plain(resp.Header.Get("Server")),
+		PoweredBy: ui.Plain(resp.Header.Get("X-Powered-By")),
 		CMS:       DetectCMS(resp.Header, cookies, string(body)),
 	}, nil
 }
@@ -64,7 +65,7 @@ func HTTP(url string) (*Page, error) {
 // DetectCMS угадывает движок по meta generator, cookie, заголовкам и характерным путям в HTML.
 func DetectCMS(h http.Header, cookies []string, html string) string {
 	if m := generatorRe.FindStringSubmatch(html); m != nil {
-		return strings.TrimSpace(m[1])
+		return strings.TrimSpace(ui.Plain(m[1]))
 	}
 	has := func(name string) bool {
 		for _, c := range cookies {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // Захват поддомена: имя смотрит через CNAME на чужой сервис, а там его никто не занял. Кто займёт,
@@ -111,7 +112,7 @@ func CNAME(name string) string {
 	target := ""
 	for _, r := range a.Records {
 		if c, ok := r.Body.(*dnsmessage.CNAMEResource); ok {
-			target = strings.TrimSuffix(c.CNAME.String(), ".")
+			target = ui.Plain(strings.TrimSuffix(c.CNAME.String(), "."))
 		}
 	}
 	return target

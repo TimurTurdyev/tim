@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
+	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
@@ -96,7 +97,7 @@ func DNS(host, server string) []Record {
 	}
 	if txt, err := r.LookupTXT(ctx, host); err == nil {
 		for _, t := range txt {
-			out = append(out, Record{"TXT", t})
+			out = append(out, Record{"TXT", ui.Plain(t)})
 		}
 	}
 	order := map[string]int{"A": 0, "AAAA": 1, "CNAME": 2, "MX": 3, "NS": 4, "TXT": 5}

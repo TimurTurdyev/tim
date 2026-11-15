@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/net/publicsuffix"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 var httpClient = &http.Client{Timeout: Timeout}
@@ -89,7 +91,7 @@ func ParseRDAP(data []byte) (*Domain, error) {
 		}
 	}
 	for _, n := range r.Nameservers {
-		d.Nameservers = append(d.Nameservers, strings.ToLower(n.Name))
+		d.Nameservers = append(d.Nameservers, strings.ToLower(ui.Plain(n.Name)))
 	}
 	for _, e := range r.Entities {
 		for _, role := range e.Roles {
@@ -112,7 +114,7 @@ func vcardName(raw json.RawMessage) string {
 		f, _ := p.([]any)
 		if len(f) >= 4 && f[0] == "fn" {
 			s, _ := f[3].(string)
-			return s
+			return ui.Plain(s)
 		}
 	}
 	return ""
@@ -162,7 +164,7 @@ func ParseWhois(text string) *Domain {
 			continue
 		}
 		k = strings.ToLower(strings.TrimSpace(k))
-		v = strings.TrimSpace(v)
+		v = strings.TrimSpace(ui.Plain(v))
 		if v == "" {
 			continue
 		}

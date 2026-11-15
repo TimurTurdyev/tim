@@ -18,6 +18,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
@@ -289,7 +290,7 @@ func getJSON(target string, timeout time.Duration) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(resp.Status)
+		return nil, errors.New(ui.Plain(resp.Status))
 	}
 	return data, nil
 }
@@ -383,7 +384,7 @@ func probe(h *Host, home bool) {
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
 		_ = resp.Body.Close()
-		h.Scheme, h.Status, h.Server = scheme, resp.StatusCode, resp.Header.Get("Server")
+		h.Scheme, h.Status, h.Server = scheme, resp.StatusCode, ui.Plain(resp.Header.Get("Server"))
 		h.Title = Title(string(body))
 		if home {
 			h.trackers = Trackers(string(body))

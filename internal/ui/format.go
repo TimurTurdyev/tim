@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -99,6 +101,18 @@ func Duration(d time.Duration) string {
 
 // StripANSI: строка без цветов - для буфера обмена и приглушённых экранов.
 func StripANSI(s string) string { return ansi.Strip(s) }
+
+// Plain: чужой текст одной строкой, без того, что терминал исполнит: управляющие символы и знаки смены
+// направления письма становятся пробелами. Чистый текст не меняется.
+func Plain(s string) string {
+	if utf8.ValidString(s) && !strings.ContainsFunc(s, control) {
+		return s
+	}
+	parts := strings.FieldsFunc(strings.ToValidUTF8(s, "?"), func(r rune) bool { return control(r) || unicode.IsSpace(r) })
+	return strings.Join(parts, " ")
+}
+
+func control(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) }
 
 // Clip обрезает строку до width рун, помечая обрез тильдой.
 func Clip(s string, width int) string {

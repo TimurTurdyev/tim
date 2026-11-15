@@ -142,8 +142,8 @@ func certData(domain string, w domainWatch) tui.BoardData {
 			issuer += " · " + leaf.Issuer.Organization[0]
 		}
 		d.Head = []string{
-			ui.Label(ui.Pad("кому", 12)) + strings.Join(cut(leaf.DNSNames, 4), ", "),
-			ui.Label(ui.Pad("кем", 12)) + issuer,
+			ui.Label(ui.Pad("кому", 12)) + ui.Plain(strings.Join(cut(leaf.DNSNames, 4), ", ")),
+			ui.Label(ui.Pad("кем", 12)) + ui.Plain(issuer),
 			ui.Label(ui.Pad("срок", 12)) + leaf.NotBefore.Format("2006-01-02") + " - " + leaf.NotAfter.Format("2006-01-02") + " · " +
 				level.Lamp(lvl, strconv.Itoa(days)+" дн"),
 		}

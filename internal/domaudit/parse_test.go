@@ -1,6 +1,9 @@
 package domaudit
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 const crtSample = `[
  {"common_name":"example.com","name_value":"*.example.com\nexample.com"},
@@ -62,5 +65,24 @@ func TestMatchTakeover(t *testing.T) {
 		if ok != (c.want != "") || got.Service != c.want {
 			t.Errorf("%s resolves=%v: %+v %v, ждали %q", c.target, c.resolves, got, ok, c.want)
 		}
+	}
+}
+
+// Заголовок страницы и имена пишут чужие люди: управляющие последовательности терминала дальше разбора не идут.
+func TestForeignText(t *testing.T) {
+	if got := Title("<title>ok &#27;[2J&#27;]0;pwn&#7; x</title>"); got != "ok [2J ]0;pwn x" {
+		t.Errorf("заголовок: %q", got)
+	}
+	names := []string{"a\x1b[31m.example.com", "b.example.com:8443", "c.example.com/x", "_dmarc.example.com", "*.d.example.com",
+		"e..example.com", "example.org:8443", "example.org/x", "192.0.2.1", "www.example.net"}
+	subs, related, err := splitNames(names, "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"_dmarc.example.com", "d.example.com"}; !slices.Equal(subs, want) {
+		t.Errorf("поддомены %q, ждали %q", subs, want)
+	}
+	if want := []string{"example.net"}; !slices.Equal(related, want) {
+		t.Errorf("связанные %q, ждали %q", related, want)
 	}
 }

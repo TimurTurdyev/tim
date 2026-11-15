@@ -12,6 +12,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/paths"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 var client = &http.Client{Timeout: 20 * time.Second}
@@ -66,7 +67,11 @@ func Parse(r io.Reader) ([]Issuance, error) {
 		if issuer == "" {
 			issuer = x.Issuer.Name
 		}
-		out = append(out, Issuance{ID: x.ID, Names: x.Names, Issuer: issuer, NotBefore: x.NotBefore, NotAfter: x.NotAfter})
+		names := make([]string, len(x.Names))
+		for i, n := range x.Names {
+			names[i] = ui.Plain(n)
+		}
+		out = append(out, Issuance{ID: x.ID, Names: names, Issuer: ui.Plain(issuer), NotBefore: x.NotBefore, NotAfter: x.NotAfter})
 	}
 	return out, nil
 }

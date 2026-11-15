@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"html"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strings"
 
 	"golang.org/x/net/publicsuffix"
+
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
@@ -27,7 +30,8 @@ var trackerRes = []struct {
 	{"VK Pixel", regexp.MustCompile(`\b(VK-RTRG-\d+-\w+)\b`)},
 }
 
-var hostLine = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+// hostLine: имя целиком; подчёркивание бывает в служебных метках вроде _dmarc.
+var hostLine = regexp.MustCompile(`^[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?(\.[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?)+$`)
 
 // Common: частые имена поддоменов для перебора через DNS.
 var Common = []string{
@@ -68,8 +72,7 @@ func Title(body string) string {
 	if m == nil {
 		return ""
 	}
-	t := html.UnescapeString(m[1])
-	t = strings.Join(strings.Fields(t), " ")
+	t := strings.Join(strings.Fields(ui.Plain(html.UnescapeString(m[1]))), " ")
 	if len([]rune(t)) > 70 {
 		t = string([]rune(t)[:70]) + "..."
 	}
@@ -133,7 +136,7 @@ func ParseCertSpotter(data []byte, domain string) (subs, related []string, err e
 // ParseHostSearch разбирает CSV "имя,адрес" построчно.
 func ParseHostSearch(out string, domain string) ([]string, error) {
 	if strings.Contains(out, "API count exceeded") || strings.Contains(out, "error ") {
-		return nil, errors.New(strings.TrimSpace(firstLine(out)))
+		return nil, errors.New(ui.Plain(strings.TrimSpace(firstLine(out))))
 	}
 	var names []string
 	for _, line := range strings.Split(out, "\n") {
@@ -158,7 +161,7 @@ func splitNames(names []string, domain string) (subs, related []string, err erro
 	for _, n := range names {
 		n = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(n)), "*.")
 		n = strings.TrimSuffix(n, ".")
-		if n == "" || strings.ContainsAny(n, " @") {
+		if _, err := netip.ParseAddr(n); err == nil || !hostLine.MatchString(n) {
 			continue
 		}
 		if n == domain || strings.HasSuffix(n, "."+domain) {

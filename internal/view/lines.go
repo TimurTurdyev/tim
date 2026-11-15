@@ -33,9 +33,9 @@ func Lines(r report.Report, l Layout) []string {
 	var out []string
 	indent := ""
 	if r.Title != "" {
-		head := ui.Label(r.Title)
+		head := ui.Label(ui.Plain(r.Title))
 		if r.Verdict.Text != "" {
-			head += "  " + level.Lamp(r.Verdict.Level, r.Verdict.Text)
+			head += "  " + level.Lamp(r.Verdict.Level, ui.Plain(r.Verdict.Text))
 		}
 		out = append(out, head)
 		indent = "  "
@@ -46,7 +46,7 @@ func Lines(r report.Report, l Layout) []string {
 			if len(out) > 0 {
 				out = append(out, "")
 			}
-			out = append(out, ui.Label(string(b)))
+			out = append(out, ui.Label(ui.Plain(string(b))))
 			indent = "  "
 		case report.Facts:
 			out = append(out, facts(b, indent, l.Width)...)
@@ -70,7 +70,7 @@ func Lines(r report.Report, l Layout) []string {
 func facts(list report.Facts, indent string, width int) []string {
 	w := 0
 	for _, f := range list {
-		w = max(w, ui.Width(f.Key))
+		w = max(w, ui.Width(ui.Plain(f.Key)))
 	}
 	w = min(w, keyMax)
 	pad := indent + strings.Repeat(" ", w+2)
@@ -79,7 +79,7 @@ func facts(list report.Facts, indent string, width int) []string {
 		for i, part := range wrap(f.Value, width-len(pad)) {
 			head := pad
 			if i == 0 {
-				head = indent + ui.Dim(ui.Pad(f.Key, w)) + "  "
+				head = indent + ui.Dim(ui.Pad(ui.Plain(f.Key), w)) + "  "
 			}
 			out = append(out, head+paintFact(f.Level, part))
 		}
@@ -104,7 +104,7 @@ func paintFact(l report.Level, s string) string { return paintMark(l, s) }
 func findings(list report.Findings, indent string, width int) []string {
 	w := 0
 	for _, f := range list {
-		w = max(w, ui.Width(f.Area))
+		w = max(w, ui.Width(ui.Plain(f.Area)))
 	}
 	if w > 0 {
 		w = min(w, areaMax) + 2
@@ -115,7 +115,7 @@ func findings(list report.Findings, indent string, width int) []string {
 	for _, f := range list {
 		for i, part := range wrap(f.Text, width-len(hang)) {
 			if i == 0 {
-				out = append(out, indent+level.Lamp(f.Level, ui.Pad(f.Area, w)+part))
+				out = append(out, indent+level.Lamp(f.Level, ui.Pad(ui.Plain(f.Area), w)+part))
 				continue
 			}
 			out = append(out, hang+level.Paint(f.Level, part))
@@ -144,8 +144,9 @@ func muted(indent, s string, width int) []string {
 	return out
 }
 
-// wrap: без ширины строка остаётся целой; узкое окно переносит не уже minWrap.
+// wrap: чужой текст чистится; без ширины строка остаётся целой, узкое окно переносит не уже minWrap.
 func wrap(s string, width int) []string {
+	s = ui.Plain(s)
 	if width <= 0 || ui.Width(s) <= width {
 		return []string{s}
 	}
@@ -221,9 +222,9 @@ func cell(c report.Column, v any) string {
 	case nil:
 		return ""
 	case string:
-		return x
+		return ui.Plain(x)
 	case report.Mark:
-		return x.Text
+		return ui.Plain(x.Text)
 	case time.Duration:
 		if x == 0 {
 			return ""
@@ -234,7 +235,7 @@ func cell(c report.Column, v any) string {
 	case int64:
 		return number(c, x)
 	}
-	return fmt.Sprint(v)
+	return ui.Plain(fmt.Sprint(v))
 }
 
 func number(c report.Column, n int64) string {

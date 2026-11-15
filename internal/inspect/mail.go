@@ -10,6 +10,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 // DKIMSelectors: частые селекторы почтовых провайдеров и рассыльщиков. Селектор может быть любым,
@@ -138,6 +139,9 @@ type Mail struct {
 
 func lookupTXT(ctx context.Context, name string) []string {
 	txt, _ := dnsq.Resolver().LookupTXT(ctx, name)
+	for i := range txt {
+		txt[i] = ui.Plain(txt[i])
+	}
 	return txt
 }
 
