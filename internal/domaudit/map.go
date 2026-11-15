@@ -72,7 +72,7 @@ for (const a of addrRows) {
   edges.push([apex, a.node]);
   for (const name of a.hosts) {
     const h = hostByName[name] || {};
-    const sub = h.status ? h.status + ' ' + (h.server || '') + ' ' + (h.title || '') : 'не отвечает по HTTP';
+    const sub = h.status ? h.status + ' ' + (h.server || '') + ' ' + (h.title || '') : h.unchecked ? 'по HTTP не спрашивали' : 'не отвечает по HTTP';
     const n = add(2, hrow++, name, sub.trim(), h.status ? '' : 'dead');
     edges.push([a.node, n]);
   }

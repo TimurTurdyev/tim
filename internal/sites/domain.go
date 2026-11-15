@@ -14,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -37,13 +38,16 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	if o.json {
 		notify = nil
 	}
-	rep := domaudit.Collect(name, domaudit.Options{SkipCRT: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify})
+	opt := domaudit.Options{SkipCRT: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
 	if o.json {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(rep)
+		return enc.Encode(domaudit.Collect(name, opt))
 	}
-	printDomain(rep, o.openMap || o.mapOut != "")
+	var rep *domaudit.Report
+	var about domainAbout
+	par.All(func() { rep = domaudit.Collect(name, opt) }, func() { about = aboutDomain(name) })
+	printDomain(rep, about, o.openMap || o.mapOut != "")
 	if o.openMap || o.mapOut != "" {
 		return writeMap(rep, o.mapOut, o.openMap)
 	}
@@ -76,9 +80,25 @@ func writeMap(rep *domaudit.Report, path string, open bool) error {
 	return runner.OpenBrowser(path)
 }
 
-func printDomain(rep *domaudit.Report, withMap bool) {
+// domainAbout: регистрация и почта домена; nil - не узнали.
+type domainAbout struct {
+	reg  *inspect.Domain
+	mail *inspect.Mail
+}
+
+func aboutDomain(domain string) domainAbout {
+	var a domainAbout
+	par.All(func() {
+		if d, err := inspect.Registration(domain); err == nil {
+			a.reg = d
+		}
+	}, func() { a.mail = inspect.MailCheck(domain, inspect.DKIMSelectors) })
+	return a
+}
+
+func printDomain(rep *domaudit.Report, about domainAbout, withMap bool) {
 	ui.Println(ui.Info(rep.Domain))
-	if d, err := inspect.Registration(rep.Domain); err == nil {
+	if d := about.reg; d != nil {
 		line := ui.Label("регистратор ") + ui.Dash(d.Registrar)
 		if !d.Expires.IsZero() {
 			line += "  до " + ui.DaysLeft(d.Expires)
@@ -88,7 +108,7 @@ func printDomain(rep *domaudit.Report, withMap bool) {
 			ui.Println(ui.Label("ns          ") + strings.Join(d.Nameservers, " "))
 		}
 	}
-	printMailLine(rep.Domain)
+	printMailLine(rep.Domain, about.mail)
 	if len(rep.Hosts) == 0 {
 		ui.Println(ui.Bad("ни одно имя не резолвится: домена нет, он не делегирован или DNS недоступен"))
 		for _, e := range rep.Errors {
@@ -104,8 +124,7 @@ func printDomain(rep *domaudit.Report, withMap bool) {
 }
 
 // printMailLine: почта домена одной строкой - подробно её показывает tim mail.
-func printMailLine(domain string) {
-	m := inspect.MailCheck(domain, inspect.DKIMSelectors)
+func printMailLine(domain string, m *inspect.Mail) {
 	switch {
 	case m.NullMX:
 		ui.Println(ui.Label("mx          ") + ui.Dim("null MX: домен почту не принимает"))
@@ -154,7 +173,7 @@ func printAddrs(rep *domaudit.Report) {
 func printDomainNotes(rep *domaudit.Report) {
 	dead := 0
 	for _, h := range rep.Hosts {
-		if h.Status == 0 {
+		if h.Silent() {
 			dead++
 		}
 	}
@@ -181,6 +200,9 @@ func printDomainNotes(rep *domaudit.Report) {
 		ui.Println(ui.Label("счётчики:    ") + strings.Join(t, ", "))
 		ui.Println(ui.Dim("             поиск сайтов с тем же счётчиком: https://publicwww.com/websites/" + rep.Trackers[0].ID + "/"))
 	}
+	for _, n := range rep.Notes {
+		ui.Println(ui.Dim(n))
+	}
 	for _, e := range rep.Errors {
 		ui.Println(ui.Warn("! ") + ui.Dim(e))
 	}
@@ -196,6 +218,9 @@ func hostLine(rep *domaudit.Report, name string) string {
 		}
 		if h.Status == 0 && len(h.IPs) == 0 {
 			return ui.Pad(name, 34) + " " + ui.Warn("CNAME в никуда ") + ui.Dim(h.CNAME+" не резолвится  "+h.Source)
+		}
+		if h.Unchecked {
+			return ui.Pad(name, 34) + " " + ui.Dim("по HTTP не спрашивали  "+h.Source)
 		}
 		if h.Status == 0 {
 			return ui.Pad(name, 34) + " " + ui.Dim("не отвечает по HTTP  "+h.Source)

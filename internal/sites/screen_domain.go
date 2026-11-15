@@ -116,6 +116,9 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 	if len(rep.Related) > 0 {
 		d.Foot = append(d.Foot, ui.Dim("в тех же сертификатах: "+strings.Join(cut(rep.Related, 8), " ")))
 	}
+	for _, n := range rep.Notes {
+		d.Foot = append(d.Foot, ui.Dim(n))
+	}
 	for _, e := range rep.Errors {
 		d.Foot = append(d.Foot, ui.Warn("\u25b2 "+e))
 	}
@@ -126,7 +129,7 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 // hostGroup: беда, сам домен или остальные имена.
 func hostGroup(rep *domaudit.Report, h domaudit.Host) string {
 	switch {
-	case h.Takeover != nil || h.Status == 0 || h.Status >= 400:
+	case h.Takeover != nil || h.Silent() || h.Status >= 400:
 		return "ВНИМАНИЕ"
 	case h.Name == rep.Domain:
 		return "САМ ДОМЕН"
@@ -270,7 +273,7 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
 		row.Pane = append(row.Pane, ui.Warn("CNAME на "+h.CNAME+", а такого имени нет: запись устарела"),
 			ui.Dim("\u2192 удалить CNAME "+h.Name+" в DNS - висячую запись могут захватить"))
-	case h.Status == 0:
+	case h.Silent():
 		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"),
 			ui.Dim("\u2192 имя не нужно - удалить запись в DNS; нужно - поднять сайт или редирект"))
 	}
@@ -310,6 +313,8 @@ func hostStatus(h domaudit.Host) (status, note string) {
 		return level.Lamp(level.Bad, "захват"), "CNAME " + h.Takeover.Target + ": " + h.Takeover.Why
 	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
 		return level.Lamp(level.Warn, "в никуда"), "CNAME " + h.CNAME + " не резолвится"
+	case h.Unchecked:
+		return level.Lamp(level.Skip, ""), "по HTTP не спрашивали: имён больше предела"
 	case h.Status == 0:
 		return level.Lamp(level.Bad, "молчит"), "не отвечает по HTTP"
 	case h.Status >= 500:
@@ -329,7 +334,7 @@ func sortHosts(rep *domaudit.Report) []domaudit.Host {
 			return 4
 		case h.Name == rep.Domain:
 			return 3
-		case h.Status == 0 || h.Status >= 500:
+		case h.Silent() || h.Status >= 500:
 			return 2
 		case h.Status >= 400:
 			return 1

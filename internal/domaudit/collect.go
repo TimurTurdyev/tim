@@ -19,7 +19,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
-	"github.com/TimurTurdyev/tim/internal/webnet"
 )
 
 var errCrtStale = errors.New("не ответил, показан прошлый список имён")
@@ -29,9 +28,8 @@ var errCrtBusy = errors.New("ответил не JSON")
 var errNoQuota = errors.New("дневной лимит бесплатного сервиса исчерпан")
 
 const (
-	dnsTimeout  = 3 * time.Second
-	httpTimeout = 5 * time.Second
-	crtTimeout  = 45 * time.Second
+	dnsTimeout = 3 * time.Second
+	crtTimeout = 45 * time.Second
 )
 
 // Host: найденное имя и что о нём известно.
@@ -47,6 +45,8 @@ type Host struct {
 	// CNAME: куда ведёт имя; Takeover - его можно захватить: цель у чужого сервиса никем не занята.
 	CNAME    string    `json:"cname,omitempty"`
 	Takeover *Takeover `json:"takeover,omitempty"`
+	// Unchecked: имя за пределом сбора, по HTTP его не спрашивали.
+	Unchecked bool `json:"unchecked,omitempty"`
 
 	trackers []Tracker // только у главной страницы
 }
@@ -69,6 +69,7 @@ type Report struct {
 	Related  []string  `json:"related,omitempty"`
 	Trackers []Tracker `json:"trackers,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
+	Notes    []string  `json:"notes,omitempty"` // что осталось за пределами сбора
 	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
 	CRTCached time.Time `json:"crt_cached,omitzero"`
 }
@@ -168,20 +169,6 @@ func (r *Report) resolve(names map[string]string, known map[string][]string) {
 		a.CDN = asn.IsCDN(a.AS.Name)
 		r.Addrs = append(r.Addrs, a)
 	}
-}
-
-// probe: обратные имена адресов и ответы сайтов, по 16 одновременно. Главная страница домена
-// читается тут же и целиком: счётчики берутся из неё, второй раз её не качаем.
-func (r *Report) probe() {
-	probes := par.NewGroup(16)
-	for i := range r.Addrs {
-		probes.Go(func() { r.Addrs[i].PTR = ptr(r.Addrs[i].IP) })
-	}
-	for i := range r.Hosts {
-		home := r.Hosts[i].Name == r.Domain || r.Hosts[i].Name == "www."+r.Domain
-		probes.Go(func() { probe(&r.Hosts[i], home) })
-	}
-	probes.Wait()
 }
 
 // homeTrackers: счётчики с главной страницы домена.
@@ -363,47 +350,6 @@ func ptr(ip string) string {
 		return ""
 	}
 	return strings.TrimSuffix(names[0], ".")
-}
-
-// probe: отвечает ли имя по HTTPS, иначе по HTTP; у главной страницы - ещё и счётчики.
-func probe(h *Host, home bool) {
-	client := webnet.Fresh(httpTimeout)
-	for _, scheme := range []string{"https", "http"} {
-		req, err := http.NewRequest(http.MethodGet, scheme+"://"+h.Name, nil)
-		if err != nil {
-			return
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh) tim")
-		resp, err := client.Do(req)
-		if err != nil {
-			continue
-		}
-		limit := int64(256 << 10)
-		if home {
-			limit = 512 << 10
-		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
-		_ = resp.Body.Close()
-		h.Scheme, h.Status, h.Server = scheme, resp.StatusCode, ui.Plain(resp.Header.Get("Server"))
-		h.Title = Title(string(body))
-		if home {
-			h.trackers = Trackers(string(body))
-		}
-		if t, ok := MatchTakeover(h.CNAME, true, string(body)); ok {
-			h.Takeover = &t
-		}
-		// Редирект отмечаем, только если ушли на другой адрес, а не просто на "/" того же имени.
-		u := resp.Request.URL
-		if u.Host != h.Name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
-			h.Final = u.String()
-		}
-		return
-	}
-	if len(h.IPs) == 0 {
-		if t, ok := MatchTakeover(h.CNAME, false, ""); ok {
-			h.Takeover = &t
-		}
-	}
 }
 
 func neighbors(ip, self string) ([]string, error) {
