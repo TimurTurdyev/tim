@@ -37,15 +37,12 @@ type answer struct {
 }
 
 // Silent: имя спрашивали по HTTP, и оно не ответило.
-func (h Host) Silent() bool { return h.Status == 0 && !h.Unchecked }
+func (h Host) Silent() bool { return h.Status == 0 && !h.Unchecked && !h.Internal }
 
-// probe: обратные имена адресов и ответы сайтов. Главная страница домена читается тут же и целиком: счётчики
-// берутся из неё, второй раз её не качаем. Имена сверх предела не спрашиваются: сам домен и www - в первую очередь.
+// probe: ответы сайтов. Главная страница домена читается тут же и целиком: счётчики берутся из неё, второй
+// раз её не качаем. Имена сверх предела и внутренние не спрашиваются: сам домен и www - в первую очередь.
 func (r *Report) probe() {
 	probes := par.NewGroup(probeWidth)
-	for i := range r.Addrs {
-		probes.Go(func() { r.Addrs[i].PTR = ptr(r.Addrs[i].IP) })
-	}
 	order := make([]int, len(r.Hosts))
 	for i := range order {
 		order[i] = i
@@ -53,6 +50,9 @@ func (r *Report) probe() {
 	slices.SortStableFunc(order, func(a, b int) int { return r.rank(a) - r.rank(b) })
 	withAddr := 0
 	for _, i := range order {
+		if r.Hosts[i].Internal {
+			continue
+		}
 		if len(r.Hosts[i].IPs) > 0 {
 			withAddr++
 			if withAddr > maxProbes {

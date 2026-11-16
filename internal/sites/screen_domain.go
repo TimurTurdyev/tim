@@ -129,7 +129,7 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 // hostGroup: беда, сам домен или остальные имена.
 func hostGroup(rep *domaudit.Report, h domaudit.Host) string {
 	switch {
-	case h.Takeover != nil || h.Silent() || h.Status >= 400 || h.CertError != "":
+	case h.Takeover != nil || h.Silent() || h.Internal || h.Status >= 400 || h.CertError != "":
 		return "ВНИМАНИЕ"
 	case h.Name == rep.Domain:
 		return "САМ ДОМЕН"
@@ -145,6 +145,9 @@ func addrsData(rep *domaudit.Report) tui.BoardData {
 		network := asName(a.AS.Name, a.AS.Country)
 		if a.AS.ASN != "" {
 			network += " \u00b7 AS" + a.AS.ASN
+		}
+		if a.Internal {
+			network = "внутренний адрес"
 		}
 		row := tui.BoardRow{ID: a.IP, Find: network,
 			Cells: ui.Pad(a.IP, 18) + ui.Fit(network, 34) + fmt.Sprintf("%4d  ", len(a.Hosts)) + ui.Dim(ui.Dash(a.PTR))}
@@ -246,7 +249,9 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	row.Cells = ui.Fit(h.Name, 29) + " " + ui.Pad(status, 12) + ui.Dim(note)
 	for _, ip := range h.IPs {
 		line := ui.Pad(ip, 17) + " "
-		if a, ok := v.addrs[ip]; ok {
+		if a, ok := v.addrs[ip]; ok && a.Internal {
+			line += ui.Dim("внутренний адрес")
+		} else if ok {
 			line += ui.Dim(asName(a.AS.Name, a.AS.Country) + " AS" + a.AS.ASN)
 			if a.PTR != "" {
 				line += ui.Dim("  " + a.PTR)
@@ -276,6 +281,9 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
 		row.Pane = append(row.Pane, ui.Warn("CNAME на "+h.CNAME+", а такого имени нет: запись устарела"),
 			ui.Dim("\u2192 удалить CNAME "+h.Name+" в DNS - висячую запись могут захватить"))
+	case h.Internal:
+		row.Pane = append(row.Pane, ui.Warn("имя ведёт на внутренний адрес: снаружи за ним никого, зато видно устройство сети"),
+			ui.Dim("\u2192 убрать "+h.Name+" из общего DNS и держать во внутреннем"))
 	case h.Silent():
 		row.Pane = append(row.Pane, ui.Warn("имя есть в DNS или логах сертификатов, а сайта нет: запись устарела?"),
 			ui.Dim("\u2192 имя не нужно - удалить запись в DNS; нужно - поднять сайт или редирект"))
@@ -292,6 +300,8 @@ func (v domainView) note(h domaudit.Host, ip string) string {
 	switch {
 	case !ok:
 		return ""
+	case a.Internal:
+		return "внутренний адрес"
 	case h.Name == v.rep.Domain:
 		return asName(a.AS.Name, a.AS.Country)
 	case v.apex[ip]:
@@ -319,6 +329,8 @@ func hostStatus(h domaudit.Host) (status, note string) {
 		return level.Lamp(level.Bad, "захват"), "CNAME " + h.Takeover.Target + ": " + h.Takeover.Why
 	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
 		return level.Lamp(level.Warn, "в никуда"), "CNAME " + h.CNAME + " не резолвится"
+	case h.Internal:
+		return level.Lamp(level.Warn, "внутри"), "внутренний адрес " + strings.Join(h.IPs, ", ")
 	case h.Unchecked:
 		return level.Lamp(level.Skip, ""), "по HTTP не спрашивали: имён больше предела"
 	case h.Status == 0:
@@ -342,7 +354,7 @@ func sortHosts(rep *domaudit.Report) []domaudit.Host {
 			return 4
 		case h.Name == rep.Domain:
 			return 3
-		case h.Silent() || h.Status >= 500 || h.CertError != "":
+		case h.Silent() || h.Internal || h.Status >= 500 || h.CertError != "":
 			return 2
 		case h.Status >= 400:
 			return 1

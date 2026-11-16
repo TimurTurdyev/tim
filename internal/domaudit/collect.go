@@ -2,7 +2,6 @@ package domaudit
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"maps"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
-	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -27,10 +25,7 @@ var errCrtBusy = errors.New("ответил не JSON")
 
 var errNoQuota = errors.New("дневной лимит бесплатного сервиса исчерпан")
 
-const (
-	dnsTimeout = 3 * time.Second
-	crtTimeout = 45 * time.Second
-)
+const crtTimeout = 45 * time.Second
 
 // Host: найденное имя и что о нём известно.
 type Host struct {
@@ -48,6 +43,8 @@ type Host struct {
 	// CertError: почему браузер не примет сертификат имени; CertName - на какое имя он выдан.
 	CertError string `json:"cert_error,omitempty"`
 	CertName  string `json:"cert_name,omitempty"`
+	// Internal: все адреса имени внутренние - в интернете за ним никого нет.
+	Internal bool `json:"internal,omitempty"`
 	// Unchecked: имя за пределом сбора, по HTTP его не спрашивали.
 	Unchecked bool `json:"unchecked,omitempty"`
 
@@ -55,14 +52,20 @@ type Host struct {
 	certNames []string  // все имена сертификата
 }
 
-// Addr: адрес, его сеть и имена, которые на него смотрят.
+// Addr: адрес, его сеть и имена, которые на него смотрят. CDN - узел раздачи, настоящий сервер за ним не виден;
+// Own - сервер самого домена: имя ведёт сюда без CNAME на чужой сервис; Internal - адрес не из интернета.
 type Addr struct {
-	IP     string     `json:"ip"`
-	PTR    string     `json:"ptr,omitempty"`
-	AS     asn.ASInfo `json:"as,omitempty"`
-	Hosts  []string   `json:"hosts"`
-	CDN    bool       `json:"cdn,omitempty"`
-	Shared []string   `json:"shared,omitempty"`
+	IP       string     `json:"ip"`
+	PTR      string     `json:"ptr,omitempty"`
+	AS       asn.ASInfo `json:"as,omitempty"`
+	Hosts    []string   `json:"hosts"`
+	CDN      bool       `json:"cdn,omitempty"`
+	Own      bool       `json:"own,omitempty"`
+	Internal bool       `json:"internal,omitempty"`
+	Shared   []string   `json:"shared,omitempty"`
+
+	direct bool     // имя домена ведёт сюда само, а не через чужой сервис
+	cnames []string // куда по дороге ведут имена
 }
 
 // Report: всё, что собрано по домену.
@@ -92,7 +95,7 @@ func Collect(domain string, opt Options) *Report {
 	rep := &Report{Domain: domain}
 	names, known := rep.discover(opt)
 	rep.resolve(names, known)
-	rep.probe()
+	par.All(rep.probe, rep.classify)
 	rep.Trackers = homeTrackers(domain, rep.Hosts)
 	if !opt.SkipNeighbors {
 		rep.findNeighbors()
@@ -145,36 +148,6 @@ func (r *Report) discover(opt Options) (names map[string]string, known map[strin
 	return names, known
 }
 
-// resolve: адреса имён, по 16 одновременно, и чьи это сети. Найденные перебором уже резолвились.
-func (r *Report) resolve(names map[string]string, known map[string][]string) {
-	all := slices.Sorted(maps.Keys(names))
-	byIP := map[string][]string{}
-	resolved := par.Map(all, 16, func(name string) []string {
-		if ips, ok := known[name]; ok {
-			return ips
-		}
-		return lookup(name)
-	})
-	// Имя без адресов, но с CNAME, остаётся: запись ведёт в никуда, это надо видеть.
-	cnames := par.Map(all, 16, CNAME)
-	for i, ips := range resolved {
-		if len(ips) == 0 && cnames[i] == "" {
-			continue
-		}
-		r.Hosts = append(r.Hosts, Host{Name: all[i], IPs: ips, CNAME: cnames[i], Source: names[all[i]]})
-		for _, ip := range ips {
-			byIP[ip] = append(byIP[ip], all[i])
-		}
-	}
-	ips := slices.Sorted(maps.Keys(byIP))
-	owners := asn.Cymru(ips)
-	for _, ip := range ips {
-		a := Addr{IP: ip, AS: owners[ip], Hosts: byIP[ip]}
-		a.CDN = asn.IsCDN(a.AS.Name)
-		r.Addrs = append(r.Addrs, a)
-	}
-}
-
 // homeTrackers: счётчики с главной страницы домена.
 func homeTrackers(domain string, hosts []Host) []Tracker {
 	for _, h := range hosts {
@@ -185,11 +158,11 @@ func homeTrackers(domain string, hosts []Host) []Tracker {
 	return nil
 }
 
-// findNeighbors: чужие сайты на первом своём, не CDN-адресе апекса.
+// findNeighbors: чужие сайты на первом своём адресе апекса.
 func (r *Report) findNeighbors() {
 	for i := range r.Addrs {
 		a := &r.Addrs[i]
-		if a.CDN || !slices.Contains(a.Hosts, r.Domain) {
+		if !a.Own || !slices.Contains(a.Hosts, r.Domain) {
 			continue
 		}
 		list, err := neighbors(a.IP, r.Domain)
@@ -329,31 +302,6 @@ func bruteforce(domain string) map[string][]string {
 		}
 	}
 	return out
-}
-
-func lookup(name string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
-	defer cancel()
-	addrs, err := dnsq.Resolver().LookupIPAddr(ctx, name)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, a := range addrs {
-		out = append(out, a.IP.String())
-	}
-	sort.Strings(out)
-	return out
-}
-
-func ptr(ip string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
-	defer cancel()
-	names, err := dnsq.Resolver().LookupAddr(ctx, ip)
-	if err != nil || len(names) == 0 {
-		return ""
-	}
-	return strings.TrimSuffix(names[0], ".")
 }
 
 func neighbors(ip, self string) ([]string, error) {

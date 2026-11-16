@@ -3,6 +3,7 @@ package asn
 import (
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"time"
 )
@@ -10,6 +11,18 @@ import (
 // Сети CDN и крупных облаков: соседние домены на их адресах чужие, а сами сети слишком широкие для обхода.
 var cdnWords = []string{"cloudflare", "akamai", "fastly", "cloudfront", "amazon", "google", "microsoft", "azure",
 	"ddos-guard", "stormwall", "qrator", "incapsula", "imperva", "sucuri", "stackpath", "bunny", "cdnvideo", "ngenix", "gcore", "selectel-cdn"}
+
+// edgeWords: сети, где адрес - узел раздачи, а не сервер сайта; hostingWords - хостинг той же компании.
+// edgeNames: CDN внутри облака видна только по имени - обратному или в CNAME.
+var (
+	edgeWords = []string{"cloudflare", "akamai", "fastly", "cloudfront", "ddos-guard", "stormwall", "qrator", "incapsula", "imperva",
+		"sucuri", "stackpath", "bunny", "cdnvideo", "ngenix", "gcore", "selectel-cdn", "edgio", "limelight", "cachefly"}
+	hostingWords = []string{"linode", "connected cloud"}
+	edgeNames    = []string{"cloudfront.net", "cdn.cloudflare.net", "akamaiedge.net", "akamai.net", "akamaized.net", "akamaitechnologies.com",
+		"edgekey.net", "edgesuite.net", "fastly.net", "fastlylb.net", "azureedge.net", "azurefd.net", "b-cdn.net", "cdn77.org",
+		"kxcdn.com", "edgecastcdn.net", "llnwd.net", "incapdns.net", "impervadns.net", "gcdn.co", "cdngc.net", "cdnvideo.ru", "ngenix.net",
+		"trbcdn.net", "yccdn.cloud.yandex.net"}
+)
 
 // ASInfo: к какой сети принадлежит адрес.
 type ASInfo struct {
@@ -66,4 +79,19 @@ func IsCDN(asName string) bool {
 		}
 	}
 	return false
+}
+
+// IsEdge: адрес - узел CDN или защиты от DDoS: настоящий сервер за ним не виден. Хостинг и облака сюда не
+// входят, там адрес обычно свой. ptr - обратное имя адреса, cname - куда ведут имена, которые на него смотрят.
+func IsEdge(asName, ptr string, cname ...string) bool {
+	for _, n := range append(cname, ptr) {
+		n = strings.TrimSuffix(strings.ToLower(n), ".")
+		if slices.ContainsFunc(edgeNames, func(e string) bool { return n == e || strings.HasSuffix(n, "."+e) }) {
+			return true
+		}
+	}
+	has := func(words []string) bool {
+		return slices.ContainsFunc(words, func(w string) bool { return strings.Contains(strings.ToLower(asName), w) })
+	}
+	return has(edgeWords) && !has(hostingWords)
 }

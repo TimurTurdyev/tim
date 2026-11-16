@@ -54,3 +54,30 @@ func TestParseCymru(t *testing.T) {
 		t.Fatalf("%+v", m)
 	}
 }
+
+// CDN - узел раздачи; хостинг и облако - адрес самого сервера, если обратное имя или CNAME не говорят иного.
+func TestIsEdge(t *testing.T) {
+	cases := []struct {
+		as, ptr string
+		cname   []string
+		want    bool
+	}{
+		{"CLOUDFLARENET - Cloudflare, Inc., US", "", nil, true},
+		{"AKAMAI-ASN1 - Akamai International B.V., NL", "", nil, true},
+		{"AKAMAI-LINODE-AP - Akamai Connected Cloud, SG", "192-0-2-1.ip.linodeusercontent.com", nil, false},
+		{"FASTLY - Fastly, Inc., US", "", nil, true},
+		{"AMAZON-02 - Amazon.com, Inc., US", "ec2-192-0-2-1.compute.amazonaws.com", nil, false},
+		{"AMAZON-02 - Amazon.com, Inc., US", "server-192-0-2-1.ams50.r.cloudfront.net", nil, true},
+		{"AMAZON-02 - Amazon.com, Inc., US", "", []string{"d111111abcdef8.cloudfront.net"}, true},
+		{"MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation, US", "", nil, false},
+		{"MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation, US", "", []string{"", "Shop.AzureEdge.net."}, true},
+		{"GOOGLE-CLOUD-PLATFORM - Google LLC, US", "", []string{"notfastly.net"}, false},
+		{"DDOS-GUARD - DDOS-GUARD LTD, RU", "", nil, true},
+		{"HETZNER-AS - Hetzner Online GmbH, DE", "static.192.0.2.1.clients.your-server.de", []string{"web.example.com"}, false},
+	}
+	for _, c := range cases {
+		if got := IsEdge(c.as, c.ptr, c.cname...); got != c.want {
+			t.Errorf("%s %s %v: %v", c.as, c.ptr, c.cname, got)
+		}
+	}
+}

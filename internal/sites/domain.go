@@ -151,6 +151,9 @@ func printAddrs(rep *domaudit.Report) {
 	ui.Println(ui.Info("Адреса и имена"))
 	for _, a := range rep.Addrs {
 		var parts []string
+		if a.Internal {
+			parts = append(parts, "внутренний адрес")
+		}
 		if owner := asName(a.AS.Name, a.AS.Country); owner != "" {
 			parts = append(parts, owner)
 		}
@@ -218,6 +221,9 @@ func hostLine(rep *domaudit.Report, name string) string {
 		}
 		if h.Status == 0 && len(h.IPs) == 0 {
 			return ui.Pad(name, 34) + " " + ui.Warn("CNAME в никуда ") + ui.Dim(h.CNAME+" не резолвится  "+h.Source)
+		}
+		if h.Internal {
+			return ui.Pad(name, 34) + " " + ui.Warn("внутренний адрес ") + ui.Dim("по HTTP не спрашивали: в интернете за ним никого  "+h.Source)
 		}
 		if h.Unchecked {
 			return ui.Pad(name, 34) + " " + ui.Dim("по HTTP не спрашивали  "+h.Source)
