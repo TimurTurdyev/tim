@@ -38,7 +38,7 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	if o.json {
 		notify = nil
 	}
-	opt := domaudit.Options{SkipCRT: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
+	opt := domaudit.Options{Quiet: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
 	if o.json {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -54,16 +54,17 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	return nil
 }
 
-// DomainOf: домен из аргумента - имя, адрес сайта или url.
+// DomainOf: домен из аргумента - имя, адрес сайта или url; имя на национальном языке - в том виде, в каком оно в DNS.
 func DomainOf(env *app.Env, arg string) (string, error) {
 	if arg == "" {
 		return "", ui.Errorf("укажи домен: tim domain example.com")
 	}
 	h, _ := netinfo.HostPort(arg, "")
-	if !strings.Contains(h, ".") {
+	t, err := netinfo.ParseTarget(h)
+	if err != nil || t.Kind != netinfo.KindDomain {
 		return "", ui.Errorf("%s - не домен: tim domain example.com", arg)
 	}
-	return h, nil
+	return t.Value, nil
 }
 
 func writeMap(rep *domaudit.Report, path string, open bool) error {
@@ -273,7 +274,7 @@ func printDomains(cfg *config.Config) error {
 	}
 	sort.Strings(domains)
 	for _, d := range domains {
-		rep := domaudit.Collect(d, domaudit.Options{SkipCRT: true, SkipNeighbors: true})
+		rep := domaudit.Collect(d, domaudit.Options{Quiet: true})
 		live := 0
 		for _, h := range rep.Hosts {
 			if h.Status > 0 {

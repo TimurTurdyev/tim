@@ -81,9 +81,10 @@ type Report struct {
 	CRTCached time.Time `json:"crt_cached,omitzero"`
 }
 
-// Options: что собирать.
+// Options: что собирать. Quiet - без сторонних сервисов с именами, соседями, местом и портами: остаются DNS,
+// регистрация, владелец сети и запросы к самому сайту.
 type Options struct {
-	SkipCRT       bool
+	Quiet         bool
 	FreshCRT      bool
 	SkipNeighbors bool
 	Notify        func(string)
@@ -97,7 +98,7 @@ func Collect(domain string, opt Options) *Report {
 	rep.resolve(names, known)
 	par.All(rep.probe, rep.classify)
 	rep.Trackers = homeTrackers(domain, rep.Hosts)
-	if !opt.SkipNeighbors {
+	if !opt.Quiet && !opt.SkipNeighbors {
 		rep.findNeighbors()
 	}
 	return rep
@@ -119,7 +120,7 @@ func (r *Report) discover(opt Options) (names map[string]string, known map[strin
 	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		if opt.SkipCRT {
+		if opt.Quiet {
 			return
 		}
 		if opt.Notify != nil {
