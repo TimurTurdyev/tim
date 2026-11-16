@@ -139,7 +139,7 @@ func Takeovers(domain string) []Host {
 	}
 	hosts = par.Map(hosts, 8, func(h Host) Host {
 		h.IPs = lookup(h.Name)
-		probe(&h, false, pins([]Host{h}))
+		probe(&h, false, pins([]*Host{&h}))
 		return h
 	})
 	return slices.DeleteFunc(hosts, func(h Host) bool { return h.Takeover == nil })

@@ -11,14 +11,13 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/ctlog"
-	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 const (
 	crtTimeout    = 45 * time.Second
 	sourceTimeout = 15 * time.Second
-	sourceWait    = 20 * time.Second // дольше сбор источник не ждёт; поздний ответ ляжет в кэш
+	sourceWait    = 16 * time.Second // дольше сбор источник не ждёт; поздний ответ ляжет в кэш
 	sourceLimit   = 32 << 20
 	thcLimit      = 1000 // больше строк не просим: ровно столько - ответ обрезан
 	hostLimit     = 50   // столько строк отдаёт hackertarget без ключа
@@ -58,33 +57,82 @@ type SourceState struct {
 	Error  string    `json:"error,omitempty"`
 }
 
-// found: имена всех источников - кто какое знает, по порядку sources; related - другие домены тех же сертификатов.
-type found struct {
+// sourceNames: имена всех ответивших источников - кто какое знает; related - другие домены тех же сертификатов.
+type sourceNames struct {
 	by      map[string][]string // имя -> источники
 	label   map[string]string   // имя -> подпись первого источника
 	related []string
 	states  []SourceState
 }
 
-// askSources опрашивает источники разом; свежее берётся из кэша, молчащему - прошлый список.
-func askSources(domain string, opt Options) found {
+// asking: источники, которых спросили разом; ответы приходят в своё время.
+type asking struct {
+	list    []source
+	answers []*sourceAnswer // nil - ещё не ответил
+	arrived chan sourceAnswer
+	left    int
+	started time.Time
+}
+
+type sourceAnswer struct {
+	index int
+	got   nameList
+	state SourceState
+}
+
+// askSources спрашивает источники разом; свежее берётся из кэша, молчащему - прошлый список.
+func askSources(domain string, opt Options) *asking {
 	list := activeSources(opt)
-	type answer struct {
-		got   nameList
-		state SourceState
+	a := &asking{list: list, answers: make([]*sourceAnswer, len(list)), arrived: make(chan sourceAnswer, len(list)),
+		left: len(list), started: time.Now()}
+	for i, s := range list {
+		go func() {
+			got, state := s.ask(domain, opt.FreshCRT)
+			a.arrived <- sourceAnswer{i, got, state}
+		}()
 	}
-	answers := par.Map(list, len(list), func(s source) answer {
-		got, state := s.ask(domain, opt.FreshCRT)
-		return answer{got, state}
-	})
-	f := found{by: map[string][]string{}, label: map[string]string{}}
-	for i, a := range answers {
-		f.states = append(f.states, a.state)
-		f.related = append(f.related, a.got.Related...)
-		for _, n := range a.got.Subs {
-			f.by[n] = append(f.by[n], list[i].name)
+	return a
+}
+
+// wait собирает ответы, но не дольше limit от начала опроса.
+func (a *asking) wait(limit time.Duration) {
+	late := time.After(max(0, limit-time.Since(a.started)))
+	for a.left > 0 {
+		select {
+		case got := <-a.arrived:
+			a.answers[got.index] = &got
+			a.left--
+		case <-late:
+			return
+		}
+	}
+}
+
+// waiting: кто ещё не ответил.
+func (a *asking) waiting() []string {
+	var out []string
+	for i, got := range a.answers {
+		if got == nil {
+			out = append(out, a.list[i].name)
+		}
+	}
+	return out
+}
+
+// found: имена ответивших - по порядку источников, а не ответов.
+func (a *asking) found() sourceNames {
+	f := sourceNames{by: map[string][]string{}, label: map[string]string{}}
+	for i, got := range a.answers {
+		if got == nil {
+			f.states = append(f.states, SourceState{Name: a.list[i].name, Error: errSlow.Error()})
+			continue
+		}
+		f.states = append(f.states, got.state)
+		f.related = append(f.related, got.got.Related...)
+		for _, n := range got.got.Subs {
+			f.by[n] = append(f.by[n], a.list[i].name)
 			if f.label[n] == "" {
-				f.label[n] = list[i].label
+				f.label[n] = a.list[i].label
 			}
 		}
 	}

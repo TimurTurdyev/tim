@@ -81,3 +81,30 @@ func TestIsEdge(t *testing.T) {
 		}
 	}
 }
+
+// Место - по самой узкой вложенной сети, куда входит адрес; "?" - у сети, которую объявляют отовсюду.
+func TestGeo(t *testing.T) {
+	one, err := ParseGeo([]byte(`{"status":"ok","data":{"located_resources":[{"resource":"192.0.2.0/24",
+		"locations":[{"country":"NL","city":"Amsterdam","resources":["192.0.2.0/24"]}]}]}}`))
+	if p := PlaceOf(one, "192.0.2.7"); err != nil || p.Country != "NL" || p.City != "Amsterdam" {
+		t.Errorf("одна страна: %+v %v", one, err)
+	}
+	everywhere, err := ParseGeo([]byte(`{"status":"ok","data":{"located_resources":[{"locations":[{"country":"?","city":"","resources":["198.51.0.0/16"]}]}]}}`))
+	if err != nil || PlaceOf(everywhere, "198.51.100.1").Country != Nowhere {
+		t.Errorf("отовсюду: %+v %v", everywhere, err)
+	}
+	two, err := ParseGeo([]byte(`{"status":"ok","data":{"located_resources":[{"resource":"203.0.112.0/21","locations":[
+		{"country":"US","city":"","resources":["203.0.112.0/21"]},{"country":"IE","city":"Dublin","resources":["203.0.113.0/24","2001:db8:1::/48"]},
+		{"country":"JP","city":"","resources":["мусор"]}]}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ip, want := range map[string]string{"203.0.112.9": "US", "203.0.113.9": "IE", "2001:db8:1::5": "IE", "192.0.2.1": "", "не адрес": ""} {
+		if got := PlaceOf(two, ip).Country; got != want {
+			t.Errorf("%s: %q, ждали %q", ip, got, want)
+		}
+	}
+	if _, err := ParseGeo([]byte(`{"status":"error"}`)); err == nil {
+		t.Error("отказ источника принят за ответ")
+	}
+}

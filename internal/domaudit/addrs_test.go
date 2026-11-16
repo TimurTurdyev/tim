@@ -4,7 +4,7 @@ import "testing"
 
 // Свой адрес - сервер самого домена: имя ведёт на него без CNAME на чужой сервис, хотя бы и в несколько шагов.
 func TestDirectAddr(t *testing.T) {
-	r := &Report{Domain: "example.com"}
+	r := &collector{domain: "example.com"}
 	cnames := map[string]string{
 		"www.example.com":  "web.example.com",
 		"web.example.com":  "",
@@ -24,7 +24,7 @@ func TestDirectAddr(t *testing.T) {
 		}
 	}
 	// Отчёт по поддомену: соседнее имя той же регистрации - тоже своё.
-	if sub := (&Report{Domain: "api.example.com"}); !sub.direct([]string{"lb.example.com"}) || sub.direct([]string{"lb.example.net"}) {
+	if sub := (&collector{domain: "api.example.com"}); !sub.direct([]string{"lb.example.com"}) || sub.direct([]string{"lb.example.net"}) {
 		t.Error("поддомен: своё и чужое перепутаны")
 	}
 }

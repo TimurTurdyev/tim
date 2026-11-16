@@ -9,12 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
-	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/webnet"
 )
@@ -37,45 +35,49 @@ type answer struct {
 	cert   *x509.Certificate
 }
 
-// Silent: имя спрашивали по HTTP, и оно не ответило.
-func (h Host) Silent() bool { return h.Status == 0 && !h.Unchecked && !h.Internal }
-
-// probe: ответы сайтов. Главная страница домена читается тут же и целиком: счётчики берутся из неё, второй
-// раз её не качаем. Имена сверх предела и внутренние не спрашиваются: сам домен и www - в первую очередь.
-func (r *Report) probe() {
-	probes := par.NewGroup(probeWidth)
-	known := pins(r.Hosts)
-	order := make([]int, len(r.Hosts))
-	for i := range order {
-		order[i] = i
+// probe ставит имена в очередь на пробу и не ждёт её. Главная страница домена читается целиком: счётчики берутся
+// из неё, второй раз её не качаем. Имена сверх предела и внутренние не спрашиваются: сам домен и www - первыми.
+func (c *collector) probe(list []*Host) {
+	if c.since.IsZero() {
+		c.since = time.Now()
 	}
-	slices.SortStableFunc(order, func(a, b int) int { return r.rank(a) - r.rank(b) })
-	withAddr := 0
-	for _, i := range order {
-		if r.Hosts[i].Internal {
+	slices.SortStableFunc(list, func(a, b *Host) int { return c.rank(a.Name) - c.rank(b.Name) })
+	var queue []*Host
+	for _, h := range list {
+		if h.Internal {
 			continue
 		}
-		if len(r.Hosts[i].IPs) > 0 {
-			withAddr++
-			if withAddr > maxProbes {
-				r.Hosts[i].Unchecked = true
+		if len(h.IPs) > 0 {
+			c.probed++
+			if c.probed > maxProbes {
+				h.Unchecked = true
 				continue
 			}
 		}
-		probes.Go(func() { probe(&r.Hosts[i], r.rank(i) < 2, known) })
+		queue = append(queue, h)
 	}
-	probes.Wait()
-	if withAddr > maxProbes {
-		r.Notes = append(r.Notes, "по HTTP проверено "+strconv.Itoa(maxProbes)+" имён из "+strconv.Itoa(withAddr))
-	}
+	known := pins(queue)
+	c.pending.Add(int32(len(queue)))
+	c.probing.Go(func() {
+		for _, h := range queue {
+			c.group.Go(func() {
+				got := *h // остальные поля до конца сбора никто не меняет, читать их можно без замка
+				probe(&got, c.rank(h.Name) < 2, known)
+				c.mu.Lock()
+				*h = got
+				c.mu.Unlock()
+				c.pending.Add(-1)
+			})
+		}
+	})
 }
 
 // pins: публичные адреса имён, IPv4 вперёд, - чтобы не спрашивать DNS второй раз.
-func pins(hosts []Host) map[string][]string {
+func pins(hosts []*Host) map[string][]string {
 	out := map[string][]string{}
-	for i := range hosts {
+	for _, h := range hosts {
 		var v4, v6 []string
-		for _, ip := range hosts[i].IPs {
+		for _, ip := range h.IPs {
 			switch {
 			case !netinfo.IsPublic(ip):
 			case netinfo.IsIPv4(ip):
@@ -84,17 +86,17 @@ func pins(hosts []Host) map[string][]string {
 				v6 = append(v6, ip)
 			}
 		}
-		out[hosts[i].Name] = append(v4, v6...)
+		out[h.Name] = append(v4, v6...)
 	}
 	return out
 }
 
 // rank: сам домен, www, остальные - по алфавиту, как в списке.
-func (r *Report) rank(i int) int {
-	switch r.Hosts[i].Name {
-	case r.Domain:
+func (c *collector) rank(name string) int {
+	switch name {
+	case c.domain:
 		return 0
-	case "www." + r.Domain:
+	case "www." + c.domain:
 		return 1
 	}
 	return 2

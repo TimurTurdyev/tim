@@ -1,84 +1,25 @@
 package domaudit
 
 import (
+	"cmp"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/par"
 )
 
-// Откуда имя, если не из архива: подпись источника.
 const (
-	fromApex  = "апекс"
-	fromCert  = "сертификат"
-	fromBrute = "перебор"
+	fastWait = 4 * time.Second // сколько первый круг ждёт источники имён; поздние попадут во второй
+	settle   = 2 * time.Second // за столько отвечает почти любой живой сайт: его сертификат успевает во второй круг
 )
-
-// Host: найденное имя и что о нём известно.
-type Host struct {
-	Name   string   `json:"name"`
-	IPs    []string `json:"ips,omitempty"`
-	Status int      `json:"status,omitempty"`
-	Scheme string   `json:"scheme,omitempty"`
-	Server string   `json:"server,omitempty"`
-	Title  string   `json:"title,omitempty"`
-	Final  string   `json:"final,omitempty"`
-	Source string   `json:"source"`
-	// Sources: все источники, которые знают имя.
-	Sources []string `json:"sources,omitempty"`
-	// CNAME: куда ведёт имя; Takeover - его можно захватить: цель у чужого сервиса никем не занята.
-	CNAME    string    `json:"cname,omitempty"`
-	Takeover *Takeover `json:"takeover,omitempty"`
-	// CertError: почему браузер не примет сертификат имени; CertName - на какое имя он выдан.
-	CertError string `json:"cert_error,omitempty"`
-	CertName  string `json:"cert_name,omitempty"`
-	// Internal: все адреса имени внутренние - в интернете за ним никого нет.
-	Internal bool `json:"internal,omitempty"`
-	// Unchecked: имя за пределом сбора, по HTTP его не спрашивали.
-	Unchecked bool `json:"unchecked,omitempty"`
-
-	trackers  []Tracker // только у главной страницы
-	certNames []string  // все имена сертификата
-}
-
-// Addr: адрес, его сеть и имена, которые на него смотрят. CDN - узел раздачи, настоящий сервер за ним не виден;
-// Own - сервер самого домена: имя ведёт сюда без CNAME на чужой сервис; Internal - адрес не из интернета.
-type Addr struct {
-	IP       string     `json:"ip"`
-	PTR      string     `json:"ptr,omitempty"`
-	AS       asn.ASInfo `json:"as,omitempty"`
-	Hosts    []string   `json:"hosts"`
-	CDN      bool       `json:"cdn,omitempty"`
-	Own      bool       `json:"own,omitempty"`
-	Internal bool       `json:"internal,omitempty"`
-	Shared   []string   `json:"shared,omitempty"`
-
-	direct bool     // имя домена ведёт сюда само, а не через чужой сервис
-	cnames []string // куда по дороге ведут имена
-}
-
-// Report: всё, что собрано по домену.
-type Report struct {
-	Domain   string    `json:"domain"`
-	Hosts    []Host    `json:"hosts"`
-	Addrs    []Addr    `json:"addrs"`
-	Related  []string  `json:"related,omitempty"`
-	Trackers []Tracker `json:"trackers,omitempty"`
-	Errors   []string  `json:"errors,omitempty"`
-	// Sources: что дал каждый источник имён.
-	Sources []SourceState `json:"sources,omitempty"`
-	Notes   []string      `json:"notes,omitempty"` // что осталось за пределами сбора
-	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
-	CRTCached time.Time `json:"crt_cached,omitzero"`
-
-	by   map[string][]string // имя -> источники, которые его знают
-	wild []string            // адреса несуществующего имени
-}
 
 // Options: что собирать. Quiet - без сторонних сервисов с именами, соседями, местом и портами: остаются DNS,
 // регистрация, владелец сети и запросы к самому сайту.
@@ -89,39 +30,149 @@ type Options struct {
 	Notify        func(string)
 }
 
-// Collect собирает отчёт по домену из публичных источников: имена, их адреса и сети, ответы
-// сайтов, счётчики главной страницы и соседей по адресу.
-func Collect(domain string, opt Options) *Report {
-	rep := &Report{Domain: domain}
-	names, known := rep.discover(opt)
-	rep.resolve(names, known)
-	par.All(rep.probe, rep.classify)
-	rep.Trackers = homeTrackers(domain, rep.Hosts)
-	if !opt.Quiet && !opt.SkipNeighbors {
-		rep.findNeighbors()
-	}
-	return rep
+// collector: сбор по кругам. Круг - новые имена: их адреса, чьи они, что отвечает сайт. Имена, которые всплыли по
+// дороге, и ответы поздних источников идут во второй круг.
+type collector struct {
+	domain string
+	opt    Options
+	rep    *Report
+
+	asking  *asking             // источники имён; nil - не спрашиваем
+	extra   map[string]string   // имена не из источников: откуда
+	known   map[string][]string // адреса, которые уже спросили
+	wild    []string            // адреса несуществующего имени
+	tried   map[string]string   // имя -> с какой подписью его резолвили
+	dropped map[string]bool     // неотличимо от несуществующего
+	cnames  map[string]string
+
+	mu      sync.Mutex // имена пишут пробы
+	hosts   map[string]*Host
+	addrs   map[string]*Addr
+	group   *par.Group
+	probing sync.WaitGroup // постановка проб в очередь
+	pending atomic.Int32   // проб ещё идёт
+	probed  int            // имён с адресами отдано на пробу: предел на оба круга
+	since   time.Time      // когда пошли первые пробы
 }
 
-// discover: имена домена из источников и перебора - откуда каждое взялось, и адреса тех, что уже резолвились
-// при переборе.
-func (r *Report) discover(opt Options) (label map[string]string, known map[string][]string) {
-	f := found{}
-	par.All(func() {
-		if opt.Quiet {
-			return
-		}
-		if opt.Notify != nil {
-			opt.Notify(sourcesNote(stale(r.Domain, opt)))
-		}
-		f = askSources(r.Domain, opt)
-	}, func() {
-		r.wild = wildcard(r.Domain)
-		known = bruteforce(r.Domain, r.wild)
+// Collect собирает отчёт по домену из публичных источников: имена, их адреса и сети, почту и серверы имён, ответы
+// сайтов, счётчики главной страницы и соседей по адресу.
+func Collect(domain string, opt Options) *Report {
+	c := &collector{domain: domain, opt: opt, rep: &Report{Domain: domain},
+		extra: map[string]string{}, known: map[string][]string{}, tried: map[string]string{}, dropped: map[string]bool{},
+		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
+	c.discover()
+	c.round(c.servers())
+	c.surface()
+	c.round(nil)
+	c.probing.Wait()
+	c.group.Wait()
+	c.finish()
+	if !opt.Quiet && !opt.SkipNeighbors {
+		c.rep.findNeighbors()
+	}
+	return c.rep
+}
+
+// discover: почта и серверы имён, перебор частых имён и быстрые источники.
+func (c *collector) discover() {
+	if !c.opt.Quiet {
+		c.note(sourcesNote(stale(c.domain, c.opt)))
+		c.asking = askSources(c.domain, c.opt)
+	}
+	var brute map[string][]string
+	par.All(c.records, func() {
+		c.wild = wildcard(c.domain)
+		brute = bruteforce(c.domain, c.wild)
 	})
-	r.Related, r.Sources, r.by = f.related, f.states, f.by
+	for n, ips := range brute {
+		c.known[n] = ips
+		c.learn(n, fromBrute)
+	}
+	if c.asking != nil {
+		c.asking.wait(fastWait)
+	}
+}
+
+// learn запоминает имя домена, которое всплыло не из источников.
+func (c *collector) learn(name, from string) {
+	if subs, _ := splitNames([]string{name}, c.domain); len(subs) == 1 && c.extra[subs[0]] == "" {
+		c.extra[subs[0]] = from
+	}
+}
+
+// fresh: имена, которых ещё не резолвили; отброшенное из-за записи * возвращается, если нашёлся сертификат.
+func (c *collector) fresh() map[string]string {
+	out := map[string]string{}
+	add := func(name, from string) {
+		old, tried := c.tried[name]
+		again := c.dropped[name] && from == fromCert && old != fromCert
+		if out[name] == "" && (!tried || again) {
+			out[name] = from
+		}
+	}
+	add(c.domain, fromApex)
+	if c.asking != nil {
+		for n, from := range c.asking.found().label {
+			add(n, from)
+		}
+	}
+	for n, from := range c.extra {
+		add(n, from)
+	}
+	return out
+}
+
+// round: один круг. Пробы сайтов идут в фоне, адреса тем временем обрастают сведениями; also - адреса не от имён.
+func (c *collector) round(also map[string]*Addr) {
+	hosts, addrs := c.resolve(c.fresh())
+	maps.Copy(addrs, also)
+	c.probe(hosts)
+	c.enrich(addrs)
+}
+
+// surface: всё, что успело всплыть после первого круга, - имена из сертификатов сайтов и поздние источники.
+func (c *collector) surface() {
+	if c.asking != nil {
+		if late := c.asking.waiting(); len(late) > 0 {
+			c.note("жду " + strings.Join(late, ", "))
+		}
+		c.asking.wait(sourceWait)
+	}
+	for c.pending.Load() > 0 && time.Since(c.since) < settle {
+		time.Sleep(50 * time.Millisecond)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, h := range c.hosts {
+		for _, n := range h.certNames {
+			c.learn(n, fromSiteCert)
+		}
+	}
+}
+
+// finish складывает отчёт: имена по алфавиту, адреса по порядку, подписи - по всем ответившим источникам.
+func (c *collector) finish() {
+	r := c.rep
+	found := sourceNames{}
+	if c.asking != nil {
+		found = c.asking.found()
+	}
+	r.Related, r.Sources = found.related, found.states
+	for _, name := range slices.Sorted(maps.Keys(c.hosts)) {
+		h := *c.hosts[name]
+		h.Sources = found.by[name]
+		h.Source = cmp.Or(found.label[name], h.Source)
+		if name == c.domain {
+			h.Source = fromApex
+		}
+		r.Hosts = append(r.Hosts, h)
+	}
+	for _, ip := range slices.Sorted(maps.Keys(c.addrs)) {
+		r.Addrs = append(r.Addrs, *c.addrs[ip])
+	}
 	failed := 0
-	for _, s := range f.states {
+	for _, s := range r.Sources {
 		if s.Name == "crt.sh" {
 			r.CRTCached = s.Cached
 		}
@@ -129,26 +180,22 @@ func (r *Report) discover(opt Options) (label map[string]string, known map[strin
 			failed++
 		}
 	}
-	if failed > 0 && failed == len(f.states) {
+	if failed > 0 && failed == len(r.Sources) {
 		r.Errors = append(r.Errors, "ни один источник имён не ответил: имена только из перебора частых")
 	}
-	label = map[string]string{r.Domain: fromApex}
-	for _, names := range []map[string]string{f.label, brute(known)} {
-		for n, from := range names {
-			if label[n] == "" {
-				label[n] = from
-			}
-		}
+	if n := len(c.dropped); n > 0 {
+		r.Notes = append(r.Notes, "у домена запись *."+c.domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(n))
 	}
-	return label, known
+	if c.probed > maxProbes {
+		r.Notes = append(r.Notes, "по HTTP проверено "+strconv.Itoa(maxProbes)+" имён из "+strconv.Itoa(c.probed))
+	}
+	r.Trackers = homeTrackers(c.domain, r.Hosts)
 }
 
-func brute(known map[string][]string) map[string]string {
-	out := map[string]string{}
-	for n := range known {
-		out[n] = fromBrute
+func (c *collector) note(s string) {
+	if c.opt.Notify != nil {
+		c.opt.Notify(s)
 	}
-	return out
 }
 
 func sourcesNote(asked []string) string {

@@ -5,7 +5,6 @@ import (
 	"maps"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,66 +21,88 @@ const (
 	maxHops    = 8 // длиннее цепочек CNAME не бывает, разве что петля
 )
 
-// resolve: адреса имён и чьи это сети. Найденные перебором уже резолвились.
-func (r *Report) resolve(names map[string]string, known map[string][]string) {
+// resolve: новые имена, у которых есть адрес или CNAME, и их адреса.
+func (c *collector) resolve(names map[string]string) (hosts []*Host, touched map[string]*Addr) {
 	all := slices.Sorted(maps.Keys(names))
-	addrs := map[string][]string{}
-	for i, ips := range par.Map(all, dnsWidth, func(name string) []string {
-		if ips, ok := known[name]; ok {
-			return ips
+	ips := map[string][]string{}
+	for i, list := range par.Map(all, dnsWidth, func(name string) []string {
+		if list, ok := c.known[name]; ok {
+			return list
 		}
 		return lookup(name)
 	}) {
-		addrs[all[i]] = ips
+		ips[all[i]] = list
 	}
-	found := len(all)
-	all = slices.DeleteFunc(all, func(n string) bool { return blank(names[n], addrs[n], r.wild) })
-	if dropped := found - len(all); dropped > 0 {
-		r.Notes = append(r.Notes, "у домена запись *."+r.Domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(dropped))
+	for n, from := range names {
+		c.tried[n] = from
+		delete(c.dropped, n)
+		if blank(from, ips[n], c.wild) {
+			c.dropped[n] = true
+		}
 	}
+	all = slices.DeleteFunc(all, func(n string) bool { return c.dropped[n] })
 	// Имя без адресов, но с CNAME, остаётся: запись ведёт в никуда, это надо видеть.
 	targets := par.Map(all, dnsWidth, CNAME)
-	cnames := map[string]string{}
 	for i, t := range targets {
-		cnames[all[i]] = strings.ToLower(t)
+		c.cnames[all[i]] = strings.ToLower(t)
 	}
-	r.hops(cnames)
-	byIP := map[string]*Addr{}
+	c.hops()
+	touched = map[string]*Addr{}
 	for i, name := range all {
-		ips := addrs[name]
-		if len(ips) == 0 && targets[i] == "" {
+		if len(ips[name]) == 0 && targets[i] == "" {
 			continue
 		}
-		h := Host{Name: name, IPs: ips, CNAME: targets[i], Source: names[name], Sources: r.by[name]}
-		h.Internal = len(ips) > 0 && !slices.ContainsFunc(ips, netinfo.IsPublic)
-		r.Hosts = append(r.Hosts, h)
-		via := chain(cnames, h.Name)
-		for _, ip := range ips {
-			a := byIP[ip]
-			if a == nil {
-				a = &Addr{IP: ip, Internal: !netinfo.IsPublic(ip)}
-				byIP[ip] = a
-			}
-			a.Hosts = append(a.Hosts, h.Name)
+		h := &Host{Name: name, IPs: ips[name], CNAME: targets[i], Source: names[name]}
+		h.Internal = len(h.IPs) > 0 && !slices.ContainsFunc(h.IPs, netinfo.IsPublic)
+		c.hosts[name] = h
+		hosts = append(hosts, h)
+		via := chain(c.cnames, name)
+		for _, ip := range h.IPs {
+			a := c.addr(ip)
+			a.Hosts = append(a.Hosts, name)
 			a.cnames = append(a.cnames, via...)
-			a.direct = a.direct || r.direct(via)
+			a.direct = a.direct || c.direct(via)
+			touched[ip] = a
 		}
 	}
-	ips := slices.Sorted(maps.Keys(byIP))
-	owners := asn.Cymru(slices.DeleteFunc(slices.Clone(ips), func(ip string) bool { return byIP[ip].Internal }))
-	for _, ip := range ips {
-		a := byIP[ip]
-		a.AS = owners[ip]
-		r.Addrs = append(r.Addrs, *a)
+	return hosts, touched
+}
+
+// servers: адреса почтовых серверов и серверов имён; свой сервер - с именем той же регистрации.
+func (c *collector) servers() map[string]*Addr {
+	touched := map[string]*Addr{}
+	link := func(s Server, role func(*Addr) *[]string) {
+		for _, ip := range s.IPs {
+			a := c.addr(ip)
+			a.direct = a.direct || c.ours(s.Name)
+			*role(a) = append(*role(a), s.Name)
+			touched[ip] = a
+		}
 	}
+	for _, s := range c.rep.MX {
+		link(s, func(a *Addr) *[]string { return &a.MX })
+	}
+	for _, s := range c.rep.NS {
+		link(s, func(a *Addr) *[]string { return &a.NS })
+	}
+	return touched
+}
+
+func (c *collector) addr(ip string) *Addr {
+	a := c.addrs[ip]
+	if a == nil {
+		a = &Addr{IP: ip, Hosts: []string{}, Internal: !netinfo.IsPublic(ip)}
+		c.addrs[ip] = a
+	}
+	return a
 }
 
 // hops дописывает CNAME имён домена, через которые идёт цепочка, но самих их в списке нет.
-func (r *Report) hops(cnames map[string]string) {
+func (c *collector) hops() {
 	for range maxHops {
 		var missing []string
-		for _, t := range cnames {
-			if _, known := cnames[t]; t != "" && !known && r.ours(t) {
+		for _, t := range c.cnames {
+			if _, known := c.cnames[t]; t != "" && !known && c.ours(t) {
 				missing = append(missing, t)
 			}
 		}
@@ -89,19 +110,19 @@ func (r *Report) hops(cnames map[string]string) {
 			return
 		}
 		for i, t := range par.Map(missing, dnsWidth, CNAME) {
-			cnames[missing[i]] = strings.ToLower(t)
+			c.cnames[missing[i]] = strings.ToLower(t)
 		}
 	}
 }
 
 // direct: CNAME не уводит с домена на чужой сервис.
-func (r *Report) direct(via []string) bool {
-	return !slices.ContainsFunc(via, func(n string) bool { return !r.ours(n) })
+func (c *collector) direct(via []string) bool {
+	return !slices.ContainsFunc(via, func(n string) bool { return !c.ours(n) })
 }
 
 // ours: имя той же регистрации, что и домен.
-func (r *Report) ours(name string) bool {
-	return inspect.Registrable(name) == inspect.Registrable(r.Domain)
+func (c *collector) ours(name string) bool {
+	return inspect.Registrable(strings.ToLower(name)) == inspect.Registrable(c.domain)
 }
 
 // chain: по каким именам идёт CNAME; петля обрывается.
@@ -113,21 +134,59 @@ func chain(cnames map[string]string, name string) []string {
 	return out
 }
 
-// classify: обратные имена адресов, и по ним - узел CDN это или свой сервер.
-func (r *Report) classify() {
-	probes := par.NewGroup(dnsWidth)
-	for i := range r.Addrs {
-		a := &r.Addrs[i]
+// enrich: чьи адреса, их обратные имена, узел CDN это или свой сервер, и где он стоит.
+func (c *collector) enrich(touched map[string]*Addr) {
+	list := slices.SortedFunc(maps.Values(touched), func(a, b *Addr) int { return strings.Compare(a.IP, b.IP) })
+	var ask []string
+	for _, a := range list {
+		if !a.Internal && !a.named {
+			ask = append(ask, a.IP)
+		}
+	}
+	owners := asn.Cymru(ask)
+	group := par.NewGroup(dnsWidth)
+	for _, a := range list {
 		if a.Internal {
 			continue
 		}
-		probes.Go(func() {
-			a.PTR = ptr(a.IP)
+		group.Go(func() {
+			if !a.named {
+				a.named, a.AS, a.PTR = true, owners[a.IP], ptr(a.IP)
+			}
 			a.CDN = asn.IsEdge(a.AS.Name, a.PTR, a.cnames...)
 			a.Own = a.direct && !a.CDN
 		})
 	}
-	probes.Wait()
+	group.Wait()
+	if !c.opt.Quiet {
+		c.places(list)
+	}
+	for _, a := range list {
+		c.learn(a.PTR, fromPTR)
+	}
+}
+
+// places: где стоят серверы - одним запросом на сеть. Узел CDN отвечает отовсюду, его не спрашиваем.
+func (c *collector) places(list []*Addr) {
+	var nets []string
+	for _, a := range list {
+		if a.AS.Prefix != "" && a.Country == "" && !a.CDN && !slices.Contains(nets, a.AS.Prefix) {
+			nets = append(nets, a.AS.Prefix)
+		}
+	}
+	found := par.Map(nets, par.Limit, func(net string) []asn.Place {
+		list, _ := asn.Places(net)
+		return list
+	})
+	for _, a := range list {
+		i := slices.Index(nets, a.AS.Prefix)
+		if i < 0 || a.CDN {
+			continue
+		}
+		if country := asn.PlaceOf(found[i], a.IP).Country; country != asn.Nowhere {
+			a.Country = country
+		}
+	}
 }
 
 func lookup(name string) []string {

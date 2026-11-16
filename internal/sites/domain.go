@@ -164,6 +164,12 @@ func printAddrs(rep *domaudit.Report) {
 		if a.PTR != "" {
 			parts = append(parts, a.PTR)
 		}
+		for _, n := range a.MX {
+			parts = append(parts, "MX "+n)
+		}
+		for _, n := range a.NS {
+			parts = append(parts, "NS "+n)
+		}
 		ui.Println(ui.Label(ui.Pad(a.IP, 22)) + " " + ui.Dim(strings.Join(parts, "  ")))
 		for _, name := range a.Hosts {
 			ui.Println("   " + hostLine(rep, name))
