@@ -1,27 +1,46 @@
 package domaudit
 
 import (
+	"slices"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/paths"
 )
 
-// CacheTTL: сколько ответ логов сертификатов считается свежим. Сервис часто недоступен,
-// а состав поддоменов меняется редко.
-const CacheTTL = 24 * time.Hour
+const (
+	namesTTL = 20 * time.Hour // меньше суток: при ежедневном обходе сутки обновлялись бы через день
+	retryTTL = time.Hour      // источник не ответил: столько его не ждём снова
+)
 
-type crtNames struct {
-	Subs    []string `json:"subs"`
-	Related []string `json:"related"`
+// nameList: ответ одного источника. Got - когда он ответил в последний раз; Error - почему не ответил сейчас,
+// тогда списки - прошлые.
+type nameList struct {
+	Subs    []string  `json:"subs,omitempty"`
+	Related []string  `json:"related,omitempty"`
+	Cut     bool      `json:"cut,omitempty"`
+	Got     time.Time `json:"got,omitzero"`
+	Error   string    `json:"error,omitempty"`
 }
 
-func cachePath(domain string) string { return cache.Path(paths.State("crt"), domain) }
+func namesPath(source, domain string) string { return cache.Path(paths.State("names", source), domain) }
 
-func readCache(domain string) (cache.Entry[crtNames], bool) {
-	return cache.Load[crtNames](cachePath(domain))
+func loadNames(source, domain string) (cache.Entry[nameList], bool) {
+	return cache.Load[nameList](namesPath(source, domain))
 }
 
-func writeCache(domain string, subs, related []string) {
-	_ = cache.Store(cachePath(domain), crtNames{Subs: subs, Related: related}, 0o600)
+func storeNames(source, domain string, n nameList) {
+	_ = cache.Store(namesPath(source, domain), n, 0o600)
+}
+
+// knownNames: имена домена из кэша всех источников любого возраста - без обращений в сеть.
+func knownNames(domain string) []string {
+	var out []string
+	for _, s := range sources {
+		if e, ok := loadNames(s.name, domain); ok {
+			out = append(out, e.Value.Subs...)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }

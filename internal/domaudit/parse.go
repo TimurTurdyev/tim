@@ -63,7 +63,8 @@ func ParseCRT(data []byte, domain string) (subs, related []string, err error) {
 			}
 		}
 	}
-	return splitNames(names, domain)
+	subs, related = splitNames(names, domain)
+	return subs, related, nil
 }
 
 // Title достаёт заголовок страницы, схлопывая пробелы.
@@ -118,35 +119,36 @@ func ParseNeighbors(out string, self string) []string {
 	return list
 }
 
-// ParseCertSpotter разбирает ответ api.certspotter.com: имена из поля dns_names.
-func ParseCertSpotter(data []byte, domain string) (subs, related []string, err error) {
-	var rows []struct {
-		DNSNames []string `json:"dns_names"`
-	}
-	if err := json.Unmarshal(data, &rows); err != nil {
-		return nil, nil, err
-	}
-	var names []string
-	for _, r := range rows {
-		names = append(names, r.DNSNames...)
-	}
-	return splitNames(names, domain)
-}
-
-// ParseHostSearch разбирает CSV "имя,адрес" построчно.
-func ParseHostSearch(out string, domain string) ([]string, error) {
+// ParseHostSearch разбирает CSV "имя,адрес" построчно; rows - сколько строк пришло.
+func ParseHostSearch(out, domain string) (subs []string, rows int, err error) {
 	if strings.Contains(out, "API count exceeded") || strings.Contains(out, "error ") {
-		return nil, errors.New(ui.Plain(strings.TrimSpace(firstLine(out))))
+		return nil, 0, errors.New(ui.Plain(strings.TrimSpace(firstLine(out))))
 	}
 	var names []string
-	for _, line := range strings.Split(out, "\n") {
-		name, _, ok := strings.Cut(strings.TrimSpace(line), ",")
-		if ok {
+	for line := range strings.SplitSeq(out, "\n") {
+		if name, _, ok := strings.Cut(strings.TrimSpace(line), ","); ok {
 			names = append(names, name)
 		}
 	}
-	subs, _, err := splitNames(names, domain)
-	return subs, err
+	subs, _ = splitNames(names, domain)
+	return subs, len(names), nil
+}
+
+// ParseTHC разбирает список имён по строке на имя; rows - сколько строк пришло.
+func ParseTHC(out, domain string) (subs []string, rows int) {
+	names := strings.Fields(out)
+	subs, _ = splitNames(names, domain)
+	return subs, len(names)
+}
+
+// ParseSubdomainCenter разбирает JSON-массив имён.
+func ParseSubdomainCenter(data []byte, domain string) ([]string, error) {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return nil, errNotJSON
+	}
+	subs, _ := splitNames(names, domain)
+	return subs, nil
 }
 
 func firstLine(s string) string {
@@ -155,7 +157,7 @@ func firstLine(s string) string {
 }
 
 // splitNames делит имена на поддомены домена и другие регистрируемые домены.
-func splitNames(names []string, domain string) (subs, related []string, err error) {
+func splitNames(names []string, domain string) (subs, related []string) {
 	domain = strings.ToLower(domain)
 	seenS, seenR := map[string]bool{}, map[string]bool{}
 	for _, n := range names {
@@ -179,5 +181,5 @@ func splitNames(names []string, domain string) (subs, related []string, err erro
 	}
 	sort.Strings(subs)
 	sort.Strings(related)
-	return subs, related, nil
+	return subs, related
 }

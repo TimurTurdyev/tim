@@ -118,14 +118,12 @@ func CNAME(name string) string {
 	return target
 }
 
-// Takeovers: имена домена, которые можно захватить. Быстрый путь для аудита: имена из кэша логов
-// сертификатов и перебора, без crt.sh в сети, и только те, чей CNAME ведёт на известный сервис.
+// Takeovers: имена домена, которые можно захватить. Быстрый путь для аудита: имена из кэша источников и
+// перебора, без запросов к источникам, и только те, чей CNAME ведёт на известный сервис.
 func Takeovers(domain string) []Host {
 	names := map[string]bool{}
-	if c, ok := readCache(domain); ok {
-		for _, n := range c.Value.Subs {
-			names[n] = true
-		}
+	for _, n := range knownNames(domain) {
+		names[n] = true
 	}
 	for _, p := range Common {
 		names[p+"."+domain] = true
@@ -141,7 +139,7 @@ func Takeovers(domain string) []Host {
 	}
 	hosts = par.Map(hosts, 8, func(h Host) Host {
 		h.IPs = lookup(h.Name)
-		probe(&h, false)
+		probe(&h, false, pins([]Host{h}))
 		return h
 	})
 	return slices.DeleteFunc(hosts, func(h Host) bool { return h.Takeover == nil })

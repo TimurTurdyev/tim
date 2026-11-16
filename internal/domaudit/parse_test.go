@@ -36,12 +36,32 @@ func TestParseCRT(t *testing.T) {
 }
 
 func TestParseHostSearch(t *testing.T) {
-	subs, err := ParseHostSearch("admin.example.com,192.0.2.4\nwww.example.com,192.0.2.4\nother.org,192.0.2.8\n", "example.com")
-	if err != nil || len(subs) != 2 || subs[0] != "admin.example.com" {
-		t.Fatalf("%v %v", subs, err)
+	subs, rows, err := ParseHostSearch("admin.example.com,192.0.2.4\nwww.example.com,192.0.2.4\nother.org,192.0.2.8\n", "example.com")
+	if err != nil || rows != 3 || len(subs) != 2 || subs[0] != "admin.example.com" {
+		t.Fatalf("%v %d %v", subs, rows, err)
 	}
-	if _, err := ParseHostSearch("error API count exceeded\n", "example.com"); err == nil {
+	if _, _, err := ParseHostSearch("error API count exceeded\n", "example.com"); err == nil {
 		t.Error("quota error should be reported")
+	}
+}
+
+func TestParseTHC(t *testing.T) {
+	subs, rows := ParseTHC("Example.com\nwww.example.com\nwww.example.com\n\nexample.com.evil.org\n", "example.com")
+	if rows != 4 || !slices.Equal(subs, []string{"example.com", "www.example.com"}) {
+		t.Errorf("%v, строк %d", subs, rows)
+	}
+	if subs, rows := ParseTHC("", "example.com"); subs != nil || rows != 0 {
+		t.Errorf("пустой ответ: %v %d", subs, rows)
+	}
+}
+
+func TestParseSubdomainCenter(t *testing.T) {
+	subs, err := ParseSubdomainCenter([]byte(`["b.example.com", "a.example.com", "example.net", "*.c.example.com"]`), "example.com")
+	if err != nil || !slices.Equal(subs, []string{"a.example.com", "b.example.com", "c.example.com"}) {
+		t.Errorf("%v %v", subs, err)
+	}
+	if _, err := ParseSubdomainCenter([]byte(`{"error": "rate limit"}`), "example.com"); err == nil {
+		t.Error("объект вместо массива принят")
 	}
 }
 
@@ -75,10 +95,7 @@ func TestForeignText(t *testing.T) {
 	}
 	names := []string{"a\x1b[31m.example.com", "b.example.com:8443", "c.example.com/x", "_dmarc.example.com", "*.d.example.com",
 		"e..example.com", "example.org:8443", "example.org/x", "192.0.2.1", "www.example.net"}
-	subs, related, err := splitNames(names, "example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
+	subs, related := splitNames(names, "example.com")
 	if want := []string{"_dmarc.example.com", "d.example.com"}; !slices.Equal(subs, want) {
 		t.Errorf("поддомены %q, ждали %q", subs, want)
 	}

@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// nextAddress: сколько ждать один адрес имени, прежде чем пробовать и следующий.
+const nextAddress = 300 * time.Millisecond
+
 var (
 	mu      sync.Mutex
 	current *state
@@ -68,6 +71,69 @@ func Fresh(timeout time.Duration) *http.Client {
 	t := build(n).secure
 	t.DisableKeepAlives = true
 	return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: n.Redirect}
+}
+
+// Pinned: как Fresh, но имена из known соединяются сразу со своими адресами: их уже спросили у DNS, а
+// холодный системный резолвер только съест срок. insecure - без проверки сертификата.
+func Pinned(timeout time.Duration, insecure bool, known map[string][]string) *http.Client {
+	n := get().net
+	s := build(n)
+	t := s.secure
+	if insecure {
+		t = s.insecure
+	}
+	t.DisableKeepAlives = true
+	dial := t.DialContext
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil || len(known[host]) == 0 {
+			return dial(ctx, network, address)
+		}
+		return dialAny(ctx, dial, network, known[host], port)
+	}
+	return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: n.Redirect}
+}
+
+// dialAny: первое удавшееся соединение; следующий адрес пробуется, если прежний отказал или медлит.
+func dialAny(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), network string, ips []string, port string) (net.Conn, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	results := make(chan result, len(ips))
+	var last error
+	for next, waiting := 0, 0; next < len(ips) || waiting > 0; {
+		var slow <-chan time.Time
+		if next < len(ips) {
+			ip := ips[next]
+			next++
+			waiting++
+			go func() {
+				c, err := dial(ctx, network, net.JoinHostPort(ip, port))
+				results <- result{c, err}
+			}()
+			slow = time.After(nextAddress)
+		}
+		select {
+		case r := <-results:
+			waiting--
+			if r.err == nil {
+				go func() {
+					for range waiting {
+						if extra := <-results; extra.conn != nil {
+							_ = extra.conn.Close()
+						}
+					}
+				}()
+				return r.conn, nil
+			}
+			last = r.err
+		case <-slow:
+		}
+	}
+	return nil, last
 }
 
 // Follow: своё правило редиректов клиента сначала проверяется общим - его нельзя обойти.

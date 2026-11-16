@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,19 +18,27 @@ import (
 
 const (
 	dnsTimeout = 3 * time.Second
-	dnsWidth   = 32
+	dnsWidth   = 96
 	maxHops    = 8 // длиннее цепочек CNAME не бывает, разве что петля
 )
 
 // resolve: адреса имён и чьи это сети. Найденные перебором уже резолвились.
 func (r *Report) resolve(names map[string]string, known map[string][]string) {
 	all := slices.Sorted(maps.Keys(names))
-	resolved := par.Map(all, dnsWidth, func(name string) []string {
+	addrs := map[string][]string{}
+	for i, ips := range par.Map(all, dnsWidth, func(name string) []string {
 		if ips, ok := known[name]; ok {
 			return ips
 		}
 		return lookup(name)
-	})
+	}) {
+		addrs[all[i]] = ips
+	}
+	found := len(all)
+	all = slices.DeleteFunc(all, func(n string) bool { return blank(names[n], addrs[n], r.wild) })
+	if dropped := found - len(all); dropped > 0 {
+		r.Notes = append(r.Notes, "у домена запись *."+r.Domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(dropped))
+	}
 	// Имя без адресов, но с CNAME, остаётся: запись ведёт в никуда, это надо видеть.
 	targets := par.Map(all, dnsWidth, CNAME)
 	cnames := map[string]string{}
@@ -38,11 +47,12 @@ func (r *Report) resolve(names map[string]string, known map[string][]string) {
 	}
 	r.hops(cnames)
 	byIP := map[string]*Addr{}
-	for i, ips := range resolved {
+	for i, name := range all {
+		ips := addrs[name]
 		if len(ips) == 0 && targets[i] == "" {
 			continue
 		}
-		h := Host{Name: all[i], IPs: ips, CNAME: targets[i], Source: names[all[i]]}
+		h := Host{Name: name, IPs: ips, CNAME: targets[i], Source: names[name], Sources: r.by[name]}
 		h.Internal = len(ips) > 0 && !slices.ContainsFunc(ips, netinfo.IsPublic)
 		r.Hosts = append(r.Hosts, h)
 		via := chain(cnames, h.Name)

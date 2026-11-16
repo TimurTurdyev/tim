@@ -1,31 +1,23 @@
 package domaudit
 
 import (
-	"bytes"
-	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/par"
-	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-var errCrtStale = errors.New("не ответил, показан прошлый список имён")
-
-var errCrtBusy = errors.New("ответил не JSON")
-
-var errNoQuota = errors.New("дневной лимит бесплатного сервиса исчерпан")
-
-const crtTimeout = 45 * time.Second
+// Откуда имя, если не из архива: подпись источника.
+const (
+	fromApex  = "апекс"
+	fromCert  = "сертификат"
+	fromBrute = "перебор"
+)
 
 // Host: найденное имя и что о нём известно.
 type Host struct {
@@ -37,6 +29,8 @@ type Host struct {
 	Title  string   `json:"title,omitempty"`
 	Final  string   `json:"final,omitempty"`
 	Source string   `json:"source"`
+	// Sources: все источники, которые знают имя.
+	Sources []string `json:"sources,omitempty"`
 	// CNAME: куда ведёт имя; Takeover - его можно захватить: цель у чужого сервиса никем не занята.
 	CNAME    string    `json:"cname,omitempty"`
 	Takeover *Takeover `json:"takeover,omitempty"`
@@ -76,9 +70,14 @@ type Report struct {
 	Related  []string  `json:"related,omitempty"`
 	Trackers []Tracker `json:"trackers,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
-	Notes    []string  `json:"notes,omitempty"` // что осталось за пределами сбора
+	// Sources: что дал каждый источник имён.
+	Sources []SourceState `json:"sources,omitempty"`
+	Notes   []string      `json:"notes,omitempty"` // что осталось за пределами сбора
 	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
 	CRTCached time.Time `json:"crt_cached,omitzero"`
+
+	by   map[string][]string // имя -> источники, которые его знают
+	wild []string            // адреса несуществующего имени
 }
 
 // Options: что собирать. Quiet - без сторонних сервисов с именами, соседями, местом и портами: остаются DNS,
@@ -104,49 +103,59 @@ func Collect(domain string, opt Options) *Report {
 	return rep
 }
 
-// discover: имена домена из логов сертификатов и перебора - откуда каждое взялось, и адреса тех,
-// что уже резолвились при переборе.
-func (r *Report) discover(opt Options) (names map[string]string, known map[string][]string) {
-	var mu sync.Mutex
-	names = map[string]string{r.Domain: "апекс"}
-	addNames := func(list []string, source string) {
-		mu.Lock()
-		defer mu.Unlock()
-		for _, n := range list {
-			if names[n] == "" {
-				names[n] = source
-			}
-		}
-	}
-	var wg sync.WaitGroup
-	wg.Go(func() {
+// discover: имена домена из источников и перебора - откуда каждое взялось, и адреса тех, что уже резолвились
+// при переборе.
+func (r *Report) discover(opt Options) (label map[string]string, known map[string][]string) {
+	f := found{}
+	par.All(func() {
 		if opt.Quiet {
 			return
 		}
 		if opt.Notify != nil {
-			if c, ok := readCache(r.Domain); ok && !opt.FreshCRT && c.Fresh(CacheTTL) {
-				opt.Notify("логи сертификатов из кэша, обновить: --fresh")
-			} else {
-				opt.Notify("спрашиваю логи сертификатов")
+			opt.Notify(sourcesNote(stale(r.Domain, opt)))
+		}
+		f = askSources(r.Domain, opt)
+	}, func() {
+		r.wild = wildcard(r.Domain)
+		known = bruteforce(r.Domain, r.wild)
+	})
+	r.Related, r.Sources, r.by = f.related, f.states, f.by
+	failed := 0
+	for _, s := range f.states {
+		if s.Name == "crt.sh" {
+			r.CRTCached = s.Cached
+		}
+		if s.Error != "" && s.Names == 0 {
+			failed++
+		}
+	}
+	if failed > 0 && failed == len(f.states) {
+		r.Errors = append(r.Errors, "ни один источник имён не ответил: имена только из перебора частых")
+	}
+	label = map[string]string{r.Domain: fromApex}
+	for _, names := range []map[string]string{f.label, brute(known)} {
+		for n, from := range names {
+			if label[n] == "" {
+				label[n] = from
 			}
 		}
-		subs, related, cached, err := fromCRT(r.Domain, opt.FreshCRT, !opt.SkipNeighbors)
-		mu.Lock()
-		if err != nil {
-			r.Errors = append(r.Errors, "crt.sh: "+err.Error())
-		}
-		if err == nil || subs != nil {
-			r.CRTCached, r.Related = cached, related
-		}
-		mu.Unlock()
-		addNames(subs, "сертификат")
-	})
-	wg.Go(func() {
-		known = bruteforce(r.Domain)
-		addNames(slices.Sorted(maps.Keys(known)), "перебор")
-	})
-	wg.Wait()
-	return names, known
+	}
+	return label, known
+}
+
+func brute(known map[string][]string) map[string]string {
+	out := map[string]string{}
+	for n := range known {
+		out[n] = fromBrute
+	}
+	return out
+}
+
+func sourcesNote(asked []string) string {
+	if len(asked) == 0 {
+		return "имена из кэша, обновить: --fresh"
+	}
+	return "спрашиваю имена: " + strings.Join(asked, ", ")
 }
 
 // homeTrackers: счётчики с главной страницы домена.
@@ -174,135 +183,6 @@ func (r *Report) findNeighbors() {
 		a.Shared = list
 		return
 	}
-}
-
-// certSources: откуда берутся имена. CertSpotter быстрый, crt.sh глубже по истории, hostsearch видит то,
-// чего нет в сертификатах. Опрашиваются параллельно, результат объединяется.
-func certSources(domain string, withQuota bool) (subs, related []string, used []string, err error) {
-	type source struct {
-		name string
-		fn   func(string) ([]string, []string, error)
-	}
-	type res struct {
-		name    string
-		subs    []string
-		related []string
-		err     error
-	}
-	sources := []source{{"certspotter", fromCertSpotter}, {"crt.sh", crtOnce}}
-	if withQuota {
-		sources = append(sources, source{"hostsearch", fromHostSearch})
-	}
-	out := par.Map(sources, len(sources), func(src source) res {
-		s, r, e := src.fn(domain)
-		return res{name: src.name, subs: s, related: r, err: e}
-	})
-	seenS, seenR := map[string]bool{}, map[string]bool{}
-	var fails []string
-	for _, r := range out {
-		if r.err != nil {
-			fails = append(fails, r.name+" ("+r.err.Error()+")")
-			continue
-		}
-		used = append(used, r.name)
-		for _, n := range r.subs {
-			if !seenS[n] {
-				seenS[n] = true
-				subs = append(subs, n)
-			}
-		}
-		for _, n := range r.related {
-			if !seenR[n] {
-				seenR[n] = true
-				related = append(related, n)
-			}
-		}
-	}
-	sort.Strings(subs)
-	sort.Strings(related)
-	if len(used) == 0 {
-		return nil, nil, nil, errors.New("источники не ответили: " + strings.Join(fails, ", "))
-	}
-	return subs, related, used, nil
-}
-
-// fromCRT: имена из источников с кэшем на сутки; при полном отказе берётся прошлый список.
-func fromCRT(domain string, fresh, withQuota bool) (subs, related []string, cached time.Time, err error) {
-	c, has := readCache(domain)
-	if has && !fresh && c.Fresh(CacheTTL) {
-		return c.Value.Subs, c.Value.Related, c.Fetched, nil
-	}
-	subs, related, _, err = certSources(domain, withQuota)
-	if err == nil {
-		writeCache(domain, subs, related)
-		return subs, related, time.Time{}, nil
-	}
-	if has {
-		return c.Value.Subs, c.Value.Related, c.Fetched, errCrtStale
-	}
-	return nil, nil, time.Time{}, err
-}
-
-func getJSON(target string, timeout time.Duration) ([]byte, error) {
-	c := &http.Client{Timeout: timeout}
-	resp, err := c.Get(target)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(ui.Plain(resp.Status))
-	}
-	return data, nil
-}
-
-func fromCertSpotter(domain string) ([]string, []string, error) {
-	data, err := getJSON("https://api.certspotter.com/v1/issuances?domain="+url.QueryEscape(domain)+
-		"&include_subdomains=true&expand=dns_names", 20*time.Second)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
-		return nil, nil, errCrtBusy
-	}
-	return ParseCertSpotter(data, domain)
-}
-
-func fromHostSearch(domain string) ([]string, []string, error) {
-	data, err := getJSON("https://api.hackertarget.com/hostsearch/?q="+url.QueryEscape(domain), 20*time.Second)
-	if err != nil {
-		return nil, nil, err
-	}
-	subs, err := ParseHostSearch(string(data), domain)
-	return subs, nil, err
-}
-
-func crtOnce(domain string) ([]string, []string, error) {
-	data, err := getJSON("https://crt.sh/?q="+url.QueryEscape("%."+domain)+"&output=json", crtTimeout)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
-		return nil, nil, errCrtBusy
-	}
-	return ParseCRT(data, domain)
-}
-
-// bruteforce: частые имена, которые резолвятся, с их адресами. При wildcard-записи резолвится любое
-// имя: такие ответы совпадают с ответом на заведомо несуществующее имя и отбрасываются.
-func bruteforce(domain string) map[string][]string {
-	wildcard := strings.Join(lookup("tim-nx-"+strconv.FormatInt(time.Now().UnixNano(), 36)+"."+domain), " ")
-	out := map[string][]string{}
-	for i, ips := range par.Map(Common, 24, func(p string) []string { return lookup(p + "." + domain) }) {
-		if len(ips) > 0 && (wildcard == "" || strings.Join(ips, " ") != wildcard) {
-			out[Common[i]+"."+domain] = ips
-		}
-	}
-	return out
 }
 
 func neighbors(ip, self string) ([]string, error) {

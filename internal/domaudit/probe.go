@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/webnet"
@@ -43,6 +44,7 @@ func (h Host) Silent() bool { return h.Status == 0 && !h.Unchecked && !h.Interna
 // раз её не качаем. Имена сверх предела и внутренние не спрашиваются: сам домен и www - в первую очередь.
 func (r *Report) probe() {
 	probes := par.NewGroup(probeWidth)
+	known := pins(r.Hosts)
 	order := make([]int, len(r.Hosts))
 	for i := range order {
 		order[i] = i
@@ -60,12 +62,31 @@ func (r *Report) probe() {
 				continue
 			}
 		}
-		probes.Go(func() { probe(&r.Hosts[i], r.rank(i) < 2) })
+		probes.Go(func() { probe(&r.Hosts[i], r.rank(i) < 2, known) })
 	}
 	probes.Wait()
 	if withAddr > maxProbes {
 		r.Notes = append(r.Notes, "по HTTP проверено "+strconv.Itoa(maxProbes)+" имён из "+strconv.Itoa(withAddr))
 	}
+}
+
+// pins: публичные адреса имён, IPv4 вперёд, - чтобы не спрашивать DNS второй раз.
+func pins(hosts []Host) map[string][]string {
+	out := map[string][]string{}
+	for i := range hosts {
+		var v4, v6 []string
+		for _, ip := range hosts[i].IPs {
+			switch {
+			case !netinfo.IsPublic(ip):
+			case netinfo.IsIPv4(ip):
+				v4 = append(v4, ip)
+			default:
+				v6 = append(v6, ip)
+			}
+		}
+		out[hosts[i].Name] = append(v4, v6...)
+	}
+	return out
 }
 
 // rank: сам домен, www, остальные - по алфавиту, как в списке.
@@ -80,17 +101,17 @@ func (r *Report) rank(i int) int {
 }
 
 // probe: что отвечает имя. https и http спрашиваются разом, ответ https важнее; у главной страницы - ещё и счётчики.
-func probe(h *Host, home bool) {
+func probe(h *Host, home bool, known map[string][]string) {
 	limit := int64(pageLimit)
 	if home {
 		limit = homeLimit
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	got, certError := askBoth(ctx, h.Name, limit)
+	got, certError := askBoth(ctx, h.Name, limit, known)
 	if got == nil && len(h.IPs) > 0 && ctx.Err() == nil {
 		// Быстрый обрыв бывает и случайным, а молчащее имя советуют удалить: спрашиваем ещё раз.
-		got, certError = askBoth(ctx, h.Name, limit)
+		got, certError = askBoth(ctx, h.Name, limit, known)
 	}
 	h.CertError = certError
 	if got == nil {
@@ -116,10 +137,10 @@ func probe(h *Host, home bool) {
 
 // askBoth: ответ по https, иначе по http. Сертификат не прошёл проверку - сайт всё равно жив: если и http
 // молчит, страница читается без проверки; причина возвращается словами.
-func askBoth(ctx context.Context, name string, limit int64) (got *answer, certError string) {
+func askBoth(ctx context.Context, name string, limit int64, known map[string][]string) (got *answer, certError string) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	client := webnet.Fresh(probeTimeout)
+	client := webnet.Pinned(probeTimeout, false, known)
 	plain, unchecked := make(chan *answer, 1), make(chan *answer, 1)
 	go func() {
 		a, _ := ask(ctx, client, "http", name, limit)
@@ -132,7 +153,7 @@ func askBoth(ctx context.Context, name string, limit int64) (got *answer, certEr
 	certError, cert := certTrouble(name, err)
 	if certError != "" {
 		go func() {
-			a, _ := ask(ctx, webnet.Client(probeTimeout, true), "https", name, limit)
+			a, _ := ask(ctx, webnet.Pinned(probeTimeout, true, known), "https", name, limit)
 			unchecked <- a
 		}()
 	}
