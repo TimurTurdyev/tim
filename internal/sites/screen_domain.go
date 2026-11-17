@@ -1,7 +1,6 @@
 package sites
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +14,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
+	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -47,8 +47,8 @@ func (l *domainLoad) get(fresh bool) (*domaudit.Report, []string) {
 		l.stages = append(l.stages, s)
 	}
 	note("сайт, сертификат, домен и почта")
-	l.lamps = domainLamps(l.domain)
-	l.rep = domaudit.Collect(l.domain, domaudit.Options{FreshCRT: fresh, Notify: note})
+	par.All(func() { l.lamps = domainLamps(l.domain) },
+		func() { l.rep = domaudit.Collect(l.domain, domaudit.Options{FreshCRT: fresh, Notify: note}) })
 	return l.rep, l.lamps
 }
 
@@ -85,12 +85,7 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 			mapAction,
 		},
 	}).(tui.Tab)
-	addrs := tui.NewBoard(tui.BoardOpts{
-		Crumbs: []string{"Сайты", domain}, Tab: "Адреса", Search: true,
-		Command: command, Wait: load.wait,
-		Load:    func(fresh bool) tui.BoardData { rep, _ := load.get(fresh); return addrsData(rep) },
-		Actions: []tui.BoardAction{mapAction},
-	}).(tui.Tab)
+	addrs := addrsTab(domain, load, command, mapAction)
 	mail := mailTab(env, domain)
 	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
 }
@@ -116,7 +111,7 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 	if len(rep.Related) > 0 {
 		d.Foot = append(d.Foot, ui.Dim("в тех же сертификатах: "+strings.Join(cut(rep.Related, 8), " ")))
 	}
-	for _, n := range append(sourceLines(rep.Sources), rep.Notes...) {
+	for _, n := range append(sourceLines(rep.Sources, false), rep.Notes...) {
 		d.Foot = append(d.Foot, ui.Dim(n))
 	}
 	for _, e := range rep.Errors {
@@ -135,37 +130,6 @@ func hostGroup(rep *domaudit.Report, h domaudit.Host) string {
 		return "САМ ДОМЕН"
 	}
 	return "ИМЕНА"
-}
-
-func addrsData(rep *domaudit.Report) tui.BoardData {
-	d := tui.BoardData{Status: ui.Count(len(rep.Addrs), "адрес", "адреса", "адресов"), Tab: "Адреса " + strconv.Itoa(len(rep.Addrs))}
-	d.Columns = ui.Pad("АДРЕС", 18) + ui.Pad("СЕТЬ", 34) + ui.Pad("ИМЁН", 6) + "PTR"
-	d.Wide = true
-	for _, a := range rep.Addrs {
-		network := asName(a.AS.Name, a.AS.Country)
-		if a.AS.ASN != "" {
-			network += " \u00b7 AS" + a.AS.ASN
-		}
-		if a.Internal {
-			network = "внутренний адрес"
-		}
-		row := tui.BoardRow{ID: a.IP, Find: network,
-			Cells: ui.Pad(a.IP, 18) + ui.Fit(network, 34) + fmt.Sprintf("%4d  ", len(a.Hosts)) + ui.Dim(ui.Dash(a.PTR))}
-		card := &tui.Card{Title: a.IP, Sub: network}
-		card.Facts = append(card.Facts, tui.Fact{Label: "имён", Value: strconv.Itoa(len(a.Hosts)) + ui.Dim(" \u00b7 "+strings.Join(cut(a.Hosts, 4), ", "))})
-		if a.CDN {
-			card.Facts = append(card.Facts, tui.Fact{Label: "сеть", Value: "CDN: настоящий сервер за ней не виден"})
-		}
-		if len(a.Shared) > 0 {
-			card.Facts = append(card.Facts, tui.Fact{Label: "соседи", Value: strings.Join(cut(a.Shared, 6), ", ")})
-		} else {
-			card.Facts = append(card.Facts, tui.Fact{Label: "соседи", Value: ui.Dim("других сайтов на адресе не нашлось")})
-		}
-		row.Card = card
-		d.Rows = append(d.Rows, row)
-	}
-	d.Empty = "Адресов нет"
-	return d
 }
 
 func mailWord(l level.Level) string {
@@ -242,17 +206,20 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 	if len(h.IPs) > 0 {
 		ip = h.IPs[0]
 	}
-	status, note := hostStatus(h)
+	lvl, word, note := hostState(h)
 	if note == "" {
 		note = v.note(h, ip)
+		if h.Engine != "" {
+			note = strings.TrimSuffix(h.Engine+" · "+note, " · ")
+		}
 	}
-	row.Cells = ui.Fit(h.Name, 29) + " " + ui.Pad(status, 12) + ui.Dim(note)
+	row.Cells = ui.Fit(h.Name, 29) + " " + ui.Pad(level.Lamp(lvl, word), 12) + ui.Dim(note)
 	for _, ip := range h.IPs {
 		line := ui.Pad(ip, 17) + " "
 		if a, ok := v.addrs[ip]; ok && a.Internal {
 			line += ui.Dim("внутренний адрес")
 		} else if ok {
-			line += ui.Dim(asName(a.AS.Name, a.AS.Country) + " AS" + a.AS.ASN)
+			line += ui.Dim(strings.TrimSpace(ownerText(a)+" "+placeText(a)) + " AS" + a.AS.ASN)
 			if a.PTR != "" {
 				line += ui.Dim("  " + a.PTR)
 			}
@@ -260,7 +227,7 @@ func (v domainView) row(h domaudit.Host) tui.BoardRow {
 		row.Pane = append(row.Pane, line)
 	}
 	var about []string
-	for _, t := range []string{h.Server, h.Title} {
+	for _, t := range []string{h.Engine, h.Server, h.Title} {
 		if t != "" {
 			about = append(about, t)
 		}
@@ -300,49 +267,37 @@ func (v domainView) note(h domaudit.Host, ip string) string {
 	switch {
 	case !ok:
 		return ""
-	case a.Internal:
-		return "внутренний адрес"
 	case h.Name == v.rep.Domain:
-		return asName(a.AS.Name, a.AS.Country)
+		return strings.TrimSpace(ownerText(a) + " " + placeText(a))
 	case v.apex[ip]:
 		return "тот же сервер"
 	case a.CDN:
-		return "за CDN " + a.AS.Name
+		return "за CDN " + ownerText(a)
 	}
-	return "другой сервер: " + asName(a.AS.Name, a.AS.Country)
+	return "другой сервер: " + strings.TrimSpace(ownerText(a)+" "+placeText(a))
 }
 
-// asName: владелец сети без повторов. В RIPE имя часто "AdminVPS - AdminVPS OOO, RU": короткое имя
-// повторяет организацию, страна уже в конце.
-func asName(name, country string) string {
-	name = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(name), ", "+country))
-	if short, org, ok := strings.Cut(name, " - "); ok && strings.HasPrefix(org, short) {
-		name = org
-	}
-	return strings.TrimSpace(name + " " + country)
-}
-
-// hostStatus: ответ сайта лампой; у молчащих и сломанных сразу и заметка.
-func hostStatus(h domaudit.Host) (status, note string) {
+// hostState: ответ сайта - уровень и слово; у молчащих и сломанных сразу и заметка.
+func hostState(h domaudit.Host) (l level.Level, word, note string) {
 	switch {
 	case h.Takeover != nil:
-		return level.Lamp(level.Bad, "захват"), "CNAME " + h.Takeover.Target + ": " + h.Takeover.Why
+		return level.Bad, "захват", "CNAME " + h.Takeover.Target + ": " + h.Takeover.Why
 	case h.Status == 0 && h.CNAME != "" && len(h.IPs) == 0:
-		return level.Lamp(level.Warn, "в никуда"), "CNAME " + h.CNAME + " не резолвится"
+		return level.Warn, "в никуда", "CNAME " + h.CNAME + " не резолвится"
 	case h.Internal:
-		return level.Lamp(level.Warn, "внутри"), "внутренний адрес " + strings.Join(h.IPs, ", ")
+		return level.Warn, "внутри", "внутренний адрес " + strings.Join(h.IPs, ", ")
 	case h.Unchecked:
-		return level.Lamp(level.Skip, ""), "по HTTP не спрашивали: имён больше предела"
+		return level.Skip, "", "по HTTP не спрашивали: имён больше предела"
 	case h.Status == 0:
-		return level.Lamp(level.Bad, "молчит"), "не отвечает по HTTP"
+		return level.Bad, "молчит", "не отвечает по HTTP"
 	case h.Status >= 500:
-		return level.Lamp(level.Bad, strconv.Itoa(h.Status)), "сервер отвечает ошибкой"
+		return level.Bad, strconv.Itoa(h.Status), "сервер отвечает ошибкой"
 	case h.CertError != "":
-		return level.Lamp(level.Warn, strconv.Itoa(h.Status)), "сертификат: " + h.CertError
+		return level.Warn, strconv.Itoa(h.Status), "сертификат: " + h.CertError
 	case h.Status >= 400:
-		return level.Lamp(level.Warn, strconv.Itoa(h.Status)), ""
+		return level.Warn, strconv.Itoa(h.Status), ""
 	}
-	return level.Lamp(level.OK, strconv.Itoa(h.Status)), ""
+	return level.OK, strconv.Itoa(h.Status), ""
 }
 
 // sortHosts: сам домен первым, за ним имена с проблемами - молчащие и с 5xx, потом с 4xx.

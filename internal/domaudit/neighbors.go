@@ -47,7 +47,7 @@ func Neighbors(ip, self string) (Neighborhood, error) {
 				return Neighborhood{}, errors.Join(err, spare)
 			}
 		}
-		n.Names = onePerSite(foreign(n.Names, self), neighborCheck)
+		n.Names = onePerSite(foreign(n.Names, ip, self), neighborCheck)
 		n.Names = stillHere(n.Names, ip)
 		return n, nil
 	})
@@ -152,9 +152,13 @@ func askReverseIP(ip string) (Neighborhood, error) {
 	return Neighborhood{Names: names, Seen: len(names), Source: sourceHackertarget}, nil
 }
 
-func foreign(names []string, self string) []string {
+// foreign: имена чужих сайтов - не того же домена и не имя, которое хостинг составил из самого адреса.
+func foreign(names []string, ip, self string) []string {
 	zone := inspect.Registrable(self)
-	return slices.DeleteFunc(slices.Clone(names), func(n string) bool { return self != "" && inspect.Registrable(n) == zone })
+	dashed := strings.ReplaceAll(ip, ".", "-")
+	return slices.DeleteFunc(slices.Clone(names), func(n string) bool {
+		return self != "" && inspect.Registrable(n) == zone || strings.Contains(n, dashed) || strings.Contains(n, ip)
+	})
 }
 
 // onePerSite: не больше limit имён, сначала по одному от каждого сайта: сорок поддоменов одного соседа - это один сосед.

@@ -469,10 +469,10 @@ func (b *board) View(width, height int) string {
 		lines := card.Lines(cw, room)
 		out = append(out, besideList(list, lines, width)...)
 	case card != nil:
-		// Под списком: короткому списку - сколько нужно, карточке - остальное; длинному - карточка
-		// не выше трети тела.
+		// Под списком: короткому списку - сколько нужно, карточке - остальное; длинному - карточка не выше
+		// трети тела, а в низком окне - половины: в пять строк не влезает ни одного факта.
 		need := len(b.list.Rows) + 1
-		cardH := min(len(card.Lines(cw, room)), max(5, room/3, room-need-1))
+		cardH := min(len(card.Lines(cw, room)), max(5, room/3, min(8, room/2), room-need-1))
 		list := b.listLines(width, room-cardH-1)
 		out = append(out, list...)
 		out = append(out, "")

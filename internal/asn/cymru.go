@@ -3,6 +3,7 @@ package asn
 import (
 	"io"
 	"net"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -24,12 +25,23 @@ var (
 		"trbcdn.net", "yccdn.cloud.yandex.net"}
 )
 
+var regionTail = regexp.MustCompile(`, [A-Z]{2}$`)
+
 // ASInfo: к какой сети принадлежит адрес.
 type ASInfo struct {
 	ASN     string `json:"asn,omitempty"`
 	Prefix  string `json:"prefix,omitempty"`
 	Country string `json:"country,omitempty"`
 	Name    string `json:"name,omitempty"`
+}
+
+// Owner: владелец сети словами. В реестрах имя вида "AMAZON-02 - Amazon.com, Inc., US": короткое имя и страна лишние.
+func (i ASInfo) Owner() string {
+	name := regionTail.ReplaceAllString(strings.TrimSpace(i.Name), "")
+	if _, org, ok := strings.Cut(name, " - "); ok && strings.TrimSpace(org) != "" {
+		name = org
+	}
+	return strings.Join(strings.Fields(strings.ReplaceAll(name, "_", " ")), " ") // вместо кавычек в реестре подчёркивания
 }
 
 // Cymru спрашивает сведения обо всех адресах одним соединением.

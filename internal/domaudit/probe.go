@@ -181,7 +181,8 @@ func ask(ctx context.Context, client *http.Client, scheme, name string, limit in
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
-	got := &answer{scheme: scheme, status: resp.StatusCode, server: ui.Plain(resp.Header.Get("Server")), body: string(body)}
+	got := &answer{scheme: scheme, status: resp.StatusCode, server: ui.Plain(resp.Header.Get("Server")),
+		body: decode(body, resp.Header.Get("Content-Type"))}
 	// Редирект отмечаем, только если ушли на другой адрес, а не просто на "/" того же имени.
 	u := resp.Request.URL
 	if u.Host != name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {

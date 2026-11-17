@@ -62,7 +62,7 @@ func CertReason(err error) string {
 	case errors.As(err, &unknown):
 		return "выдан неизвестным центром, похоже на самоподписанный"
 	}
-	return ui.Plain(err.Error())
+	return "не прошёл проверку: " + ui.Plain(ui.ShortErr(err))
 }
 
 type Record struct {
