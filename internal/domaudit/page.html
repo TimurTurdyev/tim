@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>__TITLE__ - tim domain</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #f3f5f4; --card: #fcfcfb; --line: #dde2e0; --edge: #c3cbc8;
+    --ink: #101615; --soft: #4c5855; --mute: #74807c;
+    --accent: #157a72; --track: #e3ebe9;
+    --good: #0f7a42; --warn: #8f5f00; --bad: #c9302c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --ground: #111514; --card: #191e1d; --line: #2b3331; --edge: #3d4845;
+      --ink: #eef2f0; --soft: #b9c3bf; --mute: #87938f;
+      --accent: #28aaa0; --track: #26302e;
+      --good: #3ce68c; --warn: #ebaf3c; --bad: #f05a5a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1240px; margin: 0 auto; padding-block: 24px 64px; padding-inline: 20px; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0; overflow-wrap: anywhere; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .meta { color: var(--mute); margin: 4px 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .tile b { display: block; font-size: 24px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--mute); }
+  .bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .bar { display: grid; grid-template-columns: minmax(0, 11em) 1fr 3em; gap: 10px; align-items: center; padding: 3px 0; }
+  .bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--soft); }
+  .bar .track { height: 12px; background: var(--track); border-radius: 0 4px 4px 0; }
+  .bar .fill { height: 12px; min-width: 2px; background: var(--accent); border-radius: 0 4px 4px 0; }
+  .bar .count { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--mute); margin: 0; }
+  section { margin-bottom: 12px; }
+  .scroll { overflow-x: auto; }
+  svg { display: block; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  svg text { fill: var(--ink); dominant-baseline: middle; }
+  svg .sub { fill: var(--mute); }
+  svg .net { fill: var(--soft); font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; }
+  svg .frame { fill: none; stroke: var(--line); }
+  svg .edge { fill: none; stroke: var(--edge); stroke-width: 1; opacity: .55; }
+  svg .edge.on { stroke: var(--accent); stroke-width: 1.5; opacity: 1; }
+  svg .node rect { fill: var(--card); stroke: var(--line); }
+  svg .node { cursor: default; }
+  svg .node.more { cursor: pointer; }
+  svg .node:focus { outline: none; }
+  svg .node.on rect, svg .node:focus-visible rect { stroke: var(--accent); stroke-width: 2; }
+  svg .node.root rect { fill: var(--track); }
+  svg .dot.good { fill: var(--good); } svg .dot.warn { fill: var(--warn); } svg .dot.bad { fill: var(--bad); } svg .dot.none { fill: var(--edge); }
+  svg.dim .node:not(.on) { opacity: .45; } svg.dim .edge:not(.on) { opacity: .2; }
+  .hint { color: var(--mute); margin: 8px 0 0; }
+  .find { width: 100%; max-width: 380px; padding: 8px 12px; font: inherit; color: inherit; background: var(--ground); border: 1px solid var(--line); border-radius: 8px; }
+  .find:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  table { border-collapse: collapse; width: 100%; }
+  th { text-align: left; font-weight: 600; color: var(--mute); white-space: nowrap; }
+  th, td { padding: 6px 14px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td { min-width: 9em; max-width: 420px; }
+  td.num, td.short, td.nowrap { min-width: 0; white-space: nowrap; }
+  td.long { max-width: none; overflow-wrap: anywhere; }
+  td.name { min-width: 15em; overflow-wrap: anywhere; }
+  td.key, td.num, td.name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  td.num, th.num { text-align: right; }
+  .mark { white-space: nowrap; }
+  .mark::before { margin-right: 5px; }
+  .mark.good::before { content: "\25cf"; color: var(--good); }
+  .mark.warn::before { content: "\25b2"; color: var(--warn); }
+  .mark.bad::before { content: "\2715"; color: var(--bad); }
+  .mark.none::before { content: "-"; color: var(--mute); }
+  .src { color: var(--mute); }
+  .src p { margin: 4px 0; }
+  @media (max-width: 640px) { main { padding-inline: 16px; } h1 { font-size: 21px; } .bar { grid-template-columns: minmax(0, 8em) 1fr 2.5em; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="domain"></h1>
+  <p class="meta" id="meta"></p>
+  <div class="tiles" id="tiles"></div>
+  <div class="bars" id="bars"></div>
+  <section class="card">
+    <h2>Карта</h2>
+    <div class="scroll"><svg id="map" role="img" aria-label="Карта домена: имена, адреса и сети"></svg></div>
+    <p class="hint" id="hint"></p>
+  </section>
+  <section class="card"><input class="find" id="find" type="search" placeholder="Найти в таблицах" aria-label="Найти в таблицах"></section>
+  <div id="tables"></div>
+  <section class="card src" id="sources"><h2>Откуда данные</h2></section>
+</main>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+"use strict";
+const rep = JSON.parse(document.getElementById("data").textContent);
+const byId = id => document.getElementById(id);
+const list = x => x || [];
+const hosts = list(rep.hosts), addrs = list(rep.addrs), mx = list(rep.mx), ns = list(rep.ns), txt = list(rep.txt);
+const networks = list(rep.networks), countries = list(rep.countries);
+const addrByIP = new Map(addrs.map(a => [a.ip, a]));
+
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+};
+const more = (items, n) => items.length <= n ? items.join(", ") : items.slice(0, n).join(", ") + " и ещё " + (items.length - n);
+const plural = (n, one, few, many) => {
+  const d = n % 10, h = n % 100;
+  return n + " " + (h >= 11 && h <= 14 ? many : d === 1 ? one : d >= 2 && d <= 4 ? few : many);
+};
+
+const netName = n => n.internal ? "внутренние адреса" : n.owner || "неизвестно чья";
+const netKey = x => [x.asn || "", x.cdn ? 1 : 0, x.internal ? 1 : 0].join("|");
+const addrNet = a => netKey({ asn: (a.as || {}).asn, cdn: a.cdn, internal: a.internal });
+const ownerOf = a => { const n = networks.find(n => netKey(n) === addrNet(a)); return n ? netName(n) : ""; };
+const placeOf = a => a.cdn ? "везде" : a.country || "";
+
+// Ответ имени: знак и слово, а не только цвет.
+function state(h) {
+  if (h.takeover) return ["bad", "захват", "CNAME " + h.takeover.target + ": " + h.takeover.why];
+  if (!h.status && h.cname && !list(h.ips).length) return ["warn", "в никуда", "CNAME " + h.cname + " не резолвится"];
+  if (h.internal) return ["warn", "внутри", "внутренний адрес"];
+  if (h.unchecked) return ["none", "", "по HTTP не спрашивали"];
+  if (!h.status) return ["bad", "молчит", "не отвечает по HTTP"];
+  if (h.status >= 500) return ["bad", String(h.status), "сервер отвечает ошибкой"];
+  if (h.cert_error) return ["warn", String(h.status), "сертификат: " + h.cert_error];
+  if (h.status >= 400) return ["warn", String(h.status), ""];
+  return ["good", String(h.status), ""];
+}
+const whatOf = h => [state(h)[2], h.engine || h.server, h.final ? "-> " + h.final : "", h.title].filter(Boolean).join(" · ");
+
+// ---- шапка и полосы ----
+
+byId("domain").textContent = rep.domain;
+byId("meta").textContent = "снаружи, " + new Date(rep.made).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
+for (const [n, word] of [[hosts.length, ["имя", "имени", "имён"]], [addrs.length, ["адрес", "адреса", "адресов"]],
+  [networks.length, ["владелец сетей", "владельца сетей", "владельцев сетей"]], [hosts.filter(h => state(h)[1] === "молчит").length, ["молчит", "молчат", "молчат"]]]) {
+  const t = el("div", "card tile");
+  t.append(el("b", "", n), el("span", "", plural(n, ...word).replace(/^\d+ /, "")));
+  byId("tiles").append(t);
+}
+
+function bars(title, rows) {
+  const box = el("section", "card");
+  box.append(el("h2", "", title));
+  const top = rows.slice(0, 6), max = Math.max(1, ...top.map(r => r[1]));
+  for (const [name, n] of top) {
+    const row = el("div", "bar"), track = el("div", "track"), fill = el("div", "fill");
+    fill.style.width = n / max * 100 + "%";
+    track.append(fill);
+    const label = el("div", "name", name);
+    label.title = name;
+    row.title = name + ": " + n;
+    row.append(label, track, el("div", "count", n));
+    box.append(row);
+  }
+  if (!rows.length) box.append(el("p", "empty", "нет данных"));
+  else if (rows.length > top.length) box.append(el("p", "empty", "и ещё " + (rows.length - top.length)));
+  byId("bars").append(box);
+}
+
+const tech = new Map();
+const note = (map, key, v) => { if (key) (map.get(key) || map.set(key, new Set()).get(key)).add(v); };
+for (const h of hosts) {
+  note(tech, (h.server || "").split(/[\/(]/)[0].trim(), h.name);
+  note(tech, (h.engine || "").split(/ v?\d| - /)[0].trim(), h.name);
+}
+for (const a of addrs) for (const p of list((a.services || {}).products)) note(tech, p.replace(/ \S*\d\S*$/, ""), a.ip);
+bars("Сети, адресов", networks.map(n => [netName(n) + (n.cdn ? " (CDN)" : ""), n.addrs]).sort((a, b) => b[1] - a[1]));
+bars("Где стоят, адресов", countries.map(c => [c.cdn ? "везде (CDN)" : c.code || "неизвестно", c.addrs]).sort((a, b) => b[1] - a[1]));
+bars("Серверы и технологии", [...tech].map(([k, v]) => [k, v.size]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+
+// ---- карта ----
+
+const SVG = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs, text) => {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+const ROW = 26, H = 20, CHAR = 7.25, COLLAPSE = 200;
+const COL = { root: 0, role: 230, name: 322, addr: 776 }, WIDE = { root: 190, role: 46, name: 372, addr: 364 };
+const opened = new Set();
+const fit = (s, w) => { const n = Math.floor(w / CHAR); return s.length > n ? s.slice(0, Math.max(1, n - 1)) + "~" : s; };
+
+const collapse = hosts.length > COLLAPSE;
+const netOfIP = ip => { const a = addrByIP.get(ip); return a ? addrNet(a) : ""; };
+
+// Имён много - те, что живут в одних и тех же сетях, сворачиваются в счётчик; клик раскрывает.
+function nameNodes() {
+  const out = [];
+  const groups = new Map();
+  for (const h of hosts) {
+    const key = "имена " + [...new Set(list(h.ips).map(netOfIP))].sort().join(" ");
+    (groups.get(key) || groups.set(key, []).get(key)).push(h);
+  }
+  for (const [key, g] of groups) {
+    if (collapse && g.length > 3 && !opened.has(key)) {
+      out.push({ role: "A", label: plural(g.length, "имя", "имени", "имён"), sub: "раскрыть", ips: [...new Set(g.flatMap(h => list(h.ips)))], open: key, tip: more(g.map(h => h.name), 12) });
+      continue;
+    }
+    for (const h of g) {
+      const [lvl, word] = state(h);
+      out.push({ role: "A", label: h.name, sub: word, dot: lvl, ips: list(h.ips), tip: h.name + "\n" + whatOf(h) });
+    }
+  }
+  for (const [role, servers] of [["MX", mx], ["NS", ns]])
+    for (const s of servers) out.push({ role, label: s.name, sub: s.pref ? String(s.pref) : "", ips: list(s.ips), tip: s.name });
+  return out;
+}
+
+// Адреса сети строками рамки; в большом домене длинная рамка - тоже счётчик.
+function slots(f) {
+  const key = "адреса " + netKey(f.net);
+  if (collapse && f.addrs.length > 8 && !opened.has(key))
+    return [{ label: plural(f.addrs.length, "адрес", "адреса", "адресов"), sub: "раскрыть", ips: f.addrs.map(a => a.ip), open: key, tip: more(f.addrs.map(a => a.ip), 12) }];
+  return f.addrs.map(a => {
+    const ports = list((a.services || {}).ports).join(" ");
+    return { label: a.ip, sub: ports || a.ptr || "", ips: [a.ip], tip: [a.ip, a.ptr, (a.as || {}).prefix, ports && "порты " + ports, list((a.services || {}).products).join(", ")].filter(Boolean).join("\n") };
+  });
+}
+
+function draw() {
+  const svg = byId("map");
+  svg.replaceChildren();
+  const nodes = [], edges = [];
+  const names = nameNodes();
+  // Адреса - рамками по сетям: сначала сети с сайтами, потом почта и DNS, как и имена.
+  const used = new Set(names.flatMap(n => n.ips));
+  const frames = networks.map(n => ({ net: n, addrs: addrs.filter(a => addrNet(a) === netKey(n) && used.has(a.ip)) })).filter(f => f.addrs.length);
+  const order = f => f.addrs.some(a => list(a.hosts).length) ? 0 : f.addrs.some(a => list(a.mx).length) ? 1 : 2;
+  frames.sort((a, b) => order(a) - order(b));
+  const rank = new Map(), slotOf = new Map();
+  for (const f of frames) {
+    f.slots = slots(f);
+    for (const s of f.slots) for (const ip of s.ips) { slotOf.set(ip, s); rank.set(ip, rank.size); }
+  }
+  const roleRank = { A: 0, MX: 1, NS: 2 };
+  const mean = n => n.ips.length ? n.ips.reduce((s, ip) => s + (rank.get(ip) ?? 0), 0) / n.ips.length : 1e9;
+  names.sort((a, b) => roleRank[a.role] - roleRank[b.role] || mean(a) - mean(b) || a.label.localeCompare(b.label));
+
+  // Выше тот столбец, где строк больше; второй тянется к своим соседям, не накладываясь.
+  const frameH = f => f.slots.length * ROW + 28;
+  const addrTotal = frames.reduce((s, f) => s + frameH(f) + 12, 0), nameTotal = names.length * ROW;
+  const nameByIP = new Map();
+  names.forEach(n => n.ips.forEach(ip => (nameByIP.get(ip) || nameByIP.set(ip, []).get(ip)).push(n)));
+  const placeNames = want => { let y = 0; for (const n of names) { n.y = Math.max(y, want(n)); y = n.y + ROW; } };
+  const placeFrames = want => {
+    let y = 0;
+    for (const f of frames) {
+      f.y = Math.max(y, want(f));
+      f.slots.forEach((s, i) => { s.y = f.y + 24 + i * ROW; });
+      y = f.y + frameH(f) + 12;
+    }
+  };
+  const avg = xs => xs.reduce((s, x) => s + x, 0) / xs.length;
+  if (addrTotal >= nameTotal) {
+    placeFrames(() => 0);
+    placeNames(n => n.ips.length ? avg(n.ips.map(ip => (slotOf.get(ip) || {}).y || 0)) : 0);
+  } else {
+    placeNames(() => 0);
+    placeFrames(f => { const ys = f.addrs.flatMap(a => (nameByIP.get(a.ip) || []).map(n => n.y)); return ys.length ? avg(ys) - frameH(f) / 2 : 0; });
+  }
+  const bottom = Math.max(...names.map(n => n.y + ROW), ...frames.map(f => f.y + frameH(f)), 60);
+
+  const add = (kind, label, sub, y, opt = {}) => {
+    const n = { kind, x: COL[kind], w: WIDE[kind], y, label, sub, links: [], ...opt };
+    nodes.push(n);
+    return n;
+  };
+  const link = (a, b) => { const e = { a, b }; edges.push(e); a.links.push(e); b.links.push(e); };
+  const root = add("root", rep.domain, "", bottom / 2 - H / 2);
+  for (const role of ["A", "MX", "NS"]) {
+    const mine = names.filter(n => n.role === role);
+    if (!mine.length) continue;
+    const r = add("role", role, "", avg(mine.map(n => n.y)));
+    link(root, r);
+    for (const n of mine) { n.node = add("name", n.label, n.sub, n.y, { dot: n.dot, tip: n.tip, open: n.open }); link(r, n.node); }
+  }
+  for (const f of frames) {
+    svg.append(svgEl("rect", { class: "frame", x: COL.addr - 10, y: f.y, width: WIDE.addr + 20, height: frameH(f) - 4, rx: 8 }));
+    svg.append(svgEl("text", { class: "net", x: COL.addr, y: f.y + 12 }, fit(netName(f.net) + (f.net.cdn ? " (CDN)" : "") + (f.net.countries ? ", " + f.net.countries.slice(0, 3).join(" ") : ""), WIDE.addr)));
+    for (const s of f.slots) {
+      const node = add("addr", s.label, s.sub, s.y, { tip: s.tip, open: s.open });
+      for (const n of new Set(s.ips.flatMap(ip => nameByIP.get(ip) || []))) link(n.node, node);
+    }
+  }
+  const width = COL.addr + WIDE.addr + 12;
+  svg.setAttribute("width", width + 12);
+  svg.setAttribute("height", bottom + 8);
+  svg.setAttribute("viewBox", "-2 -4 " + (width + 12) + " " + (bottom + 8));
+
+  const layer = svgEl("g", {});
+  svg.prepend(layer);
+  for (const e of edges) {
+    const x1 = e.a.x + e.a.w, y1 = e.a.y + H / 2, x2 = e.b.x, y2 = e.b.y + H / 2, mid = (x1 + x2) / 2;
+    e.path = svgEl("path", { class: "edge", d: `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}` });
+    layer.append(e.path);
+  }
+  for (const n of nodes) {
+    const g = svgEl("g", { class: "node " + n.kind + (n.open !== undefined ? " more" : ""), tabindex: 0 });
+    g.append(svgEl("rect", { x: n.x, y: n.y, width: n.w, height: H, rx: 4 }));
+    if (n.tip) g.append(svgEl("title", {}, n.tip));
+    let left = n.x + 8, room = n.w - 16;
+    if (n.dot) { g.append(svgEl("circle", { class: "dot " + n.dot, cx: left + 4, cy: n.y + H / 2, r: 4 })); left += 14; room -= 14; }
+    const label = fit(n.label, room - (n.kind === "addr" ? Math.min(90, n.sub.length * CHAR + 8) : n.sub ? n.sub.length * CHAR + 8 : 0));
+    g.append(svgEl("text", { x: left, y: n.y + H / 2 + 1 }, label));
+    if (n.sub) g.append(svgEl("text", { class: "sub", x: n.x + n.w - 8, y: n.y + H / 2 + 1, "text-anchor": "end" }, fit(n.sub, room - label.length * CHAR - 8)));
+    g.addEventListener("mouseenter", () => light(n));
+    g.addEventListener("focus", () => light(n));
+    g.addEventListener("mouseleave", () => light(null));
+    g.addEventListener("blur", () => light(null));
+    if (n.open !== undefined) {
+      const open = () => { opened.add(n.open); draw(); };
+      g.addEventListener("click", open);
+      g.addEventListener("keydown", e => { if (e.key === "Enter") open(); });
+    }
+    svg.append(g);
+    n.g = g;
+  }
+
+  // Цепочка узла: вправо до адресов и влево до домена.
+  function light(n) {
+    const on = new Set(), lines = new Set();
+    const walk = (x, side) => {
+      on.add(x);
+      for (const e of x.links) {
+        const next = side > 0 ? e.b : e.a;
+        if (next !== x && !lines.has(e)) { lines.add(e); walk(next, side); }
+      }
+    };
+    if (n) { walk(n, 1); walk(n, -1); }
+    svg.classList.toggle("dim", !!n);
+    for (const x of nodes) x.g.classList.toggle("on", on.has(x));
+    for (const e of edges) e.path.classList.toggle("on", lines.has(e));
+  }
+  byId("hint").textContent = (collapse ? "Имена и адреса одной сети свёрнуты в счётчик, клик раскрывает. " : "") + "Наведи на узел - подсветится его цепочка.";
+}
+draw();
+
+// ---- таблицы ----
+
+const rows = [];
+function table(title, columns, data) {
+  if (!data.length) return;
+  const card = el("section", "card"), wrap = el("div", "scroll"), t = el("table"), head = el("tr"), body = el("tbody");
+  const h2 = el("h2", "", title + " · " + data.length);
+  columns.forEach(c => head.append(el("th", c.num ? "num" : "", c.title)));
+  const thead = el("thead");
+  thead.append(head);
+  for (const item of data) {
+    const tr = el("tr");
+    for (const c of columns) {
+      const v = c.get(item), td = el("td", c.cls || (c.num ? "num" : ""));
+      if (Array.isArray(v)) td.append(el("span", "mark " + v[0], v[1]));
+      else td.textContent = v === 0 && c.num ? "" : v ?? "";
+      tr.append(td);
+    }
+    body.append(tr);
+    rows.push({ tr, text: tr.textContent.toLowerCase(), card });
+  }
+  t.append(thead, body);
+  wrap.append(t);
+  card.append(h2, wrap);
+  byId("tables").append(card);
+}
+const first = s => addrByIP.get(list(s.ips)[0]) || {};
+const order = { bad: 0, warn: 1, none: 2, good: 3 };
+table("Имена", [
+  { title: "Имя", cls: "name", get: h => h.name },
+  { title: "Ответ", cls: "short", get: state },
+  { title: "Адреса", cls: "key nowrap", get: h => more(list(h.ips), 1) },
+  { title: "Сеть", get: h => ownerOf(first(h)) },
+  { title: "Где", cls: "short", get: h => placeOf(first(h)) },
+  { title: "Что там", get: whatOf },
+  { title: "Откуда имя", cls: "short", get: h => h.source },
+], [...hosts].sort((a, b) => order[state(a)[0]] - order[state(b)[0]] || a.name.localeCompare(b.name)));
+const server = [
+  { title: "Сервер", cls: "name", get: s => s.name },
+  { title: "Адреса", cls: "key nowrap", get: s => more(list(s.ips), 2) },
+  { title: "PTR", cls: "long", get: s => first(s).ptr },
+  { title: "Сеть", get: s => ownerOf(first(s)) },
+  { title: "Где", cls: "short", get: s => placeOf(first(s)) },
+];
+table("MX", [{ title: "Приоритет", num: true, get: s => s.pref }, ...server], mx);
+table("NS", server, ns);
+table("TXT", [{ title: "Значение", cls: "key long", get: t => t }], txt);
+table("Адреса", [
+  { title: "Адрес", cls: "key nowrap", get: a => a.ip },
+  { title: "PTR", cls: "long", get: a => a.ptr },
+  { title: "Подсеть", cls: "key nowrap", get: a => (a.as || {}).prefix },
+  { title: "Сеть", get: a => ownerOf(a) },
+  { title: "Где", cls: "short", get: placeOf },
+  { title: "Порты", cls: "key short", get: a => list((a.services || {}).ports).join(" ") },
+  { title: "Что отвечает", get: a => list((a.services || {}).products).join(", ") },
+  { title: "CVE по версии", num: true, get: a => list((a.services || {}).cve).length },
+  { title: "Имён", num: true, get: a => list(a.hosts).length },
+  { title: "Соседи", cls: "long", get: a => more(list(a.shared), 4) },
+], addrs);
+byId("find").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  const seen = new Set();
+  for (const r of rows) {
+    const hit = !q || r.text.includes(q);
+    r.tr.hidden = !hit;
+    if (hit) seen.add(r.card);
+  }
+  for (const r of rows) r.card.hidden = !seen.has(r.card);
+});
+
+// ---- откуда ----
+
+const src = byId("sources");
+const say = text => src.append(el("p", "", text));
+if (list(rep.sources).length) say("Имена: " + rep.sources.map(s => s.name + " " + s.names + (s.cut ? " (отдал не всё)" : "") + (s.error ? " (" + s.error + ")" : "")).join(", "));
+if (addrs.some(a => a.services)) say("Порты и версии - по данным Shodan, до недели назад. CVE подобраны по номеру версии: Debian и Ubuntu чинят, не меняя номер.");
+list(rep.notes).concat(list(rep.errors)).forEach(say);
+if (list(rep.related).length) say("В тех же сертификатах: " + more(rep.related, 20));
+if (list(rep.trackers).length) say("Счётчики: " + rep.trackers.map(t => t.kind + " " + t.id).join(", "));
+</script>
+</body>
+</html>

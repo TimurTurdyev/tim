@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
@@ -17,7 +19,7 @@ import (
 	"github.com/TimurTurdyev/tim/report"
 )
 
-// domain: отчёт по домену - экраном в терминале, иначе строками, JSON или картой в браузере.
+// domain: отчёт по домену - экраном в терминале, иначе строками, JSON, страницей с картой или таблицей.
 func domain(env *app.Env, arg string, o domainOptions) error {
 	if o.all {
 		return printDomains(env.Cfg)
@@ -46,10 +48,27 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	if err := view.Show(domainReport(rep, about), false); err != nil {
 		return err
 	}
+	return saveDomain(rep, o)
+}
+
+// saveDomain: --out по расширению - .xlsx таблицей, остальное страницей; --map открывает страницу в браузере.
+func saveDomain(rep *domaudit.Report, o domainOptions) error {
+	if strings.EqualFold(filepath.Ext(o.mapOut), ".xlsx") {
+		if err := domaudit.WriteXLSX(rep, o.mapOut); err != nil {
+			return ui.Errorf("таблица не записана: %v", err)
+		}
+		ui.Println(ui.Label("таблица ") + o.mapOut)
+		o.mapOut = ""
+	}
 	if o.openMap || o.mapOut != "" {
 		return writeMap(rep, o.mapOut, o.openMap)
 	}
 	return nil
+}
+
+// tableName: имя файла таблицы рядом, как у отчёта tim audit.
+func tableName(domain string, now time.Time) string {
+	return "domain-" + domain + "-" + now.Format("2006-01-02") + ".xlsx"
 }
 
 // DomainOf: домен из аргумента - имя, адрес сайта или url; имя на национальном языке - в том виде, в каком оно в DNS.

@@ -75,6 +75,14 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 		}
 		return domain + ": карта открыта в браузере", runner.OpenBrowser(path)
 	}}
+	tableAction := tui.BoardAction{Key: "e", Label: "таблица", Doing: "сохраняю таблицу", Free: true, Run: func(*tui.BoardRow) (string, error) {
+		rep, _ := load.get(false)
+		path, err := filepath.Abs(tableName(domain, time.Now()))
+		if err != nil {
+			return "", err
+		}
+		return "сохранена " + filepath.Base(path) + " в " + filepath.Dir(path), domaudit.WriteXLSX(rep, path)
+	}}
 	command := func(*tui.BoardRow) string { return "tim domain " + domain }
 	names := tui.NewBoard(tui.BoardOpts{
 		Crumbs: []string{"Сайты", domain}, Tab: "Имена", Search: true, Order: "проблемные сверху",
@@ -82,10 +90,10 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 		Load: func(fresh bool) tui.BoardData { rep, lamps := load.get(fresh); return namesData(rep, lamps) },
 		Actions: []tui.BoardAction{
 			{Key: "enter", Label: "подробно", Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"site", row.ID}) }},
-			mapAction,
+			mapAction, tableAction,
 		},
 	}).(tui.Tab)
-	addrs := addrsTab(domain, load, command, mapAction)
+	addrs := addrsTab(domain, load, command, mapAction, tableAction)
 	mail := mailTab(env, domain)
 	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
 }
