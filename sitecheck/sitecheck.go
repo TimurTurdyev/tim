@@ -12,8 +12,8 @@ import (
 	"github.com/TimurTurdyev/tim/report"
 )
 
-// Options: Intrusive - ещё пути вроде /.env и порты баз, это для владельца сайта; CacheDir - где хранить
-// сроки версий с endoflife.date, пусто - каталог состояния tim.
+// Options: Intrusive - ещё пути вроде /.env, порты баз и передача зоны, это для владельца сайта; CacheDir -
+// где хранить сроки версий с endoflife.date, пусто - каталог состояния tim.
 type Options = audit.Options
 
 // Net: как ходить к проверяемому сайту; Control видит каждое соединение.

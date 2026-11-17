@@ -45,21 +45,22 @@ var checks = []check{
 	{name: "доставка", run: delivery},
 	{name: "скорость", run: speed},
 	{name: "dns", run: dns},
+	{name: "передача зоны", intrusive: true, run: zoneTransfer},
 	{name: "поддомены", run: takeovers},
 	{name: "движок", run: engine},
 	{name: "вход", run: login},
 }
 
 // check: одна проверка аудита; https - только для сайтов на https; intrusive - запросы, которых обычный
-// посетитель не делает (пути .env, порты баз): только с Options.Intrusive.
+// посетитель не делает (пути .env, порты баз, передача зоны): только с Options.Intrusive.
 type check struct {
 	name             string
 	https, intrusive bool
 	run              func(s *site) []Finding
 }
 
-// Options: Intrusive - проверять и пути вроде /.env с портами баз, это для владельца сайта; CacheDir -
-// где хранить сроки версий с endoflife.date, пусто - каталог состояния tim.
+// Options: Intrusive - проверять и пути вроде /.env, порты баз и передачу зоны, это для владельца сайта;
+// CacheDir - где хранить сроки версий с endoflife.date, пусто - каталог состояния tim.
 type Options struct {
 	Intrusive bool
 	CacheDir  string
