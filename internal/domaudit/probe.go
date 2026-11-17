@@ -30,6 +30,7 @@ type answer struct {
 	scheme string
 	status int
 	server string
+	engine string
 	final  string
 	body   string
 	cert   *x509.Certificate
@@ -124,7 +125,7 @@ func probe(h *Host, home bool, known map[string][]string) {
 		}
 		return
 	}
-	h.Scheme, h.Status, h.Server, h.Final = got.scheme, got.status, got.server, got.final
+	h.Scheme, h.Status, h.Server, h.Engine, h.Final = got.scheme, got.status, got.server, got.engine, got.final
 	h.Title = Title(got.body)
 	if got.cert != nil {
 		h.CertName, h.certNames = certNames(got.cert)
@@ -185,6 +186,14 @@ func ask(ctx context.Context, client *http.Client, scheme, name string, limit in
 	u := resp.Request.URL
 	if u.Host != name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
 		got.final = u.String()
+	}
+	// Ушли на чужой сайт - движок его, а не этого имени.
+	if inspect.Registrable(u.Hostname()) == inspect.Registrable(name) {
+		var cookies []string
+		for _, c := range resp.Cookies() {
+			cookies = append(cookies, c.Name)
+		}
+		got.engine = inspect.DetectCMS(resp.Header, cookies, got.body)
 	}
 	if first := firstHop(resp); first.TLS != nil && len(first.TLS.PeerCertificates) > 0 {
 		got.cert = first.TLS.PeerCertificates[0]

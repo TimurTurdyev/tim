@@ -17,10 +17,13 @@ import (
 const (
 	crtTimeout    = 45 * time.Second
 	sourceTimeout = 15 * time.Second
-	sourceWait    = 16 * time.Second // дольше сбор источник не ждёт; поздний ответ ляжет в кэш
+	sourceWait    = 19 * time.Second // дольше сбор источник не ждёт; поздний ответ ляжет в кэш
 	sourceLimit   = 32 << 20
 	thcLimit      = 1000 // больше строк не просим: ровно столько - ответ обрезан
 	hostLimit     = 50   // столько строк отдаёт hackertarget без ключа
+
+	sourceTHC          = "THC"
+	sourceHackertarget = "hackertarget"
 )
 
 var (
@@ -34,9 +37,9 @@ var (
 var sources = []source{
 	{name: "CertSpotter", label: fromCert, fetch: fetchCertSpotter},
 	{name: "crt.sh", label: fromCert, ttl: namesTTL, fetch: fetchCRT},
-	{name: "THC", label: "THC", ttl: namesTTL, fetch: fetchTHC},
+	{name: sourceTHC, label: sourceTHC, ttl: namesTTL, fetch: fetchTHC},
 	{name: "subdomain.center", label: "subdomain.center", ttl: namesTTL, fetch: fetchSubdomainCenter},
-	{name: "hackertarget", label: "hackertarget", ttl: namesTTL, quota: true, fetch: fetchHostSearch},
+	{name: sourceHackertarget, label: sourceHackertarget, ttl: namesTTL, quota: true, fetch: fetchHostSearch},
 }
 
 // source: источник имён. label - чем подписать имя; ttl - сколько верить своему кэшу, 0 - кэш у самого источника;
@@ -208,7 +211,11 @@ func (s source) cached(domain string) (nameList, bool) {
 		return nameList{}, false
 	}
 	ttl := s.ttl
-	if e.Value.Error != "" {
+	switch e.Value.Error {
+	case "":
+	case errSlow.Error():
+		ttl = slowTTL
+	default:
 		ttl = retryTTL
 	}
 	return e.Value, e.Fresh(ttl)

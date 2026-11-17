@@ -2,10 +2,7 @@ package domaudit
 
 import (
 	"cmp"
-	"io"
 	"maps"
-	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,13 +42,16 @@ type collector struct {
 	dropped map[string]bool     // неотличимо от несуществующего
 	cnames  map[string]string
 
-	mu      sync.Mutex // имена пишут пробы
+	mu      sync.Mutex // имена пишут пробы, ошибки - кто первый наткнётся
 	hosts   map[string]*Host
 	addrs   map[string]*Addr
 	group   *par.Group
 	probing sync.WaitGroup // постановка проб в очередь
 	pending atomic.Int32   // проб ещё идёт
 	probed  int            // имён с адресами отдано на пробу: предел на оба круга
+	scanned int            // своих адресов, у которых спросили порты, - тоже
+	met     int            // и соседей
+	alone   bool           // основной источник соседей не отвечает
 	since   time.Time      // когда пошли первые пробы
 }
 
@@ -63,14 +63,17 @@ func Collect(domain string, opt Options) *Report {
 		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
 	c.discover()
 	c.round(c.servers())
+	// Соседи первого круга - пока ждём поздние источники; у адресов, всплывших потом, - следом.
+	first := c.unmet()
+	var met sync.WaitGroup
+	met.Go(func() { c.neighbors(first) })
 	c.surface()
 	c.round(nil)
+	met.Wait()
+	c.neighbors(c.unmet())
 	c.probing.Wait()
 	c.group.Wait()
 	c.finish()
-	if !opt.Quiet && !opt.SkipNeighbors {
-		c.rep.findNeighbors()
-	}
 	return c.rep
 }
 
@@ -181,7 +184,7 @@ func (c *collector) finish() {
 		}
 	}
 	if failed > 0 && failed == len(r.Sources) {
-		r.Errors = append(r.Errors, "ни один источник имён не ответил: имена только из перебора частых")
+		c.fail("ни один источник имён не ответил: имена только из перебора частых")
 	}
 	if n := len(c.dropped); n > 0 {
 		r.Notes = append(r.Notes, "у домена запись *."+c.domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(n))
@@ -189,7 +192,22 @@ func (c *collector) finish() {
 	if c.probed > maxProbes {
 		r.Notes = append(r.Notes, "по HTTP проверено "+strconv.Itoa(maxProbes)+" имён из "+strconv.Itoa(c.probed))
 	}
+	if c.scanned > maxScans {
+		r.Notes = append(r.Notes, "порты спрошены у "+strconv.Itoa(maxScans)+" адресов из "+strconv.Itoa(c.scanned))
+	}
+	if c.met > maxNeighborAddrs {
+		r.Notes = append(r.Notes, "соседи спрошены у "+strconv.Itoa(maxNeighborAddrs)+" адресов из "+strconv.Itoa(c.met))
+	}
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
+}
+
+// fail: ошибка источника в отчёт - одна на всех.
+func (c *collector) fail(text string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !slices.Contains(c.rep.Errors, text) {
+		c.rep.Errors = append(c.rep.Errors, text)
+	}
 }
 
 func (c *collector) note(s string) {
@@ -213,39 +231,4 @@ func homeTrackers(domain string, hosts []Host) []Tracker {
 		}
 	}
 	return nil
-}
-
-// findNeighbors: чужие сайты на первом своём адресе апекса.
-func (r *Report) findNeighbors() {
-	for i := range r.Addrs {
-		a := &r.Addrs[i]
-		if !a.Own || !slices.Contains(a.Hosts, r.Domain) {
-			continue
-		}
-		list, err := neighbors(a.IP, r.Domain)
-		if err != nil {
-			r.Errors = append(r.Errors, "соседи по IP: "+err.Error())
-			return
-		}
-		a.Shared = list
-		return
-	}
-}
-
-func neighbors(ip, self string) ([]string, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get("https://api.hackertarget.com/reverseiplookup/?q=" + url.QueryEscape(ip))
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	out := string(data)
-	if strings.Contains(out, "API count exceeded") {
-		return nil, errNoQuota
-	}
-	return ParseNeighbors(out, self), nil
 }

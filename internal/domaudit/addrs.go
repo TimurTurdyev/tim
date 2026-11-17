@@ -6,19 +6,24 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/inspect"
+	"github.com/TimurTurdyev/tim/internal/internetdb"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
 const (
 	dnsTimeout = 3 * time.Second
 	dnsWidth   = 96
 	maxHops    = 8 // длиннее цепочек CNAME не бывает, разве что петля
+	maxScans   = 100
+	scanWidth  = 4
 )
 
 // resolve: новые имена, у которых есть адрес или CNAME, и их адреса.
@@ -158,19 +163,73 @@ func (c *collector) enrich(touched map[string]*Addr) {
 		})
 	}
 	group.Wait()
-	if !c.opt.Quiet {
-		c.places(list)
-	}
 	for _, a := range list {
 		c.learn(a.PTR, fromPTR)
 	}
+	if c.opt.Quiet {
+		return
+	}
+	var standing, own []*Addr
+	for _, a := range list {
+		if !a.CDN && !a.Internal { // узел CDN отвечает отовсюду, места у него нет
+			standing = append(standing, a)
+		}
+		if a.Own && !a.seen && netinfo.IsIPv4(a.IP) {
+			own = append(own, a)
+		}
+	}
+	par.All(func() { places(standing) }, func() { c.services(own) })
+	for _, a := range list {
+		if a.CDN {
+			a.Country = ""
+		}
+	}
 }
 
-// places: где стоят серверы - одним запросом на сеть. Узел CDN отвечает отовсюду, его не спрашиваем.
-func (c *collector) places(list []*Addr) {
+// services: что сканеры видели на своих адресах; самих адресов не трогаем.
+func (c *collector) services(list []*Addr) {
+	for _, a := range list {
+		a.seen = true
+	}
+	room := max(0, maxScans-c.scanned)
+	c.scanned += len(list)
+	list = list[:min(len(list), room)]
+	type answer struct {
+		info internetdb.Info
+		err  error
+	}
+	var failed atomic.Bool // не ответил про один адрес - не ответит и про остальные
+	for i, got := range par.Map(list, scanWidth, func(a *Addr) answer {
+		if failed.Load() {
+			return answer{}
+		}
+		info, err := internetdb.Look(a.IP)
+		if err != nil {
+			failed.Store(true)
+		}
+		return answer{info, err}
+	}) {
+		if got.err != nil {
+			c.fail("порты, InternetDB: " + ui.Plain(netError(got.err).Error()))
+			continue
+		}
+		for _, n := range got.info.Names {
+			c.learn(n, fromScan)
+		}
+		switch a := list[i]; {
+		case got.info.CDN():
+			a.CDN, a.Own = true, false
+		case !got.info.Empty():
+			a.Services = &got.info
+		}
+	}
+}
+
+// places: где стоят серверы - одним запросом на сеть.
+func places(list []*Addr) {
 	var nets []string
 	for _, a := range list {
-		if a.AS.Prefix != "" && a.Country == "" && !a.CDN && !slices.Contains(nets, a.AS.Prefix) {
+		if a.AS.Prefix != "" && a.Country == "" && !slices.Contains(nets, a.AS.Prefix) {
 			nets = append(nets, a.AS.Prefix)
 		}
 	}
@@ -180,7 +239,7 @@ func (c *collector) places(list []*Addr) {
 	})
 	for _, a := range list {
 		i := slices.Index(nets, a.AS.Prefix)
-		if i < 0 || a.CDN {
+		if i < 0 {
 			continue
 		}
 		if country := asn.PlaceOf(found[i], a.IP).Country; country != asn.Nowhere {

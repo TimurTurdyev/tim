@@ -103,3 +103,17 @@ func TestForeignText(t *testing.T) {
 		t.Errorf("связанные %q, ждали %q", related, want)
 	}
 }
+
+func TestParseTHCNeighbors(t *testing.T) {
+	n, err := ParseTHCNeighbors([]byte(`{"matching_records":75,"domains":[{"domain":"A.example.com"},{"domain":"b\u001b.example"},{"domain":"shop.example.net"}]}`))
+	if err != nil || n.Seen != 75 || !slices.Equal(n.Names, []string{"a.example.com", "shop.example.net"}) {
+		t.Errorf("%+v %v", n, err)
+	}
+	if _, err := ParseTHCNeighbors([]byte("rate limit")); err == nil {
+		t.Error("не JSON принят")
+	}
+	names := []string{"a.one.com", "b.one.com", "one.com", "two.org", "www.two.org", "example.com", "www.example.com"}
+	if got := onePerSite(foreign(names, "api.example.com"), 3); !slices.Equal(got, []string{"one.com", "two.org", "a.one.com"}) {
+		t.Errorf("соседи: %v", got)
+	}
+}

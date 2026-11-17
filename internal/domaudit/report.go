@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
+	"github.com/TimurTurdyev/tim/internal/internetdb"
 )
 
 // Откуда имя: подпись источника, если это не архив.
@@ -14,6 +15,7 @@ const (
 	fromMX       = "MX"
 	fromNS       = "NS"
 	fromPTR      = "PTR"
+	fromScan     = "InternetDB"
 	fromSiteCert = "сертификат сайта"
 )
 
@@ -25,6 +27,7 @@ type Host struct {
 	Scheme string   `json:"scheme,omitempty"`
 	Server string   `json:"server,omitempty"`
 	Title  string   `json:"title,omitempty"`
+	Engine string   `json:"engine,omitempty"` // движок сайта: WordPress, Bitrix
 	Final  string   `json:"final,omitempty"`
 	Source string   `json:"source"`
 	// Sources: все источники, которые знают имя.
@@ -61,11 +64,17 @@ type Addr struct {
 	CDN      bool       `json:"cdn,omitempty"`
 	Own      bool       `json:"own,omitempty"`
 	Internal bool       `json:"internal,omitempty"`
-	Shared   []string   `json:"shared,omitempty"`
+	Shared   []string   `json:"shared,omitempty"` // чужие сайты, которые и сейчас на адресе
+	// SharedSeen: сколько имён видели на адресе за всё время - чужих и своих.
+	SharedSeen int `json:"shared_seen,omitempty"`
+	// Services: что сканеры видели на своём адресе; nil - не спрашивали или данных нет.
+	Services *internetdb.Info `json:"services,omitempty"`
 
 	direct bool     // имя домена ведёт сюда само, а не через чужой сервис
 	cnames []string // куда по дороге ведут имена
 	named  bool     // владельца сети и обратное имя уже спросили
+	seen   bool     // порты уже спросили
+	met    bool     // соседей уже спросили
 }
 
 // Server: почтовый сервер или сервер имён домена.
