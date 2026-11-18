@@ -70,7 +70,8 @@ var examples = map[string]string{
 	"tim ps":      "  tim ps chrome              # что запущено и как закрыть",
 	"tim link":    "  tim link                   # <папка>.test в /etc/hosts и сертификат своим CA\n  tim link shop              # shop.test\n  tim link --name shop.local\n  tim unlink shop",
 	"tim check":   "  tim check                  # все сайты из sites в конфиге\n  tim check example.com      # один домен\n  tim check --servers        # и серверы из ~/.ssh/config по ssh\n  tim check install --at 09:30 --servers   # каждый день, уведомление только о новом\n  tim check --machine        # FileVault, файрвол, ключи без пароля, автозапуск",
-	"tim domain":  "  tim domain example.com\n  tim domain example.com --twins   # опечатки и другие зоны, которые зарегистрированы\n  tim domain example.com --map",
+	"tim domain":  "  tim domain example.com\n  tim domain example.com --map               # страница с картой и таблицами в браузере\n  tim domain example.com --out example.xlsx  # таблицей\n  tim domain example.com --fast              # без сторонних сервисов\n  tim domain example.com --twins   # опечатки и другие зоны, которые зарегистрированы",
+	"tim ip":      "  tim ip                     # свой внешний адрес\n  tim ip 203.0.113.5         # чей адрес, что на нём, в каких он списках\n  tim ip example.com",
 	"tim notify":  "  tim notify                 # куда уходит итог обхода\n  tim notify test",
 	"tim server":  "  tim server prod            # алиас из ~/.ssh/config\n  tim server prod --attacks  # кто ломится, за сутки\n  tim server prod --traffic  # кто ходит на сайты, за час\n  tim server prod --traffic --since 1d\n  tim server prod --run disk  # заготовка: что растёт на диске\n  tim server prod --deep      # веб-оболочки, файлы пакетов, SUID\n  tim server prod --ban 203.0.113.5 --dry-run\n  tim server prod --run unit nginx",
 	"tim servers": "  tim servers                # все серверы из ~/.ssh/config\n  tim servers prod web       # только эти\n  tim servers install        # замер раз в 6 часов для прогноза диска",
@@ -96,6 +97,7 @@ var overviewSections = []struct {
 	}},
 	{"Сайты", [][2]string{
 		{"tim site <домен>", "что за сайт: адреса, домен, сертификат"},
+		{"tim domain <домен>", "домен снаружи: имена, сети, порты, соседи"},
 		{"tim audit <домен>", "аудит снаружи: открытые файлы, заголовки, куки"},
 		{"tim mail <домен>", "почта: SPF, DKIM, DMARC"},
 		{"tim check", "обход всех сайтов одной таблицей"},
