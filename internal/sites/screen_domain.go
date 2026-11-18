@@ -93,7 +93,8 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 			mapAction, tableAction,
 		},
 	}).(tui.Tab)
-	addrs := addrsTab(domain, load, command, mapAction, tableAction)
+	addrs := addrsTab(domain, load, command, mapAction, tableAction, tui.BoardAction{Key: "enter", Label: "подробно",
+		Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"ip", row.ID}) }})
 	mail := mailTab(env, domain)
 	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
 }

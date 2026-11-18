@@ -46,6 +46,9 @@ func AttacksScreen(env *app.Env, target string, since time.Duration) tui.Screen 
 		},
 		Palette: func() (string, []tui.CommandEntry) { return recipePalette(env, target) },
 		Actions: []tui.BoardAction{
+			{Key: "enter", Label: "чей адрес", When: isIP, Do: func(row *tui.BoardRow) tui.Action {
+				return env.Result([]string{"ip", strings.TrimPrefix(row.ID, ipPrefix)})
+			}},
 			{Key: "x", Label: "забанить", When: isIP, Do: func(row *tui.BoardRow) tui.Action {
 				p, ip, err := plan(row)
 				if err != nil {

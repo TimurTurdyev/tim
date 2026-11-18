@@ -235,10 +235,22 @@ func olderFlag(cmd *cobra.Command, older string, hours float64) (time.Duration, 
 
 func ipCommand(env *app.Env) *cobra.Command {
 	return app.WithJSON(&cobra.Command{
-		Use:   "ip",
-		Short: "Внешний IP: страна, город, провайдер; напрямую и через SOCKS tim",
-		Args:  cobra.NoArgs,
+		Use:   "ip [адрес|имя]",
+		Short: "Внешний IP: страна, город, провайдер; с адресом - чей он, что на нём видно и в каких он списках",
+		Long: `Без аргумента - свой внешний адрес: страна, город, провайдер, напрямую и через SOCKS tim.
+С адресом или именем - карточка чужого адреса: сеть и её владелец, место, обратное имя, порты и что на них
+отвечает, какие сайты на нём сейчас, чёрные списки почты, списки массовых сканеров. К самому адресу запросов
+нет: он уходит в whois.cymru.com, ipwho.is, internetdb.shodan.io, ip.thc.org (запасной - hackertarget.com),
+api.greynoise.io и DNS чёрных списков. Внутренний адрес никуда не уходит.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				r, err := ipCardReport(args[0])
+				if err != nil {
+					return err
+				}
+				return view.Show(r, view.AsJSON)
+			}
 			r, err := ipReport(env.Cfg.Tunnel.Port)
 			if err != nil {
 				return err
