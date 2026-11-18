@@ -67,8 +67,9 @@ type Addr struct {
 	Shared   []string   `json:"shared,omitempty"` // чужие сайты, которые и сейчас на адресе
 	// SharedSeen: сколько имён видели на адресе за всё время - чужих и своих.
 	SharedSeen int `json:"shared_seen,omitempty"`
-	// Services: что сканеры видели на своём адресе; nil - не спрашивали или данных нет.
+	// Services: что сканеры видели на своём адресе; nil - не спрашивали или данных нет. Scanned - спросили и ответ был.
 	Services *internetdb.Info `json:"services,omitempty"`
+	Scanned  bool             `json:"scanned,omitempty"`
 
 	direct bool     // имя домена ведёт сюда само, а не через чужой сервис
 	cnames []string // куда по дороге ведут имена
@@ -100,4 +101,9 @@ type Report struct {
 	Notes   []string      `json:"notes,omitempty"` // что осталось за пределами сбора
 	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
 	CRTCached time.Time `json:"crt_cached,omitzero"`
+
+	portsFailed bool
 }
+
+// PortsKnown: источник портов ответил про все адреса, которые спрашивали.
+func (r *Report) PortsKnown() bool { return !r.portsFailed }

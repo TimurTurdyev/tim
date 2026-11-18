@@ -25,6 +25,8 @@ type Options struct {
 	FreshCRT      bool
 	SkipNeighbors bool
 	Notify        func(string)
+
+	night bool // ночной обход: без HTTP, соседей, места и медленных источников
 }
 
 // collector: сбор по кругам. Круг - новые имена: их адреса, чьи они, что отвечает сайт. Имена, которые всплыли по
@@ -58,9 +60,7 @@ type collector struct {
 // Collect собирает отчёт по домену из публичных источников: имена, их адреса и сети, почту и серверы имён, ответы
 // сайтов, счётчики главной страницы и соседей по адресу.
 func Collect(domain string, opt Options) *Report {
-	c := &collector{domain: domain, opt: opt, rep: &Report{Domain: domain},
-		extra: map[string]string{}, known: map[string][]string{}, tried: map[string]string{}, dropped: map[string]bool{},
-		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
+	c := newCollector(domain, opt)
 	c.discover()
 	c.round(c.servers())
 	// Соседи первого круга - пока ждём поздние источники; у адресов, всплывших потом, - следом.
@@ -75,6 +75,25 @@ func Collect(domain string, opt Options) *Report {
 	c.group.Wait()
 	c.finish()
 	return c.rep
+}
+
+// Names: живые имена домена, их адреса и порты своих - для ночного обхода: без HTTP, соседей и медленных источников,
+// от них берётся прошлый список.
+func Names(domain string) *Report {
+	c := newCollector(domain, Options{SkipNeighbors: false, night: true})
+	c.discover()
+	c.asking.wait(sourceWait)
+	_, addrs := c.resolve(c.fresh())
+	maps.Copy(addrs, c.servers())
+	c.enrich(addrs)
+	c.finish()
+	return c.rep
+}
+
+func newCollector(domain string, opt Options) *collector {
+	return &collector{domain: domain, opt: opt, rep: &Report{Domain: domain},
+		extra: map[string]string{}, known: map[string][]string{}, tried: map[string]string{}, dropped: map[string]bool{},
+		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
 }
 
 // discover: почта и серверы имён, перебор частых имён и быстрые источники.

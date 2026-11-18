@@ -1,0 +1,70 @@
+package sites
+
+import (
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/TimurTurdyev/tim/internal/baseline"
+	"github.com/TimurTurdyev/tim/internal/domaudit"
+	"github.com/TimurTurdyev/tim/internal/internetdb"
+)
+
+// Тревога - новое имя знакомого источника и новый порт знакомого адреса. Первый ответ источника, урезанный список и
+// впервые увиденный адрес показывают старое, о котором мы не знали.
+func TestOutside(t *testing.T) {
+	t.Setenv("TIM_STATE_DIR", t.TempDir())
+	now := time.Date(2026, 3, 10, 3, 0, 0, 0, time.UTC)
+	host := func(name string, sources ...string) domaudit.Host {
+		return domaudit.Host{Name: name, IPs: []string{"192.0.2.1"}, Source: "THC", Sources: sources}
+	}
+	addr := func(ip string, ports ...int) domaudit.Addr {
+		return domaudit.Addr{IP: ip, Own: true, Scanned: true, Services: &internetdb.Info{Ports: ports}}
+	}
+	source := func(name string, cut bool) domaudit.SourceState {
+		return domaudit.SourceState{Name: name, Names: 1, Cut: cut}
+	}
+	steps := []struct {
+		name string
+		rep  domaudit.Report
+		want []string // что ждёт отметки
+	}{
+		{"первое наблюдение запоминает всё", domaudit.Report{Hosts: []domaudit.Host{host("a.example.com", "THC")},
+			Sources: []domaudit.SourceState{source("THC", false)}, Addrs: []domaudit.Addr{addr("192.0.2.1", 80, 443)}}, nil},
+		{"первый ответ crt.sh - не тревога", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC", "crt.sh"), host("old.example.com", "crt.sh")},
+			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)}, Addrs: []domaudit.Addr{addr("192.0.2.1", 80, 443)}}, nil},
+		{"новое имя того же crt.sh - тревога", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC"), host("old.example.com", "crt.sh"), host("vpn.example.com", "crt.sh")},
+			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)}, Addrs: []domaudit.Addr{addr("192.0.2.1", 80, 443)}},
+			[]string{"host vpn.example.com"}},
+		{"имя урезанного списка и порты нового адреса - не тревога, порт знакомого - тревога", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC"), host("vpn.example.com", "crt.sh"), host("cut.example.com", "THC")},
+			Sources: []domaudit.SourceState{source("THC", true), source("crt.sh", false)},
+			Addrs:   []domaudit.Addr{addr("192.0.2.1", 80, 443, 8080), addr("192.0.2.7", 22, 443)}},
+			[]string{"host vpn.example.com", "port 192.0.2.1:8080"}},
+		{"DNS не ответил - ничего не пропало", domaudit.Report{}, []string{"host vpn.example.com", "port 192.0.2.1:8080"}},
+		{"про адрес сегодня не спрашивали - его порт ждёт", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC"), host("vpn.example.com", "crt.sh")},
+			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)},
+			Addrs:   []domaudit.Addr{{IP: "192.0.2.1", Own: true}, addr("192.0.2.7", 22, 443)}},
+			[]string{"host vpn.example.com", "port 192.0.2.1:8080"}},
+		{"порт нового адреса в следующий раз - тревога, закрытый порт уходит сам", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC"), host("vpn.example.com", "crt.sh")},
+			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)},
+			Addrs:   []domaudit.Addr{addr("192.0.2.1", 80, 443), addr("192.0.2.7", 22, 443, 3306)}},
+			[]string{"host vpn.example.com", "port 192.0.2.7:3306"}},
+	}
+	for i, s := range steps {
+		s.rep.Domain = "example.com"
+		observeOutside(&s.rep, now.Add(time.Duration(i)*24*time.Hour))
+		var got []string
+		for _, it := range baseline.Pending(outsideObject("example.com")) {
+			got = append(got, it.Kind+" "+it.Key)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, s.want) {
+			t.Errorf("%s: %v, ждали %v", s.name, got, s.want)
+		}
+	}
+}

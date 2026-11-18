@@ -123,7 +123,7 @@ func domainNews(domain string) []string {
 			out = append(out, w)
 		}
 	}
-	return out
+	return append(out, outsideNews(domain)...)
 }
 
 // recordFix: что делать, если запись сменил не ты.

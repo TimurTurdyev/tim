@@ -36,18 +36,18 @@ var (
 // crt.sh глубже по истории, остальные видят то, чего нет в сертификатах.
 var sources = []source{
 	{name: "CertSpotter", label: fromCert, fetch: fetchCertSpotter},
-	{name: "crt.sh", label: fromCert, ttl: namesTTL, fetch: fetchCRT},
+	{name: "crt.sh", label: fromCert, ttl: namesTTL, slow: true, fetch: fetchCRT},
 	{name: sourceTHC, label: sourceTHC, ttl: namesTTL, fetch: fetchTHC},
 	{name: "subdomain.center", label: "subdomain.center", ttl: namesTTL, fetch: fetchSubdomainCenter},
 	{name: sourceHackertarget, label: sourceHackertarget, ttl: namesTTL, quota: true, fetch: fetchHostSearch},
 }
 
 // source: источник имён. label - чем подписать имя; ttl - сколько верить своему кэшу, 0 - кэш у самого источника;
-// quota - дневной лимит общий с соседями, без соседей его не тратим.
+// quota - дневной лимит общий с соседями, без соседей его не тратим; slow - ночной обход его не ждёт.
 type source struct {
 	name, label string
 	ttl         time.Duration
-	quota       bool
+	quota, slow bool
 	fetch       func(domain string) (nameList, error)
 }
 
@@ -90,6 +90,11 @@ func askSources(domain string, opt Options) *asking {
 		left: len(list), started: time.Now()}
 	for i, s := range list {
 		go func() {
+			if opt.night && (s.quota || s.slow) {
+				got, state := s.remembered(domain)
+				a.arrived <- sourceAnswer{i, got, state}
+				return
+			}
 			got, state := s.ask(domain, opt.FreshCRT)
 			a.arrived <- sourceAnswer{i, got, state}
 		}()
@@ -179,6 +184,15 @@ func (s source) ask(domain string, fresh bool) (nameList, SourceState) {
 	}
 	state.Names, state.Cut, state.Error = len(got.Subs), got.Cut, got.Error
 	return got, state
+}
+
+// remembered: прошлый список любого возраста, без обращения к источнику.
+func (s source) remembered(domain string) (nameList, SourceState) {
+	e, ok := loadNames(s.name, domain)
+	if !ok || e.Value.Got.IsZero() {
+		return nameList{}, SourceState{Name: s.name, Error: "ночью не спрашиваем"}
+	}
+	return e.Value, SourceState{Name: s.name, Names: len(e.Value.Subs), Cut: e.Value.Cut, Cached: e.Value.Got}
 }
 
 // wait: ответ источника или отказ, если тот думает слишком долго; ответ ложится в кэш, даже если его не дождались.

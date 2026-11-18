@@ -47,6 +47,11 @@ func watchDomains(domains []string) {
 	par.Map(domains, 4, watchDomain)
 }
 
+// watchOutsides: имена и порты доменов обхода снаружи - только ночью: это десятки запросов на домен.
+func watchOutsides(domains []string) {
+	par.Map(domains, 2, func(d string) bool { watchOutside(d); return true })
+}
+
 func roundAlerts(rows []health.Row, domains, aliases []string) []alert {
 	var out []alert
 	for _, r := range rows {

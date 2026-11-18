@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/tui"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -35,20 +36,25 @@ func addrsData(rep *domaudit.Report) tui.BoardData {
 	d := tui.BoardData{Status: ui.Count(len(rep.Addrs), "адрес", "адреса", "адресов"), Tab: "Адреса " + strconv.Itoa(len(rep.Addrs)),
 		Head: shares(rep), Wide: true, Empty: "Адресов нет"}
 	d.Columns = ui.Pad("АДРЕС", addrCol) + ui.Pad("СЕТЬ", ownerCol) + ui.Pad("ГДЕ", placeCol) + ui.Pad("ПОРТЫ", portsCol) + "ИМЁН"
+	_, fresh := outsideNew(rep.Domain)
 	groups := []struct {
 		name string
 		rows []tui.BoardRow
-	}{{name: "САЙТЫ"}, {name: "ПОЧТА"}, {name: "DNS"}}
+	}{{name: "НОВЫЙ ПОРТ СНАРУЖИ"}, {name: "САЙТЫ"}, {name: "ПОЧТА"}, {name: "DNS"}}
 	for _, a := range rep.Addrs {
-		i := 0
+		row, i := addrRow(a), 1
 		switch {
+		case len(fresh[a.IP]) > 0:
+			i = 0
+			row.ID = newID + kindPort + " " + a.IP
+			row.Card.Facts = slices.Insert(row.Card.Facts, 0, newPortFact(a.IP, fresh[a.IP]))
 		case len(a.Hosts) > 0:
 		case len(a.MX) > 0:
-			i = 1
-		default:
 			i = 2
+		default:
+			i = 3
 		}
-		groups[i].rows = append(groups[i].rows, addrRow(a))
+		groups[i].rows = append(groups[i].rows, row)
 	}
 	for _, g := range groups {
 		for _, row := range g.rows {
@@ -69,6 +75,14 @@ func addrRow(a domaudit.Addr) tui.BoardRow {
 		Cells: ui.Fit(a.IP, addrCol-1) + " " + ui.Fit(owner, ownerCol-1) + " " + ui.Pad(placeText(a), placeCol) +
 			ui.Dim(ui.Fit(ports, portsCol-1)) + " " + fmt.Sprintf("%4d", len(a.Hosts)),
 		Card: addrCard(a, owner)}
+}
+
+func newPortFact(ip string, items []baseline.Item) tui.Fact {
+	var ports []string
+	for _, it := range items {
+		ports = append(ports, strings.TrimPrefix(it.Key, ip+":"))
+	}
+	return tui.Fact{Label: "новое", Value: ui.Warn("порт "+strings.Join(ports, ", ")) + ui.Dim(" · "+appearedText(items[0])+" · не твой - закрыть в файрволе")}
 }
 
 func addrCard(a domaudit.Addr, owner string) *tui.Card {

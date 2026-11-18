@@ -144,6 +144,28 @@ func Accept(object, kind, key string) error {
 	return store(object, s)
 }
 
+// AcceptAll отмечает своим сразу несколько: они не новые, а только сейчас стали видны.
+func AcceptAll(object string, items []Item) error {
+	if len(items) == 0 {
+		return nil
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	s := load(object)
+	own := map[[2]string]bool{}
+	for _, it := range items {
+		own[[2]string{it.Kind, it.Key}] = true
+	}
+	s.New = slices.DeleteFunc(s.New, func(it Item) bool {
+		if own[[2]string{it.Kind, it.Key}] {
+			s.Known[it.Kind] = append(s.Known[it.Kind], it.Key)
+			return true
+		}
+		return false
+	})
+	return store(object, s)
+}
+
 // Since: с какого наблюдения считается новое - самое раннее After среди нового.
 func Since(items []Item) time.Time {
 	var t time.Time

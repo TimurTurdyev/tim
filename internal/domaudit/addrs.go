@@ -23,6 +23,7 @@ const (
 	dnsWidth   = 96
 	maxHops    = 8 // длиннее цепочек CNAME не бывает, разве что петля
 	maxScans   = 100
+	nightScans = 20
 	scanWidth  = 4
 )
 
@@ -178,6 +179,9 @@ func (c *collector) enrich(touched map[string]*Addr) {
 			own = append(own, a)
 		}
 	}
+	if c.opt.night {
+		standing = nil
+	}
 	par.All(func() { places(standing) }, func() { c.services(own) })
 	for _, a := range list {
 		if a.CDN {
@@ -191,7 +195,11 @@ func (c *collector) services(list []*Addr) {
 	for _, a := range list {
 		a.seen = true
 	}
-	room := max(0, maxScans-c.scanned)
+	limit := maxScans
+	if c.opt.night {
+		limit = nightScans
+	}
+	room := max(0, limit-c.scanned)
 	c.scanned += len(list)
 	list = list[:min(len(list), room)]
 	type answer struct {
@@ -210,9 +218,11 @@ func (c *collector) services(list []*Addr) {
 		return answer{info, err}
 	}) {
 		if got.err != nil {
+			c.rep.portsFailed = true
 			c.fail("порты, InternetDB: " + ui.Plain(netError(got.err).Error()))
 			continue
 		}
+		list[i].Scanned = !c.rep.portsFailed
 		for _, n := range got.info.Names {
 			c.learn(n, fromScan)
 		}

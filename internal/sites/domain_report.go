@@ -65,6 +65,10 @@ func domainReport(rep *domaudit.Report, about domainAbout) report.Report {
 	if near := neighborFacts(rep); len(near) > 0 {
 		r.Blocks = append(r.Blocks, report.Heading("Соседи по адресу"), near)
 	}
+	if news := outsideNews(rep.Domain); len(news) > 0 {
+		r.Blocks = append(r.Blocks, report.Heading("Новое снаружи"), report.Facts{{Key: "с прошлого раза", Value: strings.Join(news, ", "), Level: level.Warn}},
+			report.Note("своё отметить: space на экране tim domain "+rep.Domain))
+	}
 	if len(found) > 0 {
 		r.Blocks = append(r.Blocks, report.Heading("Что не так"), found)
 	}

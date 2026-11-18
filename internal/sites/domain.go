@@ -40,15 +40,24 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	}
 	opt := domaudit.Options{Quiet: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
 	if o.json {
-		return view.Show(report.Report{Schema: "tim.domain/1", Data: domaudit.Collect(name, opt)}, true)
+		return view.Show(report.Report{Schema: "tim.domain/1", Data: collectDomain(name, opt)}, true)
 	}
 	var rep *domaudit.Report
 	var about domainAbout
-	par.All(func() { rep = domaudit.Collect(name, opt) }, func() { about = aboutDomain(name) })
+	par.All(func() { rep = collectDomain(name, opt) }, func() { about = aboutDomain(name) })
 	if err := view.Show(domainReport(rep, about), false); err != nil {
 		return err
 	}
 	return saveDomain(rep, o)
+}
+
+// collectDomain: полный сбор и сравнение с прошлым разом; быстрый видит не всё, с ним не сравниваем.
+func collectDomain(name string, opt domaudit.Options) *domaudit.Report {
+	rep := domaudit.Collect(name, opt)
+	if !opt.Quiet {
+		observeOutside(rep, time.Now())
+	}
+	return rep
 }
 
 // saveDomain: --out по расширению - .xlsx таблицей, остальное страницей; --map открывает страницу в браузере.

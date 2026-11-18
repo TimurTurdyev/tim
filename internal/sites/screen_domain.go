@@ -3,6 +3,7 @@ package sites
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/app"
+	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
@@ -48,7 +50,7 @@ func (l *domainLoad) get(fresh bool) (*domaudit.Report, []string) {
 	}
 	note("сайт, сертификат, домен и почта")
 	par.All(func() { l.lamps = domainLamps(l.domain) },
-		func() { l.rep = domaudit.Collect(l.domain, domaudit.Options{FreshCRT: fresh, Notify: note}) })
+		func() { l.rep = collectDomain(l.domain, domaudit.Options{FreshCRT: fresh, Notify: note}) })
 	return l.rep, l.lamps
 }
 
@@ -89,12 +91,12 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 		Command: command, Wait: load.wait,
 		Load: func(fresh bool) tui.BoardData { rep, lamps := load.get(fresh); return namesData(rep, lamps) },
 		Actions: []tui.BoardAction{
-			{Key: "enter", Label: "подробно", Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"site", row.ID}) }},
-			mapAction, tableAction,
+			{Key: "enter", Label: "подробно", Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"site", plainID(row)}) }},
+			mapAction, tableAction, acceptAction(outsideObject(domain)),
 		},
 	}).(tui.Tab)
-	addrs := addrsTab(domain, load, command, mapAction, tableAction, tui.BoardAction{Key: "enter", Label: "подробно",
-		Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"ip", row.ID}) }})
+	addrs := addrsTab(domain, load, command, mapAction, tableAction, acceptAction(outsideObject(domain)), tui.BoardAction{Key: "enter", Label: "подробно",
+		Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"ip", plainID(row)}) }})
 	mail := mailTab(env, domain)
 	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
 }
@@ -106,15 +108,28 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 	d.Columns = ui.Pad("ИМЯ", 30) + ui.Pad("ОТВЕТ", 12) + "ЗАМЕТКА"
 	d.Wide = true
 	v := newDomainView(rep)
+	fresh, _ := outsideNew(rep.Domain)
+	group := func(h domaudit.Host) string {
+		if _, ok := fresh[h.Name]; ok {
+			return "НОВОЕ СНАРУЖИ"
+		}
+		return hostGroup(rep, h)
+	}
 	hosts := sortHosts(rep)
+	slices.SortStableFunc(hosts, func(a, b domaudit.Host) int { return newRank(fresh, a) - newRank(fresh, b) })
 	counts := map[string]int{}
 	for _, h := range hosts {
-		counts[hostGroup(rep, h)]++
+		counts[group(h)]++
 	}
 	for _, h := range hosts {
 		row := v.row(h)
-		g := hostGroup(rep, h)
+		g := group(h)
 		row.Group = g + " \u00b7 " + strconv.Itoa(counts[g])
+		if it, ok := fresh[h.Name]; ok {
+			row.ID = newID + kindHost + " " + h.Name
+			row.Pane = append(row.Pane, ui.Warn("новое имя: "+appearedText(it)+", знает "+h.Source),
+				ui.Dim("\u2192 не твоё - найти, кто завёл запись в DNS; своё - space"))
+		}
 		d.Rows = append(d.Rows, row)
 	}
 	if len(rep.Related) > 0 {
@@ -128,6 +143,17 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 	}
 	d.Empty = "Ни одно имя не резолвится: домена нет, он не делегирован или DNS недоступен"
 	return d
+}
+
+// newRank: сам домен первым, за ним новое снаружи.
+func newRank(fresh map[string]baseline.Item, h domaudit.Host) int {
+	if _, ok := fresh[h.Name]; ok {
+		return 1
+	}
+	if h.Source == "апекс" {
+		return 0
+	}
+	return 2
 }
 
 // hostGroup: беда, сам домен или остальные имена.

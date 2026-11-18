@@ -20,12 +20,21 @@ import (
 // newID: у строки нового ID - "new <вид> <ключ>", по нему space отмечает своим.
 const newID = "new "
 
-// acceptAction: space - новое домена своё; свой выпуск - и центр, который его выпустил.
-func acceptAction(domain string) tui.BoardAction {
+// plainID: имя или адрес строки; у новой - без приставки вида.
+func plainID(row *tui.BoardRow) string {
+	rest, ok := strings.CutPrefix(row.ID, newID)
+	if !ok {
+		return row.ID
+	}
+	_, key, _ := strings.Cut(rest, " ")
+	return key
+}
+
+// acceptAction: space - новое объекта своё; свой выпуск - и центр, который его выпустил; у адреса - все его порты.
+func acceptAction(obj string) tui.BoardAction {
 	return tui.BoardAction{Key: "space", Label: "отметить своим", Doing: "отмечаю своим",
 		When: func(row *tui.BoardRow) bool { return strings.HasPrefix(row.ID, newID) },
 		Run: func(row *tui.BoardRow) (string, error) {
-			obj := domainObject(domain)
 			kind, key, _ := strings.Cut(strings.TrimPrefix(row.ID, newID), " ")
 			if kind == "ct" {
 				for _, it := range baseline.Pending(obj) {
@@ -34,6 +43,10 @@ func acceptAction(domain string) tui.BoardAction {
 						_ = baseline.Accept(obj, "ct-issuer", parts[len(parts)-1])
 					}
 				}
+			}
+			if kind == kindPort {
+				own := slices.DeleteFunc(baseline.Pending(obj), func(it baseline.Item) bool { return it.Kind != kindPort || !strings.HasPrefix(it.Key, key+":") })
+				return "отмечено своим", baseline.AcceptAll(obj, own)
 			}
 			return "отмечено своим", baseline.Accept(obj, kind, key)
 		}}
@@ -46,7 +59,7 @@ func recordsTab(domain string) tui.Tab {
 		Loading: "спрашиваю DNS " + domain,
 		Command: func(*tui.BoardRow) string { return "tim dns " + domain },
 		Load:    func(bool) tui.BoardData { return recordsData(domain, watchDomain(domain)) },
-		Actions: []tui.BoardAction{acceptAction(domain)},
+		Actions: []tui.BoardAction{acceptAction(domainObject(domain))},
 	}).(tui.Tab)
 }
 
@@ -118,7 +131,7 @@ func certTab(domain string) tui.Tab {
 		Loading: "сертификат " + domain + " и журналы выпусков",
 		Command: func(*tui.BoardRow) string { return "tim cert " + domain },
 		Load:    func(bool) tui.BoardData { return certData(domain, watchDomain(domain)) },
-		Actions: []tui.BoardAction{acceptAction(domain),
+		Actions: []tui.BoardAction{acceptAction(domainObject(domain)),
 			{Key: "w", Label: "браузер", Free: true, Doing: "открываю crt.sh", Run: func(*tui.BoardRow) (string, error) {
 				return "crt.sh открыт в браузере", runner.OpenBrowser("https://crt.sh/?q=" + domain)
 			}}},

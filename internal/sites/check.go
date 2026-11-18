@@ -65,6 +65,9 @@ func check(env *app.Env, args []string, o checkOptions) error {
 	rows := checkRows(hosts, aliases)
 	domains := roundDomains(hosts)
 	watchDomains(domains)
+	if o.notify {
+		watchOutsides(domains)
+	}
 	if o.json {
 		return ui.JSON(rows)
 	}
