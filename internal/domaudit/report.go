@@ -5,6 +5,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/internetdb"
+	"github.com/TimurTurdyev/tim/internal/portscan"
 )
 
 // Откуда имя: подпись источника, если это не архив.
@@ -70,12 +71,16 @@ type Addr struct {
 	// Services: что сканеры видели на своём адресе; nil - не спрашивали или данных нет. Scanned - спросили и ответ был.
 	Services *internetdb.Info `json:"services,omitempty"`
 	Scanned  bool             `json:"scanned,omitempty"`
+	// Open: что ответило на портах, когда проверили сами; Checked - проверили.
+	Open    []portscan.Service `json:"open,omitempty"`
+	Checked bool               `json:"checked,omitempty"`
 
 	direct bool     // имя домена ведёт сюда само, а не через чужой сервис
 	cnames []string // куда по дороге ведут имена
 	named  bool     // владельца сети и обратное имя уже спросили
 	seen   bool     // порты уже спросили
 	met    bool     // соседей уже спросили
+	tried  bool     // порты уже проверяли сами
 }
 
 // Server: почтовый сервер или сервер имён домена.

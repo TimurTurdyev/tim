@@ -104,6 +104,8 @@ const list = x => x || [];
 const hosts = list(rep.hosts), addrs = list(rep.addrs), mx = list(rep.mx), ns = list(rep.ns), txt = list(rep.txt);
 const networks = list(rep.networks), countries = list(rep.countries);
 const addrByIP = new Map(addrs.map(a => [a.ip, a]));
+const portsOf = a => list((rep.seen[a.ip] || {}).ports).join(" ");
+const answersOf = a => list((rep.seen[a.ip] || {}).answers);
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -173,7 +175,7 @@ for (const h of hosts) {
   note(tech, (h.server || "").split(/[\/(]/)[0].trim(), h.name);
   note(tech, (h.engine || "").split(/ v?\d| - /)[0].trim(), h.name);
 }
-for (const a of addrs) for (const p of list((a.services || {}).products)) note(tech, p.replace(/ \S*\d\S*$/, ""), a.ip);
+for (const a of addrs) for (const p of answersOf(a)) note(tech, p.replace(/ \S*\d\S*$/, ""), a.ip);
 bars("Сети, адресов", networks.map(n => [netName(n) + (n.cdn ? " (CDN)" : ""), n.addrs]).sort((a, b) => b[1] - a[1]));
 bars("Где стоят, адресов", countries.map(c => [c.cdn ? "везде (CDN)" : c.code || "неизвестно", c.addrs]).sort((a, b) => b[1] - a[1]));
 bars("Серверы и технологии", [...tech].map(([k, v]) => [k, v.size]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
@@ -224,8 +226,8 @@ function slots(f) {
   if (collapse && f.addrs.length > 8 && !opened.has(key))
     return [{ label: plural(f.addrs.length, "адрес", "адреса", "адресов"), sub: "раскрыть", ips: f.addrs.map(a => a.ip), open: key, tip: more(f.addrs.map(a => a.ip), 12) }];
   return f.addrs.map(a => {
-    const ports = list((a.services || {}).ports).join(" ");
-    return { label: a.ip, sub: ports || a.ptr || "", ips: [a.ip], tip: [a.ip, a.ptr, (a.as || {}).prefix, ports && "порты " + ports, list((a.services || {}).products).join(", ")].filter(Boolean).join("\n") };
+    const ports = portsOf(a);
+    return { label: a.ip, sub: ports || a.ptr || "", ips: [a.ip], tip: [a.ip, a.ptr, (a.as || {}).prefix, ports && "порты " + ports, answersOf(a).join(", ")].filter(Boolean).join("\n") };
   });
 }
 
@@ -400,8 +402,8 @@ table("Адреса", [
   { title: "Подсеть", cls: "key nowrap", get: a => (a.as || {}).prefix },
   { title: "Сеть", get: a => ownerOf(a) },
   { title: "Где", cls: "short", get: placeOf },
-  { title: "Порты", cls: "key short", get: a => list((a.services || {}).ports).join(" ") },
-  { title: "Что отвечает", get: a => list((a.services || {}).products).join(", ") },
+  { title: "Порты", cls: "key short", get: portsOf },
+  { title: "Что отвечает", get: a => answersOf(a).join(", ") },
   { title: "CVE по версии", num: true, get: a => list((a.services || {}).cve).length },
   { title: "Имён", num: true, get: a => list(a.hosts).length },
   { title: "Соседи", cls: "long", get: a => more(list(a.shared), 4) },
@@ -422,7 +424,8 @@ byId("find").addEventListener("input", e => {
 const src = byId("sources");
 const say = text => src.append(el("p", "", text));
 if (list(rep.sources).length) say("Имена: " + rep.sources.map(s => s.name + " " + s.names + (s.cut ? " (отдал не всё)" : "") + (s.error ? " (" + s.error + ")" : "")).join(", "));
-if (addrs.some(a => a.services)) say("Порты и версии - по данным Shodan, до недели назад. CVE подобраны по номеру версии: Debian и Ubuntu чинят, не меняя номер.");
+if (addrs.some(a => a.checked)) say("Порты своих серверов проверены сами, по ответу сервиса; порты сверх списка - по данным Shodan.");
+if (addrs.some(a => a.services && !a.checked)) say("Порты и версии - по данным Shodan, до недели назад. CVE подобраны по номеру версии: Debian и Ubuntu чинят, не меняя номер.");
 list(rep.notes).concat(list(rep.errors)).forEach(say);
 if (list(rep.related).length) say("В тех же сертификатах: " + more(rep.related, 20));
 if (list(rep.trackers).length) say("Счётчики: " + rep.trackers.map(t => t.kind + " " + t.id).join(", "));

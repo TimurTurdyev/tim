@@ -57,10 +57,7 @@ func domainReport(rep *domaudit.Report, about domainAbout) report.Report {
 		r.Blocks = append(r.Blocks, report.Heading("Сети"), networksTable(rep), report.Heading("Имена"), namesTable(rep))
 	}
 	if t := portsTable(rep); len(t.Rows) > 0 {
-		r.Blocks = append(r.Blocks, report.Heading("Порты наружу"), t)
-		if note := cveNote(rep); note != "" {
-			r.Blocks = append(r.Blocks, report.Note(note))
-		}
+		r.Blocks = append(r.Blocks, report.Heading("Порты наружу"), t, report.Note(portsNote(rep)))
 	}
 	if near := neighborFacts(rep); len(near) > 0 {
 		r.Blocks = append(r.Blocks, report.Heading("Соседи по адресу"), near)
@@ -283,9 +280,15 @@ func hostWhat(h domaudit.Host, note string) string {
 func portsTable(rep *domaudit.Report) report.Table {
 	t := report.Table{Columns: []report.Column{{Title: "АДРЕС", Style: report.Key}, {Title: "ПОРТЫ"}, {Title: "ЧТО ОТВЕЧАЕТ", Style: report.Muted}, {Title: "CVE", Kind: report.Number}}}
 	for _, a := range rep.Addrs {
-		if s := a.Services; s != nil {
-			t.Rows = append(t.Rows, []any{a.IP, ui.Clip(portList(s.Ports), 40), ui.Clip(strings.Join(s.Products, ", "), whatWidth), len(s.CVE)})
+		ports := a.Ports()
+		if len(ports) == 0 {
+			continue
 		}
+		cve := 0
+		if a.Services != nil {
+			cve = len(a.Services.CVE)
+		}
+		t.Rows = append(t.Rows, []any{a.IP, ui.Clip(portList(ports), 40), ui.Clip(strings.Join(a.Answers(), ", "), whatWidth), cve})
 	}
 	return t
 }
@@ -298,14 +301,42 @@ func portList(ports []int) string {
 	return strings.Join(out, " ")
 }
 
-// cveNote: уязвимости - догадка по номеру версии, поэтому счётчиком и с оговоркой.
-func cveNote(rep *domaudit.Report) string {
+// portsNote: откуда порты; уязвимости - догадка по номеру версии, поэтому счётчиком и с оговоркой.
+func portsNote(rep *domaudit.Report) string {
+	checked, shodan, cve := false, false, false
 	for _, a := range rep.Addrs {
-		if a.Services != nil && len(a.Services.CVE) > 0 {
-			return "порты и версии - по данным Shodan, до недели назад; CVE подобраны по номеру версии: Debian и Ubuntu чинят, не меняя номер"
+		checked = checked || a.Checked
+		shodan = shodan || a.Services != nil && !a.Checked
+		cve = cve || a.Services != nil && len(a.Services.CVE) > 0
+	}
+	var parts []string
+	if checked {
+		parts = append(parts, "порты проверены сейчас, по ответу сервиса")
+	}
+	if shodan {
+		parts = append(parts, "порты и версии - по данным Shodan, до недели назад (проверить самим: --scan)")
+	}
+	if cve {
+		parts = append(parts, "CVE подобраны по номеру версии: Debian и Ubuntu чинят, не меняя номер")
+	}
+	return strings.Join(parts, "; ")
+}
+
+// portFindings: сервисы, которым не место в интернете, - по ответу самого сервиса.
+func portFindings(rep *domaudit.Report) report.Findings {
+	var out report.Findings
+	for _, a := range rep.Addrs {
+		for _, s := range a.Open {
+			why := s.Risk()
+			if why == "" || s.Silent {
+				continue
+			}
+			out = append(out, report.Finding{Area: "порты", Level: level.Bad, Subject: a.IP, Intrusive: true,
+				Text: fmt.Sprintf("наружу отвечает %s на %s:%d", strings.TrimSpace(s.Name+" "+s.Product), a.IP, s.Port), Why: why,
+				Fix: fmt.Sprintf("слушать на 127.0.0.1 или закрыть в файрволе, снаружи ходить через ssh-туннель: tim tunnel port %d <сервер>", s.Port)})
 		}
 	}
-	return "порты и версии - по данным Shodan, до недели назад"
+	return out
 }
 
 func neighborFacts(rep *domaudit.Report) report.Facts {
@@ -335,7 +366,7 @@ func domainFindings(rep *domaudit.Report) report.Findings {
 		return report.Findings{{Area: "dns", Level: level.Bad, Text: "ни одно имя не резолвится: домена нет, он не делегирован или DNS недоступен",
 			Fix: "проверить, нет ли опечатки, и записи у регистратора: tim site " + rep.Domain}}
 	}
-	var out report.Findings
+	out := portFindings(rep)
 	var badCert []string
 	for _, h := range rep.Hosts {
 		switch {

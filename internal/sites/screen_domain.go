@@ -25,10 +25,12 @@ import (
 // domainLoad: один сбор на все вкладки домена; этапы - для заметки, пока он идёт.
 type domainLoad struct {
 	domain  string
+	scan    bool       // порты своих серверов проверяем сами
 	mu      sync.Mutex // сам сбор: вкладки ждут один и тот же
 	rep     *domaudit.Report
 	lamps   []string
-	smu     sync.Mutex // этапы - их читает заметка, пока сбор держит mu
+	smu     sync.Mutex // этапы и свои адреса - их читает отрисовка, пока сбор держит mu
+	mine    map[string]bool
 	stages  []string
 	started time.Time
 }
@@ -50,8 +52,40 @@ func (l *domainLoad) get(fresh bool) (*domaudit.Report, []string) {
 	}
 	note("сайт, сертификат, домен и почта")
 	par.All(func() { l.lamps = domainLamps(l.domain) },
-		func() { l.rep = collectDomain(l.domain, domaudit.Options{FreshCRT: fresh, Notify: note}) })
+		func() { l.rep = collectDomain(l.domain, domaudit.Options{Scan: l.scan, FreshCRT: fresh, Notify: note}) })
+	l.smu.Lock()
+	l.mine = map[string]bool{}
+	for _, a := range l.rep.Addrs {
+		l.mine[a.IP] = a.Own
+	}
+	l.smu.Unlock()
 	return l.rep, l.lamps
+}
+
+// own: адрес - сервер домена; зовётся при каждой отрисовке, поэтому мимо замка сбора.
+func (l *domainLoad) own(ip string) bool {
+	l.smu.Lock()
+	defer l.smu.Unlock()
+	return l.mine[ip]
+}
+
+// check: порты адреса проверяются самими и остаются в отчёте.
+func (l *domainLoad) check(ip string) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	i := slices.IndexFunc(l.rep.Addrs, func(a domaudit.Addr) bool { return a.IP == ip })
+	if i < 0 {
+		return "", ui.Errorf("%s в отчёте нет", ip)
+	}
+	a := &l.rep.Addrs[i]
+	r := domaudit.Check(a)
+	switch {
+	case r.Faked:
+		return "", ui.Errorf("порты не проверить: за сервер отвечает кто-то на пути")
+	case len(r.Services) == 0:
+		return ip + ": ни один из проверенных портов не ответил", nil
+	}
+	return ip + ": " + strings.Join(a.Answers(), ", "), nil
 }
 
 // wait: заметка сбора - бегунок, секунды и последний этап.
@@ -68,7 +102,11 @@ func (l *domainLoad) wait(width int) []string {
 // DomainScreen: домен целиком вкладками - имена, адреса, записи, сертификат, почта, двойники; лампы сайта,
 // сертификата, регистрации и почты над таблицей.
 func DomainScreen(env *app.Env, domain string) tui.Screen {
-	load := &domainLoad{domain: domain, started: time.Now()}
+	return domainScreen(env, domain, ownSite(env.Cfg, domain))
+}
+
+func domainScreen(env *app.Env, domain string, scan bool) tui.Screen {
+	load := &domainLoad{domain: domain, scan: scan, started: time.Now()}
 	mapAction := tui.BoardAction{Key: "w", Label: "браузер", Doing: "рисую карту домена", Free: true, Run: func(*tui.BoardRow) (string, error) {
 		rep, _ := load.get(false)
 		path := filepath.Join(os.TempDir(), "tim-domain-"+rep.Domain+".html")
@@ -95,7 +133,7 @@ func DomainScreen(env *app.Env, domain string) tui.Screen {
 			mapAction, tableAction, acceptAction(outsideObject(domain)),
 		},
 	}).(tui.Tab)
-	addrs := addrsTab(domain, load, command, mapAction, tableAction, acceptAction(outsideObject(domain)), tui.BoardAction{Key: "enter", Label: "подробно",
+	addrs := addrsTab(domain, load, command, mapAction, tableAction, checkAction(load), acceptAction(outsideObject(domain)), tui.BoardAction{Key: "enter", Label: "подробно",
 		Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"ip", plainID(row)}) }})
 	mail := mailTab(env, domain)
 	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)

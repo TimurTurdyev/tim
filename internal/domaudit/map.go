@@ -16,12 +16,21 @@ var page string
 
 // WriteMap собирает самодостаточную HTML-страницу: сводка, карта и таблицы.
 func WriteMap(rep *Report, path string) error {
+	type seen struct {
+		Ports   []int    `json:"ports"`
+		Answers []string `json:"answers"`
+	}
+	ports := map[string]seen{}
+	for _, a := range rep.Addrs {
+		ports[a.IP] = seen{a.Ports(), a.Answers()}
+	}
 	data, err := json.Marshal(struct {
 		*Report
-		Networks  []Network `json:"networks"`
-		Countries []Country `json:"countries"`
-		Made      time.Time `json:"made"`
-	}{rep, Networks(rep), Countries(rep), time.Now()})
+		Networks  []Network       `json:"networks"`
+		Countries []Country       `json:"countries"`
+		Seen      map[string]seen `json:"seen"`
+		Made      time.Time       `json:"made"`
+	}{rep, Networks(rep), Countries(rep), ports, time.Now()})
 	if err != nil {
 		return err
 	}

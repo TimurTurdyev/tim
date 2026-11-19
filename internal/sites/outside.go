@@ -8,6 +8,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
+	"github.com/TimurTurdyev/tim/internal/portscan"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
@@ -18,6 +19,8 @@ const (
 	kindPort   = "port"
 	kindSource = "source"
 	kindAddr   = "addr"
+
+	checkedMark = " проверен" // у адреса, чьи порты проверили сами
 )
 
 // watchedSources: имена не из источников, за которыми следим; остальное видит только полный сбор, и ночью оно
@@ -26,8 +29,8 @@ var watchedSources = []string{"апекс", "перебор", "MX", "NS"}
 
 func outsideObject(domain string) string { return "outside-" + domain }
 
-// watchOutside: ночное наблюдение.
-func watchOutside(domain string) { observeOutside(domaudit.Names(domain), time.Now()) }
+// watchOutside: ночное наблюдение; обходятся домены из sites, их порты проверяем сами.
+func watchOutside(domain string) { observeOutside(domaudit.Names(domain, true), time.Now()) }
 
 // observeOutside сравнивает отчёт с прошлым разом; что стало видно только сейчас, но не новое, сразу своё.
 func observeOutside(rep *domaudit.Report, now time.Time) {
@@ -51,25 +54,31 @@ func outsideSnapshot(rep *domaudit.Report) baseline.Snapshot {
 			snap[kindSource] = append(snap[kindSource], baseline.Item{Key: s.Name})
 		}
 	}
-	if !rep.PortsKnown() {
-		return snap
-	}
-	snap[kindPort], snap[kindAddr] = []baseline.Item{}, []baseline.Item{}
 	scanned := map[string]bool{}
+	var ports, addrs []baseline.Item
 	for _, a := range rep.Addrs {
-		if !a.Scanned {
+		if !a.Checked && (!a.Scanned || !rep.PortsKnown()) {
 			continue
 		}
 		scanned[a.IP] = true
-		snap[kindAddr] = append(snap[kindAddr], baseline.Item{Key: a.IP})
-		if a.Services == nil {
-			continue
+		// Проверенное самими и данные Shodan видят разное: смена источника - не новый порт.
+		key := a.IP
+		if a.Checked {
+			key += checkedMark
 		}
-		for _, p := range a.Services.Ports {
+		addrs = append(addrs, baseline.Item{Key: key})
+		for _, p := range a.Ports() {
+			if slices.ContainsFunc(a.Open, func(s portscan.Service) bool { return s.Port == p && s.Silent }) {
+				continue // молчит: за VPN такой не виден, и порт мигал бы
+			}
 			key := a.IP + ":" + strconv.Itoa(p)
-			snap[kindPort] = append(snap[kindPort], baseline.Item{Key: key, Text: key + " · " + strings.Join(cut(a.Hosts, 2), ", ")})
+			ports = append(ports, baseline.Item{Key: key, Text: key + " · " + strings.Join(cut(a.Hosts, 2), ", ")})
 		}
 	}
+	if len(scanned) == 0 {
+		return snap
+	}
+	snap[kindPort], snap[kindAddr] = append([]baseline.Item{}, ports...), addrs
 	// Про адрес сегодня не спрашивали: его неотмеченные порты остаются ждать.
 	for _, it := range baseline.Pending(outsideObject(rep.Domain)) {
 		if ip, _, _ := strings.Cut(it.Key, ":"); it.Kind == kindPort && !scanned[ip] {
@@ -95,7 +104,7 @@ func familiar(rep *domaudit.Report, fresh []baseline.Item, now time.Time) []base
 		case kindSource:
 			trusted[it.Key] = false
 		case kindAddr:
-			firstSeen[it.Key] = true
+			firstSeen[strings.TrimSuffix(it.Key, checkedMark)] = true
 		}
 	}
 	sources := map[string][]string{}

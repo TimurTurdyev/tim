@@ -8,6 +8,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/baseline"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/internetdb"
+	"github.com/TimurTurdyev/tim/internal/portscan"
 )
 
 // Тревога - новое имя знакомого источника и новый порт знакомого адреса. Первый ответ источника, урезанный список и
@@ -20,6 +21,13 @@ func TestOutside(t *testing.T) {
 	}
 	addr := func(ip string, ports ...int) domaudit.Addr {
 		return domaudit.Addr{IP: ip, Own: true, Scanned: true, Services: &internetdb.Info{Ports: ports}}
+	}
+	checked := func(ip string, ports ...int) domaudit.Addr {
+		a := domaudit.Addr{IP: ip, Own: true, Checked: true}
+		for _, p := range ports {
+			a.Open = append(a.Open, portscan.Service{Port: p, Name: "http"})
+		}
+		return a
 	}
 	source := func(name string, cut bool) domaudit.SourceState {
 		return domaudit.SourceState{Name: name, Names: 1, Cut: cut}
@@ -54,6 +62,17 @@ func TestOutside(t *testing.T) {
 			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)},
 			Addrs:   []domaudit.Addr{addr("192.0.2.1", 80, 443), addr("192.0.2.7", 22, 443, 3306)}},
 			[]string{"host vpn.example.com", "port 192.0.2.7:3306"}},
+		{"порты проверили сами впервые - не тревога", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC"), host("vpn.example.com", "crt.sh")},
+			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)},
+			Addrs:   []domaudit.Addr{checked("192.0.2.1", 25, 80, 443), addr("192.0.2.7", 22, 443, 3306)}},
+			[]string{"host vpn.example.com", "port 192.0.2.7:3306"}},
+		{"новый порт в своей проверке - тревога, молчащий - нет", domaudit.Report{
+			Hosts:   []domaudit.Host{host("a.example.com", "THC"), host("vpn.example.com", "crt.sh")},
+			Sources: []domaudit.SourceState{source("THC", false), source("crt.sh", false)},
+			Addrs: []domaudit.Addr{{IP: "192.0.2.1", Own: true, Checked: true, Open: []portscan.Service{{Port: 80}, {Port: 443}, {Port: 6379, Name: "redis"},
+				{Port: 110, Silent: true}}}, addr("192.0.2.7", 22, 443, 3306)}},
+			[]string{"host vpn.example.com", "port 192.0.2.1:6379", "port 192.0.2.7:3306"}},
 	}
 	for i, s := range steps {
 		s.rep.Domain = "example.com"

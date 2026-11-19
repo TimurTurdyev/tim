@@ -89,13 +89,13 @@ func sheets(rep *Report) []sheet {
 			own = "да"
 		}
 		_, where := place([]string{a.IP})
-		ports, products, cve := "", "", 0
-		if s := a.Services; s != nil {
-			list := make([]string, len(s.Ports))
-			for i, p := range s.Ports {
-				list[i] = strconv.Itoa(p)
-			}
-			ports, products, cve = strings.Join(list, " "), strings.Join(s.Products, ", "), len(s.CVE)
+		list, cve := []string{}, 0
+		for _, p := range a.Ports() {
+			list = append(list, strconv.Itoa(p))
+		}
+		ports, products := strings.Join(list, " "), strings.Join(a.Answers(), ", ")
+		if a.Services != nil {
+			cve = len(a.Services.CVE)
 		}
 		as := ""
 		if a.AS.ASN != "" {

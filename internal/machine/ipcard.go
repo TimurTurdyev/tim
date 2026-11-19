@@ -17,6 +17,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
+	"github.com/TimurTurdyev/tim/internal/portscan"
 	"github.com/TimurTurdyev/tim/internal/reputation"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/report"
@@ -43,20 +44,29 @@ type ipCard struct {
 	Blacklist []dnsbl.Result        `json:"blacklist,omitempty"`
 	Lists     []string              `json:"lists,omitempty"` // списки массового шума
 	Noise     *reputation.Noise     `json:"greynoise,omitempty"`
-	Errors    []string              `json:"errors,omitempty"`
+	// Scan: порты, которые проверили сами.
+	Scan   *portscan.Result `json:"scan,omitempty"`
+	Errors []string         `json:"errors,omitempty"`
 
 	listsLoaded bool
 }
 
-// ipCardReport: карточка адреса или имени.
-func ipCardReport(arg string) (report.Report, error) {
+// ipCardReport: карточка адреса или имени; scan - порты проверить самим.
+func ipCardReport(arg string, scan bool) (report.Report, error) {
 	c, err := newIPCard(arg)
 	if err != nil {
 		return report.Report{}, err
 	}
-	if !c.Internal {
-		c.collect()
-	}
+	par.All(func() {
+		if !c.Internal {
+			c.collect()
+		}
+	}, func() {
+		if scan {
+			r := portscan.Scan(c.IP, c.Name)
+			c.Scan = &r
+		}
+	})
 	return c.report(), nil
 }
 
@@ -167,7 +177,7 @@ func (c ipCard) report() report.Report {
 		if len(c.Others) > 0 {
 			facts = append(facts, report.Fact{Key: "ещё адреса", Value: strings.Join(c.Others, ", ")})
 		}
-		r.Blocks = []report.Block{facts}
+		r.Blocks = []report.Block{append(facts, c.scanFacts()...)}
 		return r
 	}
 	worst := level.Skip
@@ -179,11 +189,16 @@ func (c ipCard) report() report.Report {
 	case c.CDN:
 		r.Verdict = report.Verdict{Level: level.Info, Text: "узел CDN"}
 	case worst >= level.Warn:
-		r.Verdict = report.Verdict{Level: worst, Text: "есть в списках"}
+		r.Verdict = report.Verdict{Level: worst, Text: "есть на что посмотреть"}
 	}
 	r.Blocks = []report.Block{facts}
-	if c.Services != nil {
-		r.Blocks = append(r.Blocks, report.Note("порты и версии - по данным Shodan, до недели назад; к самому адресу запросов не было"))
+	switch {
+	case c.Scan != nil && c.Scan.Intercepted && !c.Scan.Faked:
+		r.Blocks = append(r.Blocks, report.Note("порты проверены сейчас; сеть на пути принимает любое соединение (VPN), показаны те, где сервис назвался"))
+	case c.Scan != nil:
+		r.Blocks = append(r.Blocks, report.Note("порты проверены сейчас, по ответу сервиса"))
+	case c.Services != nil:
+		r.Blocks = append(r.Blocks, report.Note("порты и версии - по данным Shodan, до недели назад; к самому адресу запросов не было (проверить самим: --scan)"))
 	}
 	for _, e := range c.Errors {
 		r.Blocks = append(r.Blocks, report.Note("не узнали: "+e))
@@ -218,20 +233,21 @@ func (c ipCard) facts() report.Facts {
 	add("PTR", c.PTR, level.Skip)
 	if c.CDN {
 		add("CDN", "адрес раздаёт много чужих сайтов, настоящий сервер за ним не виден: порты, соседи и списки ничего не скажут", level.Skip)
-		return f
+		return append(f, c.scanFacts()...)
 	}
-	if s := c.Services; s != nil {
+	f = append(f, c.scanFacts()...)
+	if s := c.Services; s != nil && c.Scan == nil {
 		ports := make([]string, len(s.Ports))
 		for i, p := range s.Ports {
 			ports[i] = strconv.Itoa(p)
 		}
 		add("порты", strings.Join(ports, " "), level.Skip)
 		add("что отвечает", strings.Join(s.Products, ", "), level.Skip)
-		if n := len(s.CVE); n > 0 {
-			add("CVE", fmt.Sprintf("%d по номеру версии: Debian и Ubuntu чинят, не меняя номер", n), level.Info)
-		}
-	} else if netinfo.IsIPv4(c.IP) {
+	} else if c.Scan == nil && netinfo.IsIPv4(c.IP) {
 		add("порты", "сканеры Shodan ничего не видели", level.Info)
+	}
+	if s := c.Services; s != nil && len(s.CVE) > 0 {
+		add("CVE", fmt.Sprintf("%d по номеру версии: Debian и Ubuntu чинят, не меняя номер", len(s.CVE)), level.Info)
 	}
 	if n := c.Sites; len(n.Names) > 0 || n.Seen > 0 {
 		add("сайты", sitesText(n), level.Skip)
@@ -240,6 +256,38 @@ func (c ipCard) facts() report.Facts {
 	add("почта", text, l)
 	text, l = c.noiseText()
 	add("шум", text, l)
+	return f
+}
+
+// scanFacts: порты, которые проверили сами, - по строке на порт; чему не место в интернете - красным.
+func (c ipCard) scanFacts() report.Facts {
+	if c.Scan == nil {
+		return nil
+	}
+	if c.Scan.Faked {
+		return report.Facts{{Key: "порты", Value: "не проверить: за сервер отвечает кто-то на пути", Level: level.Info}}
+	}
+	if len(c.Scan.Services) == 0 {
+		return report.Facts{{Key: "порты", Value: "ни один из проверенных не ответил", Level: level.Info}}
+	}
+	var f report.Facts
+	for i, s := range c.Scan.Services {
+		key, l := "", level.Skip
+		if i == 0 {
+			key = "порты"
+		}
+		text := s.String()
+		if s.Cert != "" {
+			text += " · сертификат на " + s.Cert
+		}
+		switch why := s.Risk(); {
+		case s.Silent:
+			text, l = text+" · молчит", level.Info
+		case why != "" && !c.Internal:
+			text, l = text+" · "+why, level.Bad
+		}
+		f = append(f, report.Fact{Key: key, Value: text, Level: l})
+	}
 	return f
 }
 

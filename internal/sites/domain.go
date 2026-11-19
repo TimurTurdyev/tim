@@ -3,6 +3,7 @@ package sites
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
+	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
@@ -31,14 +33,15 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	if o.twins {
 		return printTwins(name, o.json)
 	}
+	scan := o.scan || !o.scanSet && !o.fast && ownSite(env.Cfg, name)
 	if app.Interactive() && !o.json && !o.openMap && o.mapOut == "" && !o.fast {
-		return env.Open(DomainScreen(env, name))
+		return env.Open(domainScreen(env, name, scan))
 	}
 	notify := func(s string) { ui.Println(ui.Dim(s)) }
 	if o.json {
 		notify = nil
 	}
-	opt := domaudit.Options{Quiet: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
+	opt := domaudit.Options{Quiet: o.fast, Scan: scan, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
 	if o.json {
 		return view.Show(report.Report{Schema: "tim.domain/1", Data: collectDomain(name, opt)}, true)
 	}
@@ -49,6 +52,11 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 		return err
 	}
 	return saveDomain(rep, o)
+}
+
+// ownSite: домен из sites конфига - свой, его серверы проверяем без вопросов.
+func ownSite(cfg *config.Config, domain string) bool {
+	return slices.Contains(roundDomains(siteHosts(cfg, nil)), inspect.Registrable(domain))
 }
 
 // collectDomain: полный сбор и сравнение с прошлым разом; быстрый видит не всё, с ним не сравниваем.

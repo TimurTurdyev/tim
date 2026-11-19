@@ -21,6 +21,7 @@ type checkOptions struct {
 // domainOptions: сколько собирать о домене и куда выводить.
 type domainOptions struct {
 	fast, fresh, noNeighbors, json, openMap, all, twins bool
+	scan, scanSet                                       bool
 	mapOut                                              string
 }
 
@@ -83,8 +84,8 @@ func checkCommand(env *app.Env) *cobra.Command {
 		Short: "Обход: ответ, сертификат, почта и срок домена у сайтов, с --servers - ещё серверы",
 		Long: `Обходит сайты из конфига или из аргументов: ответ, сертификат, почта, срок домена. Записи DNS и выпуски
 сертификатов сравниваются с прошлым разом. Обход по расписанию (tim check install) ещё смотрит, что видно снаружи:
-новые имена домена и новые порты своих серверов. Для этого домен уходит в api.certspotter.com, ip.thc.org и
-api.subdomain.center, адреса - в whois.cymru.com и internetdb.shodan.io. Новое держится, пока не отметишь своим:
+новые имена домена и новые порты своих серверов, порты проверяет сам. Для имён домен уходит в api.certspotter.com,
+ip.thc.org и api.subdomain.center, адреса - в whois.cymru.com и internetdb.shodan.io. Новое держится, пока не отметишь своим:
 space на экране tim domain.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.json = view.AsJSON
@@ -224,17 +225,19 @@ HTTP/2 и кэш статики, скорость первого байта, CAA
 func domainCommand(env *app.Env) *cobra.Command {
 	var o domainOptions
 	c := &cobra.Command{
-		Use:   "domain [домен] [--fast] [--map [--out файл]] [--twins] [--json]",
+		Use:   "domain [домен] [--fast] [--scan] [--map [--out файл]] [--twins] [--json]",
 		Short: "Проверить домен целиком: записи, поддомены, адреса, сети, порты, живость, сертификаты",
 		Long: `Собирает по домену всё, что видно снаружи: регистрацию, MX, NS и TXT, поддомены из логов сертификатов, архивов
 DNS и перебора частых имён, адреса с сетью и страной, что отвечает каждое имя, порты и продукты своих серверов,
-соседей по адресу, имена под захват. Порты не сканируются: они из готовых данных Shodan. К самому сайту - обычный
-запрос главной страницы, зона не запрашивается, пути не перебираются.
+соседей по адресу, имена под захват. К самому сайту - обычный запрос главной страницы.
+Порты чужих доменов - из готовых данных Shodan. У доменов из sites и с --scan tim проверяет порты серверов сам:
+полсотни частых, по приветствию сервиса, без входа и подбора. Голому соединению не верит: VPN принимает любое.
+Чужой сервер проверяй с согласия владельца.
 Куда уходит домен: crt.sh, api.certspotter.com, ip.thc.org, api.subdomain.center, api.hackertarget.com, rdap.org или
 whois зоны. Адреса: whois.cymru.com, stat.ripe.net (подсети); internetdb.shodan.io и ip.thc.org, запасной -
 api.hackertarget.com, - только своих серверов. Внутренние адреса никуда не уходят. --fast и --all обходятся без
 этого: DNS (за VPN, который перехватывает порт 53, - через DoH), регистрация, whois.cymru.com и сам сайт.
-Пределы: HTTP у 300 имён, порты у 100 адресов, соседи у 20; что осталось за ними, сказано внизу. Имена кешируются
+Пределы: HTTP у 300 имён, порты по Shodan у 100 адресов, своя проверка портов и соседи у 20; что осталось за ними, сказано внизу. Имена кешируются
 на 20 часов, --fresh спрашивает заново.
 --map - страница с картой и таблицами, --out сохраняет её в файл, а с .xlsx - таблицу.
 --twins ищет двойники: опечатки, похожие буквы и та же метка в других зонах, и какие из них
@@ -242,13 +245,14 @@ api.hackertarget.com, - только своих серверов. Внутрен
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: siteNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			o.json = view.AsJSON
+			o.json, o.scanSet = view.AsJSON, cmd.Flags().Changed("scan")
 			return domain(env, app.First(args), o)
 		},
 	}
 	f := c.Flags()
 	f.BoolVar(&o.fast, "fast", false, "без сторонних сервисов: только DNS, перебор частых имён и сам сайт")
 	f.BoolVar(&o.fresh, "fresh", false, "спросить источники имён заново, не брать из кэша")
+	f.BoolVar(&o.scan, "scan", false, "проверить порты своих серверов самим; у доменов из sites - и без флага, выключить: --scan=false")
 	f.BoolVar(&o.noNeighbors, "no-neighbors", false, "не спрашивать соседей по IP")
 	f.BoolVar(&o.openMap, "map", false, "собрать страницу с картой и таблицами и открыть")
 	f.StringVar(&o.mapOut, "out", "", "сохранить в файл, не открывая: .xlsx - таблицей, иначе страницей")

@@ -19,9 +19,10 @@ const (
 )
 
 // Options: что собирать. Quiet - без сторонних сервисов с именами, соседями, местом и портами: остаются DNS,
-// регистрация, владелец сети и запросы к самому сайту.
+// регистрация, владелец сети и запросы к самому сайту. Scan - проверить порты своих серверов самим.
 type Options struct {
 	Quiet         bool
+	Scan          bool
 	FreshCRT      bool
 	SkipNeighbors bool
 	Notify        func(string)
@@ -53,6 +54,7 @@ type collector struct {
 	probed  int            // имён с адресами отдано на пробу: предел на оба круга
 	scanned int            // своих адресов, у которых спросили порты, - тоже
 	met     int            // и соседей
+	checked int            // и чьи порты проверили сами
 	alone   bool           // основной источник соседей не отвечает
 	since   time.Time      // когда пошли первые пробы
 }
@@ -64,13 +66,16 @@ func Collect(domain string, opt Options) *Report {
 	c.discover()
 	c.round(c.servers())
 	// Соседи первого круга - пока ждём поздние источники; у адресов, всплывших потом, - следом.
-	first := c.unmet()
+	// Порты - так же.
+	first, ports := c.unmet(), c.unchecked()
 	var met sync.WaitGroup
 	met.Go(func() { c.neighbors(first) })
+	met.Go(func() { c.checkPorts(ports) })
 	c.surface()
 	c.round(nil)
 	met.Wait()
 	c.neighbors(c.unmet())
+	c.checkPorts(c.unchecked())
 	c.probing.Wait()
 	c.group.Wait()
 	c.finish()
@@ -78,14 +83,15 @@ func Collect(domain string, opt Options) *Report {
 }
 
 // Names: живые имена домена, их адреса и порты своих - для ночного обхода: без HTTP, соседей и медленных источников,
-// от них берётся прошлый список.
-func Names(domain string) *Report {
-	c := newCollector(domain, Options{SkipNeighbors: false, night: true})
+// от них берётся прошлый список. scan - порты проверить самим.
+func Names(domain string, scan bool) *Report {
+	c := newCollector(domain, Options{Scan: scan, night: true})
 	c.discover()
 	c.asking.wait(sourceWait)
 	_, addrs := c.resolve(c.fresh())
 	maps.Copy(addrs, c.servers())
 	c.enrich(addrs)
+	c.checkPorts(c.unchecked())
 	c.finish()
 	return c.rep
 }
@@ -217,6 +223,9 @@ func (c *collector) finish() {
 	if c.met > maxNeighborAddrs {
 		r.Notes = append(r.Notes, "соседи спрошены у "+strconv.Itoa(maxNeighborAddrs)+" адресов из "+strconv.Itoa(c.met))
 	}
+	if c.checked > maxChecks {
+		r.Notes = append(r.Notes, "порты проверены у "+strconv.Itoa(maxChecks)+" адресов из "+strconv.Itoa(c.checked))
+	}
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
 }
 
@@ -226,6 +235,15 @@ func (c *collector) fail(text string) {
 	defer c.mu.Unlock()
 	if !slices.Contains(c.rep.Errors, text) {
 		c.rep.Errors = append(c.rep.Errors, text)
+	}
+}
+
+// say: замечание о сборе - одно на всех.
+func (c *collector) say(text string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !slices.Contains(c.rep.Notes, text) {
+		c.rep.Notes = append(c.rep.Notes, text)
 	}
 }
 

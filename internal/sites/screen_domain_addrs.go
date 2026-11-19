@@ -22,6 +22,13 @@ const (
 	barCol   = 10
 )
 
+// checkAction: порты своего адреса - проверить самим, прямо сейчас.
+func checkAction(load *domainLoad) tui.BoardAction {
+	return tui.BoardAction{Key: "c", Label: "проверить", Doing: "проверяю порты, до 6 секунд",
+		When: func(row *tui.BoardRow) bool { return load.own(plainID(row)) },
+		Run:  func(row *tui.BoardRow) (string, error) { return load.check(plainID(row)) }}
+}
+
 // addrsTab: адреса домена - сайты, почта и серверы имён.
 func addrsTab(domain string, load *domainLoad, command func(*tui.BoardRow) string, actions ...tui.BoardAction) tui.Tab {
 	return tui.NewBoard(tui.BoardOpts{
@@ -67,10 +74,7 @@ func addrsData(rep *domaudit.Report) tui.BoardData {
 
 func addrRow(a domaudit.Addr) tui.BoardRow {
 	owner := ownerText(a)
-	ports := ""
-	if a.Services != nil {
-		ports = portList(a.Services.Ports)
-	}
+	ports := portList(a.Ports())
 	return tui.BoardRow{ID: a.IP, Find: strings.Join([]string{a.IP, owner, a.PTR, strings.Join(a.Hosts, " ")}, " "),
 		Cells: ui.Fit(a.IP, addrCol-1) + " " + ui.Fit(owner, ownerCol-1) + " " + ui.Pad(placeText(a), placeCol) +
 			ui.Dim(ui.Fit(ports, portsCol-1)) + " " + fmt.Sprintf("%4d", len(a.Hosts)),
@@ -95,12 +99,21 @@ func addrCard(a domaudit.Addr, owner string) *tui.Card {
 	if a.Internal {
 		add("внутри", "адрес не из интернета: имя показывает устройство сети, убрать из общего DNS")
 	}
-	if s := a.Services; s != nil {
-		add("порты", portList(s.Ports)+ui.Dim(" · по данным Shodan, до недели назад"))
-		add("что там", strings.Join(s.Products, ", "))
-		if n := len(s.CVE); n > 0 {
-			add("CVE", fmt.Sprintf("%d по номеру версии", n)+ui.Dim(" · Debian и Ubuntu чинят, не меняя номер"))
+	if ports := a.Ports(); len(ports) > 0 {
+		from := " · по данным Shodan, до недели назад"
+		if a.Checked {
+			from = " · проверены сейчас"
 		}
+		add("порты", portList(ports)+ui.Dim(from))
+		add("что там", strings.Join(a.Answers(), ", "))
+	}
+	for _, s := range a.Open {
+		if why := s.Risk(); why != "" && !s.Silent {
+			add("опасно", ui.Bad(s.String())+ui.Dim(" · "+why))
+		}
+	}
+	if s := a.Services; s != nil && len(s.CVE) > 0 {
+		add("CVE", fmt.Sprintf("%d по номеру версии", len(s.CVE))+ui.Dim(" · Debian и Ubuntu чинят, не меняя номер"))
 	}
 	if len(a.Hosts) > 0 {
 		add("имён", strconv.Itoa(len(a.Hosts))+ui.Dim(" · "+strings.Join(cut(a.Hosts, 4), ", ")))
