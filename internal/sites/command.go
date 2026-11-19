@@ -20,9 +20,9 @@ type checkOptions struct {
 
 // domainOptions: сколько собирать о домене и куда выводить.
 type domainOptions struct {
-	fast, fresh, noNeighbors, json, openMap, all, twins bool
-	scan, scanSet                                       bool
-	mapOut                                              string
+	fast, own, fresh, noNeighbors, json, openMap, all, twins bool
+	scan, scanSet, direct                                    bool
+	mapOut                                                   string
 }
 
 // corsOptions: что собирается сделать фронтенд.
@@ -250,7 +250,9 @@ api.hackertarget.com, - только своих серверов. Внутрен
 		},
 	}
 	f := c.Flags()
-	f.BoolVar(&o.fast, "fast", false, "без сторонних сервисов: только DNS, перебор частых имён и сам сайт")
+	f.BoolVar(&o.fast, "fast", false, "быстро и только своими силами: DNS, короткий перебор словаря и сам сайт")
+	f.BoolVar(&o.own, "own", false, "только своими силами, но в полную силу: без сторонних сервисов")
+	f.BoolVar(&o.direct, "direct", false, "запросы DNS с физического интерфейса мимо VPN: серверы зоны увидят твой адрес")
 	f.BoolVar(&o.fresh, "fresh", false, "спросить источники имён заново, не брать из кэша")
 	f.BoolVar(&o.scan, "scan", false, "проверить порты своих серверов самим; у доменов из sites - и без флага, выключить: --scan=false")
 	f.BoolVar(&o.noNeighbors, "no-neighbors", false, "не спрашивать соседей по IP")

@@ -25,7 +25,7 @@ import (
 // domainLoad: один сбор на все вкладки домена; этапы - для заметки, пока он идёт.
 type domainLoad struct {
 	domain  string
-	scan    bool       // порты своих серверов проверяем сами
+	opt     domaudit.Options
 	mu      sync.Mutex // сам сбор: вкладки ждут один и тот же
 	rep     *domaudit.Report
 	lamps   []string
@@ -51,8 +51,9 @@ func (l *domainLoad) get(fresh bool) (*domaudit.Report, []string) {
 		l.stages = append(l.stages, s)
 	}
 	note("сайт, сертификат, домен и почта")
-	par.All(func() { l.lamps = domainLamps(l.domain) },
-		func() { l.rep = collectDomain(l.domain, domaudit.Options{Scan: l.scan, FreshCRT: fresh, Notify: note}) })
+	opt := l.opt
+	opt.FreshCRT, opt.Notify = fresh, note
+	par.All(func() { l.lamps = domainLamps(l.domain) }, func() { l.rep = collectDomain(l.domain, opt) })
 	l.smu.Lock()
 	l.mine = map[string]bool{}
 	for _, a := range l.rep.Addrs {
@@ -102,11 +103,11 @@ func (l *domainLoad) wait(width int) []string {
 // DomainScreen: домен целиком вкладками - имена, адреса, записи, сертификат, почта, двойники; лампы сайта,
 // сертификата, регистрации и почты над таблицей.
 func DomainScreen(env *app.Env, domain string) tui.Screen {
-	return domainScreen(env, domain, ownSite(env.Cfg, domain))
+	return domainScreen(env, domain, domaudit.Options{Scan: ownSite(env.Cfg, domain), Direct: directIface(env.Cfg, false)})
 }
 
-func domainScreen(env *app.Env, domain string, scan bool) tui.Screen {
-	load := &domainLoad{domain: domain, scan: scan, started: time.Now()}
+func domainScreen(env *app.Env, domain string, opt domaudit.Options) tui.Screen {
+	load := &domainLoad{domain: domain, opt: opt, started: time.Now()}
 	mapAction := tui.BoardAction{Key: "w", Label: "браузер", Doing: "рисую карту домена", Free: true, Run: func(*tui.BoardRow) (string, error) {
 		rep, _ := load.get(false)
 		path := filepath.Join(os.TempDir(), "tim-domain-"+rep.Domain+".html")

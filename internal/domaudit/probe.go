@@ -23,6 +23,7 @@ const (
 	maxProbes    = 300
 	pageLimit    = 256 << 10
 	homeLimit    = 512 << 10
+	home         = 2 // у стольких имён страница главная: сам домен и www
 )
 
 // answer: что ответил сайт по одной схеме; nil - не ответил.
@@ -37,12 +38,12 @@ type answer struct {
 }
 
 // probe ставит имена в очередь на пробу и не ждёт её. Главная страница домена читается целиком: счётчики берутся
-// из неё, второй раз её не качаем. Имена сверх предела и внутренние не спрашиваются: сам домен и www - первыми.
+// из неё, второй раз её не качаем. Имена сверх предела и внутренние не спрашиваются.
 func (c *collector) probe(list []*Host) {
 	if c.since.IsZero() {
 		c.since = time.Now()
 	}
-	slices.SortStableFunc(list, func(a, b *Host) int { return c.rank(a.Name) - c.rank(b.Name) })
+	slices.SortStableFunc(list, func(a, b *Host) int { return c.rank(a) - c.rank(b) })
 	var queue []*Host
 	for _, h := range list {
 		if h.Internal {
@@ -63,7 +64,7 @@ func (c *collector) probe(list []*Host) {
 		for _, h := range queue {
 			c.group.Go(func() {
 				got := *h // остальные поля до конца сбора никто не меняет, читать их можно без замка
-				probe(&got, c.rank(h.Name) < 2, known)
+				probe(&got, c.rank(h) < home, known)
 				c.mu.Lock()
 				*h = got
 				c.mu.Unlock()
@@ -92,15 +93,15 @@ func pins(hosts []*Host) map[string][]string {
 	return out
 }
 
-// rank: сам домен, www, остальные - по алфавиту, как в списке.
-func (c *collector) rank(name string) int {
-	switch name {
+// rank: сам домен, www, дальше по надёжности источника: предел проб общий, и угаданным именам достаётся остаток.
+func (c *collector) rank(h *Host) int {
+	switch h.Name {
 	case c.domain:
 		return 0
 	case "www." + c.domain:
 		return 1
 	}
-	return 2
+	return home + rankOf(h.Source)
 }
 
 // probe: что отвечает имя. https и http спрашиваются разом, ответ https важнее; у главной страницы - ещё и счётчики.

@@ -28,7 +28,7 @@ const (
 )
 
 // resolve: новые имена, у которых есть адрес или CNAME, и их адреса.
-func (c *collector) resolve(names map[string]string) (hosts []*Host, touched map[string]*Addr) {
+func (c *collector) resolve(names map[string][]string) (hosts []*Host, touched map[string]*Addr) {
 	all := slices.Sorted(maps.Keys(names))
 	ips := map[string][]string{}
 	for i, list := range par.Map(all, dnsWidth, func(name string) []string {
@@ -39,10 +39,10 @@ func (c *collector) resolve(names map[string]string) (hosts []*Host, touched map
 	}) {
 		ips[all[i]] = list
 	}
-	for n, from := range names {
-		c.tried[n] = from
+	for n, labels := range names {
+		c.tried[n] = firm(labels)
 		delete(c.dropped, n)
-		if blank(from, ips[n], c.wild) {
+		if blank(labels, ips[n], c.wild) {
 			c.dropped[n] = true
 		}
 	}
@@ -58,7 +58,7 @@ func (c *collector) resolve(names map[string]string) (hosts []*Host, touched map
 		if len(ips[name]) == 0 && targets[i] == "" {
 			continue
 		}
-		h := &Host{Name: name, IPs: ips[name], CNAME: targets[i], Source: names[name]}
+		h := &Host{Name: name, IPs: ips[name], CNAME: targets[i], Source: best(names[name])}
 		h.Internal = len(h.IPs) > 0 && !slices.ContainsFunc(h.IPs, netinfo.IsPublic)
 		c.hosts[name] = h
 		hosts = append(hosts, h)

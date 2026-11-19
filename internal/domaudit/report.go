@@ -8,18 +8,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/portscan"
 )
 
-// Откуда имя: подпись источника, если это не архив.
-const (
-	fromApex     = "апекс"
-	fromCert     = "сертификат"
-	fromBrute    = "перебор"
-	fromMX       = "MX"
-	fromNS       = "NS"
-	fromPTR      = "PTR"
-	fromScan     = "InternetDB"
-	fromSiteCert = "сертификат сайта"
-)
-
 // Host: найденное имя и что о нём известно.
 type Host struct {
 	Name   string   `json:"name"`
@@ -83,6 +71,14 @@ type Addr struct {
 	tried  bool     // порты уже проверяли сами
 }
 
+// Found: итог по именам отчёта. Own - знает хотя бы один свой источник, Added - только сторонние сервисы,
+// Silent - сторонние, которые не ответили.
+type Found struct {
+	Own    int      `json:"own"`
+	Added  int      `json:"added"`
+	Silent []string `json:"silent,omitempty"`
+}
+
 // Server: почтовый сервер или сервер имён домена.
 type Server struct {
 	Name string   `json:"name"`
@@ -101,9 +97,11 @@ type Report struct {
 	Related  []string  `json:"related,omitempty"`
 	Trackers []Tracker `json:"trackers,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
-	// Sources: что дал каждый источник имён.
+	// Sources: что дал каждый источник имён - свои первыми.
 	Sources []SourceState `json:"sources,omitempty"`
-	Notes   []string      `json:"notes,omitempty"` // что осталось за пределами сбора
+	// Found: сколько имён нашли сами и сколько добавили сторонние сервисы.
+	Found Found    `json:"found"`
+	Notes []string `json:"notes,omitempty"` // что осталось за пределами сбора
 	// CRTCached: не пусто, если список из логов сертификатов взят из кэша.
 	CRTCached time.Time `json:"crt_cached,omitzero"`
 

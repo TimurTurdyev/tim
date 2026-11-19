@@ -33,15 +33,14 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	if o.twins {
 		return printTwins(name, o.json)
 	}
-	scan := o.scan || !o.scanSet && !o.fast && ownSite(env.Cfg, name)
+	opt := domaudit.Options{Quiet: o.fast || o.own, Quick: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors,
+		Scan: o.scan || !o.scanSet && !o.fast && ownSite(env.Cfg, name), Direct: directIface(env.Cfg, o.direct)}
 	if app.Interactive() && !o.json && !o.openMap && o.mapOut == "" && !o.fast {
-		return env.Open(domainScreen(env, name, scan))
+		return env.Open(domainScreen(env, name, opt))
 	}
-	notify := func(s string) { ui.Println(ui.Dim(s)) }
-	if o.json {
-		notify = nil
+	if !o.json {
+		opt.Notify = func(s string) { ui.Println(ui.Dim(s)) }
 	}
-	opt := domaudit.Options{Quiet: o.fast, Scan: scan, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors, Notify: notify}
 	if o.json {
 		return view.Show(report.Report{Schema: "tim.domain/1", Data: collectDomain(name, opt)}, true)
 	}
@@ -59,7 +58,16 @@ func ownSite(cfg *config.Config, domain string) bool {
 	return slices.Contains(roundDomains(siteHosts(cfg, nil)), inspect.Registrable(domain))
 }
 
-// collectDomain: полный сбор и сравнение с прошлым разом; быстрый видит не всё, с ним не сравниваем.
+// directIface: интерфейс для запросов DNS мимо VPN - по флагу или по [domain] direct конфига; пусто - обычным путём.
+func directIface(cfg *config.Config, flag bool) string {
+	if !flag && !cfg.Domain.Direct {
+		return ""
+	}
+	svc, _ := netinfo.PhysIface()
+	return svc.Device
+}
+
+// collectDomain: полный сбор и сравнение с прошлым разом; сбор без сторонних сервисов видит не всё, с ним не сравниваем.
 func collectDomain(name string, opt domaudit.Options) *domaudit.Report {
 	rep := domaudit.Collect(name, opt)
 	if !opt.Quiet {
@@ -131,7 +139,7 @@ func printDomains(cfg *config.Config) error {
 	}
 	sort.Strings(domains)
 	for _, d := range domains {
-		rep := domaudit.Collect(d, domaudit.Options{Quiet: true})
+		rep := domaudit.Collect(d, domaudit.Options{Quiet: true, Quick: true})
 		live := 0
 		for _, h := range rep.Hosts {
 			if h.Status > 0 {

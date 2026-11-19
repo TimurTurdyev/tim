@@ -87,3 +87,45 @@ func TestOutside(t *testing.T) {
 		}
 	}
 }
+
+// Свой источник проверяет сколько успеет и меняет словарь: имя, до которого он дошёл впервые, - не тревога.
+// Тревога - новое имя в полном проходе тем же словарём.
+func TestOutsideOwnSource(t *testing.T) {
+	t.Setenv("TIM_STATE_DIR", t.TempDir())
+	now := time.Date(2026, 3, 10, 3, 0, 0, 0, time.UTC)
+	host := func(name string) domaudit.Host {
+		return domaudit.Host{Name: name, IPs: []string{"192.0.2.1"}, Source: "словарь", Sources: []string{"словарь"}}
+	}
+	words := func(version string, cut bool) []domaudit.SourceState {
+		return []domaudit.SourceState{{Name: "словарь", Own: true, Names: 1, Version: version, Cut: cut}}
+	}
+	steps := []struct {
+		name  string
+		hosts []string
+		state []domaudit.SourceState
+		want  []string
+	}{
+		{"первое наблюдение: словарь успел не всё", []string{"a"}, words("1", true), nil},
+		{"первый полный проход находит старое", []string{"a", "b"}, words("1", false), nil},
+		{"новое имя в полном проходе - тревога", []string{"a", "b", "c"}, words("1", false), []string{"host c.example.com"}},
+		{"урезанный проход не снимает тревогу и не поднимает новую", []string{"a", "b", "c", "d"}, words("1", true), []string{"host c.example.com"}},
+		{"новый словарь находит старое", []string{"a", "b", "c", "d", "e"}, words("2", false), []string{"host c.example.com"}},
+		{"новое имя новым словарём на другой день - тревога", []string{"a", "b", "c", "d", "e", "f"}, words("2", false),
+			[]string{"host c.example.com", "host f.example.com"}},
+	}
+	for i, s := range steps {
+		rep := domaudit.Report{Domain: "example.com", Sources: s.state}
+		for _, h := range s.hosts {
+			rep.Hosts = append(rep.Hosts, host(h+".example.com"))
+		}
+		observeOutside(&rep, now.Add(time.Duration(i)*24*time.Hour))
+		var got []string
+		for _, it := range baseline.Pending(outsideObject("example.com")) {
+			got = append(got, it.Kind+" "+it.Key)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, s.want) {
+			t.Errorf("%s: %v, ждали %v", s.name, got, s.want)
+		}
+	}
+}

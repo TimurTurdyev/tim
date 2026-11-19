@@ -83,6 +83,17 @@ type Tunnel struct {
 	Port int    `toml:"port,omitzero"`
 }
 
+// Domain: как tim domain спрашивает DNS. Direct - с физического интерфейса мимо VPN: серверы зоны увидят
+// адрес этой сети.
+type Domain struct {
+	Direct bool `toml:"direct,omitempty"`
+}
+
+// Data: локальная база tim data. Mirror - откуда брать список хостов вместо data.commoncrawl.org.
+type Data struct {
+	Mirror string `toml:"mirror,omitempty"`
+}
+
 type Config struct {
 	Dev       string              `toml:"dev"`
 	Wrapper   string              `toml:"wrapper,omitempty"`
@@ -95,6 +106,8 @@ type Config struct {
 	Recipes   []Recipe            `toml:"recipe,omitempty"`
 	Notify    Notify              `toml:"notify,omitempty"`
 	Tunnel    Tunnel              `toml:"tunnel,omitempty"`
+	Domain    Domain              `toml:"domain,omitempty"`
+	Data      Data                `toml:"data,omitempty"`
 	Sites     []string            `toml:"sites,omitempty"`
 	Projects  []Project           `toml:"project"`
 	Hosts     []Host              `toml:"host"`

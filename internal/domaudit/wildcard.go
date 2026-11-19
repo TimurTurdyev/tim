@@ -8,9 +8,6 @@ import (
 	"github.com/TimurTurdyev/tim/internal/par"
 )
 
-// solid: откуда имена, которые точно заведены: сертификат выпускают на то, что есть, а записи указывают на имя прямо.
-var solid = []string{fromApex, fromCert, fromMX, fromNS, fromPTR, fromSiteCert}
-
 // wildTries: сколько несуществующих имён спросить: за балансировщиком каждый ответ - один адрес из нескольких.
 const wildTries = 8
 
@@ -26,9 +23,10 @@ func wildcard(domain string) []string {
 	return slices.Compact(out)
 }
 
-// blank: имя неотличимо от несуществующего - его адреса те же, что у wildcard.
-func blank(source string, ips, wild []string) bool {
-	if len(wild) == 0 || len(ips) == 0 || slices.Contains(solid, source) {
+// blank: имя неотличимо от несуществующего - его адреса те же, что у wildcard, и ни один источник не называет
+// его заведённым.
+func blank(labels []string, ips, wild []string) bool {
+	if len(wild) == 0 || len(ips) == 0 || firm(labels) {
 		return false
 	}
 	return !slices.ContainsFunc(ips, func(ip string) bool { return !slices.Contains(wild, ip) })
@@ -38,7 +36,7 @@ func blank(source string, ips, wild []string) bool {
 func bruteforce(domain string, wild []string) map[string][]string {
 	out := map[string][]string{}
 	for i, ips := range par.Map(Common, dnsWidth, func(p string) []string { return lookup(p + "." + domain) }) {
-		if len(ips) > 0 && !blank(fromBrute, ips, wild) {
+		if len(ips) > 0 && !blank([]string{fromWords}, ips, wild) {
 			out[Common[i]+"."+domain] = ips
 		}
 	}

@@ -22,8 +22,6 @@ const (
 	thcLimit      = 1000 // больше строк не просим: ровно столько - ответ обрезан
 	hostLimit     = 50   // столько строк отдаёт hackertarget без ключа
 
-	sourceTHC          = "THC"
-	sourceHackertarget = "hackertarget"
 )
 
 var (
@@ -38,7 +36,7 @@ var sources = []source{
 	{name: "CertSpotter", label: fromCert, fetch: fetchCertSpotter},
 	{name: "crt.sh", label: fromCert, ttl: namesTTL, slow: true, fetch: fetchCRT},
 	{name: sourceTHC, label: sourceTHC, ttl: namesTTL, fetch: fetchTHC},
-	{name: "subdomain.center", label: "subdomain.center", ttl: namesTTL, fetch: fetchSubdomainCenter},
+	{name: sourceCenter, label: sourceCenter, ttl: namesTTL, fetch: fetchSubdomainCenter},
 	{name: sourceHackertarget, label: sourceHackertarget, ttl: namesTTL, quota: true, fetch: fetchHostSearch},
 }
 
@@ -52,18 +50,25 @@ type source struct {
 }
 
 // SourceState: что дал источник имён. Cached - список из кэша, тогда и получен; Cut - источник отдал не всё.
+// Own - источник свой, а не сторонний сервис: Checked из Total - сколько он успел проверить, Version - выпуск
+// его данных, Note - как он работал.
 type SourceState struct {
-	Name   string    `json:"name"`
-	Names  int       `json:"names"`
-	Cached time.Time `json:"cached,omitzero"`
-	Cut    bool      `json:"cut,omitempty"`
-	Error  string    `json:"error,omitempty"`
+	Name    string    `json:"name"`
+	Names   int       `json:"names"`
+	Cached  time.Time `json:"cached,omitzero"`
+	Cut     bool      `json:"cut,omitempty"`
+	Error   string    `json:"error,omitempty"`
+	Own     bool      `json:"own,omitempty"`
+	Checked int       `json:"checked,omitempty"`
+	Total   int       `json:"total,omitempty"`
+	Version string    `json:"version,omitempty"`
+	Note    string    `json:"note,omitempty"`
 }
 
 // sourceNames: имена всех ответивших источников - кто какое знает; related - другие домены тех же сертификатов.
 type sourceNames struct {
 	by      map[string][]string // имя -> источники
-	label   map[string]string   // имя -> подпись первого источника
+	labels  map[string][]string // имя -> подписи источников
 	related []string
 	states  []SourceState
 }
@@ -129,7 +134,7 @@ func (a *asking) waiting() []string {
 
 // found: имена ответивших - по порядку источников, а не ответов.
 func (a *asking) found() sourceNames {
-	f := sourceNames{by: map[string][]string{}, label: map[string]string{}}
+	f := sourceNames{by: map[string][]string{}, labels: map[string][]string{}}
 	for i, got := range a.answers {
 		if got == nil {
 			f.states = append(f.states, SourceState{Name: a.list[i].name, Error: errSlow.Error()})
@@ -139,8 +144,8 @@ func (a *asking) found() sourceNames {
 		f.related = append(f.related, got.got.Related...)
 		for _, n := range got.got.Subs {
 			f.by[n] = append(f.by[n], a.list[i].name)
-			if f.label[n] == "" {
-				f.label[n] = a.list[i].label
+			if !slices.Contains(f.labels[n], a.list[i].label) {
+				f.labels[n] = append(f.labels[n], a.list[i].label)
 			}
 		}
 	}

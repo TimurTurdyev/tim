@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/baseline"
+	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/portscan"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -23,14 +24,15 @@ const (
 	checkedMark = " проверен" // у адреса, чьи порты проверили сами
 )
 
-// watchedSources: имена не из источников, за которыми следим; остальное видит только полный сбор, и ночью оно
-// выглядело бы пропавшим.
-var watchedSources = []string{"апекс", "перебор", "MX", "NS"}
+// watchedSources: подписи без своей строки в источниках, за которыми следим: эти имена видит любой сбор.
+var watchedSources = []string{"апекс", "MX", "NS"}
 
 func outsideObject(domain string) string { return "outside-" + domain }
 
 // watchOutside: ночное наблюдение; обходятся домены из sites, их порты проверяем сами.
-func watchOutside(domain string) { observeOutside(domaudit.Names(domain, true), time.Now()) }
+func watchOutside(cfg *config.Config, domain string) {
+	observeOutside(domaudit.Names(domain, domaudit.Options{Scan: true, Direct: directIface(cfg, false)}), time.Now())
+}
 
 // observeOutside сравнивает отчёт с прошлым разом; что стало видно только сейчас, но не новое, сразу своё.
 func observeOutside(rep *domaudit.Report, now time.Time) {
@@ -50,8 +52,10 @@ func outsideSnapshot(rep *domaudit.Report) baseline.Snapshot {
 		}
 	}
 	for _, s := range rep.Sources {
-		if s.Names > 0 {
-			snap[kindSource] = append(snap[kindSource], baseline.Item{Key: s.Name})
+		// Свой источник, который не успел проверить всё, знакомым не становится: в полный проход он покажет
+		// старое, о котором мы не знали.
+		if cut := s.Own && s.Cut; s.Names > 0 && !cut {
+			snap[kindSource] = append(snap[kindSource], baseline.Item{Key: sourceKey(s)})
 		}
 	}
 	scanned := map[string]bool{}
@@ -88,12 +92,21 @@ func outsideSnapshot(rep *domaudit.Report) baseline.Snapshot {
 	return snap
 }
 
+// sourceKey: источник с выпуском его данных - после смены словаря или архива он снова "ответил впервые".
+func sourceKey(s domaudit.SourceState) string {
+	if s.Version == "" {
+		return s.Name
+	}
+	return s.Name + " " + s.Version
+}
+
 // familiar: что из нового не новое - имена, которые принёс впервые ответивший или урезанный источник, и порты
 // адреса, которого раньше не было; служебные виды - всегда.
 func familiar(rep *domaudit.Report, fresh []baseline.Item, now time.Time) []baseline.Item {
 	trusted := map[string]bool{} // источники, по которым новое имя - и правда новое
+	keys := map[string]string{}
 	for _, s := range rep.Sources {
-		trusted[s.Name] = !s.Cut
+		trusted[s.Name], keys[sourceKey(s)] = !s.Cut, s.Name
 	}
 	firstSeen := map[string]bool{} // адреса, которых раньше не было
 	for _, it := range fresh {
@@ -102,7 +115,7 @@ func familiar(rep *domaudit.Report, fresh []baseline.Item, now time.Time) []base
 		}
 		switch it.Kind {
 		case kindSource:
-			trusted[it.Key] = false
+			trusted[keys[it.Key]] = false
 		case kindAddr:
 			firstSeen[strings.TrimSuffix(it.Key, checkedMark)] = true
 		}

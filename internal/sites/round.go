@@ -48,8 +48,8 @@ func watchDomains(domains []string) {
 }
 
 // watchOutsides: имена и порты доменов обхода снаружи - только ночью: это десятки запросов на домен.
-func watchOutsides(domains []string) {
-	par.Map(domains, 2, func(d string) bool { watchOutside(d); return true })
+func watchOutsides(cfg *config.Config, domains []string) {
+	par.Map(domains, 2, func(d string) bool { watchOutside(cfg, d); return true })
 }
 
 func roundAlerts(rows []health.Row, domains, aliases []string) []alert {

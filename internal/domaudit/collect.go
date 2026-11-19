@@ -1,7 +1,7 @@
 package domaudit
 
 import (
-	"cmp"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -18,13 +18,16 @@ const (
 	settle   = 2 * time.Second // за столько отвечает почти любой живой сайт: его сертификат успевает во второй круг
 )
 
-// Options: что собирать. Quiet - без сторонних сервисов с именами, соседями, местом и портами: остаются DNS,
-// регистрация, владелец сети и запросы к самому сайту. Scan - проверить порты своих серверов самим.
+// Options: что собирать. Quiet - без сторонних сервисов: имена, соседи, место и порты только своими силами.
+// Quick - свои источники на коротком сроке. Scan - проверить порты своих серверов самим. Direct - интерфейс, с
+// которого запросы DNS идут мимо VPN; пусто - обычным путём.
 type Options struct {
 	Quiet         bool
+	Quick         bool
 	Scan          bool
 	FreshCRT      bool
 	SkipNeighbors bool
+	Direct        string
 	Notify        func(string)
 
 	night bool // ночной обход: без HTTP, соседей, места и медленных источников
@@ -37,12 +40,14 @@ type collector struct {
 	opt    Options
 	rep    *Report
 
-	asking  *asking             // источники имён; nil - не спрашиваем
-	extra   map[string]string   // имена не из источников: откуда
-	known   map[string][]string // адреса, которые уже спросили
-	wild    []string            // адреса несуществующего имени
-	tried   map[string]string   // имя -> с какой подписью его резолвили
-	dropped map[string]bool     // неотличимо от несуществующего
+	asking  *asking                 // сторонние источники имён; nil - не спрашиваем
+	from    map[string][]string     // имена, которые нашли сами: откуда
+	states  map[string]*SourceState // что сказать о своих источниках
+	related []string                // чужие домены, которые назвала сама цель
+	known   map[string][]string     // адреса, которые уже спросили
+	wild    []string                // адреса несуществующего имени
+	tried   map[string]bool         // имя уже резолвили; true - тогда оно было точно заведённым
+	dropped map[string]bool         // неотличимо от несуществующего
 	cnames  map[string]string
 
 	mu      sync.Mutex // имена пишут пробы, ошибки - кто первый наткнётся
@@ -83,9 +88,10 @@ func Collect(domain string, opt Options) *Report {
 }
 
 // Names: живые имена домена, их адреса и порты своих - для ночного обхода: без HTTP, соседей и медленных источников,
-// от них берётся прошлый список. scan - порты проверить самим.
-func Names(domain string, scan bool) *Report {
-	c := newCollector(domain, Options{Scan: scan, night: true})
+// от них берётся прошлый список.
+func Names(domain string, opt Options) *Report {
+	opt.night = true
+	c := newCollector(domain, opt)
 	c.discover()
 	c.asking.wait(sourceWait)
 	_, addrs := c.resolve(c.fresh())
@@ -98,8 +104,9 @@ func Names(domain string, scan bool) *Report {
 
 func newCollector(domain string, opt Options) *collector {
 	return &collector{domain: domain, opt: opt, rep: &Report{Domain: domain},
-		extra: map[string]string{}, known: map[string][]string{}, tried: map[string]string{}, dropped: map[string]bool{},
-		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
+		from: map[string][]string{}, states: map[string]*SourceState{}, known: map[string][]string{}, tried: map[string]bool{},
+		dropped: map[string]bool{},
+		cnames:  map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
 }
 
 // discover: почта и серверы имён, перебор частых имён и быстрые источники.
@@ -115,38 +122,48 @@ func (c *collector) discover() {
 	})
 	for n, ips := range brute {
 		c.known[n] = ips
-		c.learn(n, fromBrute)
+		c.learn(n, fromWords)
 	}
+	c.state(fromWords).Checked, c.state(fromWords).Total = len(Common), len(Common)
 	if c.asking != nil {
 		c.asking.wait(fastWait)
 	}
 }
 
-// learn запоминает имя домена, которое всплыло не из источников.
+// learn запоминает, что имя домена нашёл свой источник.
 func (c *collector) learn(name, from string) {
-	if subs, _ := splitNames([]string{name}, c.domain); len(subs) == 1 && c.extra[subs[0]] == "" {
-		c.extra[subs[0]] = from
+	subs, _ := splitNames([]string{name}, c.domain)
+	if len(subs) == 1 && !slices.Contains(c.from[subs[0]], from) {
+		c.from[subs[0]] = append(c.from[subs[0]], from)
 	}
 }
 
-// fresh: имена, которых ещё не резолвили; отброшенное из-за записи * возвращается, если нашёлся сертификат.
-func (c *collector) fresh() map[string]string {
-	out := map[string]string{}
-	add := func(name, from string) {
-		old, tried := c.tried[name]
-		again := c.dropped[name] && from == fromCert && old != fromCert
-		if out[name] == "" && (!tried || again) {
-			out[name] = from
-		}
+// state: строка своего источника в отчёте.
+func (c *collector) state(label string) *SourceState {
+	if c.states[label] == nil {
+		c.states[label] = &SourceState{Name: label, Own: true}
 	}
-	add(c.domain, fromApex)
+	return c.states[label]
+}
+
+// fresh: имена, которых ещё не резолвили, со всеми подписями; отброшенное из-за записи * возвращается, если о нём
+// узнал источник, который называет только заведённые имена.
+func (c *collector) fresh() map[string][]string {
+	all := map[string][]string{c.domain: {fromApex}}
 	if c.asking != nil {
-		for n, from := range c.asking.found().label {
-			add(n, from)
+		for n, labels := range c.asking.found().labels {
+			all[n] = append(all[n], labels...)
 		}
 	}
-	for n, from := range c.extra {
-		add(n, from)
+	for n, labels := range c.from {
+		all[n] = append(all[n], labels...)
+	}
+	out := map[string][]string{}
+	for n, labels := range all {
+		wasFirm, tried := c.tried[n]
+		if !tried || c.dropped[n] && firm(labels) && !wasFirm {
+			out[n] = labels
+		}
 	}
 	return out
 }
@@ -179,54 +196,98 @@ func (c *collector) surface() {
 	}
 }
 
-// finish складывает отчёт: имена по алфавиту, адреса по порядку, подписи - по всем ответившим источникам.
+// finish складывает отчёт: имена по алфавиту, адреса по порядку, у каждого имени - кто его знает.
 func (c *collector) finish() {
 	r := c.rep
 	found := sourceNames{}
 	if c.asking != nil {
 		found = c.asking.found()
 	}
-	r.Related, r.Sources = found.related, found.states
+	r.Related = slices.Compact(slices.Sorted(slices.Values(slices.Concat(found.related, c.related))))
 	for _, name := range slices.Sorted(maps.Keys(c.hosts)) {
 		h := *c.hosts[name]
-		h.Sources = found.by[name]
-		h.Source = cmp.Or(found.label[name], h.Source)
+		labels := slices.Concat(c.from[name], found.labels[name])
 		if name == c.domain {
-			h.Source = fromApex
+			labels = append(labels, fromApex)
+		}
+		h.Source, h.Sources = best(labels), c.knownBy(name, found)
+		if selfFound(labels) {
+			r.Found.Own++
+		} else {
+			r.Found.Added++
 		}
 		r.Hosts = append(r.Hosts, h)
 	}
 	for _, ip := range slices.Sorted(maps.Keys(c.addrs)) {
 		r.Addrs = append(r.Addrs, *c.addrs[ip])
 	}
-	failed := 0
-	for _, s := range r.Sources {
+	r.Sources = append(c.ownStates(), found.states...)
+	for _, s := range found.states {
 		if s.Name == "crt.sh" {
 			r.CRTCached = s.Cached
 		}
 		if s.Error != "" && s.Names == 0 {
-			failed++
+			r.Found.Silent = append(r.Found.Silent, s.Name)
 		}
 	}
-	if failed > 0 && failed == len(r.Sources) {
-		c.fail("ни один источник имён не ответил: имена только из перебора частых")
-	}
-	if n := len(c.dropped); n > 0 {
-		r.Notes = append(r.Notes, "у домена запись *."+c.domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(n))
-	}
-	if c.probed > maxProbes {
-		r.Notes = append(r.Notes, "по HTTP проверено "+strconv.Itoa(maxProbes)+" имён из "+strconv.Itoa(c.probed))
-	}
-	if c.scanned > maxScans {
-		r.Notes = append(r.Notes, "порты спрошены у "+strconv.Itoa(maxScans)+" адресов из "+strconv.Itoa(c.scanned))
-	}
-	if c.met > maxNeighborAddrs {
-		r.Notes = append(r.Notes, "соседи спрошены у "+strconv.Itoa(maxNeighborAddrs)+" адресов из "+strconv.Itoa(c.met))
-	}
-	if c.checked > maxChecks {
-		r.Notes = append(r.Notes, "порты проверены у "+strconv.Itoa(maxChecks)+" адресов из "+strconv.Itoa(c.checked))
-	}
+	r.Notes = append(r.Notes, c.limits()...)
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
+}
+
+// knownBy: источники, которые знают имя, - свои, о которых отчёт говорит строкой, и сторонние.
+func (c *collector) knownBy(name string, found sourceNames) []string {
+	var out []string
+	for _, label := range reported {
+		if slices.Contains(c.from[name], label) {
+			out = append(out, label)
+		}
+	}
+	return append(out, found.by[name]...)
+}
+
+// ownStates: строки своих источников - сколько имён назвал каждый; молчавший и без замечаний не показывается.
+func (c *collector) ownStates() []SourceState {
+	var out []SourceState
+	for _, label := range reported {
+		names := 0
+		for _, labels := range c.from {
+			if slices.Contains(labels, label) {
+				names++
+			}
+		}
+		st := c.states[label]
+		if st == nil && names == 0 {
+			continue
+		}
+		if st == nil {
+			st = &SourceState{Name: label, Own: true}
+		}
+		st.Names = names
+		out = append(out, *st)
+	}
+	return out
+}
+
+// limits: что осталось за пределами сбора.
+func (c *collector) limits() []string {
+	var out []string
+	if n := len(c.dropped); n > 0 {
+		out = append(out, "у домена запись *."+c.domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(n))
+	}
+	for _, l := range []struct {
+		got, max int
+		text     string
+	}{
+		{c.probed, maxProbes, "по HTTP проверено %d имён из %d"},
+		{c.scanned, maxScans, "порты спрошены у %d адресов из %d"},
+		{c.met, maxNeighborAddrs, "соседи спрошены у %d адресов из %d"},
+		{c.checked, maxChecks, "порты проверены у %d адресов из %d"},
+	} {
+		if l.got > l.max {
+			out = append(out, fmt.Sprintf(l.text, l.max, l.got))
+		}
+	}
+	return out
 }
 
 // fail: ошибка источника в отчёт - одна на всех.
