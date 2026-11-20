@@ -6,11 +6,12 @@ package tproxy
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"os"
 	"time"
+
+	"github.com/TimurTurdyev/tim/internal/bindif"
 )
 
 // Options: куда слушать и через что ходить наружу.
@@ -28,9 +29,10 @@ func Serve(ctx context.Context, o Options) error {
 		return err
 	}
 	defer func() { _ = pf.Close() }()
-	ifi, err := net.InterfaceByName(o.Iface)
+	// Сокет привязан к интерфейсу: маршрут ищется в его рамках, даже если маршрут по умолчанию держит туннель.
+	bind, err := bindif.Control(o.Iface)
 	if err != nil {
-		return fmt.Errorf("интерфейс %s: %w", o.Iface, err)
+		return err
 	}
 	ln, err := net.Listen("tcp4", o.Listen)
 	if err != nil {
@@ -40,7 +42,7 @@ func Serve(ctx context.Context, o Options) error {
 		<-ctx.Done()
 		_ = ln.Close()
 	}()
-	dialer := &net.Dialer{Timeout: 15 * time.Second, LocalAddr: &net.TCPAddr{IP: o.Local}, Control: bindIface(ifi.Index)}
+	dialer := &net.Dialer{Timeout: 15 * time.Second, LocalAddr: &net.TCPAddr{IP: o.Local}, Control: bind}
 	logf := o.Logf
 	if logf == nil {
 		logf = func(string, ...any) {}

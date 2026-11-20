@@ -1,13 +1,10 @@
-// Package dnsq: запросы DNS, которых нет в net: CAA и признак DNSSEC от проверяющего резолвера.
+// Package dnsq: запросы DNS, которых нет в net: CAA, признак DNSSEC, зона имени; путь - обычный, DoH или с интерфейса.
 package dnsq
 
 import (
 	"context"
-	"errors"
 	"math/rand/v2"
-	"net"
 	"strings"
-	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
 )
@@ -32,7 +29,7 @@ func query(server, name string, t dnsmessage.Type) (Answer, error) {
 	if Hijacked() {
 		resp, err = overHTTPS(context.Background(), msg)
 	} else {
-		resp, err = overUDP(server, msg, 3*time.Second)
+		resp, err = ask(open(Control()), server, msg, tries)
 	}
 	if err != nil {
 		return Answer{}, err
@@ -51,11 +48,16 @@ func query(server, name string, t dnsmessage.Type) (Answer, error) {
 }
 
 func build(name string, t dnsmessage.Type) ([]byte, error) {
+	return compose(name, t, true, true)
+}
+
+// compose: signed добавляет EDNS с битом DO - без него резолвер не скажет, проверена ли подпись.
+func compose(name string, t dnsmessage.Type, recurse, signed bool) ([]byte, error) {
 	n, err := dnsmessage.NewName(strings.TrimSuffix(name, ".") + ".")
 	if err != nil {
 		return nil, err
 	}
-	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: uint16(rand.IntN(1 << 16)), RecursionDesired: true})
+	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: uint16(rand.IntN(1 << 16)), RecursionDesired: recurse})
 	b.EnableCompression()
 	if err := b.StartQuestions(); err != nil {
 		return nil, err
@@ -63,7 +65,9 @@ func build(name string, t dnsmessage.Type) ([]byte, error) {
 	if err := b.Question(dnsmessage.Question{Name: n, Type: t, Class: dnsmessage.ClassINET}); err != nil {
 		return nil, err
 	}
-	// EDNS с битом DO: без него резолвер не скажет, проверена ли подпись.
+	if !signed {
+		return b.Finish()
+	}
 	if err := b.StartAdditionals(); err != nil {
 		return nil, err
 	}
@@ -77,24 +81,6 @@ func build(name string, t dnsmessage.Type) ([]byte, error) {
 	return b.Finish()
 }
 
-func overUDP(server string, msg []byte, limit time.Duration) ([]byte, error) {
-	conn, err := net.DialTimeout("udp", server, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(limit))
-	if _, err := conn.Write(msg); err != nil {
-		return nil, err
-	}
-	buf := make([]byte, 4096)
-	k, err := conn.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf[:k], nil
-}
-
 // Query спрашивает резолверы по очереди, пока один не ответит.
 func Query(name string, t dnsmessage.Type) (Answer, error) {
 	var last error
@@ -106,7 +92,7 @@ func Query(name string, t dnsmessage.Type) (Answer, error) {
 		last = err
 	}
 	if last == nil {
-		last = errors.New("нет резолверов")
+		last = errNoResolvers
 	}
 	return Answer{}, last
 }

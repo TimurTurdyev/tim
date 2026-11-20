@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -55,19 +54,4 @@ func OriginalDst(pf *os.File, src, dst *net.TCPAddr) (string, error) {
 	ip := net.IP(nl.rdaddr[:4])
 	port := binary.BigEndian.Uint16(nl.rdxport[:2])
 	return net.JoinHostPort(ip.String(), fmt.Sprint(port)), nil
-}
-
-// bindIface: исходящий сокет привязан к интерфейсу, и маршрут ищется в его рамках - мимо
-// туннеля, даже если тот держит маршрут по умолчанию.
-func bindIface(index int) func(network, address string, c syscall.RawConn) error {
-	return func(network, address string, c syscall.RawConn) error {
-		var serr error
-		err := c.Control(func(fd uintptr) {
-			serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_BOUND_IF, index)
-		})
-		if err != nil {
-			return err
-		}
-		return serr
-	}
 }
