@@ -1,0 +1,42 @@
+[
+ {
+  "id": "cc-main-2099-jan-feb-mar",
+  "crawls": [
+   "CC-MAIN-2099-04",
+   "CC-MAIN-2099-08",
+   "CC-MAIN-2099-12"
+  ],
+  "index": "https://data.commoncrawl.org/projects/hyperlinkgraph/cc-main-2099-jan-feb-mar/index.html",
+  "location": "s3://commoncrawl/projects/hyperlinkgraph/cc-main-2099-jan-feb-mar/",
+  "stats": {
+   "host": {
+    "nodes": 4498,
+    "arcs": 40482
+   },
+   "domain": {
+    "nodes": 2249,
+    "arcs": 31486
+   }
+  }
+ },
+ {
+  "id": "cc-main-2098-99-dec-jan-feb",
+  "crawls": [
+   "CC-MAIN-2098-51",
+   "CC-MAIN-2099-04",
+   "CC-MAIN-2099-08"
+  ],
+  "index": "https://data.commoncrawl.org/projects/hyperlinkgraph/cc-main-2098-99-dec-jan-feb/index.html",
+  "location": "s3://commoncrawl/projects/hyperlinkgraph/cc-main-2098-99-dec-jan-feb/",
+  "stats": {
+   "host": {
+    "nodes": 4000,
+    "arcs": 36000
+   },
+   "domain": {
+    "nodes": 2000,
+    "arcs": 28000
+   }
+  }
+ }
+]

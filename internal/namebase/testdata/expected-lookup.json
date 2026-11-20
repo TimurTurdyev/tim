@@ -1,0 +1,177 @@
+{
+ "names": 4497,
+ "queries": {
+  "alone.test": {
+   "first": [
+    "alone.test"
+   ],
+   "sha256": "aede584453deb57970d8c3a0e0cb4f4920b99cf0043362249ee371c22e2f1b43",
+   "total": 1
+  },
+  "ample.com": {
+   "first": [],
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "total": 0
+  },
+  "api.example.com": {
+   "first": [
+    "api.example.com",
+    "dev.api.example.com"
+   ],
+   "sha256": "6fc711aec430f702ca615ff183469f0c66a493e8651a372d42f0b7a33aa7ba67",
+   "total": 2
+  },
+  "blogs.test": {
+   "first": [
+    "blogs.test",
+    "u0000.blogs.test",
+    "www.u0000.blogs.test",
+    "u0001.blogs.test",
+    "u0002.blogs.test",
+    "u0003.blogs.test",
+    "u0004.blogs.test",
+    "u0005.blogs.test",
+    "u0006.blogs.test",
+    "u0007.blogs.test",
+    "u0008.blogs.test",
+    "u0009.blogs.test",
+    "u0010.blogs.test",
+    "www.u0010.blogs.test",
+    "u0011.blogs.test",
+    "u0012.blogs.test",
+    "u0013.blogs.test",
+    "u0014.blogs.test",
+    "u0015.blogs.test",
+    "u0016.blogs.test"
+   ],
+   "sha256": "acb3be41c1b2cbc5056e20ca806fbae680c57f8778049b7c7f42b435f83749ca",
+   "total": 3302
+  },
+  "example.com": {
+   "first": [
+    "example.com",
+    "2fwww.example.com",
+    "api.example.com",
+    "dev.api.example.com",
+    "static.cdn.example.com",
+    "a.b.c.d.example.com",
+    "db01.example.com",
+    "db02.example.com",
+    "mail.example.com",
+    "shop.test.example.com",
+    "under_score.example.com",
+    "www.example.com",
+    "www.www.example.com",
+    "xn--e1afmkfd.example.com"
+   ],
+   "sha256": "0aa53669d6a9f5c5120ef7ce5e1ff61806ce0b7733032aae14c99a5ccf323be1",
+   "total": 14
+  },
+  "example.net": {
+   "first": [
+    "www.example.net"
+   ],
+   "sha256": "d75fe2320eae05dae166b70105647555a94a9fc197af8fcc8c1631ff865dd739",
+   "total": 1
+  },
+  "example.org": {
+   "first": [
+    "example.org",
+    "docs.example.org",
+    "lllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll.example.org",
+    "www.example.org"
+   ],
+   "sha256": "cf7bd882934edf07153b2750df2fd6dd8c2dcfa6f9e51655e8780137ccaf2d2a",
+   "total": 4
+  },
+  "long.test": {
+   "first": [],
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "total": 0
+  },
+  "missing.test": {
+   "first": [],
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "total": 0
+  },
+  "onlywww.test": {
+   "first": [
+    "www.onlywww.test"
+   ],
+   "sha256": "691567a1f6ce1d6e7e9c49777b294f6236dc309a8ff0bb96772a1a1fe8819477",
+   "total": 1
+  },
+  "shop-online.test": {
+   "first": [
+    "shop-online.test",
+    "www.shop-online.test"
+   ],
+   "sha256": "fc66f042e9e43ccff810bd4ff0f4fce3e5182f1b8c85ed5fdd15fc560fd0fa99",
+   "total": 2
+  },
+  "shop.test": {
+   "first": [
+    "shop.test",
+    "api.shop.test",
+    "www.shop.test"
+   ],
+   "sha256": "08af5a130cf8875b604679c7f6c1fcbae5eb1c189da82812db41eb14f7316af9",
+   "total": 3
+  },
+  "shop0.test": {
+   "first": [
+    "shop0.test"
+   ],
+   "sha256": "cfca688fcbf6bd0acda1eb4c58b14c54824de5c30ab3ad3bc13c6875b04f450c",
+   "total": 1
+  },
+  "site000.test": {
+   "first": [
+    "site000.test",
+    "api.site000.test",
+    "dev.api.site000.test",
+    "mail.site000.test",
+    "www.site000.test",
+    "www_site_test.site000.test"
+   ],
+   "sha256": "a313e757190869a14842f6f81f7579d329408e70754e95e5e7aa89e928539970",
+   "total": 6
+  },
+  "test": {
+   "first": [
+    "alone.test",
+    "blogs.test",
+    "u0000.blogs.test",
+    "www.u0000.blogs.test",
+    "u0001.blogs.test",
+    "u0002.blogs.test",
+    "u0003.blogs.test",
+    "u0004.blogs.test",
+    "u0005.blogs.test",
+    "u0006.blogs.test",
+    "u0007.blogs.test",
+    "u0008.blogs.test",
+    "u0009.blogs.test",
+    "u0010.blogs.test",
+    "www.u0010.blogs.test",
+    "u0011.blogs.test",
+    "u0012.blogs.test",
+    "u0013.blogs.test",
+    "u0014.blogs.test",
+    "u0015.blogs.test"
+   ],
+   "sha256": "1dccb9e805cc94a9acf73f9af651b993459fde5b251c9e357ff2a76e40486c47",
+   "total": 4478
+  },
+  "u0000.blogs.test": {
+   "first": [
+    "u0000.blogs.test",
+    "www.u0000.blogs.test"
+   ],
+   "sha256": "8845f113a6f7e99fd5da2f41eac5a6b4dd2035380f738a61cdc73d1f730d6c62",
+   "total": 2
+  }
+ },
+ "release": "cc-main-2099-jan-feb-mar",
+ "source": 4498
+}

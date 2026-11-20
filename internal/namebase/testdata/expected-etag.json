@@ -1,0 +1,12 @@
+{
+ "part-00000-00000000-0000-4000-8000-000000000000-c000.txt.gz": {
+  "etag_part_4kib": "1113e3bf5f0b17dcb60397a1a8d35e86-3",
+  "etag_part_8mib": "3f1b4c5ce1896ef05df44d9a216f1ddd",
+  "size": 10770
+ },
+ "part-00001-00000000-0000-4000-8000-000000000000-c000.txt.gz": {
+  "etag_part_4kib": "002dbdb88a93bda1ba5dae13bb3f211c-3",
+  "etag_part_8mib": "a39b15c6d5f39d72e01c969c4087c1f2",
+  "size": 10811
+ }
+}
