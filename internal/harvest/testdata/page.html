@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Example shop</title>
+<base href="https://www.example.com/">
+<link rel="canonical" href="https://www.example.com/catalog/">
+<link rel="alternate" hreflang="de" href="//de.example.com/">
+<link rel="preconnect" href="https://static.example.com">
+<link rel="dns-prefetch" href="//img2.example.com">
+<link rel=stylesheet href=https://cdn.example.com/app.css>
+<meta http-equiv="refresh" content="30; url=https://status.example.com/maintenance">
+<meta property="og:image" content="https://media.example.com/og/cover.png">
+<meta name="msapplication-config" content="//assets.example.com/browserconfig.xml">
+<!-- old login moved: https://legacy-auth.example.com/login -->
+<script src="https://js.example.com/bundle.min.js" async></script>
+<script>
+  window.__CONFIG__ = {"api":"https:\/\/api.example.com\/v2","ws":"wss://ws.example.com/socket",
+    "sso":"https\x3a\x2f\x2fsso.example.com\x2fauth","metrics":"//metrics.internal.example.com:9443/push",
+    "cdnHosts":["a1.cdn.example.com","a2.cdn.example.com"],"mail":"billing@pay.example.com"};
+  var back = "/login?next=https%3A%2F%2Faccount.example.com%2Forders";
+  var twice = "/go?u=https%253A%252F%252Fpartners.example.com%252Fin";
+  var notOurs = "https://example.com.evil.test/x https://notexample.com/ https://example.community/ https://my-example.com/";
+</script>
+</head>
+<body>
+<a href="https://blog.example.com/2026/hello">Blog</a>
+<a href='http://FORUM.Example.COM/topics'>Forum</a>
+<a href="https://user:secret@files.example.com:8443/pub/">Files</a>
+<a href="mailto:support@helpdesk.example.com">Support</a>
+<a href="https://www.example.com-cdn.test/trap">trap</a>
+<a href="https://shop.example.com.">trailing dot</a>
+<a href="/redirect?to=&#x2F;&#x2F;promo.example.com&#x2F;sale&amp;utm=1">Promo</a>
+<img src="https://img.example.com/logo.png" srcset="https://img.example.com/logo@2x.png 2x, //img3.example.com/logo@3x.png 3x">
+<video poster="https://video.example.com/p.jpg"><source src="https://stream.example.com/v.m3u8"></video>
+<form action="https://pay.example.com/checkout" method="post"><button formaction="https://pay-test.example.com/checkout">Test</button></form>
+<iframe src="https://widgets.example.com/chat"></iframe>
+<div data-endpoint="https://graphql.example.com/query" data-hosts="eu.edge.example.com us.edge.example.com"></div>
+<p>Mirrors: ftp.example.com, rsync.example.com and xn--e1afmkfd.example.com (IDN). Wildcard cert: *.apps.example.com.</p>
+<p>DMARC lives at _dmarc.example.com; server 192.0.2.10, 198.51.100.7 and 203.0.113.99 are documentation addresses.</p>
+<p>Broken: -dash.example.com trailing-.example.com aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com</p>
+</body>
+</html>

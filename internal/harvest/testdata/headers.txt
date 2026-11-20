@@ -1,0 +1,15 @@
+HTTP/1.1 302 Found
+Server: nginx
+Location: https://www.example.com/start?from=apex
+Content-Security-Policy: default-src 'self' https://static.example.com *.cdn.example.com; script-src 'self' 'unsafe-inline' https://js.example.com https://tags.analytics.test; connect-src 'self' wss://ws.example.com https://api.example.com:8443 https://sentry.internal.example.com; frame-ancestors https://partners.example.com; report-uri https://csp-report.example.com/r
+Content-Security-Policy-Report-Only: img-src https://img.example.com https://jira.corp.example.com data:
+Link: <https://fonts.example.com/inter.woff2>; rel=preload; as=font, <//edge.example.com>; rel=preconnect
+Set-Cookie: sid=abc123; Domain=.example.com; Path=/; Secure; HttpOnly
+Set-Cookie: sso=eyJob3N0IjoiZmFrZS5leGFtcGxlLmNvbSJ9; domain=sso.example.com; Path=/
+Set-Cookie: note=seen-at-trap.example.com; Path=/
+Access-Control-Allow-Origin: https://app.example.com
+Report-To: {"group":"default","max_age":31536000,"endpoints":[{"url":"https://nel.example.com/report"}]}
+X-Served-By: cache-fra-01.example.com
+Alt-Svc: h3=":443"; ma=86400
+Refresh: 5; url=https://m.example.com/
+X-Frame-Options: ALLOW-FROM https://example.com.evil.test/
