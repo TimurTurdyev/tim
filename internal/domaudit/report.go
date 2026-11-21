@@ -1,6 +1,7 @@
 package domaudit
 
 import (
+	"crypto/x509"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/asn"
@@ -32,8 +33,10 @@ type Host struct {
 	// Unchecked: имя за пределом сбора, по HTTP его не спрашивали.
 	Unchecked bool `json:"unchecked,omitempty"`
 
-	trackers  []Tracker // только у главной страницы
-	certNames []string  // все имена сертификата
+	trackers  []Tracker         // только у главной страницы
+	certNames []string          // все имена сертификата
+	pageNames []string          // имена домена со страницы и из заголовков ответа
+	cert      *x509.Certificate // сертификат сайта: по его меткам ищутся соседи в журналах
 }
 
 // Silent: имя спрашивали по HTTP, и оно не ответило.
@@ -69,6 +72,7 @@ type Addr struct {
 	seen   bool     // порты уже спросили
 	met    bool     // соседей уже спросили
 	tried  bool     // порты уже проверяли сами
+	shaken bool     // сертификат без имени уже спрашивали
 }
 
 // Found: итог по именам отчёта. Own - знает хотя бы один свой источник, Added - только сторонние сервисы,

@@ -8,9 +8,13 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
+	"github.com/TimurTurdyev/tim/internal/namebase"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
+
+// takeoverWords: столько частых имён аудит проверяет на захват сверх тех, что уже находил сбор.
+const takeoverWords = 100
 
 // Захват поддомена: имя смотрит через CNAME на чужой сервис, а там его никто не занял. Кто займёт,
 // получит сайт на этом имени - с куками и доверием основного домена. Признаки - по списку
@@ -125,7 +129,7 @@ func Takeovers(domain string) []Host {
 	for _, n := range knownNames(domain) {
 		names[n] = true
 	}
-	for _, p := range Common {
+	for _, p := range namebase.Words(takeoverWords) {
 		names[p+"."+domain] = true
 	}
 	all := slices.Sorted(maps.Keys(names))
@@ -139,7 +143,7 @@ func Takeovers(domain string) []Host {
 	}
 	hosts = par.Map(hosts, 8, func(h Host) Host {
 		h.IPs = lookup(h.Name)
-		probe(&h, false, pins([]*Host{&h}))
+		probe(&h, domain, false, pins([]*Host{&h}))
 		return h
 	})
 	return slices.DeleteFunc(hosts, func(h Host) bool { return h.Takeover == nil })

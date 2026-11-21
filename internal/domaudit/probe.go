@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/harvest"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -34,6 +35,7 @@ type answer struct {
 	engine string
 	final  string
 	body   string
+	header http.Header
 	cert   *x509.Certificate
 }
 
@@ -64,7 +66,7 @@ func (c *collector) probe(list []*Host) {
 		for _, h := range queue {
 			c.group.Go(func() {
 				got := *h // остальные поля до конца сбора никто не меняет, читать их можно без замка
-				probe(&got, c.rank(h) < home, known)
+				probe(&got, c.domain, c.rank(h) < home, known)
 				c.mu.Lock()
 				*h = got
 				c.mu.Unlock()
@@ -105,7 +107,7 @@ func (c *collector) rank(h *Host) int {
 }
 
 // probe: что отвечает имя. https и http спрашиваются разом, ответ https важнее; у главной страницы - ещё и счётчики.
-func probe(h *Host, home bool, known map[string][]string) {
+func probe(h *Host, domain string, home bool, known map[string][]string) {
 	limit := int64(pageLimit)
 	if home {
 		limit = homeLimit
@@ -128,7 +130,9 @@ func probe(h *Host, home bool, known map[string][]string) {
 	}
 	h.Scheme, h.Status, h.Server, h.Engine, h.Final = got.scheme, got.status, got.server, got.engine, got.final
 	h.Title = Title(got.body)
+	h.pageNames = harvest.PageNames(domain, got.body, got.header)
 	if got.cert != nil {
+		h.cert = got.cert
 		h.CertName, h.certNames = certNames(got.cert)
 	}
 	if home {
@@ -183,7 +187,7 @@ func ask(ctx context.Context, client *http.Client, scheme, name string, limit in
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
 	got := &answer{scheme: scheme, status: resp.StatusCode, server: ui.Plain(resp.Header.Get("Server")),
-		body: decode(body, resp.Header.Get("Content-Type"))}
+		body: decode(body, resp.Header.Get("Content-Type")), header: resp.Header}
 	// Редирект отмечаем, только если ушли на другой адрес, а не просто на "/" того же имени.
 	u := resp.Request.URL
 	if u.Host != name || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {

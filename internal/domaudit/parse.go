@@ -33,16 +33,6 @@ var trackerRes = []struct {
 // hostLine: имя целиком; подчёркивание бывает в служебных метках вроде _dmarc.
 var hostLine = regexp.MustCompile(`^[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?(\.[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?)+$`)
 
-// Common: частые имена поддоменов для перебора через DNS.
-var Common = []string{
-	"www", "mail", "webmail", "smtp", "imap", "pop", "mx", "ns1", "ns2", "api", "api2", "app", "admin", "panel",
-	"cp", "cpanel", "dev", "stage", "staging", "test", "demo", "beta", "old", "new", "shop", "store", "blog",
-	"news", "forum", "wiki", "docs", "doc", "help", "support", "status", "cdn", "static", "assets", "img",
-	"images", "media", "files", "upload", "download", "db", "mysql", "pgsql", "redis", "git", "gitlab", "jenkins",
-	"ci", "build", "deploy", "vpn", "ssh", "ftp", "sftp", "backup", "monitor", "grafana", "metrics", "logs",
-	"kibana", "portal", "my", "lk", "office", "crm", "erp", "lms", "edu", "m", "mobile", "ws", "socket", "chat",
-}
-
 // ParseCRT разбирает ответ crt.sh: поддомены домена и другие регистрируемые домены из тех же сертификатов.
 func ParseCRT(data []byte, domain string) (subs, related []string, err error) {
 	var rows []struct {
@@ -174,7 +164,7 @@ func splitNames(names []string, domain string) (subs, related []string) {
 			continue
 		}
 		reg, e := publicsuffix.EffectiveTLDPlusOne(n)
-		if e == nil && reg != domain && !seenR[reg] {
+		if e == nil && reg != domain && !seenR[reg] && realZone(n) {
 			seenR[reg] = true
 			related = append(related, reg)
 		}
@@ -182,4 +172,10 @@ func splitNames(names []string, domain string) (subs, related []string) {
 	sort.Strings(subs)
 	sort.Strings(related)
 	return subs, related
+}
+
+// realZone: имя лежит в настоящей зоне, а не в выдуманной вроде "traefik.default" из сертификата по умолчанию.
+func realZone(name string) bool {
+	suffix, icann := publicsuffix.PublicSuffix(name)
+	return icann || strings.Contains(suffix, ".")
 }

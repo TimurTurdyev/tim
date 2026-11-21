@@ -27,6 +27,7 @@ func TestBest(t *testing.T) {
 
 // Итог: имя, которое знает хоть один свой источник, найдено самими; сторонние добавили то, чего свои не знают.
 func TestFound(t *testing.T) {
+	t.Setenv("TIM_STATE_DIR", t.TempDir())
 	c := newCollector("example.com", Options{})
 	c.asking = &asking{
 		list: []source{{name: sourceTHC, label: sourceTHC}, {name: "crt.sh", label: fromCert}},
@@ -72,5 +73,26 @@ func TestFound(t *testing.T) {
 	}
 	if !slices.Equal(names, []string{fromWords, fromSPF, fromPage, sourceTHC, "crt.sh"}) {
 		t.Errorf("источники: %v", names)
+	}
+}
+
+// Память: живое имя своего источника в следующий раз идёт на проверку с той же подписью, мёртвое забывается.
+func TestMemory(t *testing.T) {
+	t.Setenv("TIM_STATE_DIR", t.TempDir())
+	c := newCollector("example.com", Options{})
+	c.learn("git.example.com", fromPage)
+	c.learn("git.example.com", fromSiteCert)
+	c.learn("gone.example.com", fromPattern)
+	c.learn("mx.example.com", fromMX)
+	c.hosts["git.example.com"] = &Host{Name: "git.example.com", IPs: []string{"192.0.2.1"}}
+	c.hosts["mx.example.com"] = &Host{Name: "mx.example.com", IPs: []string{"192.0.2.2"}}
+	c.remember()
+	next := newCollector("example.com", Options{})
+	next.recall()
+	if got := next.from["git.example.com"]; !slices.Contains(got, fromPage) || !slices.Contains(got, fromSiteCert) || len(got) != 2 {
+		t.Errorf("git: %v", got)
+	}
+	if len(next.from) != 1 {
+		t.Errorf("в памяти лишнее: %v", next.from)
 	}
 }

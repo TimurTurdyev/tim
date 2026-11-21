@@ -33,6 +33,7 @@ func (c *collector) records() {
 		c.known[strings.ToLower(s.Name)] = s.IPs
 		c.learn(s.Name, fromNS)
 	}
+	c.dnsNames()
 }
 
 func mailServers(ctx context.Context, domain string) []Server {

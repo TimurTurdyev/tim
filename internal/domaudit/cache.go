@@ -34,12 +34,17 @@ func storeNames(source, domain string, n nameList) {
 	_ = cache.Store(namesPath(source, domain), n, 0o600)
 }
 
-// knownNames: имена домена из кэша всех источников любого возраста - без обращений в сеть.
+// knownNames: имена домена из кэша сторонних источников и из памяти своих, любого возраста - без обращений в сеть.
 func knownNames(domain string) []string {
 	var out []string
 	for _, s := range sources {
 		if e, ok := loadNames(s.name, domain); ok {
 			out = append(out, e.Value.Subs...)
+		}
+	}
+	if e, ok := cache.Load[memory](memoryPath(domain)); ok {
+		for _, names := range e.Value.Names {
+			out = append(out, names...)
 		}
 	}
 	slices.Sort(out)

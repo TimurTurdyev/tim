@@ -1,8 +1,10 @@
 package domaudit
 
 import (
+	"crypto/x509"
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -46,9 +48,26 @@ type collector struct {
 	related []string                // чужие домены, которые назвала сама цель
 	known   map[string][]string     // адреса, которые уже спросили
 	wild    []string                // адреса несуществующего имени
+	wilds   map[string][]string     // то же под поддоменами, у которых есть угаданные дети
 	tried   map[string]bool         // имя уже резолвили; true - тогда оно было точно заведённым
 	dropped map[string]bool         // неотличимо от несуществующего
 	cnames  map[string]string
+
+	pathOnce   sync.Once
+	dns        dnsPath
+	swept      chan found // ответ перебора словаря; nil - забран или не запускался
+	wordsTotal int
+	nodes      []string // имена без адреса: у них могут быть дети
+	zones      []string // дочерние зоны
+	poolMu     sync.Mutex
+	pool       map[string]pool // ответы на несуществующее имя под родителями
+	firmly     map[string]bool // совпадают с записью *, но заведены явно
+	mailIPs    []string        // адреса и сети почты из SPF
+	mailNets   []netip.Prefix
+	included   []string              // записи SPF внутри домена, которые уже раскрыли
+	nets       map[netip.Prefix]bool // сети /24, про которые уже решили, обходить ли
+	netsDone   int
+	certs      []*x509.Certificate // сертификаты найденных сайтов и своих серверов: по их меткам ищутся соседи
 
 	mu      sync.Mutex // имена пишут пробы, ошибки - кто первый наткнётся
 	hosts   map[string]*Host
@@ -78,13 +97,31 @@ func Collect(domain string, opt Options) *Report {
 	met.Go(func() { c.checkPorts(ports) })
 	c.surface()
 	c.round(nil)
+	c.deepen()
 	met.Wait()
 	c.neighbors(c.unmet())
 	c.checkPorts(c.unchecked())
-	c.probing.Wait()
-	c.group.Wait()
+	c.last()
 	c.finish()
 	return c.rep
+}
+
+// last: пробы доходят до конца; имена, которые назвали сайты последнего круга, получают свой круг - короткий,
+// дальше он не растёт.
+func (c *collector) last() {
+	c.probing.Wait()
+	c.group.Wait()
+	if c.opt.Quick {
+		return
+	}
+	c.gather()
+	if len(c.fresh()) == 0 {
+		return
+	}
+	c.round(nil)
+	c.probing.Wait()
+	c.group.Wait()
+	c.gather()
 }
 
 // Names: живые имена домена, их адреса и порты своих - для ночного обхода: без HTTP, соседей и медленных источников,
@@ -94,9 +131,14 @@ func Names(domain string, opt Options) *Report {
 	c := newCollector(domain, opt)
 	c.discover()
 	c.asking.wait(sourceWait)
-	_, addrs := c.resolve(c.fresh())
-	maps.Copy(addrs, c.servers())
-	c.enrich(addrs)
+	c.takeWords(2 * time.Minute)
+	// Второй проход - имена из обратных записей сетей, которые стали известны после первого.
+	for range 2 {
+		_, addrs := c.resolve(c.fresh())
+		maps.Copy(addrs, c.servers())
+		c.enrich(addrs)
+		c.reverse()
+	}
 	c.checkPorts(c.unchecked())
 	c.finish()
 	return c.rep
@@ -105,29 +147,29 @@ func Names(domain string, opt Options) *Report {
 func newCollector(domain string, opt Options) *collector {
 	return &collector{domain: domain, opt: opt, rep: &Report{Domain: domain},
 		from: map[string][]string{}, states: map[string]*SourceState{}, known: map[string][]string{}, tried: map[string]bool{},
-		dropped: map[string]bool{},
-		cnames:  map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
+		dropped: map[string]bool{}, wilds: map[string][]string{}, pool: map[string]pool{}, firmly: map[string]bool{}, nets: map[netip.Prefix]bool{},
+		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
 }
 
-// discover: почта и серверы имён, перебор частых имён и быстрые источники.
+// discover: почта и серверы имён, память прошлых сборов, словарь и быстрые источники.
 func (c *collector) discover() {
+	c.bind()
+	c.recall()
 	if !c.opt.Quiet {
 		c.note(sourcesNote(stale(c.domain, c.opt)))
 		c.asking = askSources(c.domain, c.opt)
 	}
-	var brute map[string][]string
-	par.All(c.records, func() {
-		c.wild = wildcard(c.domain)
-		brute = bruteforce(c.domain, c.wild)
-	})
-	for n, ips := range brute {
-		c.known[n] = ips
-		c.learn(n, fromWords)
-	}
-	c.state(fromWords).Checked, c.state(fromWords).Total = len(Common), len(Common)
+	c.startWords()
+	par.All(c.records, func() { c.wild = wildcard(c.domain) })
 	if c.asking != nil {
 		c.asking.wait(fastWait)
 	}
+	// Быстрому сбору второй круг не нужен: короткий словарь дожидаемся сразу.
+	wait := time.Duration(0)
+	if c.opt.Quick {
+		wait = sweepQuick + 2*poolBudget
+	}
+	c.takeWords(wait)
 }
 
 // learn запоминает, что имя домена нашёл свой источник.
@@ -184,16 +226,16 @@ func (c *collector) surface() {
 		}
 		c.asking.wait(sourceWait)
 	}
+	if !c.takeWords(0) {
+		c.note("словарь: проверяю имена " + c.path().how)
+		c.takeWords(time.Minute)
+	}
 	for c.pending.Load() > 0 && time.Since(c.since) < settle {
 		time.Sleep(50 * time.Millisecond)
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, h := range c.hosts {
-		for _, n := range h.certNames {
-			c.learn(n, fromSiteCert)
-		}
-	}
+	c.gather()
+	c.reverse()
+	c.handshakes()
 }
 
 // finish складывает отчёт: имена по алфавиту, адреса по порядку, у каждого имени - кто его знает.
@@ -232,6 +274,7 @@ func (c *collector) finish() {
 	}
 	r.Notes = append(r.Notes, c.limits()...)
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
+	c.remember()
 }
 
 // knownBy: источники, которые знают имя, - свои, о которых отчёт говорит строкой, и сторонние.
@@ -272,7 +315,7 @@ func (c *collector) ownStates() []SourceState {
 func (c *collector) limits() []string {
 	var out []string
 	if n := len(c.dropped); n > 0 {
-		out = append(out, "у домена запись *."+c.domain+": отброшено имён, неотличимых от неё, - "+strconv.Itoa(n))
+		out = append(out, "в зоне есть запись *: отброшено имён, неотличимых от неё, - "+strconv.Itoa(n))
 	}
 	for _, l := range []struct {
 		got, max int

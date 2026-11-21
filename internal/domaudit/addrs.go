@@ -39,10 +39,11 @@ func (c *collector) resolve(names map[string][]string) (hosts []*Host, touched m
 	}) {
 		ips[all[i]] = list
 	}
+	c.probeParents(names, ips)
 	for n, labels := range names {
 		c.tried[n] = firm(labels)
 		delete(c.dropped, n)
-		if blank(labels, ips[n], c.wild) {
+		if !c.firmly[n] && blank(labels, ips[n], c.wildOf(parentOf(n))) {
 			c.dropped[n] = true
 		}
 	}

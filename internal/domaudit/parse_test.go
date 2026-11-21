@@ -9,7 +9,8 @@ const crtSample = `[
  {"common_name":"example.com","name_value":"*.example.com\nexample.com"},
  {"common_name":"api.example.com","name_value":"api.example.com\nold.api.example.com"},
  {"common_name":"shop.example.net","name_value":"shop.example.net\nexample.net\nwww.example.co.uk"},
- {"common_name":"example.com","name_value":"api.example.com"}
+ {"common_name":"example.com","name_value":"api.example.com"},
+ {"common_name":"traefik.default","name_value":"traefik.default\nrouter.lan\npages.example.github.io"}
 ]`
 
 func TestParseCRT(t *testing.T) {
@@ -26,8 +27,9 @@ func TestParseCRT(t *testing.T) {
 			t.Fatalf("subs %v want %v", subs, wantSubs)
 		}
 	}
-	wantRel := []string{"example.co.uk", "example.net"}
-	if len(related) != 2 || related[0] != wantRel[0] || related[1] != wantRel[1] {
+	// Имена из выдуманных зон (сертификат по умолчанию, домашняя сеть) связанными доменами не считаются.
+	wantRel := []string{"example.co.uk", "example.github.io", "example.net"}
+	if !slices.Equal(related, wantRel) {
 		t.Errorf("related %v want %v", related, wantRel)
 	}
 	if _, _, err := ParseCRT([]byte("not json"), "example.com"); err == nil {
