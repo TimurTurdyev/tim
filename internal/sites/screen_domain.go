@@ -174,7 +174,7 @@ func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
 	if len(rep.Related) > 0 {
 		d.Foot = append(d.Foot, ui.Dim("в тех же сертификатах: "+strings.Join(cut(rep.Related, 8), " ")))
 	}
-	for _, n := range append(sourceLines(rep.Sources, false), rep.Notes...) {
+	for _, n := range append(sourceLines(rep, false), rep.Notes...) {
 		d.Foot = append(d.Foot, ui.Dim(n))
 	}
 	for _, e := range rep.Errors {

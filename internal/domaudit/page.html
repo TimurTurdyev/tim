@@ -423,7 +423,13 @@ byId("find").addEventListener("input", e => {
 
 const src = byId("sources");
 const say = text => src.append(el("p", "", text));
-if (list(rep.sources).length) say("Имена: " + rep.sources.map(s => s.name + " " + s.names + (s.cut ? " (отдал не всё)" : "") + (s.error ? " (" + s.error + ")" : "")).join(", "));
+const srcText = s => s.name + " " + s.names + (s.total ? " (проверено " + s.checked + " из " + s.total + ")" : "") + (s.note ? " (" + s.note + ")" : "") +
+  (s.cut && !s.own ? " (отдал не всё)" : "") + (s.error ? " (" + s.error + ")" : "");
+const own = list(rep.sources).filter(s => s.own), others = list(rep.sources).filter(s => !s.own);
+if (own.length) say("Нашёл сам: " + own.map(srcText).join(", "));
+if (others.length) say("Сторонние сервисы: " + others.map(srcText).join(", "));
+if (rep.found && rep.found.own + rep.found.added > 0) say("Итог: своими силами " + rep.found.own + " из " + (rep.found.own + rep.found.added) +
+  (others.length ? ", сторонние добавили " + rep.found.added : ", сторонние сервисы не спрашивались") + ".");
 if (addrs.some(a => a.checked)) say("Порты своих серверов проверены сами, по ответу сервиса; порты сверх списка - по данным Shodan.");
 if (addrs.some(a => a.services && !a.checked)) say("Порты и версии - по данным Shodan, до недели назад. CVE подобраны по номеру версии: Debian и Ubuntu чинят, не меняя номер.");
 list(rep.notes).concat(list(rep.errors)).forEach(say);

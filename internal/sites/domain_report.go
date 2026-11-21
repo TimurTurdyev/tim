@@ -400,38 +400,7 @@ func domainNotes(rep *domaudit.Report) []string {
 		}
 	}
 	out := []string{fmt.Sprintf("имён %d, адресов %d, не отвечают по HTTP %d", len(rep.Hosts), len(rep.Addrs), dead)}
-	out = append(out, sourceLines(rep.Sources, true)...)
+	out = append(out, sourceLines(rep, true)...)
 	out = append(out, rep.Notes...)
 	return append(out, rep.Errors...)
-}
-
-// sourceLines: сколько имён дал каждый источник, а кто не ответил или отдал не всё - отдельной строкой; dates -
-// с датой кэша.
-func sourceLines(list []domaudit.SourceState, dates bool) []string {
-	var good, bad []string
-	for _, s := range list {
-		text := s.Name + " " + strconv.Itoa(s.Names)
-		if s.Cut {
-			text += " (отдал не всё)"
-		}
-		switch {
-		case s.Error != "" && s.Cached.IsZero():
-			bad = append(bad, s.Name+": "+s.Error)
-		case s.Error != "":
-			bad = append(bad, s.Name+": "+s.Error+", показан список от "+s.Cached.Local().Format("02.01"))
-			good = append(good, text)
-		case dates && !s.Cached.IsZero():
-			good = append(good, text+" (кэш "+s.Cached.Local().Format("02.01 15:04")+")")
-		default:
-			good = append(good, text)
-		}
-	}
-	var out []string
-	if len(good) > 0 {
-		out = append(out, "имена: "+strings.Join(good, ", "))
-	}
-	if len(bad) > 0 {
-		out = append(out, "не ответили: "+strings.Join(bad, "; "))
-	}
-	return out
 }

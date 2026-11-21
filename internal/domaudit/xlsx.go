@@ -59,7 +59,7 @@ func sheets(rep *Report) []sheet {
 		}
 		return a.AS.Owner(), where
 	}
-	names := sheet{name: "Имена", head: []string{"Имя", "Ответ", "Адреса", "Сеть", "Где", "Движок", "Сервер", "Заголовок", "Куда ведёт", "CNAME", "Сертификат", "Захват", "Откуда имя"}}
+	names := sheet{name: "Имена", head: []string{"Имя", "Ответ", "Адреса", "Сеть", "Где", "Движок", "Сервер", "Заголовок", "Куда ведёт", "CNAME", "Сертификат", "Захват", "Откуда имя", "Кто знает"}}
 	for _, h := range rep.Hosts {
 		owner, where := place(h.IPs)
 		takeover := ""
@@ -67,7 +67,7 @@ func sheets(rep *Report) []sheet {
 			takeover = h.Takeover.Service + ": " + h.Takeover.Why
 		}
 		names.rows = append(names.rows, []any{h.Name, h.Status, strings.Join(h.IPs, ", "), owner, where, h.Engine, h.Server, h.Title, h.Final,
-			h.CNAME, h.CertError, takeover, h.Source})
+			h.CNAME, h.CertError, takeover, h.Source, strings.Join(h.Sources, ", ")})
 	}
 	servers := sheet{name: "MX и NS", head: []string{"Запись", "Сервер", "Приоритет", "Адреса", "Сеть", "Где"}}
 	for _, s := range rep.MX {
@@ -104,7 +104,27 @@ func sheets(rep *Report) []sheet {
 		addrs.rows = append(addrs.rows, []any{a.IP, a.PTR, a.AS.Prefix, as, a.AS.Owner(), where, own, ports, products, cve,
 			strings.Join(a.Hosts, ", "), strings.Join(a.MX, ", "), strings.Join(a.NS, ", "), strings.Join(a.Shared, ", ")})
 	}
-	return []sheet{names, servers, texts, addrs}
+	return []sheet{names, servers, texts, addrs, sourceSheet(rep)}
+}
+
+// sourceSheet: кто сколько имён назвал и как отработал.
+func sourceSheet(rep *Report) sheet {
+	s := sheet{name: "Источники", head: []string{"Источник", "Чей", "Имён", "Проверено", "Из", "Заметка", "Ошибка", "Кэш"}}
+	for _, x := range rep.Sources {
+		whose, cached := "сторонний", ""
+		if x.Own {
+			whose = "свой"
+		}
+		if !x.Cached.IsZero() {
+			cached = x.Cached.Local().Format("2006-01-02 15:04")
+		}
+		note := x.Note
+		if x.Cut && !x.Own {
+			note = strings.TrimSpace(note + " отдал не всё")
+		}
+		s.rows = append(s.rows, []any{x.Name, whose, x.Names, x.Checked, x.Total, note, x.Error, cached})
+	}
+	return s
 }
 
 func encodeXLSX(list []sheet) ([]byte, error) {
