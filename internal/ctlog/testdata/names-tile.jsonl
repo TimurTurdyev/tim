@@ -1,0 +1,12 @@
+{"Timestamp":1795562438120,"Subject":{"CommonName":"shop.example.net"},"DNS":["shop.example.net","www.shop.example.net"]}
+{"Timestamp":1795562438120,"IP":["192.0.2.17"]}
+{"Timestamp":1795562438120,"Subject":{"Country":["US"],"Organization":["Example Org, Inc."],"Locality":["Springfield"],"Province":["Illinois"],"CommonName":"probe1.aws-prod1.watch.example.org"},"DNS":["probe1.aws-prod1.watch.example.org"]}
+{"Timestamp":1795562439120,"Subject":{"CommonName":"git.example.com"},"DNS":["git.example.com"]}
+{"Timestamp":1795562439120,"DNS":["dc.ipa.example.com","glpi.ipa.example.com","openqa.ipa.example.com"]}
+{"Timestamp":1795562439120,"Subject":{"CommonName":"*.example.com"},"DNS":["*.example.com","example.com"]}
+{"Timestamp":1795562440119,"Subject":{"CommonName":"Mail.Example.COM"},"DNS":["Mail.Example.COM","WWW.Mail.Example.COM"]}
+{"Timestamp":1795562440119,"Subject":{"CommonName":"notexample.com"},"DNS":["notexample.com","example.com.evil.example.net"]}
+{"Timestamp":1795562440119,"IP":["198.51.100.4","2001:db8::4"]}
+{"Timestamp":1795562441119,"Subject":{"CommonName":"xn--e1afmkfd.example.com"},"DNS":["xn--e1afmkfd.example.com"]}
+{"Timestamp":1795562441119,"Subject":{"CommonName":"stage.api.example.com"},"DNS":["stage.api.example.com","stage.api.example.com"],"IP":["203.0.113.9"]}
+{"Timestamp":1795562442119,"Subject":{"CommonName":"cdn.example.org"},"DNS":["cdn.example.org","img.cdn.example.org"]}

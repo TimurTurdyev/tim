@@ -1,0 +1,394 @@
+{
+ "is_all_logs": true,
+ "version": "98.5",
+ "log_list_timestamp": "2026-11-24T13:39:18Z",
+ "operators": [
+  {
+   "name": "Google",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [
+    {
+     "name": "google_argon2026h1",
+     "description": "Google Argon2026h1",
+     "log_id": "DleUvPOuqT4zGyyZB7P3kN+bwj1xMiXdIaklrGHFTiE=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEB/we6GOO/xwxivy4HhkrYFAAPo6e2nc346Wo2o2U+GvoPWSPJz91s/xrEvA3Bk9kWHUUXVZS5morFEzsgdHqPg==",
+     "url": "https://google-argon2026h1.ct.example.com/logs/us1/argon2026h1/",
+     "mmd": 86400,
+     "state": {
+      "rejected": {
+       "timestamp": "2026-07-09T13:40:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2026-01-01T00:00:00Z",
+      "end_exclusive": "2026-07-01T00:00:00Z"
+     }
+    },
+    {
+     "name": "google_argon2026h2",
+     "description": "Google Argon2026h2",
+     "log_id": "1219ENGn9XfCx+lf1wC/+YLJM1pl4dCzAXMXwMjFaXc=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKjpni/66DIYrSlGK6Rf+e6F2c/28ZUvDJ79N81+gyimAESAyeNZ++TRgjHWg9TVQnKHTSU0T1TtqDupFnSQTIg==",
+     "url": "https://google-argon2026h2.ct.example.com/logs/us1/argon2026h2/",
+     "mmd": 86400,
+     "state": {
+      "readonly": {
+       "timestamp": "2026-11-13T17:30:00Z",
+       "final_tree_head": {
+        "sha256_root_hash": "y/1N4/rB/Ziykeo4ouNW+YI1fByDVKL8XmJXZNTerzU=",
+        "tree_size": 3501950757
+       }
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2026-07-01T00:00:00Z",
+      "end_exclusive": "2027-01-01T00:00:00Z"
+     }
+    },
+    {
+     "name": "google_submariner",
+     "description": "Google Submariner",
+     "log_id": "qJnYeAySkKr0YvMYgMz71SRR6XDQ+/WR73Ww2ZtkVoE=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOfifIGLUV1Voou9JLfA5LZreRLSUMOCeeic8q3Dw0fpRkGMWV0Gtq20fgHQweQJeLVmEByQj9p81uIW4QkWkTw==",
+     "url": "https://google-submariner.ct.example.com/submariner/",
+     "mmd": 86400
+    }
+   ],
+   "tiled_logs": [
+    {
+     "name": "google_parcelyard2027h1",
+     "description": "Google ParcelYard2027h1",
+     "log_id": "HIl0B+YBCgEpO7Z439ejaM6xjMpSHcyk04bkoy5bXQQ=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEX7i7gYwmBxpiLXAlM/VLk4BFzspJRmZA86iReO7NVRlwGL1KWb/Dv5DRXJNBZd+9uREkNUTee5yBy2dRdRGa0w==",
+     "submission_url": "https://log.google-parcelyard2027h1.ct.example.com/",
+     "monitoring_url": "https://mon.google-parcelyard2027h1.ct.example.com/parcelyard2027h1.prod.certificate.transparency.goog/",
+     "mmd": 60,
+     "state": {
+      "usable": {
+       "timestamp": "2026-08-31T13:50:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ]
+  },
+  {
+   "name": "Cloudflare",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [
+    {
+     "name": "cloudflare_nimbus2027",
+     "description": "Cloudflare Nimbus2027",
+     "log_id": "TGPcmOWcHauI9h6KPd6uj6tEozd7X5uUw/uhnPzBviY=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYjd/jE0EoAhNBbfcNhrTb7F0x10KZK8r2SDjx1GdjJ75hJrHx2OCQ+BXRjXi+czoREN1u0j9cWl8d6OoPMPogQ==",
+     "url": "https://cloudflare-nimbus2027.ct.example.com/logs/nimbus2027/",
+     "mmd": 86400,
+     "state": {
+      "usable": {
+       "timestamp": "2025-11-15T00:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2028-01-01T00:00:00Z"
+     }
+    }
+   ],
+   "tiled_logs": []
+  },
+  {
+   "name": "Sectigo",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [
+    {
+     "name": "sectigo_elephant2027h1",
+     "description": "Sectigo Elephant2027h1",
+     "log_id": "YEyar3p/d18B1Ab8kg3ImesLHH34yVIb+voXdzuXi8k=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4fu36JygUwaaVO+ddWJ97FJZlA5SjPLmT+RHwg0pavkIrbT1b5LNQrsaEw0CoGraf7BkzKZf7PC8gYAScw2woA==",
+     "url": "https://sectigo-elephant2027h1.ct.example.com/",
+     "mmd": 86400,
+     "state": {
+      "usable": {
+       "timestamp": "2025-07-22T01:33:20Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    },
+    {
+     "name": "sectigo_tiger2027h1",
+     "description": "Sectigo Tiger2027h1",
+     "log_id": "HJ9oLOn68EVpUPgbloqH3dsyENhM5siy44JSSsTPWZ8=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmMQofpsDjCVYzF4jXdFWM/ioYBJIPcsQQrNAHE6v4lOsADoI+/jN1lph8x4K3NgnXDXwmyJcFwRYgVOBMhaYhA==",
+     "url": "https://sectigo-tiger2027h1.ct.example.com/",
+     "mmd": 86400,
+     "state": {
+      "usable": {
+       "timestamp": "2025-09-18T23:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ],
+   "tiled_logs": []
+  },
+  {
+   "name": "Let's Encrypt",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [
+    {
+     "name": "letsencrypt_oak2026h2",
+     "description": "Let's Encrypt Oak2026h2",
+     "log_id": "rKswcGzr7IQx9BPS9JFfER5CJEOx8qaMTzwrO6ceAsM=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEanCds5bj7IU2lcNPnIvZfMnVkSmu69aH3AS8O/Y0D/bbCPdSqYjvuz9Z1tT29PxcqYxf+w1g5CwPFuwqsm3rFQ==",
+     "url": "https://let-s-encrypt-oak2026h2.ct.example.com/2026h2/",
+     "mmd": 86400,
+     "state": {
+      "retired": {
+       "timestamp": "2026-02-28T00:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2026-06-20T00:00:00Z",
+      "end_exclusive": "2027-01-20T00:00:00Z"
+     }
+    }
+   ],
+   "tiled_logs": [
+    {
+     "name": "letsencrypt_twig2027h1",
+     "description": "Let's Encrypt Twig2027h1",
+     "log_id": "MIQn6dbJsGQ5/rsS4QFNbqJ2NlTgQ19Z48RWY2ZbuOo=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGHGl4ihlmfbfwJyONqNpBaLsRNnInohynCns6HTZeWRGZ3WLGA8VhbUJhlY2oAHH93mtoU+Pvtj/3MD4OqEJ5w==",
+     "submission_url": "https://log.let-s-encrypt-twig2027h1.ct.example.com/2027h1/",
+     "monitoring_url": "https://mon.let-s-encrypt-twig2027h1.ct.example.com/2027h1/",
+     "mmd": 60,
+     "temporal_interval": {
+      "start_inclusive": "2026-12-15T00:00:00Z",
+      "end_exclusive": "2027-06-16T00:00:00Z"
+     },
+     "log_type": "test"
+    },
+    {
+     "name": "letsencrypt_sycamore2026h2",
+     "description": "Let's Encrypt Sycamore2026h2",
+     "log_id": "bP5QGUOoXqkWvFLRM+TcyR7xQRx9JYQg0XOAnhgY6zo=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEwR1FtiiMbpvxR+sIeiZ5JSCIDIdTAPh7OrpdchcrCcyNVDvNUq358pqJx2qdyrOI+EjGxZ7UiPcN3bL3Q99FqA==",
+     "submission_url": "https://log.let-s-encrypt-sycamore2026h2.ct.example.com/2026h2/",
+     "monitoring_url": "https://mon.let-s-encrypt-sycamore2026h2.ct.example.com/2026h2/",
+     "mmd": 60,
+     "state": {
+      "usable": {
+       "timestamp": "2025-11-27T03:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2026-06-18T00:00:00Z",
+      "end_exclusive": "2026-12-17T00:00:00Z"
+     }
+    },
+    {
+     "name": "letsencrypt_sycamore2027h1",
+     "description": "Let's Encrypt Sycamore2027h1",
+     "log_id": "jspHC6zeavOiBrCkeoS3Rv4fxr+VPiXmm07kAkjzxug=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWrGdYyZYB7teCS4K/oKIsbV0yVBSgjlOwO22OOCoA6Y252QhFzC8Wg7oVXVKqfkWaSaM/n+3pfCBf4BAkpdx8g==",
+     "submission_url": "https://log.let-s-encrypt-sycamore2027h1.ct.example.com/2027h1/",
+     "monitoring_url": "https://mon.let-s-encrypt-sycamore2027h1.ct.example.com/2027h1/",
+     "mmd": 60,
+     "state": {
+      "usable": {
+       "timestamp": "2025-11-27T03:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2026-12-17T00:00:00Z",
+      "end_exclusive": "2027-06-18T00:00:00Z"
+     }
+    },
+    {
+     "name": "letsencrypt_willow2027h1",
+     "description": "Let's Encrypt Willow2027h1",
+     "log_id": "ooEAGHNOF24dR+CVQPOBulRml81jqENQcW64CU7a8Q0=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzsMKtojO0BVB4t59lVyAhxtqObVA+wId5BpJGA8pZrw5GTjzuhpvLu/heQGi0hHCeislkDe34N/2D0SwEUBE0w==",
+     "submission_url": "https://log.let-s-encrypt-willow2027h1.ct.example.com/2027h1/",
+     "monitoring_url": "https://mon.let-s-encrypt-willow2027h1.ct.example.com/2027h1/",
+     "mmd": 60,
+     "state": {
+      "usable": {
+       "timestamp": "2025-11-27T03:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2026-12-16T00:00:00Z",
+      "end_exclusive": "2027-06-17T00:00:00Z"
+     }
+    }
+   ]
+  },
+  {
+   "name": "Geomys",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [],
+   "tiled_logs": [
+    {
+     "name": "geomys_tuscolo2027h1",
+     "description": "Geomys Tuscolo2027h1",
+     "log_id": "WW5sM4aUsllyolbIoOjdkEp26Ag92oc7AQg4KBQ87lk=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOYwwGoaNpZ/SQW0VNGICP7wGRQsSeEowTRl4DPSdPjSkO/+ouvFH78I8sQTR3FWPZDScALbclBqnqL0ptY8beA==",
+     "submission_url": "https://log.geomys-tuscolo2027h1.ct.example.com/",
+     "monitoring_url": "https://mon.geomys-tuscolo2027h1.ct.example.com/",
+     "mmd": 60,
+     "state": {
+      "usable": {
+       "timestamp": "2025-10-08T21:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ]
+  },
+  {
+   "name": "IPng Networks",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [],
+   "tiled_logs": [
+    {
+     "name": "ipng_rennet2027h1",
+     "description": "IPng Networks Rennet2027h1",
+     "log_id": "IPngmrbD1ZzKxMv9sDFnjmgsvhhIV4z/L8d05K0vULE=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAErtwy8ljIL7OS99Fq0QMnXkep69geGFwjlex7/Wrii2cT+SCFl7Nw8JIAZTp24a5+RDrfoETMtUrkELVgmVeCVA==",
+     "submission_url": "https://log.ipng-networks-rennet2027h1.ct.example.com/",
+     "monitoring_url": "https://mon.ipng-networks-rennet2027h1.ct.example.com/",
+     "mmd": 60,
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     },
+     "log_type": "monitoring_only"
+    },
+    {
+     "name": "ipng_gouda2027h1",
+     "description": "IPng Networks Gouda2027h1",
+     "log_id": "Gouda43XkdHNBUnttgNV1ga2T60w23H+eI8Px8j7xLE=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOh11B2aRT9BiTqo+6kvQ7cSGf819Ait+jGc6AuHlGUXxWCX1YCQ9OFNnr6MUKStyw4sVin5FCvtbke1mctl3gQ==",
+     "submission_url": "https://log.ipng-networks-gouda2027h1.ct.example.com/",
+     "monitoring_url": "https://mon.ipng-networks-gouda2027h1.ct.example.com/",
+     "mmd": 60,
+     "state": {
+      "usable": {
+       "timestamp": "2025-11-27T03:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ]
+  },
+  {
+   "name": "GoDaddy",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [],
+   "tiled_logs": [
+    {
+     "name": "godaddy_aquamarine2027h1",
+     "description": "GoDaddy Aquamarine2027h1",
+     "log_id": "/cLoBbiE8/CzcwbEliJzk9OExUIiB/1Aj+4CBc6jVhY=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEDMQ0K5rmCd7krvHQytXOSmsQqRcDZRnbo6brb2ctD4QKL+XQr0CGU47OfQ2q08zRtKRiXZ6SDGKKHamcpL9t+Q==",
+     "submission_url": "https://log.godaddy-aquamarine2027h1.ct.example.com/aquamarine2027h1/",
+     "monitoring_url": "https://mon.godaddy-aquamarine2027h1.ct.example.com/aquamarine2027h1/",
+     "mmd": 60,
+     "state": {
+      "qualified": {
+       "timestamp": "2026-09-30T13:40:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ]
+  },
+  {
+   "name": "SwissSign",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [],
+   "tiled_logs": [
+    {
+     "name": "swisssign_eiger2027h1",
+     "description": "SwissSign Eiger2027h1",
+     "log_id": "iYkoUO1DUrb7LXPct1kWBfF6kEY7AqR4tbszkSMz/Yk=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE981YfiP6WiTQq/cDJoqwgLTp2eYxEIw6yI0eDOYc0iK+Z0jWIU+QIEj5sfelLAjuieArUKULxdqO8mL/ANjFMw==",
+     "submission_url": "https://log.swisssign-eiger2027h1.ct.example.com/",
+     "monitoring_url": "https://mon.swisssign-eiger2027h1.ct.example.com/",
+     "mmd": 60,
+     "state": {
+      "pending": {
+       "timestamp": "2026-11-03T13:38:43Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ]
+  },
+  {
+   "name": "SHECA",
+   "email": [
+    "ct@example.com"
+   ],
+   "logs": [],
+   "tiled_logs": [
+    {
+     "name": "sheca_hongkou2027h1",
+     "description": "SHECA Hongkou2027h1",
+     "log_id": "/6sV+04gOrNi7YekbpOjxEN0g7eWMLB4ZcY2qA4os04=",
+     "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzwbUgiGYvzBnQqaTLql29WmlZ6LZJ2Svv5Z+j0n2ITB3ZO4qILxdtSfyR+K/foDjjDOFeomWZ3DmTKexNWKgBw==",
+     "submission_url": "https://log.sheca-hongkou2027h1.ct.example.com/",
+     "monitoring_url": "https://mon.sheca-hongkou2027h1.ct.example.com/",
+     "mmd": 60,
+     "state": {
+      "rejected": {
+       "timestamp": "2026-11-17T19:00:00Z"
+      }
+     },
+     "temporal_interval": {
+      "start_inclusive": "2027-01-01T00:00:00Z",
+      "end_exclusive": "2027-07-01T00:00:00Z"
+     }
+    }
+   ]
+  }
+ ]
+}
