@@ -120,6 +120,29 @@ func zoneOwner(zone string) (mname, mbox string, ok bool) {
 	return "", "", true
 }
 
+// inside: сайты, которые настроены на своих серверах, - из их сохранённого обхода.
+func (c *collector) inside() {
+	if c.opt.Inside == nil || c.asked {
+		return
+	}
+	c.asked = true
+	var ips []string
+	for _, a := range c.addrs {
+		if a.direct && !a.CDN && !a.Internal {
+			ips = append(ips, a.IP)
+		}
+	}
+	slices.Sort(ips)
+	var servers []string
+	for _, in := range c.opt.Inside(ips) {
+		c.learnAll(in.Names, fromInside)
+		servers = append(servers, in.Server+" (обход от "+in.At.Local().Format("02.01")+")")
+	}
+	if len(servers) > 0 {
+		c.state(fromInside).Note = strings.Join(servers, ", ")
+	}
+}
+
 // reverse: обратные имена сетей домена - названных в SPF и тех, где стоят его серверы.
 func (c *collector) reverse() {
 	nets := c.ownNets()

@@ -165,15 +165,18 @@ func (c *collector) enrich(touched map[string]*Addr) {
 		})
 	}
 	group.Wait()
+	var standing, own []*Addr
 	for _, a := range list {
 		c.learn(a.PTR, fromPTR)
+		if where, ok := asn.Where(a.IP); ok && !a.CDN && !a.Internal {
+			a.Country = where
+		}
 	}
 	if c.opt.Quiet {
 		return
 	}
-	var standing, own []*Addr
 	for _, a := range list {
-		if !a.CDN && !a.Internal { // узел CDN отвечает отовсюду, места у него нет
+		if !a.CDN && !a.Internal && a.Country == "" { // узел CDN отвечает отовсюду, места у него нет
 			standing = append(standing, a)
 		}
 		if a.Own && !a.seen && netinfo.IsIPv4(a.IP) {

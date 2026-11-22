@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/domaudit"
+	"github.com/TimurTurdyev/tim/internal/health"
 	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/level"
 	"github.com/TimurTurdyev/tim/internal/par"
@@ -32,7 +33,7 @@ type domainAbout struct {
 func aboutDomain(domain string) domainAbout {
 	var a domainAbout
 	par.All(func() {
-		if d, err := inspect.Registration(domain); err == nil {
+		if d, err := health.Registration(inspect.Registrable(domain)); err == nil {
 			a.reg = d
 		}
 	}, func() { a.mail = inspect.MailCheck(domain, inspect.DKIMSelectors) })
@@ -382,6 +383,10 @@ func domainFindings(rep *domaudit.Report) report.Findings {
 		case h.CertError != "":
 			badCert = append(badCert, h.Name)
 		}
+	}
+	if len(rep.InsideOnly) > 0 {
+		out = append(out, report.Finding{Area: "сервер", Level: level.Info, Text: "на сервере настроены сайты, которых нет в DNS: " + strings.Join(cut(rep.InsideOnly, 5), ", "),
+			Why: "сервер отвечает на эти имена, а записи у них нет: сайт забыт или запись ещё не завели", Fix: "убрать сайт с сервера или завести запись в DNS"})
 	}
 	if len(badCert) > 0 {
 		out = append(out, report.Finding{Area: "сертификат", Level: level.Warn, Text: "браузер не пустит на https: " + strings.Join(cut(badCert, 5), ", "),

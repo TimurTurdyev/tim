@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/baseline"
-	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/domaudit"
 	"github.com/TimurTurdyev/tim/internal/portscan"
 	"github.com/TimurTurdyev/tim/internal/ui"
@@ -30,8 +30,9 @@ var watchedSources = []string{"апекс", "MX", "NS"}
 func outsideObject(domain string) string { return "outside-" + domain }
 
 // watchOutside: ночное наблюдение; обходятся домены из sites, их порты проверяем сами.
-func watchOutside(cfg *config.Config, domain string) {
-	observeOutside(domaudit.Names(domain, domaudit.Options{Scan: true, Direct: directIface(cfg, false)}), time.Now())
+func watchOutside(env *app.Env, domain string) {
+	opt := domaudit.Options{Scan: true, Direct: directIface(env.Cfg, false), Inside: insideOf(env, domain)}
+	observeOutside(domaudit.Names(domain, opt), time.Now())
 }
 
 // observeOutside сравнивает отчёт с прошлым разом; что стало видно только сейчас, но не новое, сразу своё.

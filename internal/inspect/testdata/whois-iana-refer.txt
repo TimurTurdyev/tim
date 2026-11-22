@@ -1,0 +1,21 @@
+% IANA WHOIS server
+% for more information on IANA, visit http://www.iana.org
+% This query returned 1 object
+
+refer:        whois.nic.example
+
+domain:       EXAMPLE
+
+organisation: Example Registry Ltd.
+address:      1 Example Street
+
+nserver:      A.NIC.EXAMPLE 192.0.2.1 2001:db8:0:0:0:0:0:1
+
+whois:        whois.nic.example
+
+status:       ACTIVE
+remarks:      Registration information: https://nic.example
+
+created:      1997-09-16
+changed:      2025-08-27
+source:       IANA

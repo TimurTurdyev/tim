@@ -1,0 +1,172 @@
+{
+ "rdapConformance": [
+  "rdap_level_0",
+  "icann_rdap_response_profile_1",
+  "icann_rdap_technical_implementation_guide_1",
+  "redacted"
+ ],
+ "ldhName": "example.org",
+ "unicodeName": "example.org",
+ "nameservers": [
+  {
+   "ldhName": "ns2.example.net",
+   "unicodeName": "ns2.example.net",
+   "ipAddresses": {
+    "v4": [
+     "192.0.2.53"
+    ]
+   },
+   "objectClassName": "nameserver",
+   "status": [
+    "associated"
+   ]
+  },
+  {
+   "ldhName": "ns1.example.net",
+   "unicodeName": "ns1.example.net",
+   "ipAddresses": {
+    "v4": [
+     "198.51.100.53"
+    ]
+   },
+   "objectClassName": "nameserver",
+   "status": [
+    "associated"
+   ]
+  }
+ ],
+ "secureDNS": {
+  "delegationSigned": false,
+  "maxSigLife": 1
+ },
+ "redacted": [
+  {
+   "name": {
+    "type": "Registry Domain ID"
+   },
+   "prePath": "$.handle",
+   "pathLang": "jsonpath",
+   "method": "removal"
+  }
+ ],
+ "objectClassName": "domain",
+ "status": [
+  "client delete prohibited",
+  "client transfer prohibited"
+ ],
+ "events": [
+  {
+   "eventAction": "transfer",
+   "eventDate": "2013-06-15T23:18:08.545Z"
+  },
+  {
+   "eventAction": "expiration",
+   "eventDate": "2033-03-28T05:00:00Z"
+  },
+  {
+   "eventAction": "registration",
+   "eventDate": "1995-03-27T05:00:00.545Z"
+  },
+  {
+   "eventAction": "last changed",
+   "eventDate": "2026-08-12T05:01:11.536Z"
+  },
+  {
+   "eventAction": "last update of RDAP database",
+   "eventDate": "2026-11-25T00:51:00.162Z"
+  }
+ ],
+ "entities": [
+  {
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      ""
+     ],
+     [
+      "org",
+      {
+       "type": "work"
+      },
+      "text",
+      "Example Privacy Service"
+     ],
+     [
+      "adr",
+      {
+       "cc": "US"
+      },
+      "text",
+      [
+       "",
+       "",
+       "",
+       "",
+       "Arizona",
+       "",
+       ""
+      ]
+     ]
+    ]
+   ],
+   "roles": [
+    "registrant"
+   ],
+   "objectClassName": "entity"
+  },
+  {
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "Example Registrar SAS"
+     ]
+    ]
+   ],
+   "roles": [
+    "registrar"
+   ],
+   "publicIds": [
+    {
+     "type": "IANA Registrar ID",
+     "identifier": "9998"
+    }
+   ],
+   "objectClassName": "entity",
+   "handle": "9998"
+  }
+ ],
+ "links": [
+  {
+   "value": "https://rdap.example.org/rdap/domain/example.org",
+   "rel": "related",
+   "href": "https://rdap.registrar.example/domain/example.org",
+   "type": "application/rdap+json"
+  },
+  {
+   "value": "https://rdap.example.org/rdap/domain/example.org",
+   "rel": "self",
+   "href": "https://rdap.example.org/rdap/domain/example.org",
+   "type": "application/rdap+json"
+  }
+ ]
+}

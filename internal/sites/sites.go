@@ -83,7 +83,7 @@ func Collect(host, target string) *Report {
 				r.Geo, geoErr = inspect.IPGeo(r.IPs[0])
 			}
 		},
-		func() { r.Domain, domainErr = inspect.Registration(inspect.Registrable(host)) },
+		func() { r.Domain, domainErr = health.Registration(inspect.Registrable(host)) },
 		func() {
 			info, err := inspect.Cert(host, "443")
 			if tlsErr = err; err == nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/TimurTurdyev/tim/internal/netinfo"
 	"github.com/TimurTurdyev/tim/internal/par"
 	"github.com/TimurTurdyev/tim/internal/runner"
+	"github.com/TimurTurdyev/tim/internal/servers"
 	"github.com/TimurTurdyev/tim/internal/ui"
 	"github.com/TimurTurdyev/tim/internal/view"
 	"github.com/TimurTurdyev/tim/report"
@@ -35,6 +36,7 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	}
 	opt := domaudit.Options{Quiet: o.fast || o.own, Quick: o.fast, FreshCRT: o.fresh, SkipNeighbors: o.noNeighbors,
 		Scan: o.scan || !o.scanSet && !o.fast && ownSite(env.Cfg, name), Direct: directIface(env.Cfg, o.direct)}
+	opt.Inside = insideOf(env, name)
 	if app.Interactive() && !o.json && !o.openMap && o.mapOut == "" && !o.fast {
 		return env.Open(domainScreen(env, name, opt))
 	}
@@ -56,6 +58,21 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 // ownSite: домен из sites конфига - свой, его серверы проверяем без вопросов.
 func ownSite(cfg *config.Config, domain string) bool {
 	return slices.Contains(roundDomains(siteHosts(cfg, nil)), inspect.Registrable(domain))
+}
+
+// insideOf: что серверы домена из sites сами знают о своих сайтах - по сохранённому обходу, без захода по ssh;
+// у чужого домена спрашивать некого.
+func insideOf(env *app.Env, domain string) func(ips []string) []domaudit.Inside {
+	if !ownSite(env.Cfg, domain) {
+		return nil
+	}
+	return func(ips []string) []domaudit.Inside {
+		var out []domaudit.Inside
+		for _, in := range servers.InsideNames(env, ips) {
+			out = append(out, domaudit.Inside{Server: in.Alias, Names: in.Names, Wild: in.Wild, At: in.At})
+		}
+		return out
+	}
 }
 
 // directIface: интерфейс для запросов DNS мимо VPN - по флагу или по [domain] direct конфига; пусто - обычным путём.

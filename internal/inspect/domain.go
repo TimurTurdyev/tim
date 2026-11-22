@@ -2,22 +2,41 @@ package inspect
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"golang.org/x/net/idna"
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-var httpClient = &http.Client{Timeout: Timeout}
+const (
+	// rdapProxy: посредник, который сам находит реестр зоны и перенаправляет к нему.
+	rdapProxy = "https://rdap.org/"
+	// chainTimeout: вся цепочка Registration - список реестров, реестр, rdap.org и два запроса whois.
+	chainTimeout = 5 * Timeout
+)
 
-var whoisDates = []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02", "2006.01.02", "02-Jan-2006"}
+var (
+	httpClient = &http.Client{Timeout: Timeout}
+
+	whoisDates = []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02", "2006.01.02", "02-Jan-2006"}
+
+	// ErrNoDomain: реестр зоны ответил, что такого домена у него нет.
+	ErrNoDomain = errors.New("домен не зарегистрирован")
+
+	errNoWhois = errors.New("whois-сервера нет")
+	errNoData  = errors.New("whois не дал данных")
+)
 
 type Domain struct {
 	Registrar   string    `json:"registrar,omitempty"`
@@ -27,41 +46,85 @@ type Domain struct {
 	Source      string    `json:"source"`
 }
 
-// Registration: RDAP, а для зон без RDAP (например .ru) whois по порту 43.
-func Registration(domain string) (*Domain, error) {
-	if d, err := rdap(domain); err == nil {
-		return d, nil
+// sources: чем спросить сервер RDAP и whois; порядок обхода проверяется без сети.
+type sources struct {
+	rdap  func(ctx context.Context, base, name string) (*Domain, error)
+	whois func(ctx context.Context, name string) (string, error)
+}
+
+// registration: реестр по адресу base, при его отказе rdap.org и whois; base пуст - сразу whois.
+func (s sources) registration(ctx context.Context, name, base string) (*Domain, error) {
+	if base == "" {
+		return s.viaWhois(ctx, name, nil)
 	}
-	text, err := whois(domain)
-	if err != nil {
+	d, err := s.rdap(ctx, base, name)
+	switch {
+	case err == nil:
+		return d, nil
+	case errors.Is(err, errNotFound):
+		return nil, fmt.Errorf("реестр зоны .%s не знает %s: %w", lastLabel(name), name, ErrNoDomain)
+	}
+	viaProxy, proxyErr := s.rdap(ctx, rdapProxy, name)
+	if proxyErr == nil {
+		viaProxy.Source = "rdap.org"
+		return viaProxy, nil
+	}
+	return s.viaWhois(ctx, name, err)
+}
+
+// viaWhois: rdapErr - почему перед этим не ответил RDAP; nil - у зоны его нет.
+func (s sources) viaWhois(ctx context.Context, name string, rdapErr error) (*Domain, error) {
+	text, err := s.whois(ctx, name)
+	switch {
+	case errors.Is(err, errNoWhois) && rdapErr != nil:
+		return nil, fmt.Errorf("у зоны .%s только RDAP, и он не ответил (%w): данных о регистрации нет",
+			lastLabel(name), rdapErr)
+	case err != nil:
 		return nil, err
 	}
 	d := ParseWhois(text)
 	if d.Registrar == "" && d.Expires.IsZero() && len(d.Nameservers) == 0 {
-		return nil, errors.New("whois не дал данных")
+		return nil, errNoData
 	}
 	return d, nil
 }
 
-func rdap(domain string) (*Domain, error) {
-	resp, err := httpClient.Get("https://rdap.org/domain/" + domain)
+// Registration: реестр зоны из списка IANA, при его отказе rdap.org и whois; зоны нет в списке - сразу whois.
+func Registration(domain string) (*Domain, error) {
+	name, err := asciiName(domain)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("rdap: " + resp.Status)
+	ctx, cancel := context.WithTimeout(context.Background(), chainTimeout)
+	defer cancel()
+	return sources{rdap: rdap, whois: whois}.registration(ctx, name, currentRegistries().base(name))
+}
+
+// asciiName: имя для запроса - в нижнем регистре, без точки на конце, IDN в виде xn--.
+func asciiName(domain string) (string, error) {
+	name, err := idna.Lookup.ToASCII(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	if err != nil {
+		return "", fmt.Errorf("имя домена %q не годится для запроса: %w", domain, err)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if name == "" {
+		return "", errors.New("имя домена пустое")
+	}
+	return name, nil
+}
+
+// rdap спрашивает домен у сервера RDAP: base с "/" на конце, имя в ASCII.
+func rdap(ctx context.Context, base, name string) (*Domain, error) {
+	data, err := getJSON(ctx, base+"domain/"+name)
 	if err != nil {
 		return nil, err
 	}
 	return ParseRDAP(data)
 }
 
-// ParseRDAP достаёт регистратора, даты регистрации и окончания, NS из ответа RDAP.
+// ParseRDAP достаёт регистратора, даты регистрации и окончания, NS из ответа RDAP о домене.
 func ParseRDAP(data []byte) (*Domain, error) {
 	var r struct {
+		Class  string `json:"objectClassName"`
 		Events []struct {
 			Action string `json:"eventAction"`
 			Date   string `json:"eventDate"`
@@ -75,7 +138,10 @@ func ParseRDAP(data []byte) (*Domain, error) {
 		} `json:"entities"`
 	}
 	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ответ RDAP не разобран: %w", err)
+	}
+	if r.Class != "domain" {
+		return nil, errors.New("в ответе RDAP не домен")
 	}
 	d := &Domain{Source: "rdap"}
 	for _, e := range r.Events {
@@ -91,13 +157,13 @@ func ParseRDAP(data []byte) (*Domain, error) {
 		}
 	}
 	for _, n := range r.Nameservers {
-		d.Nameservers = append(d.Nameservers, strings.ToLower(ui.Plain(n.Name)))
+		if name := strings.ToLower(strings.TrimSuffix(ui.Plain(n.Name), ".")); name != "" {
+			d.Nameservers = append(d.Nameservers, name)
+		}
 	}
 	for _, e := range r.Entities {
-		for _, role := range e.Roles {
-			if role == "registrar" {
-				d.Registrar = vcardName(e.Vcard)
-			}
+		if d.Registrar == "" && slices.Contains(e.Roles, "registrar") {
+			d.Registrar = vcardName(e.Vcard)
 		}
 	}
 	return d, nil
@@ -120,38 +186,51 @@ func vcardName(raw json.RawMessage) string {
 	return ""
 }
 
-func whois(domain string) (string, error) {
-	tld := domain[strings.LastIndex(domain, ".")+1:]
-	iana, err := whoisQuery("whois.iana.org", tld)
+func whois(ctx context.Context, name string) (string, error) {
+	zone := lastLabel(name)
+	iana, err := whoisQuery(ctx, "whois.iana.org", zone)
 	if err != nil {
 		return "", err
 	}
-	server := ""
-	for line := range strings.SplitSeq(iana, "\n") {
-		k, v, ok := strings.Cut(line, ":")
-		if ok && (strings.TrimSpace(k) == "whois" || strings.TrimSpace(k) == "refer") && strings.TrimSpace(v) != "" {
-			server = strings.TrimSpace(v)
-			break
-		}
-	}
+	server := whoisServer(iana)
 	if server == "" {
-		return "", errors.New("нет whois-сервера для ." + tld)
+		return "", fmt.Errorf("зона .%s: %w", zone, errNoWhois)
 	}
-	return whoisQuery(server, domain)
+	return whoisQuery(ctx, server, name)
 }
 
-func whoisQuery(server, q string) (string, error) {
-	c, err := net.DialTimeout("tcp", net.JoinHostPort(server, "43"), Timeout)
+// whoisServer: сервер зоны из ответа whois.iana.org - строка whois или refer; у зон с одним RDAP обе пусты.
+func whoisServer(iana string) string {
+	for line := range strings.SplitSeq(iana, "\n") {
+		k, v, ok := strings.Cut(line, ":")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if ok && (k == "whois" || k == "refer") && v != "" {
+			return ui.Plain(v)
+		}
+	}
+	return ""
+}
+
+func whoisQuery(ctx context.Context, server, q string) (string, error) {
+	dialer := net.Dialer{Timeout: Timeout}
+	c, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(server, "43"))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("whois-сервер %s недоступен: %w", server, err)
 	}
 	defer func() { _ = c.Close() }()
-	_ = c.SetDeadline(time.Now().Add(Timeout))
-	if _, err := io.WriteString(c, q+"\r\n"); err != nil {
-		return "", err
+	deadline := time.Now().Add(Timeout)
+	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
 	}
-	data, err := io.ReadAll(io.LimitReader(c, 1<<20))
-	return string(data), err
+	_ = c.SetDeadline(deadline)
+	if _, err := io.WriteString(c, q+"\r\n"); err != nil {
+		return "", fmt.Errorf("запрос к whois-серверу %s не ушёл: %w", server, err)
+	}
+	data, err := io.ReadAll(io.LimitReader(c, maxAnswer))
+	if err != nil {
+		return "", fmt.Errorf("ответ whois-сервера %s оборван: %w", server, err)
+	}
+	return string(data), nil
 }
 
 // ParseWhois понимает ключи gTLD и зоны .ru/.рф (registrar, created, paid-till, nserver).

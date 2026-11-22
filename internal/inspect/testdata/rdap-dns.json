@@ -1,0 +1,31 @@
+{
+ "description": "RDAP bootstrap file for Domain Name System registrations",
+ "publication": "2026-11-20T23:00:03Z",
+ "services": [
+  [
+   ["com", "net"],
+   ["https://rdap.registry.example/com/v1/"]
+  ],
+  [
+   ["org"],
+   ["https://rdap.example.org/rdap/"]
+  ],
+  [
+   ["xn--80akhbyknj4f"],
+   ["http://rdap.example.net/", "https://rdap.example.net/"]
+  ],
+  [
+   ["example"],
+   ["http://rdap.nic.example/"]
+  ],
+  [
+   ["test"],
+   ["https://rdap.example.test/no-slash"]
+  ],
+  [
+   ["invalid"],
+   ["ftp://rdap.example.invalid/"]
+  ]
+ ],
+ "version": "1.0"
+}

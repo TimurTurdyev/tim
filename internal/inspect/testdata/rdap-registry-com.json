@@ -1,0 +1,137 @@
+{
+ "objectClassName": "domain",
+ "handle": "1000000001_DOMAIN_COM-EXMP",
+ "ldhName": "EXAMPLE.COM",
+ "links": [
+  {
+   "value": "https://rdap.registry.example/com/v1/domain/example.com",
+   "rel": "self",
+   "href": "https://rdap.registry.example/com/v1/domain/example.com",
+   "type": "application/rdap+json"
+  },
+  {
+   "value": "https://rdap.registry.example/com/v1/domain/example.com",
+   "rel": "related",
+   "href": "https://rdap.registrar.example/domain/EXAMPLE.COM",
+   "type": "application/rdap+json"
+  }
+ ],
+ "status": [
+  "client transfer prohibited"
+ ],
+ "entities": [
+  {
+   "objectClassName": "entity",
+   "handle": "9999",
+   "roles": [
+    "registrar"
+   ],
+   "publicIds": [
+    {
+     "type": "IANA Registrar ID",
+     "identifier": "9999"
+    }
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "Example Registrar, Inc."
+     ]
+    ]
+   ],
+   "entities": [
+    {
+     "objectClassName": "entity",
+     "roles": [
+      "abuse"
+     ],
+     "vcardArray": [
+      "vcard",
+      [
+       [
+        "version",
+        {},
+        "text",
+        "4.0"
+       ],
+       [
+        "fn",
+        {},
+        "text",
+        ""
+       ],
+       [
+        "tel",
+        {
+         "type": "voice"
+        },
+        "uri",
+        "tel:+1.5555550100"
+       ],
+       [
+        "email",
+        {},
+        "text",
+        "abuse@registrar.example"
+       ]
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "eventAction": "registration",
+   "eventDate": "2007-07-04T01:13:38Z"
+  },
+  {
+   "eventAction": "expiration",
+   "eventDate": "2029-07-04T01:13:38Z"
+  },
+  {
+   "eventAction": "last changed",
+   "eventDate": "2025-12-15T02:08:37Z"
+  },
+  {
+   "eventAction": "last update of RDAP database",
+   "eventDate": "2026-11-25T00:50:47Z"
+  }
+ ],
+ "secureDNS": {
+  "delegationSigned": false
+ },
+ "nameservers": [
+  {
+   "objectClassName": "nameserver",
+   "ldhName": "NS1.EXAMPLE.NET"
+  },
+  {
+   "objectClassName": "nameserver",
+   "ldhName": "NS2.EXAMPLE.NET"
+  }
+ ],
+ "rdapConformance": [
+  "rdap_level_0",
+  "icann_rdap_technical_implementation_guide_1",
+  "icann_rdap_response_profile_1"
+ ],
+ "notices": [
+  {
+   "title": "Terms of Service",
+   "description": [
+    "Service subject to Terms of Use."
+   ]
+  }
+ ]
+}

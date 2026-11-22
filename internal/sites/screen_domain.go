@@ -103,7 +103,8 @@ func (l *domainLoad) wait(width int) []string {
 // DomainScreen: домен целиком вкладками - имена, адреса, записи, сертификат, почта, двойники; лампы сайта,
 // сертификата, регистрации и почты над таблицей.
 func DomainScreen(env *app.Env, domain string) tui.Screen {
-	return domainScreen(env, domain, domaudit.Options{Scan: ownSite(env.Cfg, domain), Direct: directIface(env.Cfg, false)})
+	return domainScreen(env, domain, domaudit.Options{Scan: ownSite(env.Cfg, domain), Direct: directIface(env.Cfg, false),
+		Inside: insideOf(env, domain)})
 }
 
 func domainScreen(env *app.Env, domain string, opt domaudit.Options) tui.Screen {
@@ -226,7 +227,7 @@ func domainLamps(domain string) []string {
 	if cert.Level >= level.Warn {
 		lamps[1] += ui.Dim("  причина - вкладка Сертификат")
 	}
-	if reg, err := inspect.Registration(domain); err == nil && !reg.Expires.IsZero() {
+	if reg, err := health.Registration(inspect.Registrable(domain)); err == nil && !reg.Expires.IsZero() {
 		c := health.Deadline("домен", reg.Expires, health.DomainWarnDays, health.DomainBadDays)
 		lamp := level.Lamp(c.Level, "домен "+c.Text) + ui.Dim("  "+reg.Registrar)
 		if c.Level >= level.Warn {

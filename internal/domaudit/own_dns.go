@@ -2,6 +2,7 @@ package domaudit
 
 import (
 	"context"
+	"errors"
 	"net"
 	"slices"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
 	"github.com/TimurTurdyev/tim/internal/namebase"
+	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/sweep"
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
@@ -23,6 +25,7 @@ const (
 	poolBudget  = 5 * time.Second
 	maxHits     = 3000 // больше имён словарь не находит и у огромных зон: дальше похоже на незамеченную запись *
 	maxExplicit = 2000
+	maxArchive  = 10000 // больше имён в архиве только у площадок с чужими поддоменами
 )
 
 // dnsPath: каким путём идёт массовая проверка имён; how - словами, для строки источника.
@@ -101,6 +104,45 @@ func resolvers() sweep.Options {
 		return sweep.Options{DoH: sweep.DoHServers}
 	}
 	return sweep.Options{Servers: dnsq.Resolvers, Recursive: true, Control: dnsq.Control()}
+}
+
+// archived: что локальный архив знает о домене.
+type archived struct {
+	names   []string
+	total   int
+	release string
+	err     error
+}
+
+// lookupArchive: имена домена из локального архива - что видел обход интернета.
+func lookupArchive(domain string) archived {
+	base, err := namebase.Open(paths.Data("names"))
+	if err != nil {
+		return archived{err: err}
+	}
+	names, total, err := base.Lookup(domain, maxArchive)
+	return archived{names, total, base.Release(), err}
+}
+
+// archive: имена из архива - в сбор; без архива - строка о том, как его поставить.
+func (c *collector) archive(a archived) {
+	st := c.state(fromBase)
+	switch {
+	case errors.Is(a.err, namebase.ErrNoBase):
+		st.Note = "локального архива нет: tim data update --names"
+		return
+	case a.err != nil:
+		st.Error = ui.Plain(ui.ShortErr(a.err))
+		return
+	}
+	for _, n := range a.names {
+		c.learn(n, fromBase)
+	}
+	st.Version, st.Note = a.release, "выпуск "+a.release
+	if a.total > len(a.names) {
+		st.Cut = true
+		st.Note += ", взято " + strconv.Itoa(len(a.names)) + " из " + strconv.Itoa(a.total)
+	}
 }
 
 // startWords запускает перебор словаря в фоне: он идёт, пока собирается первый круг и отвечают сторонние.

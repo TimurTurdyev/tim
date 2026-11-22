@@ -44,10 +44,13 @@ func (i ASInfo) Owner() string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(name, "_", " ")), " ") // вместо кавычек в реестре подчёркивания
 }
 
-// Cymru спрашивает сведения обо всех адресах одним соединением.
+// Cymru: чьи адреса - по локальным таблицам сетей, а без них одним соединением у whois.cymru.com.
 func Cymru(ips []string) map[string]ASInfo {
 	if len(ips) == 0 {
 		return nil
+	}
+	if known := local(ips); known != nil {
+		return known
 	}
 	conn, err := net.DialTimeout("tcp", "whois.cymru.com:43", 5*time.Second)
 	if err != nil {

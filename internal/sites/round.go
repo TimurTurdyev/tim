@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/app"
 	"github.com/TimurTurdyev/tim/internal/cache"
 	"github.com/TimurTurdyev/tim/internal/config"
 	"github.com/TimurTurdyev/tim/internal/health"
@@ -48,8 +49,8 @@ func watchDomains(domains []string) {
 }
 
 // watchOutsides: имена и порты доменов обхода снаружи - только ночью: это десятки запросов на домен.
-func watchOutsides(cfg *config.Config, domains []string) {
-	par.Map(domains, 2, func(d string) bool { watchOutside(cfg, d); return true })
+func watchOutsides(env *app.Env, domains []string) {
+	par.Map(domains, 2, func(d string) bool { watchOutside(env, d); return true })
 }
 
 func roundAlerts(rows []health.Row, domains, aliases []string) []alert {

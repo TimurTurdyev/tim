@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TimurTurdyev/tim/internal/asn"
 	"github.com/TimurTurdyev/tim/internal/par"
 )
 
@@ -30,9 +31,18 @@ type Options struct {
 	FreshCRT      bool
 	SkipNeighbors bool
 	Direct        string
-	Notify        func(string)
+	// Inside: что серверы с этими адресами сами знают о своих сайтах; nil - спросить некого.
+	Inside func(ips []string) []Inside
+	Notify func(string)
 
 	night bool // ночной обход: без HTTP, соседей, места и медленных источников
+}
+
+// Inside: сервер и сайты, которые на нём настроены; Wild - поддомены, под которыми он отвечает на любое имя.
+type Inside struct {
+	Server      string
+	Names, Wild []string
+	At          time.Time
 }
 
 // collector: сбор по кругам. Круг - новые имена: их адреса, чьи они, что отвечает сайт. Имена, которые всплыли по
@@ -67,6 +77,7 @@ type collector struct {
 	included   []string              // записи SPF внутри домена, которые уже раскрыли
 	nets       map[netip.Prefix]bool // сети /24, про которые уже решили, обходить ли
 	netsDone   int
+	asked      bool                // серверы о своих сайтах уже спрошены
 	certs      []*x509.Certificate // сертификаты найденных сайтов и своих серверов: по их меткам ищутся соседи
 
 	mu      sync.Mutex // имена пишут пробы, ошибки - кто первый наткнётся
@@ -160,7 +171,9 @@ func (c *collector) discover() {
 		c.asking = askSources(c.domain, c.opt)
 	}
 	c.startWords()
-	par.All(c.records, func() { c.wild = wildcard(c.domain) })
+	var known archived
+	par.All(c.records, func() { known = lookupArchive(c.domain) }, func() { c.wild = wildcard(c.domain) })
+	c.archive(known)
 	if c.asking != nil {
 		c.asking.wait(fastWait)
 	}
@@ -234,6 +247,7 @@ func (c *collector) surface() {
 		time.Sleep(50 * time.Millisecond)
 	}
 	c.gather()
+	c.inside()
 	c.reverse()
 	c.handshakes()
 }
@@ -272,7 +286,16 @@ func (c *collector) finish() {
 			r.Found.Silent = append(r.Found.Silent, s.Name)
 		}
 	}
+	for name, labels := range c.from {
+		if slices.Contains(labels, fromInside) && c.hosts[name] == nil {
+			r.InsideOnly = append(r.InsideOnly, name)
+		}
+	}
+	slices.Sort(r.InsideOnly)
 	r.Notes = append(r.Notes, c.limits()...)
+	if len(r.Addrs) > 0 {
+		r.Notes = append(r.Notes, netsNote())
+	}
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
 	c.remember()
 }
@@ -309,6 +332,14 @@ func (c *collector) ownStates() []SourceState {
 		out = append(out, *st)
 	}
 	return out
+}
+
+// netsNote: откуда сведения о сетях и странах.
+func netsNote() string {
+	if built, ok := asn.LocalBuilt(); ok {
+		return "сети и страны - из локальных таблиц от " + built.Local().Format("02.01.2006")
+	}
+	return "локальных таблиц сетей нет или они старше 30 дней: сети спрошены у whois.cymru.com; поставить свои - tim data update"
 }
 
 // limits: что осталось за пределами сбора.

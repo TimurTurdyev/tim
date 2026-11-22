@@ -103,6 +103,8 @@ type Report struct {
 	Errors   []string  `json:"errors,omitempty"`
 	// Sources: что дал каждый источник имён - свои первыми.
 	Sources []SourceState `json:"sources,omitempty"`
+	// InsideOnly: сайты, которые настроены на своих серверах, а записи в DNS у них нет.
+	InsideOnly []string `json:"inside_only,omitempty"`
 	// Found: сколько имён нашли сами и сколько добавили сторонние сервисы.
 	Found Found    `json:"found"`
 	Notes []string `json:"notes,omitempty"` // что осталось за пределами сбора
