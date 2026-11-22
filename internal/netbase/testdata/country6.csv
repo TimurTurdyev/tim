@@ -1,0 +1,4 @@
+2001:db8::,2001:db8:0:ffff:ffff:ffff:ffff:ffff,NL
+2001:db8:1::,2001:db8:1::ffff,US
+2001:db8:1::1:0,2001:db8:1:ffff:ffff:ffff:ffff:ffff,DE
+3fff::,3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff,JP

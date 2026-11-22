@@ -1,0 +1,11 @@
+4199990001 EXAMPLE-NET - Example Networks, Inc., US
+4199990002 EXAMPLE-HOSTING Example Hosting GmbH, DE
+4199990003 EXAMPLE-RU "Example Telecom", Ltd, RU
+4199990004 EXAMPLE_CDN Example CDN B.V., NL
+4199990005 EXAMPLE-LAB - Example Corporation - Research Laboratory, US
+4199990006 Exemple Côte - Exemple Côte d'Ivoire, CI
+4199990007 Examplemyndigheten, SE
+4199990008 - , NZ
+4199990009 EXAMPLE-AP - Example Pty Ltd, Level 3, AU
+4199990010 EXAMPLE-BANK Example Bank AG, DE
+4199990011 Example Bank AG, DE

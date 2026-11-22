@@ -9,7 +9,34 @@ import (
 
 // Commands: команды раздела.
 func Commands(env *app.Env) []*cobra.Command {
-	return []*cobra.Command{initCommand(env), doctorCommand(env), selfUpdateCommand(env), configCommand(env)}
+	return []*cobra.Command{initCommand(env), doctorCommand(env), selfUpdateCommand(env), configCommand(env), dataCommand(env)}
+}
+
+func dataCommand(env *app.Env) *cobra.Command {
+	var o dataOptions
+	c := app.WithJSON(&cobra.Command{
+		Use:   "data [update [--nets] [--names] [--from папка]]",
+		Short: "Локальная база: сети, страны и архив имён - что стоит и какого возраста",
+		Long: `Локальная база заменяет сторонние сервисы в tim domain и tim ip: чья сеть и где стоит сервер - по таблицам,
+поддомены - из архива имён. Лежит в ~/.local/share/tim (или TIM_DATA_DIR).
+Таблицы сетей (25 МБ): маршруты из RIPE RIS, имена AS и страны серверов из ip-location-db. Качаются и без VPN.
+Таблицы старше 30 дней tim не берёт и спрашивает сеть.
+Архив имён (скачать около 1.9 ГБ, на диске 1 ГБ): список хостов Common Crawl, 243 млн имён, выходит раз в месяц.
+Без VPN не качается: нужен VPN, зеркало ([data] mirror в конфиге) или уже скачанные части: --from папка.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return dataStatus() },
+	})
+	update := &cobra.Command{
+		Use:   "update [--nets] [--names] [--from папка]",
+		Short: "Скачать или обновить: без флагов - таблицы сетей и архив имён, если он уже стоит",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return dataUpdate(env.Cfg, o) },
+	}
+	update.Flags().BoolVar(&o.nets, "nets", false, "только таблицы сетей и стран")
+	update.Flags().BoolVar(&o.names, "names", false, "архив имён: свежий выпуск списка хостов")
+	update.Flags().StringVar(&o.from, "from", "", "собрать архив имён из папки с уже скачанными частями part-*.gz")
+	c.AddCommand(update)
+	return c
 }
 
 func configCommand(env *app.Env) *cobra.Command {

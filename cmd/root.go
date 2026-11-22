@@ -69,7 +69,7 @@ var groups = []struct {
 	{"net", "Сеть", []string{"vpn", "route", "direct", "net", "ip"}},
 	{"sites", "Сайты", []string{"site", "audit", "domain", "mail", "dns", "cert", "http", "check", "notify"}},
 	{"util", "Утилиты", utilCmds},
-	{"self", "Сам tim", []string{"init", "config", "doctor", "version", "self-update", "render"}},
+	{"self", "Сам tim", []string{"init", "config", "data", "doctor", "version", "self-update", "render"}},
 }
 
 // utilCmds: мелкие утилиты. В общей справке они одной строкой - полный список: tim help utils.

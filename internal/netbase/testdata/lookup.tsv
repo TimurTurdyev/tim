@@ -1,0 +1,50 @@
+# адрес	сеть	AS	MOAS	страна сервера	страна регистрации	имя AS; прочерк - пусто
+192.0.2.1	192.0.2.0/24	4199990001	-	NL	US	EXAMPLE-NET - Example Networks, Inc., US
+192.0.2.127	192.0.2.0/24	4199990001	-	NL	US	EXAMPLE-NET - Example Networks, Inc., US
+192.0.2.128	192.0.2.0/24	4199990001	-	US	US	EXAMPLE-NET - Example Networks, Inc., US
+192.0.2.200	192.0.2.0/24	4199990001	-	US	US	EXAMPLE-NET - Example Networks, Inc., US
+198.18.0.0	198.18.0.0/16	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+198.18.3.255	198.18.0.0/16	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+198.18.4.1	198.18.4.0/22	4199990003	-	-	RU	EXAMPLE-RU - "Example Telecom", Ltd, RU
+198.18.5.1	198.18.5.0/24	4199990003	-	-	RU	EXAMPLE-RU - "Example Telecom", Ltd, RU
+198.18.6.1	198.18.4.0/22	4199990003	-	-	RU	EXAMPLE-RU - "Example Telecom", Ltd, RU
+198.18.7.255	198.18.4.0/22	4199990003	-	-	RU	EXAMPLE-RU - "Example Telecom", Ltd, RU
+198.18.8.0	198.18.0.0/16	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+198.19.0.1	198.19.0.0/24	4199990005	+	-	US	EXAMPLE-LAB - Example Corporation - Research Laboratory, US
+198.19.1.1	198.19.1.0/24	4199990007	+	-	SE	Examplemyndigheten, SE
+198.19.2.1	198.19.2.0/24	4199990005	-	-	US	EXAMPLE-LAB - Example Corporation - Research Laboratory, US
+198.19.3.1	198.18.0.0/15	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+198.19.4.1	198.18.0.0/15	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+198.19.5.1	198.19.5.0/24	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+198.19.6.1	198.18.0.0/15	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+198.19.255.255	198.18.0.0/15	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+198.51.100.7	198.51.100.0/24	4199990002	-	DE	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+203.0.113.1	-	-	-	RU	-	-
+203.0.113.63	-	-	-	RU	-	-
+203.0.113.64	-	-	-	-	-	-
+203.0.113.200	-	-	-	SG	-	-
+240.0.0.1	-	-	-	-	-	-
+240.0.255.255	-	-	-	-	-	-
+240.1.0.0	240.1.0.0/16	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+240.1.8.1	240.1.8.0/24	4199990011	-	-	DE	Example Bank AG, DE
+240.1.254.255	240.1.0.0/16	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+240.1.255.255	240.1.255.0/24	4199990003	-	-	RU	EXAMPLE-RU - "Example Telecom", Ltd, RU
+240.2.0.0	-	-	-	-	-	-
+10.0.0.1	-	-	-	-	-	-
+::ffff:192.0.2.1	192.0.2.0/24	4199990001	-	NL	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8::1	2001:db8::/32	4199990001	-	NL	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:0:ffff:ffff:ffff:ffff:ffff	2001:db8::/32	4199990001	-	NL	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:1::5	2001:db8::/32	4199990001	-	US	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:1::1:0	2001:db8::/32	4199990001	-	DE	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:2::1	2001:db8::/32	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:100::1	2001:db8:100::/40	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+2001:db8:100:1::1	2001:db8:100::/40	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+2001:db8:ff:ffff:ffff:ffff:ffff:ffff	2001:db8::/32	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:1ff:ffff:ffff:ffff:ffff:ffff	2001:db8:100::/40	4199990002	-	-	DE	EXAMPLE-HOSTING - Example Hosting GmbH, DE
+2001:db8:200::	2001:db8::/32	4199990001	-	-	US	EXAMPLE-NET - Example Networks, Inc., US
+2001:db8:ffff::1	2001:db8:ffff::/48	4199990004	+	-	NL	EXAMPLE_CDN - Example CDN B.V., NL
+2001:db8:ffff:ffff:ffff:ffff:ffff:ffff	2001:db8:ffff::/48	4199990004	+	-	NL	EXAMPLE_CDN - Example CDN B.V., NL
+fc00::1	-	-	-	-	-	-
+3fff::1	3fff::/20	4199990006	-	JP	CI	Exemple Côte - Exemple Côte d'Ivoire, CI
+3fff:0:1::1	3fff::/20	4199990006	-	JP	CI	Exemple Côte - Exemple Côte d'Ivoire, CI
+3fff:0:2::1	3fff::/20	4199990006	-	JP	CI	Exemple Côte - Exemple Côte d'Ivoire, CI
