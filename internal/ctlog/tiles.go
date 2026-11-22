@@ -29,14 +29,16 @@ const (
 	tileWidth     = 256
 	bodyLimit     = 4 << 20
 	unpackLimit   = 16 << 20
-	requestLimit  = 15 * time.Second
-	errorRetries  = 2
-	busyRetries   = 7
-	pauseMin      = 100 * time.Millisecond
-	pauseMax      = 10 * time.Second
-	gapMin        = 20 * time.Millisecond
-	gapMax        = 250 * time.Millisecond
-	maxSteps      = 48
+	requestLimit  = 8 * time.Second
+	// pingAfter: молчащее соединение проверяется и закрывается, иначе запросы на нём висят до своего срока.
+	pingAfter    = 3 * time.Second
+	errorRetries = 2
+	busyRetries  = 7
+	pauseMin     = 100 * time.Millisecond
+	pauseMax     = 10 * time.Second
+	gapMin       = 20 * time.Millisecond
+	gapMax       = 250 * time.Millisecond
+	maxSteps     = 48
 )
 
 var (
@@ -67,6 +69,7 @@ func newWeb(limit int64, stop context.CancelFunc) *web {
 			MaxIdleConnsPerHost: leParallel,
 			IdleConnTimeout:     30 * time.Second,
 			TLSHandshakeTimeout: 8 * time.Second,
+			HTTP2:               &http.HTTP2Config{SendPingTimeout: pingAfter, PingTimeout: pingAfter},
 		}},
 		limit: limit, stop: stop, gates: map[string]*gate{},
 	}
@@ -103,7 +106,7 @@ func (w *web) get(ctx context.Context, g *gate, rawURL string) ([]byte, int, err
 		}
 		a, err := w.once(ctx, rawURL)
 		switch {
-		case err != nil && (ctx.Err() != nil || failed == errorRetries):
+		case err != nil && (ctx.Err() != nil || failed == errorRetries || timedOut(err)):
 			return nil, 0, err
 		case err != nil || a.status >= 500 && failed < errorRetries:
 			failed++
@@ -243,6 +246,12 @@ func retryPause(header string, try int, now time.Time) time.Duration {
 		wait = at.Sub(now)
 	}
 	return min(max(wait, floor), pauseMax)
+}
+
+// timedOut: ответа не дождались; повтор завис бы так же и держал окно до конца общего срока.
+func timedOut(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
