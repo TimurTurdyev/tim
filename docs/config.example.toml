@@ -24,6 +24,12 @@ sites = ["shop.example.com", "example.com"]
   desc = "место по сайтам"
   run = "du -sh /var/www/* | sort -rh | head"   # {server} и {unit} подставляются
 
+[domain]                # tim domain и ночной обход
+  direct = false        # true - запросы DNS мимо VPN: весь словарь у серверов зоны, но они видят адрес твоей сети
+
+[data]                  # локальная база tim data
+  mirror = ""           # откуда брать список хостов вместо https://data.commoncrawl.org/, если он без VPN не качается
+
 [notify]                # итог обхода по расписанию: только новое и серьёзное
   telegram = "123456:ABC..."   # токен бота от @BotFather
   chat = "123456789"           # кому писать
