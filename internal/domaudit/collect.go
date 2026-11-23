@@ -148,6 +148,7 @@ func Names(domain string, opt Options) *Report {
 		_, addrs := c.resolve(c.fresh())
 		maps.Copy(addrs, c.servers())
 		c.enrich(addrs)
+		c.inside()
 		c.reverse()
 	}
 	c.checkPorts(c.unchecked())

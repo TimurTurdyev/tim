@@ -358,7 +358,9 @@ func (c *collector) under() {
 	})
 	var parents []string
 	for _, p := range slices.Concat(c.zones, c.nodes, busy) {
-		if !slices.Contains(parents, p) && len(parents) < deepParents {
+		// Под записью * словарь ответит на всё: такие родители уже видны по ответу на несуществующее имя.
+		starred := len(c.wilds[p]) > 0 || len(c.pool[p].ips) > 0 || len(c.pool[p].targets) > 0
+		if !starred && !slices.Contains(parents, p) && len(parents) < deepParents {
 			parents = append(parents, p)
 		}
 	}
