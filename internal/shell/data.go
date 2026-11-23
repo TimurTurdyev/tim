@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/config"
@@ -117,6 +119,13 @@ func readData() dataState {
 
 // dataUpdate: таблицы сетей - всегда, архив имён - если просили или он уже стоит.
 func dataUpdate(cfg *config.Config, o dataOptions) error {
+	if !runner.DryRun {
+		unlock, err := lockData()
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	nets, names := o.nets, o.names || o.from != ""
 	if !nets && !names {
 		_, err := namebase.Open(paths.Data("names"))
@@ -134,6 +143,34 @@ func dataUpdate(cfg *config.Config, o dataOptions) error {
 		ui.Println(ui.Dim("архив имён не стоит: tim data update --names (скачать около 1.9 ГБ, нужен VPN или зеркало)"))
 	}
 	return nil
+}
+
+// lockData: два обновления разом испортили бы архив. В замке номер процесса: замок прерванного запуска не мешает.
+func lockData() (unlock func(), err error) {
+	path := paths.Data("update.lock")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, ui.Errorf("каталог локальной базы: %v", err)
+	}
+	if owner, _ := os.ReadFile(path); len(owner) > 0 && !running(string(owner)) {
+		_ = os.Remove(path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, ui.Errorf("локальную базу уже обновляет другой tim")
+	}
+	_, _ = fmt.Fprint(f, os.Getpid())
+	_ = f.Close()
+	return func() { _ = os.Remove(path) }, nil
+}
+
+// running: процесс с таким номером жив.
+func running(pid string) bool {
+	n, err := strconv.Atoi(strings.TrimSpace(pid))
+	if err != nil {
+		return false
+	}
+	p, err := os.FindProcess(n)
+	return err == nil && p.Signal(syscall.Signal(0)) == nil
 }
 
 // updateNets: дампы RIS, имена AS и страны серверов - в таблицы; прежние остаются, пока новые не собраны.

@@ -6,9 +6,11 @@ import (
 	"net"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TimurTurdyev/tim/internal/dnsq"
+	"github.com/TimurTurdyev/tim/internal/inspect"
 	"github.com/TimurTurdyev/tim/internal/namebase"
 	"github.com/TimurTurdyev/tim/internal/paths"
 	"github.com/TimurTurdyev/tim/internal/sweep"
@@ -88,7 +90,10 @@ func zonePath(name string) (dnsPath, bool) {
 			}
 		}
 	}
-	if err != nil || !zone.Direct || len(servers) == 0 {
+	// У домена, которого нет, ближайшая зона - зона выше, вплоть до ru или com: её серверы словарём не спрашиваем.
+	reg := inspect.Registrable(name)
+	inside := zone.Name == reg || strings.HasSuffix(zone.Name, "."+reg)
+	if err != nil || !zone.Direct || len(servers) == 0 || !inside {
 		return dnsPath{}, false
 	}
 	p := dnsPath{opt: sweep.Options{Servers: servers, Control: dnsq.Control()}, how: "у серверов зоны", zone: zone.Name, direct: true}
