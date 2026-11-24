@@ -17,8 +17,7 @@ type ledger struct {
 	state   []nameState
 	tries   []uint8
 	// open: выданы и ещё ждут ответа
-	open    int
-	limited bool
+	open int
 }
 
 func newLedger(names []string) ledger {
@@ -72,7 +71,7 @@ func (l *ledger) noteFail(idx int32) {
 func (l *ledger) progress() (done, total int) { return len(l.answers) - l.open, len(l.names) }
 
 func (l *ledger) result() Result {
-	res := Result{Answers: l.answers, Limited: l.limited}
+	res := Result{Answers: l.answers}
 	for i := range l.answers {
 		if !definite(l.answers[i].Kind) {
 			res.Unanswered++

@@ -53,8 +53,8 @@ type peer struct {
 	next    uint16
 	flights []flight
 	head    int
-	// lastReply: когда сервер отвечал в последний раз, чем угодно; -1 - ещё ни разу
-	lastReply time.Duration
+	// когда сервер в последний раз ответил чем угодно и когда - обрезанным ответом; -1 - ещё ни разу
+	lastReply, lastClip time.Duration
 	// tcp: имена с обрезанным ответом ждут очереди по TCP
 	tcp     []int32
 	tcpDown bool
@@ -64,7 +64,8 @@ type peer struct {
 type engine struct {
 	book  ledger
 	peers []*peer
-	probe string
+	// root: общий родитель имён - о нём спрашивает проба
+	root string
 	// по именам: когда и кому ушла последняя попытка
 	sentAt []time.Duration
 	sentTo []uint8
@@ -85,11 +86,11 @@ func newEngine(names []string, servers int, recursive bool, deadline time.Durati
 	if recursive {
 		lim.start, lim.minTimeout, tries = startRateResolver, minTimeoutResolver, triesResolver
 	}
-	e := &engine{book: newLedger(names), probe: probeName(names), tries: tries, deadline: deadline,
+	e := &engine{book: newLedger(names), root: probeName(names), tries: tries, deadline: deadline,
 		sentAt: make([]time.Duration, len(names)), sentTo: make([]uint8, len(names))}
 	for range servers {
 		pace := newPacer(lim, totalTop/float64(servers))
-		e.peers = append(e.peers, &peer{pace: pace, ring: make([]slot, ringSize), lastReply: -1})
+		e.peers = append(e.peers, &peer{pace: pace, ring: make([]slot, ringSize), lastReply: -1, lastClip: -1})
 	}
 	return e
 }
@@ -132,10 +133,18 @@ func (e *engine) finished(now time.Duration) bool {
 	return now-e.progressAt > stallLimit
 }
 
-// name: о каком имени запрос - проба спрашивает общего родителя.
+// result: ограничение частоты называет правило частоты - одиночный обрезанный ответ бывает и просто большим.
+func (e *engine) result() Result {
+	res := e.book.result()
+	for _, p := range e.peers {
+		res.Limited = res.Limited || p.pace.limited
+	}
+	return res
+}
+
 func (e *engine) name(idx int32) string {
 	if idx == probe {
-		return e.probe
+		return e.root
 	}
 	return e.book.names[idx]
 }
@@ -155,8 +164,13 @@ func (e *engine) expire(p *peer, now time.Duration) {
 		if f.idx == probe || e.book.state[f.idx] != flying || e.sentAt[f.idx] != f.at {
 			continue
 		}
-		// сервер молчал всё время после запроса: это не про имя, попытку ему возвращаем
-		if lost && p.lastReply < f.at {
+		switch {
+		case lost && p.lastClip >= f.at && !p.tcpDown:
+			// ограничитель частоты половину отказов обрезает, половину глотает: тишина рядом с обрезанным - тот же отказ
+			e.toTCP(p, f.idx)
+			continue
+		case lost && p.lastReply < f.at:
+			// сервер молчал всё время после запроса: это не про имя, попытку ему возвращаем
 			e.book.tries[f.idx]--
 		}
 		e.again(f.idx)
@@ -257,68 +271,59 @@ func (e *engine) fire(n int, idx int32, now time.Duration) {
 	e.out = append(e.out, shot{server: n, idx: idx, id: id})
 }
 
-// receive: сообщение от сервера n; true - имя встало в очередь TCP.
-func (e *engine) receive(n int, msg []byte, now time.Duration) bool {
+// receive: сообщение от сервера n - ответ принимается, только если совпали номер и имя вопроса.
+func (e *engine) receive(n int, msg []byte, now time.Duration) {
 	id, asked, ok := question(msg)
 	if !ok {
-		return false
+		return
 	}
-	s := e.peers[n].ring[id]
-	if s.state == slotFree || !sameName(asked, e.name(s.idx)) {
-		return false
-	}
-	a, truncated := Classify(msg, e.name(s.idx))
-	return e.reply(n, id, a, truncated, now)
-}
-
-// reply: ответ сервера n на запрос с номером id; true - имя встало в очередь TCP.
-func (e *engine) reply(n int, id uint16, a Answer, truncated bool, now time.Duration) bool {
 	p := e.peers[n]
 	s := &p.ring[id]
+	if s.state == slotFree || s.state == slotDone || !sameName(asked, e.name(s.idx)) {
+		return
+	}
+	a, truncated := Classify(msg, e.name(s.idx))
 	good := definite(a.Kind)
-	switch s.state {
-	case slotLive:
+	switch {
+	case s.state == slotLive:
 		p.pace.onReply(s.at, now, good, truncated)
-	case slotLost:
-		if good {
-			p.pace.onLate(s.at, now)
-		}
-	default:
-		return false
+	case good:
+		p.pace.onLate(s.at, now)
 	}
 	s.state, p.lastReply = slotDone, now
 	if truncated {
-		e.book.limited = true
+		p.lastClip = now
 	}
-	if s.idx == probe {
-		return false
+	if s.idx != probe {
+		e.land(p, s, a, truncated, now)
 	}
-	return e.land(p, s, a, truncated, now)
 }
 
 // land: что ответ значит для имени.
-func (e *engine) land(p *peer, s *slot, a Answer, truncated bool, now time.Duration) bool {
+func (e *engine) land(p *peer, s *slot, a Answer, truncated bool, now time.Duration) {
 	idx := s.idx
 	if definite(a.Kind) {
 		if e.book.settle(idx, a) {
 			e.progressAt = now
 		}
-		return false
+		return
 	}
 	if a.Kind == Fail {
 		e.book.noteFail(idx)
 	}
-	// ответ на прошлую попытку: имя уже ждёт другого сервера
-	if e.book.state[idx] != flying || e.sentAt[idx] != s.at {
-		return false
+	// ответ на прошлую попытку не в счёт: имя уже ждёт другого сервера
+	if truncated && !p.tcpDown && e.book.state[idx] == flying && e.sentAt[idx] == s.at {
+		e.toTCP(p, idx)
 	}
-	if truncated && !p.tcpDown {
-		e.book.state[idx] = viaTCP
-		p.tcp = append(p.tcp, idx)
-		return true
-	}
-	return false
 }
+
+func (e *engine) toTCP(p *peer, idx int32) {
+	e.book.state[idx] = viaTCP
+	p.tcp = append(p.tcp, idx)
+}
+
+// tcpWaiting: у сервера n есть имена, которые пора спросить по TCP.
+func (e *engine) tcpWaiting(n int) bool { return len(e.peers[n].tcp) > 0 }
 
 // takeTCP: имена сервера n, которые пора спросить по TCP, - не больше limit.
 func (e *engine) takeTCP(n, limit int) []int32 {

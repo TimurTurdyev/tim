@@ -49,7 +49,7 @@ func overUDP(ctx context.Context, names []string, opt Options, start time.Time) 
 	}
 	wg.Wait()
 	d.report()
-	return d.eng.book.result()
+	return d.eng.result()
 }
 
 // connect: сервер, до которого сокет не открылся, в перебор не идёт.
@@ -88,6 +88,9 @@ func (d *direct) loop(ctx context.Context) {
 		d.mu.Lock()
 		shots = append(shots[:0], d.eng.tick(now)...)
 		done := d.eng.finished(now)
+		for n := range d.conns {
+			d.nudge(n)
+		}
 		d.mu.Unlock()
 		d.send(shots)
 		if done {
@@ -124,16 +127,21 @@ func (d *direct) receive(n int) {
 			time.Sleep(time.Millisecond)
 			continue
 		}
-		now := time.Since(d.start)
 		d.mu.Lock()
-		queued := d.eng.receive(n, buf[:size], now)
+		d.eng.receive(n, buf[:size], time.Since(d.start))
+		d.nudge(n)
 		d.mu.Unlock()
-		if queued {
-			select {
-			case d.wake[n] <- struct{}{}:
-			default:
-			}
-		}
+	}
+}
+
+// nudge: будит очередь TCP сервера n, если в ней появились имена. Вызывается под d.mu.
+func (d *direct) nudge(n int) {
+	if !d.eng.tcpWaiting(n) {
+		return
+	}
+	select {
+	case d.wake[n] <- struct{}{}:
+	default:
 	}
 }
 

@@ -57,7 +57,7 @@ type Options struct {
 type Result struct {
 	Answers    []Answer
 	Unanswered int
-	// Limited: сервер ограничивал частоту - приходили обрезанные ответы
+	// Limited: сервер ограничивал частоту - обрезанные ответы шли пачками
 	Limited bool
 	Elapsed time.Duration
 }

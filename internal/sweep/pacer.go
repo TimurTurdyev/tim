@@ -96,6 +96,8 @@ type pacer struct {
 	probing                   bool
 	// silent: сервер не отвечает - имён ему не дают, идут только пробы
 	silent bool
+	// limited: частоту хоть раз пришлось сбросить из-за обрезанных ответов
+	limited bool
 }
 
 func newPacer(lim limits, share float64) pacer {
@@ -222,6 +224,7 @@ func (p *pacer) overloaded(now time.Duration, n int) bool {
 		p.good = 0
 		p.cut(now, p.rate/2)
 	case p.truncated >= truncatedCut:
+		p.limited = true
 		p.cut(now, p.retreat(0.5))
 	case p.based && n >= minSample && above(p.lost, n, p.base+cutOver, 2):
 		p.cut(now, p.retreat(0.75))

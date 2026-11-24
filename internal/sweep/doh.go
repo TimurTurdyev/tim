@@ -44,8 +44,7 @@ type desk struct {
 	book     ledger
 	retry    []later
 	deadline time.Duration
-	// cold: связь рвалась - запросы идут по одному, пока резолвер не ответит: иначе транспорт
-	// откроет по соединению на каждый ждущий запрос
+	// cold: связь рвалась - запросы идут по одному, пока резолвер не ответит
 	cold bool
 	// lone: имя одиночного запроса в пути
 	lone int32
@@ -170,13 +169,17 @@ func overHTTPS(ctx context.Context, names []string, opt Options, start time.Time
 	}
 	defer transport.CloseIdleConnections()
 	s := &secure{opt: opt, client: &http.Client{Transport: transport}, start: start}
-	s.desk = newDesk(names, horizon(ctx, start, opt.Budget))
+	return s.run(ctx, names)
+}
+
+func (s *secure) run(ctx context.Context, names []string) Result {
+	s.desk = newDesk(names, horizon(ctx, s.start, s.opt.Budget))
 	if s.desk.deadline > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, start.Add(s.desk.deadline))
+		ctx, cancel = context.WithDeadline(ctx, s.start.Add(s.desk.deadline))
 		defer cancel()
 	}
-	for _, address := range opt.DoH {
+	for _, address := range s.opt.DoH {
 		// без первого одиночного запроса транспорт открывает по соединению на каждый ждущий запрос
 		if _, reached := s.ask(ctx, address, probeName(names), dohFirst); !reached {
 			continue
