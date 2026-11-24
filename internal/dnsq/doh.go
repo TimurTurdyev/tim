@@ -18,7 +18,7 @@ func overHTTPS(ctx context.Context, msg []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var last error
-	for _, u := range dohServers {
+	for i, u := range dohServers {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(msg))
 		if err != nil {
 			return nil, err
@@ -39,7 +39,17 @@ func overHTTPS(ctx context.Context, msg []byte) ([]byte, error) {
 			last = err
 			continue
 		}
+		// Резолвер под нагрузкой отвечает отказом и на живое имя: спрашиваем следующий, а его отказ уже ответ.
+		if refused(body) && i < len(dohServers)-1 {
+			last = errors.New("DoH " + u + ": резолвер отказал")
+			continue
+		}
 		return body, nil
 	}
 	return nil, last
+}
+
+// refused: код ответа SERVFAIL.
+func refused(msg []byte) bool {
+	return len(msg) > 3 && msg[3]&0x0f == 2
 }

@@ -2,7 +2,9 @@ package domaudit
 
 import (
 	"context"
+	"errors"
 	"maps"
+	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -19,12 +21,13 @@ import (
 )
 
 const (
-	dnsTimeout = 3 * time.Second
-	dnsWidth   = 96
-	maxHops    = 8 // длиннее цепочек CNAME не бывает, разве что петля
-	maxScans   = 100
-	nightScans = 20
-	scanWidth  = 4
+	dnsTimeout  = 3 * time.Second
+	lookupTries = 2
+	dnsWidth    = 96
+	maxHops     = 8 // длиннее цепочек CNAME не бывает, разве что петля
+	maxScans    = 100
+	nightScans  = 20
+	scanWidth   = 4
 )
 
 // resolve: новые имена, у которых есть адрес или CNAME, и их адреса.
@@ -262,19 +265,26 @@ func places(list []*Addr) {
 	}
 }
 
+// lookup: адреса имени. Сбой резолвера - не "имени нет": спрашиваем ещё раз, иначе живое имя пропадёт из отчёта.
 func lookup(name string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
-	defer cancel()
-	addrs, err := dnsq.Resolver().LookupIPAddr(ctx, name)
-	if err != nil {
-		return nil
+	for range lookupTries {
+		ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
+		addrs, err := dnsq.Resolver().LookupIPAddr(ctx, name)
+		cancel()
+		if dnsErr, ok := errors.AsType[*net.DNSError](err); ok && dnsErr.IsNotFound {
+			return nil
+		}
+		if err != nil {
+			continue
+		}
+		var out []string
+		for _, a := range addrs {
+			out = append(out, a.IP.String())
+		}
+		sort.Strings(out)
+		return out
 	}
-	var out []string
-	for _, a := range addrs {
-		out = append(out, a.IP.String())
-	}
-	sort.Strings(out)
-	return out
+	return nil
 }
 
 func ptr(ip string) string {
