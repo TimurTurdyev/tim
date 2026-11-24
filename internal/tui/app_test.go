@@ -39,6 +39,39 @@ func (c *counter) Update(msg tea.Msg, _ *App) tea.Cmd {
 
 func ping() tea.Msg { return pingMsg{} }
 
+// opener: вкладка, которая по enter открывает поверх себя экран.
+type opener struct {
+	counter
+	next Screen
+}
+
+func (o *opener) Init() tea.Cmd   { return nil }
+func (o *opener) TabName() string { return "вкладка" }
+
+func (o *opener) Update(msg tea.Msg, app *App) tea.Cmd {
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		return app.Push(o.next)
+	}
+	return o.counter.Update(msg, app)
+}
+
+// Регрессия: ответ экрана, открытого из вкладки, уходил самой вкладке, и экран результата ждал вечно.
+func TestScreenOpenedFromTabGetsReply(t *testing.T) {
+	opened := &counter{}
+	tab := &opener{next: opened}
+	app := &App{stack: []frame{{s: NewTabs(nil, []Tab{tab}, 0), id: 1}}, lastID: 1}
+	app.Init()
+
+	_, reply := app.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if reply == nil {
+		t.Fatal("открытый экран не заказал свою загрузку")
+	}
+	app.Update(reply())
+	if opened.got != 1 || tab.got != 0 {
+		t.Fatalf("ответ открытого экрана: ему %d, вкладке %d", opened.got, tab.got)
+	}
+}
+
 // Регрессия: два одинаковых экрана в стопке получали пинги друг друга, и тикеры удваивались.
 func TestRepliesReachOnlyOwner(t *testing.T) {
 	first, second := &counter{}, &counter{}

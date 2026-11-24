@@ -194,7 +194,8 @@ func tagTab(i int, c tea.Cmd) tea.Cmd {
 	}
 	return func() tea.Msg {
 		switch m := c().(type) {
-		case nil, tabMsg:
+		case nil, tabMsg, ownedMsg:
+			// ownedMsg - ответ экрана, который вкладка открыла поверх: он идёт ему, а не вкладке.
 			return m
 		case tea.BatchMsg:
 			out := make(tea.BatchMsg, len(m))
