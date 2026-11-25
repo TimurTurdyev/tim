@@ -13,7 +13,10 @@ import (
 	"github.com/TimurTurdyev/tim/internal/ui"
 )
 
-const segSuffix = ".seg"
+const (
+	segSuffix  = ".seg"
+	totalSlack = 1000
+)
 
 // Update ставит выпуск rel часть за частью без второй копии архива: open(i) отдаёт часть i (gzip) и её ETag; rel.Nodes 0 - число имён не сверять.
 func Update(dir string, rel Release, parts int, open func(i int) (io.ReadCloser, string, error), progress func(done, total int)) error {
@@ -161,13 +164,18 @@ func (m *manifest) commit(dir string, gone []string) error {
 	return nil
 }
 
-// checkTotal: в частях должно быть столько строк, сколько имён обещал выпуск.
+// checkTotal: строк в частях должно быть столько, сколько имён обещал выпуск. Common Crawl считает узлы
+// неточно (бывает на строку меньше, чем в частях), поэтому ошибка - расхождение от десятой доли процента.
 func (m *manifest) checkTotal(nodes int64) error {
 	var lines int64
 	for _, s := range m.Segments {
 		lines += s.Source
 	}
-	if nodes > 0 && lines != nodes {
+	diff := lines - nodes
+	if diff < 0 {
+		diff = -diff
+	}
+	if nodes > 0 && diff*totalSlack > nodes {
 		return fmt.Errorf("в частях %d имён, а выпуск обещал %d", lines, nodes)
 	}
 	return nil

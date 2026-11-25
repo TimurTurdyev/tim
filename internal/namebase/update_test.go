@@ -161,4 +161,12 @@ func TestUpdateTotal(t *testing.T) {
 	if _, total := lookup(t, dir, "example.com", 10); total != 2 {
 		t.Errorf("после расхождения в числе имён поиск отдал %d", total)
 	}
+	// Регрессия: выпуск объявил на одно имя меньше, чем лежит в его частях, и полный архив считался сбоем.
+	var many []string
+	for i := range 2000 {
+		many = append(many, fmt.Sprintf("com.example.h%04d", i))
+	}
+	if err := update(t.TempDir(), 16, Release{ID: sampleRelease, Nodes: 1999}, 1, serve(-1, nil, pack(t, many...)), nil); err != nil {
+		t.Errorf("расхождение на одно имя из двух тысяч: %v", err)
+	}
 }
