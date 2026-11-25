@@ -53,7 +53,7 @@ func (l *domainLoad) get(fresh bool) (*domaudit.Report, []string) {
 	note("сайт, сертификат, домен и почта")
 	opt := l.opt
 	opt.FreshCRT, opt.Notify = fresh, note
-	par.All(func() { l.lamps = domainLamps(l.domain) }, func() { l.rep = collectDomain(l.domain, opt) })
+	par.All(func() { l.lamps = domainLamps(l.domain, opt.Quiet) }, func() { l.rep = collectDomain(l.domain, opt) })
 	l.smu.Lock()
 	l.mine = map[string]bool{}
 	for _, a := range l.rep.Addrs {
@@ -138,7 +138,7 @@ func domainScreen(env *app.Env, domain string, opt domaudit.Options) tui.Screen 
 	addrs := addrsTab(domain, load, command, mapAction, tableAction, checkAction(load), acceptAction(outsideObject(domain)), tui.BoardAction{Key: "enter", Label: "подробно",
 		Do: func(row *tui.BoardRow) tui.Action { return env.Result([]string{"ip", plainID(row)}) }})
 	mail := mailTab(env, domain)
-	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain), certTab(domain), mail, twinsTab(domain)}, 0)
+	return tui.NewTabs([]string{"Сайты", domain}, []tui.Tab{names, addrs, recordsTab(domain, opt.Quiet), certTab(domain, opt.Quiet), mail, twinsTab(domain)}, 0)
 }
 
 func namesData(rep *domaudit.Report, lamps []string) tui.BoardData {
@@ -220,14 +220,14 @@ func mailWord(l level.Level) string {
 }
 
 // domainLamps: сайт, сертификат, регистрация и почта домена - по лампе на каждое.
-func domainLamps(domain string) []string {
+func domainLamps(domain string, quiet bool) []string {
 	site := health.Site("https://" + domain)
 	cert := health.Cert(domain)
 	lamps := []string{level.Lamp(site.Level, "сайт "+site.Text), level.Lamp(cert.Level, "сертификат "+cert.Text)}
 	if cert.Level >= level.Warn {
 		lamps[1] += ui.Dim("  причина - вкладка Сертификат")
 	}
-	if reg, err := health.Registration(inspect.Registrable(domain)); err == nil && !reg.Expires.IsZero() {
+	if reg, err := registration(domain, quiet); err == nil && !reg.Expires.IsZero() {
 		c := health.Deadline("домен", reg.Expires, health.DomainWarnDays, health.DomainBadDays)
 		lamp := level.Lamp(c.Level, "домен "+c.Text) + ui.Dim("  "+reg.Registrar)
 		if c.Level >= level.Warn {

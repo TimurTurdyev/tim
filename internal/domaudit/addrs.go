@@ -144,6 +144,14 @@ func chain(cnames map[string]string, name string) []string {
 	return out
 }
 
+// owners: чьи адреса; без сторонних - только по локальным таблицам, адреса наружу не уходят.
+func (c *collector) owners(ips []string) map[string]asn.ASInfo {
+	if c.opt.Quiet {
+		return asn.Local(ips)
+	}
+	return asn.Cymru(ips)
+}
+
 // enrich: чьи адреса, их обратные имена, узел CDN это или свой сервер, и где он стоит.
 func (c *collector) enrich(touched map[string]*Addr) {
 	list := slices.SortedFunc(maps.Values(touched), func(a, b *Addr) int { return strings.Compare(a.IP, b.IP) })
@@ -153,7 +161,7 @@ func (c *collector) enrich(touched map[string]*Addr) {
 			ask = append(ask, a.IP)
 		}
 	}
-	owners := asn.Cymru(ask)
+	owners := c.owners(ask)
 	group := par.NewGroup(dnsWidth)
 	for _, a := range list {
 		if a.Internal {

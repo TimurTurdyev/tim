@@ -295,7 +295,7 @@ func (c *collector) finish() {
 	slices.Sort(r.InsideOnly)
 	r.Notes = append(r.Notes, c.limits()...)
 	if len(r.Addrs) > 0 {
-		r.Notes = append(r.Notes, netsNote())
+		r.Notes = append(r.Notes, netsNote(c.opt.Quiet))
 	}
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
 	c.remember()
@@ -335,10 +335,17 @@ func (c *collector) ownStates() []SourceState {
 	return out
 }
 
-// netsNote: откуда сведения о сетях и странах.
-func netsNote() string {
-	if built, ok := asn.LocalBuilt(); ok {
-		return "сети и страны - из локальных таблиц от " + built.Local().Format("02.01.2006")
+// netsNote: откуда сведения о сетях и странах; quiet - сторонних не спрашивали.
+func netsNote(quiet bool) string {
+	built, fresh := asn.LocalBuilt()
+	on := built.Local().Format("02.01.2006")
+	switch {
+	case fresh:
+		return "сети и страны - из локальных таблиц от " + on
+	case quiet && built.IsZero():
+		return "локальных таблиц сетей нет, а сторонних не спрашиваем: чьи адреса, неизвестно; поставить таблицы - tim data update"
+	case quiet:
+		return "сети - из локальных таблиц от " + on + ", они старше 30 дней: обновить - tim data update"
 	}
 	return "локальных таблиц сетей нет или они старше 30 дней: сети спрошены у whois.cymru.com; поставить свои - tim data update"
 }

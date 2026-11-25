@@ -45,7 +45,7 @@ func roundDomains(hosts []string) []string {
 
 // watchDomains: записи и сертификаты доменов обхода - сравниваются с прошлым разом.
 func watchDomains(domains []string) {
-	par.Map(domains, 4, watchDomain)
+	par.Map(domains, 4, func(d string) domainWatch { return watchDomain(d, false) })
 }
 
 // watchOutsides: имена и порты доменов обхода снаружи - только ночью: это десятки запросов на домен.

@@ -48,7 +48,7 @@ func domain(env *app.Env, arg string, o domainOptions) error {
 	}
 	var rep *domaudit.Report
 	var about domainAbout
-	par.All(func() { rep = collectDomain(name, opt) }, func() { about = aboutDomain(name) })
+	par.All(func() { rep = collectDomain(name, opt) }, func() { about = aboutDomain(name, opt.Quiet) })
 	if err := view.Show(domainReport(rep, about), false); err != nil {
 		return err
 	}

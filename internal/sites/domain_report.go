@@ -25,15 +25,24 @@ const (
 )
 
 // domainAbout: регистрация и почта домена; nil - не узнали.
+// registration: quiet - без посредника rdap.org.
+func registration(domain string, quiet bool) (*inspect.Domain, error) {
+	if quiet {
+		return health.RegistrationOwn(inspect.Registrable(domain))
+	}
+	return health.Registration(inspect.Registrable(domain))
+}
+
 type domainAbout struct {
 	reg  *inspect.Domain
 	mail *inspect.Mail
 }
 
-func aboutDomain(domain string) domainAbout {
+// aboutDomain: регистрация и почта домена; quiet - регистрацию спрашиваем только у реестра зоны.
+func aboutDomain(domain string, quiet bool) domainAbout {
 	var a domainAbout
 	par.All(func() {
-		if d, err := health.Registration(inspect.Registrable(domain)); err == nil {
+		if d, err := registration(domain, quiet); err == nil {
 			a.reg = d
 		}
 	}, func() { a.mail = inspect.MailCheck(domain, inspect.DKIMSelectors) })

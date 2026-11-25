@@ -129,6 +129,7 @@ func TestRegistrationOrder(t *testing.T) {
 		name            string
 		base            string
 		registry, proxy error
+		own             bool
 		whois           string
 		whoisErr        error
 		calls           []string
@@ -144,6 +145,8 @@ func TestRegistrationOrder(t *testing.T) {
 			calls: []string{"реестр", "rdap.org", "whois"}, source: "whois"},
 		{name: "rdap.org не знает зоны", base: base, registry: down, proxy: errNotFound, whois: answer,
 			calls: []string{"реестр", "rdap.org", "whois"}, source: "whois"},
+		{name: "без посредника реестр лежит", base: base, own: true, registry: down, whois: answer,
+			calls: []string{"реестр", "whois"}, source: "whois"},
 		{name: "зоны нет в списке", whois: answer, calls: []string{"whois"}, source: "whois"},
 		{name: "зоны нет в списке, whois пуст", whois: "No match for domain\n", calls: []string{"whois"},
 			err: errNoData},
@@ -169,6 +172,7 @@ func TestRegistrationOrder(t *testing.T) {
 				calls = append(calls, "whois")
 				return c.whois, c.whoisErr
 			},
+			own: c.own,
 		}
 		d, err := ask.registration(context.Background(), "example.com", c.base)
 		if !slices.Equal(calls, c.calls) {

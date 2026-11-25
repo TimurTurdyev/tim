@@ -1,6 +1,7 @@
 package sites
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,8 +18,12 @@ import (
 // Домен сравнивается с прошлым разом: записи DNS и выпуски сертификатов. Чужая смена MX или NS и
 // сертификат от незнакомого центра - первые признаки угона домена.
 
-// recordTypes: порядок типов записей на вкладке.
-var recordTypes = []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT", "CAA"}
+var (
+	// recordTypes: порядок типов записей на вкладке.
+	recordTypes = []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT", "CAA"}
+
+	errOwnOnly = errors.New("в --own не спрашиваем: выпуски знает только сторонний CertSpotter")
+)
 
 // record: запись домена; Host - пусто у самого домена, "www" у www.
 type record struct {
@@ -64,11 +69,14 @@ func records(domain string) ([]record, []string) {
 	return out, caa
 }
 
-// watchDomain: записи и сертификаты домена - и сравнение с прошлым разом.
-func watchDomain(domain string) domainWatch {
+// watchDomain: записи и сертификаты домена - и сравнение с прошлым разом; quiet - без CertSpotter, выпуски не
+// сравниваются.
+func watchDomain(domain string, quiet bool) domainWatch {
 	var w domainWatch
 	w.Records, w.CAA = records(domain)
-	w.Certs, w.CertErr = ctlog.Issuances(domain)
+	if w.CertErr = errOwnOnly; !quiet {
+		w.Certs, w.CertErr = ctlog.Issuances(domain)
+	}
 	snap := baseline.Snapshot{}
 	for _, t := range recordTypes {
 		for _, host := range []string{"", "www"} {

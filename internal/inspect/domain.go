@@ -50,6 +50,7 @@ type Domain struct {
 type sources struct {
 	rdap  func(ctx context.Context, base, name string) (*Domain, error)
 	whois func(ctx context.Context, name string) (string, error)
+	own   bool // без посредника rdap.org: только реестр зоны
 }
 
 // registration: реестр по адресу base, при его отказе rdap.org и whois; base пуст - сразу whois.
@@ -64,10 +65,11 @@ func (s sources) registration(ctx context.Context, name, base string) (*Domain, 
 	case errors.Is(err, errNotFound):
 		return nil, fmt.Errorf("реестр зоны .%s не знает %s: %w", lastLabel(name), name, ErrNoDomain)
 	}
-	viaProxy, proxyErr := s.rdap(ctx, rdapProxy, name)
-	if proxyErr == nil {
-		viaProxy.Source = "rdap.org"
-		return viaProxy, nil
+	if !s.own {
+		if viaProxy, proxyErr := s.rdap(ctx, rdapProxy, name); proxyErr == nil {
+			viaProxy.Source = "rdap.org"
+			return viaProxy, nil
+		}
 	}
 	return s.viaWhois(ctx, name, err)
 }
@@ -91,13 +93,22 @@ func (s sources) viaWhois(ctx context.Context, name string, rdapErr error) (*Dom
 
 // Registration: реестр зоны из списка IANA, при его отказе rdap.org и whois; зоны нет в списке - сразу whois.
 func Registration(domain string) (*Domain, error) {
+	return registration(domain, false)
+}
+
+// RegistrationOwn: то же без rdap.org - домен уходит только реестру своей зоны.
+func RegistrationOwn(domain string) (*Domain, error) {
+	return registration(domain, true)
+}
+
+func registration(domain string, own bool) (*Domain, error) {
 	name, err := asciiName(domain)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), chainTimeout)
 	defer cancel()
-	return sources{rdap: rdap, whois: whois}.registration(ctx, name, currentRegistries().base(name))
+	return sources{rdap: rdap, whois: whois, own: own}.registration(ctx, name, currentRegistries().base(name))
 }
 
 // asciiName: имя для запроса - в нижнем регистре, без точки на конце, IDN в виде xn--.

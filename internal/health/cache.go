@@ -18,3 +18,10 @@ func Registration(domain string) (*inspect.Domain, error) {
 		return inspect.Registration(domain)
 	})
 }
+
+// RegistrationOwn: то же без посредника rdap.org.
+func RegistrationOwn(domain string) (*inspect.Domain, error) {
+	return cache.Get(cache.Path(paths.State("whois"), domain), CacheTTL, func() (*inspect.Domain, error) {
+		return inspect.RegistrationOwn(domain)
+	})
+}

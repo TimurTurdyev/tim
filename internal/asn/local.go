@@ -11,21 +11,29 @@ import (
 // localFresh: таблицы старше этого не годятся - сети переезжают, и вместо таблиц спрашивается сеть.
 const localFresh = 30 * 24 * time.Hour
 
-var localTables = sync.OnceValue(func() *netbase.Tables {
+var anyTables = sync.OnceValue(func() *netbase.Tables {
 	t, err := netbase.Open(paths.Data("nets"))
-	if err != nil || time.Since(t.Built()) > localFresh {
+	if err != nil {
 		return nil
 	}
 	return t
 })
 
-// LocalBuilt: когда собраны локальные таблицы сетей; ok=false - их нет или они устарели.
-func LocalBuilt() (time.Time, bool) {
-	t := localTables()
+// localTables: таблицы, которым ещё можно верить вместо сети.
+func localTables() *netbase.Tables {
+	if t := anyTables(); t != nil && time.Since(t.Built()) <= localFresh {
+		return t
+	}
+	return nil
+}
+
+// LocalBuilt: когда собраны локальные таблицы сетей; fresh=false - они устарели, нулевое время - их нет.
+func LocalBuilt() (built time.Time, fresh bool) {
+	t := anyTables()
 	if t == nil {
 		return time.Time{}, false
 	}
-	return t.Built(), true
+	return t.Built(), time.Since(t.Built()) <= localFresh
 }
 
 // Where: в какой стране стоит сервер - по локальным таблицам; ok=false - таблиц нет или адреса в них нет.
@@ -38,9 +46,17 @@ func Where(ip string) (country string, ok bool) {
 	return info.Country, info.Country != ""
 }
 
-// local: сети адресов из локальных таблиц; nil - таблиц нет. Адреса, которого никто не объявляет, в ответе нет.
+// Local: чьи адреса - только по локальным таблицам, даже устаревшим: наружу не уходит ничего. nil - таблиц нет.
+func Local(ips []string) map[string]ASInfo {
+	return lookup(anyTables(), ips)
+}
+
+// local: сети адресов из свежих локальных таблиц; nil - таблиц нет. Адреса, которого никто не объявляет, в ответе нет.
 func local(ips []string) map[string]ASInfo {
-	t := localTables()
+	return lookup(localTables(), ips)
+}
+
+func lookup(t *netbase.Tables, ips []string) map[string]ASInfo {
 	if t == nil {
 		return nil
 	}

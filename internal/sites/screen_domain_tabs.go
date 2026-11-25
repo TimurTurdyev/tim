@@ -53,12 +53,12 @@ func acceptAction(obj string) tui.BoardAction {
 }
 
 // recordsTab: записи домена; сменившиеся - группой сверху с прежним значением.
-func recordsTab(domain string) tui.Tab {
+func recordsTab(domain string, quiet bool) tui.Tab {
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs: []string{"Сайты", domain}, Tab: "Записи", Search: true,
 		Loading: "спрашиваю DNS " + domain,
 		Command: func(*tui.BoardRow) string { return "tim dns " + domain },
-		Load:    func(bool) tui.BoardData { return recordsData(domain, watchDomain(domain)) },
+		Load:    func(bool) tui.BoardData { return recordsData(domain, watchDomain(domain, quiet)) },
 		Actions: []tui.BoardAction{acceptAction(domainObject(domain))},
 	}).(tui.Tab)
 }
@@ -125,12 +125,12 @@ func seenText(it baseline.Item) string {
 }
 
 // certTab: сертификат домена и выпуски за 30 дней по журналам CT.
-func certTab(domain string) tui.Tab {
+func certTab(domain string, quiet bool) tui.Tab {
 	return tui.NewBoard(tui.BoardOpts{
 		Crumbs: []string{"Сайты", domain}, Tab: "Сертификат",
 		Loading: "сертификат " + domain + " и журналы выпусков",
 		Command: func(*tui.BoardRow) string { return "tim cert " + domain },
-		Load:    func(bool) tui.BoardData { return certData(domain, watchDomain(domain)) },
+		Load:    func(bool) tui.BoardData { return certData(domain, watchDomain(domain, quiet)) },
 		Actions: []tui.BoardAction{acceptAction(domainObject(domain)),
 			{Key: "w", Label: "браузер", Free: true, Doing: "открываю crt.sh", Run: func(*tui.BoardRow) (string, error) {
 				return "crt.sh открыт в браузере", runner.OpenBrowser("https://crt.sh/?q=" + domain)
