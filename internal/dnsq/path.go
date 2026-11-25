@@ -123,6 +123,9 @@ func Bind(iface string) error {
 	return nil
 }
 
+// Unbind: запросы пакета снова идут обычным путём.
+func Unbind() { bound.Store(nil) }
+
 // Bound: интерфейс привязки; пусто - запросы идут обычным путём.
 func Bound() string {
 	if b := bound.Load(); b != nil {

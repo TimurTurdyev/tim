@@ -33,8 +33,11 @@ func (c *collector) near() {
 	for _, n := range got.Names {
 		c.learn(n, fromLog)
 	}
+	for _, a := range anchors {
+		c.ranOver(fromLog, []string{a.LogID + " " + strconv.FormatInt(a.Index, 10)})
+	}
 	st := c.state(fromLog)
-	st.Cut = got.Cut
+	st.Cut = got.Cut || got.Err != nil
 	st.Note = "плиток " + strconv.Itoa(got.Tiles) + ", " + ui.Bytes(got.Bytes)
 	if got.Cut {
 		st.Note += ", прочитано не всё"

@@ -63,7 +63,9 @@ type SourceState struct {
 	Checked int       `json:"checked,omitempty"`
 	Total   int       `json:"total,omitempty"`
 	Version string    `json:"version,omitempty"`
-	Note    string    `json:"note,omitempty"`
+	// Scope: отпечаток того, по чему источник искал (поддомены, сети, образцы): сменился - с прошлым разом не сравнить.
+	Scope string `json:"scope,omitempty"`
+	Note  string `json:"note,omitempty"`
 }
 
 // sourceNames: имена всех ответивших источников - кто какое знает; related - другие домены тех же сертификатов.

@@ -1,7 +1,9 @@
 package domaudit
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -52,23 +54,27 @@ type collector struct {
 	opt    Options
 	rep    *Report
 
-	asking  *asking                 // сторонние источники имён; nil - не спрашиваем
-	from    map[string][]string     // имена, которые нашли сами: откуда
-	states  map[string]*SourceState // что сказать о своих источниках
-	related []string                // чужие домены, которые назвала сама цель
-	known   map[string][]string     // адреса, которые уже спросили
-	wild    []string                // адреса несуществующего имени
-	wilds   map[string][]string     // то же под поддоменами, у которых есть угаданные дети
-	tried   map[string]bool         // имя уже резолвили; true - тогда оно было точно заведённым
-	dropped map[string]bool         // неотличимо от несуществующего
-	cnames  map[string]string
+	asking   *asking                 // сторонние источники имён; nil - не спрашиваем
+	from     map[string][]string     // имена, которые нашли сами: откуда
+	recalled map[string][]string     // из них помнятся с прошлого сбора и пока не найдены заново: с какой подписью
+	states   map[string]*SourceState // что сказать о своих источниках
+	related  []string                // чужие домены, которые назвала сама цель
+	known    map[string][]string     // адреса, которые уже спросили
+	wild     []string                // адреса несуществующего имени
+	wilds    map[string][]string     // то же под поддоменами, у которых есть угаданные дети
+	tried    map[string]bool         // имя уже резолвили; true - тогда оно было точно заведённым
+	dropped  map[string]bool         // неотличимо от несуществующего
+	cnames   map[string]string
 
 	pathOnce   sync.Once
 	dns        dnsPath
 	swept      chan found // ответ перебора словаря; nil - забран или не запускался
 	wordsTotal int
-	nodes      []string // имена без адреса: у них могут быть дети
-	zones      []string // дочерние зоны
+	wordsLimit time.Duration       // дольше перебор со всеми пробами не идёт
+	bound      bool                // запросы DNS привязал к интерфейсу этот сбор
+	scopes     map[string][]string // по чему искали источники, чей охват меняется от сбора к сбору
+	nodes      []string            // имена без адреса: у них могут быть дети
+	zones      []string            // дочерние зоны
 	poolMu     sync.Mutex
 	pool       map[string]pool // ответы на несуществующее имя под родителями
 	firmly     map[string]bool // совпадают с записью *, но заведены явно
@@ -125,6 +131,7 @@ func (c *collector) last() {
 	if c.opt.Quick {
 		return
 	}
+	c.takeWords(0)
 	c.gather()
 	if len(c.fresh()) == 0 {
 		return
@@ -141,8 +148,10 @@ func Names(domain string, opt Options) *Report {
 	opt.night = true
 	c := newCollector(domain, opt)
 	c.discover()
-	c.asking.wait(sourceWait)
-	c.takeWords(2 * time.Minute)
+	if c.asking != nil {
+		c.asking.wait(sourceWait)
+	}
+	c.takeWords(c.wordsLimit)
 	// Второй проход - имена из обратных записей сетей, которые стали известны после первого.
 	for range 2 {
 		_, addrs := c.resolve(c.fresh())
@@ -158,7 +167,8 @@ func Names(domain string, opt Options) *Report {
 
 func newCollector(domain string, opt Options) *collector {
 	return &collector{domain: domain, opt: opt, rep: &Report{Domain: domain},
-		from: map[string][]string{}, states: map[string]*SourceState{}, known: map[string][]string{}, tried: map[string]bool{},
+		from: map[string][]string{}, recalled: map[string][]string{}, scopes: map[string][]string{},
+		states: map[string]*SourceState{}, known: map[string][]string{}, tried: map[string]bool{},
 		dropped: map[string]bool{}, wilds: map[string][]string{}, pool: map[string]pool{}, firmly: map[string]bool{}, nets: map[netip.Prefix]bool{},
 		cnames: map[string]string{}, hosts: map[string]*Host{}, addrs: map[string]*Addr{}, group: par.NewGroup(probeWidth)}
 }
@@ -181,17 +191,29 @@ func (c *collector) discover() {
 	// Быстрому сбору второй круг не нужен: короткий словарь дожидаемся сразу.
 	wait := time.Duration(0)
 	if c.opt.Quick {
-		wait = sweepQuick + 2*poolBudget
+		wait = c.wordsLimit
 	}
 	c.takeWords(wait)
 }
 
-// learn запоминает, что имя домена нашёл свой источник.
+// learn запоминает, что имя домена нашёл свой источник; найденное заново больше не "помнится с прошлого сбора".
 func (c *collector) learn(name, from string) {
 	subs, _ := splitNames([]string{name}, c.domain)
-	if len(subs) == 1 && !slices.Contains(c.from[subs[0]], from) {
-		c.from[subs[0]] = append(c.from[subs[0]], from)
+	if len(subs) != 1 {
+		return
 	}
+	n := subs[0]
+	if !slices.Contains(c.from[n], from) {
+		c.from[n] = append(c.from[n], from)
+	}
+	if slices.Contains(c.recalled[n], from) {
+		c.recalled[n] = slices.DeleteFunc(c.recalled[n], func(l string) bool { return l == from })
+	}
+}
+
+// ranOver: источник искал по этим поддоменам, сетям или образцам.
+func (c *collector) ranOver(label string, items []string) {
+	c.scopes[label] = append(c.scopes[label], items...)
 }
 
 // state: строка своего источника в отчёте.
@@ -242,7 +264,7 @@ func (c *collector) surface() {
 	}
 	if !c.takeWords(0) {
 		c.note("словарь: проверяю имена " + c.path().how)
-		c.takeWords(time.Minute)
+		c.takeWords(c.wordsLimit)
 	}
 	for c.pending.Load() > 0 && time.Since(c.since) < settle {
 		time.Sleep(50 * time.Millisecond)
@@ -256,6 +278,7 @@ func (c *collector) surface() {
 // finish складывает отчёт: имена по алфавиту, адреса по порядку, у каждого имени - кто его знает.
 func (c *collector) finish() {
 	r := c.rep
+	c.wordsLost()
 	found := sourceNames{}
 	if c.asking != nil {
 		found = c.asking.found()
@@ -267,7 +290,7 @@ func (c *collector) finish() {
 		if name == c.domain {
 			labels = append(labels, fromApex)
 		}
-		h.Source, h.Sources = best(labels), c.knownBy(name, found)
+		h.Source, h.Sources, h.Recalled = best(labels), c.knownBy(name, found), c.recalledOnly(name)
 		if selfFound(labels) {
 			r.Found.Own++
 		} else {
@@ -299,6 +322,18 @@ func (c *collector) finish() {
 	}
 	r.Trackers = homeTrackers(c.domain, r.Hosts)
 	c.remember()
+	c.unbind()
+}
+
+// recalledOnly: источники, от которых имя только помнится, - в порядке строк отчёта.
+func (c *collector) recalledOnly(name string) []string {
+	var out []string
+	for _, label := range reported {
+		if slices.Contains(c.recalled[name], label) {
+			out = append(out, label)
+		}
+	}
+	return out
 }
 
 // knownBy: источники, которые знают имя, - свои, о которых отчёт говорит строкой, и сторонние.
@@ -329,10 +364,20 @@ func (c *collector) ownStates() []SourceState {
 		if st == nil {
 			st = &SourceState{Name: label, Own: true}
 		}
-		st.Names = names
+		st.Names, st.Scope = names, scopeOf(c.scopes[label])
 		out = append(out, *st)
 	}
 	return out
+}
+
+// scopeOf: короткий отпечаток набора; пусто - у источника охват постоянный.
+func scopeOf(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	items = slices.Compact(slices.Sorted(slices.Values(items)))
+	sum := sha256.Sum256([]byte(strings.Join(items, "\n")))
+	return hex.EncodeToString(sum[:6])
 }
 
 // netsNote: откуда сведения о сетях и странах; quiet - сторонних не спрашивали.

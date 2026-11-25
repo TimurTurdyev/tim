@@ -86,8 +86,10 @@ func checkCommand(env *app.Env) *cobra.Command {
 сертификатов сравниваются с прошлым разом. Обход по расписанию (tim check install) ещё смотрит, что видно снаружи:
 новые имена домена и новые порты своих серверов, порты проверяет сам. Имена ищет сам - словарём у серверов зоны (за
 VPN через DoH), по записям домена и в архиве tim data - и спрашивает api.certspotter.com, ip.thc.org и
-api.subdomain.center; адреса уходят в internetdb.shodan.io, а без таблиц tim data и в whois.cymru.com. Новое держится,
-пока не отметишь своим: space на экране tim domain.`,
+api.subdomain.center; адреса уходят в internetdb.shodan.io, а без таблиц tim data и в whois.cymru.com. Новым имя
+называет только источник, который прошёл всё: словарь через DoH за свой срок проходит не весь, и имя, которое знает
+один он, в сравнение не идёт - с [domain] direct = true словарь проходит весь. Новое держится, пока не отметишь своим:
+space на экране tim domain.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.json = view.AsJSON
 			var err error

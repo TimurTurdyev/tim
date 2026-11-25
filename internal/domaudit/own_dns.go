@@ -1,7 +1,6 @@
 package domaudit
 
 import (
-	"context"
 	"errors"
 	"net"
 	"slices"
@@ -18,16 +17,18 @@ import (
 )
 
 const (
-	wordsFull   = 100000 // весь встроенный словарь
-	wordsQuick  = 20000
-	sweepFull   = 20 * time.Second // столько же ждём сторонних: перебор идёт в это время
-	sweepOwn    = 40 * time.Second // без сторонних ждать некого, зато словарь у серверов зоны проходит весь
-	sweepQuick  = 3 * time.Second
-	sweepNight  = time.Minute
-	poolBudget  = 5 * time.Second
-	maxHits     = 3000 // больше имён словарь не находит и у огромных зон: дальше похоже на незамеченную запись *
-	maxExplicit = 2000
-	maxArchive  = 10000 // больше имён в архиве только у площадок с чужими поддоменами
+	wordsFull  = 100000 // весь встроенный словарь
+	wordsQuick = 20000
+	sweepFull  = 20 * time.Second // столько же ждём сторонних: перебор идёт в это время
+	sweepOwn   = 40 * time.Second // без сторонних ждать некого, зато словарь у серверов зоны проходит весь
+	sweepQuick = 3 * time.Second
+	sweepNight = time.Minute
+	maxHits    = 3000             // больше имён словарь не находит и у огромных зон: дальше похоже на незамеченную запись *
+	maxArchive = 10000            // больше имён в архиве только у площадок с чужими поддоменами
+	wordsSlack = 10 * time.Second // поиск серверов зоны перед перебором
+
+	// NoIface: мимо VPN просили, а физического интерфейса не нашлось.
+	NoIface = "-"
 )
 
 // dnsPath: каким путём идёт массовая проверка имён; how - словами, для строки источника.
@@ -38,29 +39,40 @@ type dnsPath struct {
 	direct bool   // спрашиваем сами серверы зоны
 }
 
-// pool: что зона отвечает на несуществующее имя под родителем; пусто - честное "имени нет".
-type pool struct {
-	ips, targets []string
-	nodata       bool
-}
-
 // found: что массовая проверка сказала об именах.
 type found struct {
 	live    []string // есть адрес или CNAME, и это не запись *
-	blank   []string // неотличимы от записи * своего родителя
+	firm    []string // отвечают как запись *, но заведены явно
 	nodes   []string // имя есть, адреса у него нет
 	zones   []string // дочерние зоны, куда отсылают серверы
-	checked int
+	starred int      // имён, неотличимых от записи *
+	checked int      // имён с ответом
 	limited bool
+	cut     bool // проверено не всё: срок, имена без ответа или запись *, о которой зона промолчала
 }
 
 // bind: запросы DNS с интерфейса мимо VPN, если так просили; не вышло - обычным путём и строкой в отчёте.
+// Привязка общая на весь процесс: кто её поставил, тот в конце сбора и снимает.
 func (c *collector) bind() {
-	if c.opt.Direct == "" || dnsq.Bound() == c.opt.Direct {
+	switch {
+	case c.opt.Direct == "" || dnsq.Bound() == c.opt.Direct:
+		return
+	case c.opt.Direct == NoIface:
+		c.say("мимо VPN не вышло: физический интерфейс не найден, запросы DNS идут обычным путём")
 		return
 	}
 	if err := dnsq.Bind(c.opt.Direct); err != nil {
 		c.say("мимо VPN через " + c.opt.Direct + " не вышло, запросы DNS идут обычным путём: " + ui.Plain(ui.ShortErr(err)))
+		return
+	}
+	c.bound = true
+}
+
+// unbind: запросы DNS остального процесса снова идут обычным путём.
+func (c *collector) unbind() {
+	if c.bound {
+		dnsq.Unbind()
+		c.bound = false
 	}
 }
 
@@ -111,12 +123,13 @@ func resolvers() sweep.Options {
 	return sweep.Options{Servers: dnsq.Resolvers, Recursive: true, Control: dnsq.Control()}
 }
 
-// archived: что локальный архив знает о домене.
+// archived: что локальный архив знает о домене; ready из parts - сколько частей выпуска уже стоит.
 type archived struct {
-	names   []string
-	total   int
-	release string
-	err     error
+	names        []string
+	total        int
+	release      string
+	ready, parts int
+	err          error
 }
 
 // lookupArchive: имена домена из локального архива - что видел обход интернета.
@@ -126,7 +139,8 @@ func lookupArchive(domain string) archived {
 		return archived{err: err}
 	}
 	names, total, err := base.Lookup(domain, maxArchive)
-	return archived{names, total, base.Release(), err}
+	ready, parts := base.Parts()
+	return archived{names, total, base.Release(), ready, parts, err}
 }
 
 // archive: имена из архива - в сбор; без архива - строка о том, как его поставить.
@@ -148,6 +162,10 @@ func (c *collector) archive(a archived) {
 		st.Cut = true
 		st.Note += ", взято " + strconv.Itoa(len(a.names)) + " из " + strconv.Itoa(a.total)
 	}
+	if a.ready < a.parts {
+		st.Cut = true
+		st.Note += ", стоит частей " + strconv.Itoa(a.ready) + " из " + strconv.Itoa(a.parts) + ": tim data update --names"
+	}
 }
 
 // startWords запускает перебор словаря в фоне: он идёт, пока собирается первый круг и отвечают сторонние.
@@ -168,7 +186,13 @@ func (c *collector) startWords() {
 	}
 	c.swept = make(chan found, 1)
 	c.wordsTotal = len(names)
+	c.wordsLimit = budget + retryBudget + poolRounds*poolBudget + explicitBudget(budget) + retryBudget + wordsSlack
 	go func() { c.swept <- c.alive(c.path(), names, budget) }()
+}
+
+// explicitBudget: сколько проверять имена под записью *, если основной проход шёл budget.
+func explicitBudget(budget time.Duration) time.Duration {
+	return min(budget, max(poolBudget, budget/2))
 }
 
 // takeWords забирает ответ перебора, если он готов или будет готов за wait; false - ещё идёт.
@@ -190,26 +214,42 @@ func (c *collector) takeWords(wait time.Duration) bool {
 func (c *collector) words(f found) {
 	st := c.state(fromWords)
 	st.Checked, st.Total, st.Version, st.Note = f.checked, c.wordsTotal, namebase.WordsVersion, c.path().how
-	st.Cut = f.checked < c.wordsTotal
+	st.Cut = f.cut
 	if f.limited {
 		st.Note += ", сервер ограничивает частоту"
 	}
-	if st.Cut && !c.path().direct && !c.opt.Quick {
+	if f.checked < c.wordsTotal && !c.path().direct && !c.opt.Quick {
 		c.say("порт 53 перехвачен (VPN): словарь проверен не весь; весь - с --direct, но серверы зоны увидят твой адрес")
 	}
-	live := c.take(c.path(), f)
-	if len(live) > maxHits {
-		st.Note += ", совпадений слишком много: взяты первые " + strconv.Itoa(maxHits)
-		live = live[:maxHits]
+	if f.starred > 0 {
+		st.Note += ", под записью * " + strconv.Itoa(f.starred) + " слов, явно заведённых " + strconv.Itoa(len(f.firm))
 	}
-	for _, n := range live {
+	names := c.take(f)
+	if len(names) > maxHits {
+		st.Cut = true
+		st.Note += ", совпадений слишком много: взяты первые " + strconv.Itoa(maxHits)
+		names = names[:maxHits]
+	}
+	for _, n := range names {
 		c.learn(n, fromWords)
 	}
 }
 
-// take: имена, которые проверка признала существующими: живые, заведённые явно под записью *, имена без адреса и
-// вершины дочерних зон. Последние два вида запоминаются: под ними стоит искать глубже.
-func (c *collector) take(via dnsPath, f found) []string {
+// wordsLost: перебор не уложился в срок сбора - об этом строка, а не тишина.
+func (c *collector) wordsLost() {
+	if c.swept == nil {
+		return
+	}
+	st := c.state(fromWords)
+	st.Total, st.Version, st.Cut, st.Note = c.wordsTotal, namebase.WordsVersion, true, "не успел за срок сбора"
+}
+
+// take: имена, которые проверка признала существующими, надёжные первыми: заведённые явно под записью *, вершины
+// дочерних зон, имена без адреса, живые. Имена без адреса и зоны запоминаются: под ними стоит искать глубже.
+func (c *collector) take(f found) []string {
+	for _, n := range f.firm {
+		c.firmly[n] = true
+	}
 	for _, n := range f.nodes {
 		if !slices.Contains(c.nodes, n) {
 			c.nodes = append(c.nodes, n)
@@ -220,112 +260,53 @@ func (c *collector) take(via dnsPath, f found) []string {
 			c.zones = append(c.zones, z)
 		}
 	}
-	return slices.Concat(f.live, c.explicit(via, f.blank), f.nodes, f.zones)
+	return slices.Concat(f.firm, f.zones, f.nodes, f.live)
 }
 
-// alive: какие из имён есть в DNS, если спрашивать путём p. Имя под записью * считается, только если отвечает не
-// так, как она.
+// alive: какие из имён есть в DNS, если спрашивать путём p. Имя, которое отвечает как запись *, считается, только
+// если заведено явно; о ком судить нечем - не считается, а проход помечается неполным.
 func (c *collector) alive(p dnsPath, names []string, budget time.Duration) found {
 	if len(names) == 0 {
 		return found{}
 	}
-	opt := p.opt
-	opt.Budget = budget
-	res := sweep.Run(context.Background(), names, opt)
-	out := found{checked: len(res.Answers), limited: res.Limited}
+	answers, limited := askNames(p, names, budget)
+	out := found{limited: limited}
 	var hits []sweep.Answer
-	var parents []string
-	for i, a := range res.Answers {
+	for i, a := range answers {
 		a.Name = names[i]
 		switch a.Kind {
-		case sweep.Addr, sweep.CNAME:
+		case sweep.Addr, sweep.CNAME, sweep.NoData:
 			hits = append(hits, a)
-			if p := parentOf(a.Name); !slices.Contains(parents, p) {
-				parents = append(parents, p)
-			}
-		case sweep.NoData:
-			out.nodes = append(out.nodes, a.Name)
+			out.checked++
 		case sweep.Refer:
 			if !slices.Contains(out.zones, a.Zone) {
 				out.zones = append(out.zones, a.Zone)
 			}
+			out.checked++
+		case sweep.NX:
+			out.checked++
 		}
 	}
-	pools := c.pools(p, parents)
+	out.cut = out.checked < len(names)
+	c.star(p, hits, min(poolBudget, budget))
+	var blank []string
 	for _, a := range hits {
-		if under := pools[parentOf(a.Name)]; under.covers(a) {
-			out.blank = append(out.blank, a.Name)
-		} else {
+		under, direct, known := c.poolOf(a.Name)
+		switch covered := known && under.covers(a); {
+		case !covered && !direct:
+			out.cut = true
+			fallthrough
+		case covered:
+			if a.Kind != sweep.NoData {
+				blank = append(blank, a.Name)
+			}
+		case a.Kind == sweep.NoData:
+			out.nodes = append(out.nodes, a.Name)
+		default:
 			out.live = append(out.live, a.Name)
 		}
 	}
-	out.nodes = slices.DeleteFunc(out.nodes, func(n string) bool { return pools[parentOf(n)].nodata })
-	return out
-}
-
-// pools: ответы зоны на несуществующие имена под каждым из родителей - у балансировщика каждый ответ свой.
-func (c *collector) pools(via dnsPath, parents []string) map[string]pool {
-	c.poolMu.Lock()
-	defer c.poolMu.Unlock()
-	var names []string
-	nonce := "tim-nx-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	for _, p := range parents {
-		if _, done := c.pool[p]; done {
-			continue
-		}
-		c.pool[p] = pool{}
-		for i := range wildTries {
-			names = append(names, nonce+strconv.Itoa(i)+"."+p)
-		}
-	}
-	if len(names) == 0 {
-		return c.pool
-	}
-	opt := via.opt
-	opt.Budget = poolBudget
-	for i, a := range sweep.Run(context.Background(), names, opt).Answers {
-		parent := parentOf(names[i])
-		p := c.pool[parent]
-		switch a.Kind {
-		case sweep.Addr:
-			p.ips = append(p.ips, a.IPs...)
-		case sweep.CNAME:
-			p.targets = append(p.targets, a.Target)
-		case sweep.NoData:
-			p.nodata = true
-		}
-		c.pool[parent] = p
-	}
-	return c.pool
-}
-
-// covers: ответ неотличим от ответа на несуществующее имя.
-func (p pool) covers(a sweep.Answer) bool {
-	if a.Kind == sweep.CNAME {
-		return slices.Contains(p.targets, a.Target)
-	}
-	return len(p.ips) > 0 && !slices.ContainsFunc(a.IPs, func(ip string) bool { return !slices.Contains(p.ips, ip) })
-}
-
-// explicit: имена, неотличимые от записи *, но заведённые явно: под таким именем запись * уже не действует, и на
-// несуществующее имя ниже зона отвечает "нет".
-func (c *collector) explicit(via dnsPath, blank []string) []string {
-	if len(blank) == 0 {
-		return nil
-	}
-	blank = blank[:min(len(blank), maxExplicit)]
-	probes := make([]string, len(blank))
-	for i, n := range blank {
-		probes[i] = "tim-nx." + n
-	}
-	opt := via.opt
-	opt.Budget = poolBudget
-	var out []string
-	for i, a := range sweep.Run(context.Background(), probes, opt).Answers {
-		if a.Kind == sweep.NX {
-			c.firmly[blank[i]] = true
-			out = append(out, blank[i])
-		}
-	}
+	firm, all := explicit(p, blank, explicitBudget(budget))
+	out.firm, out.starred, out.cut = firm, len(blank), out.cut || !all
 	return out
 }

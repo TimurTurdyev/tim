@@ -81,6 +81,9 @@ func directIface(cfg *config.Config, flag bool) string {
 		return ""
 	}
 	svc, _ := netinfo.PhysIface()
+	if svc.Device == "" {
+		return domaudit.NoIface
+	}
 	return svc.Device
 }
 
@@ -156,7 +159,7 @@ func printDomains(cfg *config.Config) error {
 	}
 	sort.Strings(domains)
 	for _, d := range domains {
-		rep := domaudit.Collect(d, domaudit.Options{Quiet: true, Quick: true})
+		rep := domaudit.Collect(d, domaudit.Options{Quiet: true, Quick: true, Direct: directIface(cfg, false)})
 		live := 0
 		for _, h := range rep.Hosts {
 			if h.Status > 0 {

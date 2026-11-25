@@ -46,19 +46,8 @@ func observeOutside(rep *domaudit.Report, now time.Time) {
 }
 
 func outsideSnapshot(rep *domaudit.Report) baseline.Snapshot {
-	snap := baseline.Snapshot{kindHost: {}, kindSource: {}}
-	for _, h := range rep.Hosts {
-		if len(h.IPs) > 0 && (len(h.Sources) > 0 || slices.Contains(watchedSources, h.Source)) {
-			snap[kindHost] = append(snap[kindHost], baseline.Item{Key: h.Name, Text: h.Name + " · " + moreText(h.IPs) + " · " + h.Source})
-		}
-	}
-	for _, s := range rep.Sources {
-		// Свой источник, который не успел проверить всё, знакомым не становится: в полный проход он покажет
-		// старое, о котором мы не знали.
-		if cut := s.Own && s.Cut; s.Names > 0 && !cut {
-			snap[kindSource] = append(snap[kindSource], baseline.Item{Key: sourceKey(s)})
-		}
-	}
+	snap := baseline.Snapshot{}
+	snap[kindHost], snap[kindSource] = namesSnapshot(rep)
 	scanned := map[string]bool{}
 	var ports, addrs []baseline.Item
 	for _, a := range rep.Addrs {
@@ -93,12 +82,56 @@ func outsideSnapshot(rep *domaudit.Report) baseline.Snapshot {
 	return snap
 }
 
-// sourceKey: источник с выпуском его данных - после смены словаря или архива он снова "ответил впервые".
-func sourceKey(s domaudit.SourceState) string {
-	if s.Version == "" {
-		return s.Name
+// namesSnapshot: имена и источники, о которых сегодня можно судить. Свой источник с неполным проходом и память
+// прошлых сборов судить не дают: имя, которое знают только они, не становится ни новым, ни своим - его оценит
+// первый полный проход. Имя, которое уже ждёт отметки, остаётся ждать.
+func namesSnapshot(rep *domaudit.Report) (hosts, sources []baseline.Item) {
+	hosts, sources = []baseline.Item{}, []baseline.Item{}
+	waiting := map[string]bool{}
+	for _, it := range baseline.Pending(outsideObject(rep.Domain)) {
+		waiting[it.Key] = it.Kind == kindHost
 	}
-	return s.Name + " " + s.Version
+	weak := map[string]bool{}
+	for _, s := range rep.Sources {
+		weak[s.Name] = s.Own && s.Cut
+	}
+	ran := map[string]bool{} // источники, которые назвали живое имя сами, а не по памяти
+	for _, h := range rep.Hosts {
+		if len(h.IPs) == 0 {
+			continue
+		}
+		found := foundNow(h)
+		for _, s := range found {
+			ran[s] = true
+		}
+		if slices.Contains(watchedSources, h.Source) || waiting[h.Name] || slices.ContainsFunc(found, func(s string) bool { return !weak[s] }) {
+			hosts = append(hosts, baseline.Item{Key: h.Name, Text: h.Name + " · " + moreText(h.IPs) + " · " + h.Source})
+		}
+	}
+	for _, s := range rep.Sources {
+		// Знакомым свой источник становится, когда прошёл всё и сам назвал живое имя.
+		if s.Names > 0 && (!s.Own || !s.Cut && ran[s.Name]) {
+			sources = append(sources, baseline.Item{Key: sourceKey(s)})
+		}
+	}
+	return hosts, sources
+}
+
+// foundNow: источники, которые назвали имя в этом сборе, а не помнят его с прошлого.
+func foundNow(h domaudit.Host) []string {
+	var out []string
+	for _, s := range h.Sources {
+		if !slices.Contains(h.Recalled, s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// sourceKey: источник с выпуском данных и охватом - после смены словаря, архива или набора поддоменов, по
+// которым он искал, источник снова "ответил впервые".
+func sourceKey(s domaudit.SourceState) string {
+	return strings.TrimSpace(s.Name + " " + strings.TrimSpace(s.Version+" "+s.Scope))
 }
 
 // familiar: что из нового не новое - имена, которые принёс впервые ответивший или урезанный источник, и порты
@@ -121,9 +154,9 @@ func familiar(rep *domaudit.Report, fresh []baseline.Item, now time.Time) []base
 			firstSeen[strings.TrimSuffix(it.Key, checkedMark)] = true
 		}
 	}
-	sources := map[string][]string{}
+	sources, watched := map[string][]string{}, map[string]bool{}
 	for _, h := range rep.Hosts {
-		sources[h.Name] = h.Sources
+		sources[h.Name], watched[h.Name] = foundNow(h), slices.Contains(watchedSources, h.Source)
 	}
 	var out []baseline.Item
 	for _, it := range fresh {
@@ -132,8 +165,10 @@ func familiar(rep *domaudit.Report, fresh []baseline.Item, now time.Time) []base
 		case kindSource, kindAddr:
 			own = true
 		case kindHost:
+			// Запись MX или NS читается целиком в любом сборе: имя из неё новое, кто бы ещё его ни назвал.
 			known := sources[it.Key]
-			own = it.Seen.Equal(now) && len(known) > 0 && !slices.ContainsFunc(known, func(s string) bool { return trusted[s] })
+			own = it.Seen.Equal(now) && !watched[it.Key] && len(known) > 0 &&
+				!slices.ContainsFunc(known, func(s string) bool { return trusted[s] })
 		case kindPort:
 			ip, _, _ := strings.Cut(it.Key, ":")
 			own = it.Seen.Equal(now) && firstSeen[ip]

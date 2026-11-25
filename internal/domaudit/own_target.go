@@ -89,13 +89,16 @@ func (c *collector) spf(texts []string, depth int) {
 	}
 }
 
-// learnAll: имена домена - с подписью, чужие домены - в связанные.
+// learnAll: имена домена - с подписью; чужие домены из сертификатов - в связанные. Чужое из SPF, SRV, SOA и с
+// соседних сайтов своего сервера связанным не считается: отчёт называет связанные "в тех же сертификатах".
 func (c *collector) learnAll(names []string, from string) {
 	subs, related := splitNames(names, c.domain)
 	for _, n := range subs {
 		c.learn(n, from)
 	}
-	c.related = append(c.related, related...)
+	if from == fromHostCert || from == fromSiteCert {
+		c.related = append(c.related, related...)
+	}
 }
 
 // zoneOwner: сервер и домен ящика из SOA зоны; ok=false - зона не отвечает.
@@ -156,13 +159,22 @@ func (c *collector) reverse() {
 	opt := resolvers()
 	opt.Type, opt.Budget = dnsmessage.TypePTR, netBudget
 	c.note("обратные имена сетей: " + strconv.Itoa(len(nets)))
-	for _, a := range sweep.Run(context.Background(), names, opt).Answers {
+	res := sweep.Run(context.Background(), names, opt)
+	for _, a := range res.Answers {
 		if a.Target != "" {
 			c.learn(a.Target, fromPTR)
 		}
 	}
 	c.netsDone += len(nets)
-	c.state(fromPTR).Note = "обойдено сетей /24: " + strconv.Itoa(c.netsDone)
+	for _, n := range nets {
+		c.ranOver(fromPTR, []string{n.String()})
+	}
+	st := c.state(fromPTR)
+	st.Note = "обойдено сетей /24: " + strconv.Itoa(c.netsDone)
+	if left := len(names) - len(res.Answers) + res.Unanswered; left > 0 {
+		st.Cut = true
+		st.Note += ", без ответа адресов: " + strconv.Itoa(left)
+	}
 }
 
 // ownNets: сети /24, которые ещё не обходили и которые похожи на свои: названа в SPF, обратную зону держит
@@ -293,11 +305,20 @@ func (c *collector) deepen() {
 	c.gather()
 	c.near()
 	c.note("имена по образцу найденных")
-	for _, n := range c.alive(c.path(), c.patterns(), deepBudget).live {
-		c.learn(n, fromPattern)
-	}
+	c.guess(fromPattern, c.alive(c.path(), c.patterns(), deepBudget))
 	c.under()
 	c.round(nil)
+}
+
+// guess: находки проверки догадок - имён по образцу или словаря под поддоменами - со строкой источника.
+func (c *collector) guess(label string, f found) {
+	for _, n := range c.take(f) {
+		c.learn(n, label)
+	}
+	if f.cut {
+		st := c.state(label)
+		st.Cut, st.Note = true, "проверено не всё"
+	}
 }
 
 // gather: имена, которые назвали сами сайты, - из сертификатов и страниц.
@@ -334,6 +355,7 @@ func (c *collector) patterns() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, h := range seeds[:min(len(seeds), maxSeeds)] {
+		c.ranOver(fromPattern, []string{h.Name})
 		for _, n := range harvest.Mutate(h.Name, c.domain) {
 			if _, tried := c.tried[n]; tried || seen[n] || len(out) >= maxPatterns {
 				continue
@@ -359,8 +381,7 @@ func (c *collector) under() {
 	var parents []string
 	for _, p := range slices.Concat(c.zones, c.nodes, busy) {
 		// Под записью * словарь ответит на всё: такие родители уже видны по ответу на несуществующее имя.
-		starred := len(c.wilds[p]) > 0 || len(c.pool[p].ips) > 0 || len(c.pool[p].targets) > 0
-		if !starred && !slices.Contains(parents, p) && len(parents) < deepParents {
+		if len(c.wilds[p]) == 0 && !c.starred(p) && !slices.Contains(parents, p) && len(parents) < deepParents {
 			parents = append(parents, p)
 		}
 	}
@@ -368,6 +389,7 @@ func (c *collector) under() {
 		return
 	}
 	c.note("словарь под " + strings.Join(parents, ", "))
+	c.ranOver(fromDeep, parents)
 	words := namebase.Words(deepWords)
 	// У дочерней зоны свои серверы: серверы родителя на её имена только отсылают.
 	byPath := map[string][]string{}
@@ -388,8 +410,6 @@ func (c *collector) under() {
 				names = append(names, w+"."+parent)
 			}
 		}
-		for _, n := range c.take(paths[key], c.alive(paths[key], names, deepBudget)) {
-			c.learn(n, fromWords)
-		}
+		c.guess(fromDeep, c.alive(paths[key], names, deepBudget))
 	}
 }

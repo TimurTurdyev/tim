@@ -20,8 +20,10 @@ type Host struct {
 	Engine string   `json:"engine,omitempty"` // движок сайта: WordPress, Bitrix
 	Final  string   `json:"final,omitempty"`
 	Source string   `json:"source"`
-	// Sources: все источники, которые знают имя.
-	Sources []string `json:"sources,omitempty"`
+	// Sources: все источники, которые знают имя; Recalled - те из них, что в этот раз не искали или не нашли его
+	// сами: имя помнится с прошлого сбора.
+	Sources  []string `json:"sources,omitempty"`
+	Recalled []string `json:"recalled,omitempty"`
 	// CNAME: куда ведёт имя; Takeover - его можно захватить: цель у чужого сервиса никем не занята.
 	CNAME    string    `json:"cname,omitempty"`
 	Takeover *Takeover `json:"takeover,omitempty"`

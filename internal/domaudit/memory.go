@@ -27,6 +27,7 @@ func (c *collector) recall() {
 		}
 		for _, n := range names {
 			c.learn(n, label)
+			c.recalled[n] = append(c.recalled[n], label)
 		}
 	}
 }

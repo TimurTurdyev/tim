@@ -19,6 +19,7 @@ const (
 	fromScan     = "InternetDB"
 	fromBase     = "архив"
 	fromWords    = "словарь"
+	fromDeep     = "словарь вглубь"
 	fromPattern  = "образец"
 
 	sourceTHC          = "THC"
@@ -29,13 +30,14 @@ const (
 var (
 	// order: подписи по надёжности - имя подписывается первой из тех, что его знают.
 	order = []string{fromApex, fromInside, fromHostCert, fromSiteCert, fromLog, fromMX, fromNS, fromSRV, fromSPF, fromPTR, fromCert,
-		fromPage, fromScan, fromBase, sourceTHC, sourceCenter, sourceHackertarget, fromWords, fromPattern}
+		fromPage, fromScan, fromBase, sourceTHC, sourceCenter, sourceHackertarget, fromWords, fromDeep, fromPattern}
 	// solid: имя точно заведено - сертификат выпускают на то, что есть, а записи и конфиг сервера называют имя прямо.
 	solid = []string{fromApex, fromInside, fromHostCert, fromSiteCert, fromLog, fromMX, fromNS, fromSRV, fromSPF, fromPTR, fromCert}
 	// outside: подписи сторонних сервисов; остальное нашли сами.
 	outside = []string{fromCert, fromScan, sourceTHC, sourceCenter, sourceHackertarget}
 	// reported: свои источники, о которых отчёт говорит отдельной строкой, - в этом порядке.
-	reported = []string{fromWords, fromBase, fromSPF, fromSRV, fromPTR, fromPage, fromSiteCert, fromHostCert, fromLog, fromPattern, fromInside}
+	reported = []string{fromWords, fromDeep, fromBase, fromSPF, fromSRV, fromPTR, fromPage, fromSiteCert, fromHostCert, fromLog, fromPattern,
+		fromInside}
 )
 
 // rankOf: место подписи по надёжности; незнакомая - в конце.
