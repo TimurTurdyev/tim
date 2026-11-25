@@ -18,6 +18,7 @@ const (
 	crtTimeout    = 45 * time.Second
 	sourceTimeout = 15 * time.Second
 	sourceWait    = 19 * time.Second // дольше сбор источник не ждёт; поздний ответ ляжет в кэш
+	sourceGrace   = time.Second      // источник сдаётся раньше сбора: его прошлый список успевает дойти
 	sourceLimit   = 32 << 20
 	thcLimit      = 1000 // больше строк не просим: ровно столько - ответ обрезан
 	hostLimit     = 50   // столько строк отдаёт hackertarget без ключа
@@ -107,10 +108,17 @@ func askSources(domain string, opt Options) *asking {
 	return a
 }
 
-// wait собирает ответы, но не дольше limit от начала опроса.
+// wait собирает ответы, но не дольше limit от начала опроса; уже пришедшие забирает и после срока.
 func (a *asking) wait(limit time.Duration) {
 	late := time.After(max(0, limit-time.Since(a.started)))
 	for a.left > 0 {
+		select {
+		case got := <-a.arrived:
+			a.answers[got.index] = &got
+			a.left--
+			continue
+		default:
+		}
 		select {
 		case got := <-a.arrived:
 			a.answers[got.index] = &got
@@ -218,7 +226,7 @@ func (s source) wait(domain string) (nameList, error) {
 	select {
 	case a := <-done:
 		return a.got, a.err
-	case <-time.After(sourceWait):
+	case <-time.After(sourceWait - sourceGrace):
 		return nameList{}, errSlow
 	}
 }
