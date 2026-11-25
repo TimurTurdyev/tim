@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -145,32 +144,21 @@ func dataUpdate(cfg *config.Config, o dataOptions) error {
 	return nil
 }
 
-// lockData: два обновления разом испортили бы архив. В замке номер процесса: замок прерванного запуска не мешает.
+// lockData: два обновления разом испортили бы архив. Замок держит ядро: умер процесс - замок снят, файл остаётся.
 func lockData() (unlock func(), err error) {
 	path := paths.Data("update.lock")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, ui.Errorf("каталог локальной базы: %v", err)
 	}
-	if owner, _ := os.ReadFile(path); len(owner) > 0 && !running(string(owner)) {
-		_ = os.Remove(path)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
+		return nil, ui.Errorf("замок локальной базы: %v", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
 		return nil, ui.Errorf("локальную базу уже обновляет другой tim")
 	}
-	_, _ = fmt.Fprint(f, os.Getpid())
-	_ = f.Close()
-	return func() { _ = os.Remove(path) }, nil
-}
-
-// running: процесс с таким номером жив.
-func running(pid string) bool {
-	n, err := strconv.Atoi(strings.TrimSpace(pid))
-	if err != nil {
-		return false
-	}
-	p, err := os.FindProcess(n)
-	return err == nil && p.Signal(syscall.Signal(0)) == nil
+	return func() { _ = f.Close() }, nil
 }
 
 // updateNets: дампы RIS, имена AS и страны серверов - в таблицы; прежние остаются, пока новые не собраны.
@@ -202,9 +190,11 @@ func updateNets() error {
 func fetchSource(src netbase.Source, dst string) error {
 	opt := fetch.Options{MaxBytes: tableLimit, Progress: progress(src.File)}
 	if src.SHA256URL != "" {
-		if sum, _, err := fetch.Bytes(context.Background(), src.SHA256URL, listLimit, nil); err == nil {
-			opt.SHA256, _, _ = strings.Cut(strings.TrimSpace(string(sum)), " ")
+		sum, _, err := fetch.Bytes(context.Background(), src.SHA256URL, listLimit, nil)
+		if err != nil {
+			ui.Println(ui.Dim("контрольная сумма " + src.File + " не скачана: файл ставится без сверки"))
 		}
+		opt.SHA256, _, _ = strings.Cut(strings.TrimSpace(string(sum)), " ")
 	}
 	var last error
 	for _, url := range src.URLs {
